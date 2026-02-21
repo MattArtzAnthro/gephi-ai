@@ -180,13 +180,6 @@ Detailed reference guides are in `.claude/skills/gephi/`:
 - **MCP Server**: Python 3.10+, MCP SDK (FastMCP), httpx, Pydantic
 - **Target**: Gephi 0.10.1, NetBeans RELEASE126
 
-## Citation
-
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18673386.svg)](https://doi.org/10.5281/zenodo.18673386)
-
-If you use this software in your academic research, please cite:
-
-> Artz, Matt. 2025. gephi-ai. Software. Zenodo. https://doi.org/10.5281/zenodo.18673386
 
 ## Attribution
 
