@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__gephi-mcp__gephi_add_nodes|mcp__gephi-mcp__gephi_add_edges|mcp__gephi-mcp__gephi_import_file|mcp__gephi-mcp__gephi_import_gexf|mcp__gephi-mcp__gephi_import_graphml|mcp__gephi-mcp__gephi_import_csv",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check-gephi.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
