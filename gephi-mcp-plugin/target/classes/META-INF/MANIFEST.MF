@@ -1,0 +1,28 @@
+Manifest-Version: 1.0
+OpenIDE-Module-Install: org/gephi/plugins/mcp/Installer.class
+OpenIDE-Module-Localizing-Bundle: org/gephi/plugins/mcp/Bundle.propert
+ ies
+OpenIDE-Module-Specification-Version: 1.0.0
+OpenIDE-Module-Implementation-Version: 1.0.0
+OpenIDE-Module-Build-Version: 202603160210
+OpenIDE-Module: org.gephi.plugins.gephi.mcp
+OpenIDE-Module-Public-Packages: org.gephi.plugins.mcp.api.*
+OpenIDE-Module-Requires: org.openide.modules.ModuleFormat1
+OpenIDE-Module-Display-Category: org.gephi.plugins
+OpenIDE-Module-Name: Gephi MCP Plugin
+OpenIDE-Module-Short-Description: HTTP API for remote Gephi control vi
+ a MCP
+OpenIDE-Module-Long-Description: HTTP API for remote Gephi control via
+  MCP
+X-Class-Path: ext/org.gephi.plugins.gephi-mcp/org-nanohttpd/nanohttpd.
+ jar ext/org.gephi.plugins.gephi-mcp/com-google-code-gson/gson.jar
+Maven-Class-Path: org.nanohttpd:nanohttpd:2.3.1 com.google.code.gson:g
+ son:2.10.1
+OpenIDE-Module-Module-Dependencies: org.gephi.graph.api > 0.10.1, org.
+ gephi.project.api > 0.10.1, org.gephi.layout.api > 0.10.1, org.gephi.
+ io.exporter.api > 0.10.1, org.gephi.io.importer.api > 0.10.1, org.gep
+ hi.statistics.api > 0.10.1, org.gephi.appearance.api > 0.10.1, org.ge
+ phi.preview.api > 0.10.1, org.gephi.filters.api > 0.10.1, org.openide
+ .util > 9.22, org.openide.util.lookup > 8.48, org.openide.modules > 7
+ .62, org.openide.nodes > 7.59
+
