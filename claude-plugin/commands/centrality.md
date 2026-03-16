@@ -7,9 +7,11 @@ allowed-tools: mcp__gephi-mcp__*
 
 Run comprehensive centrality analysis to identify the most important and influential nodes in the graph.
 
+**Tell the user what you're doing at each step** — narrate briefly before each tool call.
+
 ## Steps
 
-1. **Health check**: Call `gephi_health_check` to confirm Gephi is running.
+1. **Health check**: Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop.
 
 2. **Graph info**: Call `gephi_get_project_info` to get node/edge counts and graph type.
 
@@ -31,7 +33,7 @@ Run comprehensive centrality analysis to identify the most important and influen
 
 6. **Size by PageRank**: Call `gephi_size_by_ranking` with column `"pageranks"`, `min_size: 3`, `max_size: 30`.
 
-7. **Layout**: Call `gephi_run_layout` with algorithm `"forceatlas2"`, 1000 iterations.
+7. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"`, 1000 iterations.
 
 8. **Report**: Present a ranked table of key nodes with their centrality scores. Highlight:
    - **Hubs**: High degree nodes

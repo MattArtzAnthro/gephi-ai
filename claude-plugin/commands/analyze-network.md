@@ -7,9 +7,11 @@ allowed-tools: mcp__gephi-mcp__*
 
 Run a full structural analysis of the current graph and present a detailed report of its properties.
 
+**Tell the user what you're doing at each step** — narrate briefly before each tool call (e.g., "Computing modularity...", "Running centrality analysis...").
+
 ## Steps
 
-1. **Health check**: Call `gephi_health_check` to confirm Gephi is running.
+1. **Health check**: Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop.
 
 2. **Basic stats**: Call `gephi_get_graph_stats` and `gephi_get_graph_type` to get node count, edge count, density, average degree, and directionality.
 

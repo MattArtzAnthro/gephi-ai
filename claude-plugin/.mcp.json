@@ -1,5 +1,7 @@
 {
-  "gephi-mcp": {
-    "command": "gephi-mcp"
+  "mcpServers": {
+    "gephi-mcp": {
+      "command": "gephi-mcp"
+    }
   }
 }
