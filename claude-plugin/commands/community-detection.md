@@ -8,15 +8,17 @@ allowed-tools: mcp__gephi-mcp__*
 
 Run a complete community detection and visualization workflow on the current Gephi graph.
 
+**Tell the user what you're doing at each step** — narrate briefly before each tool call.
+
 ## Steps
 
-1. **Health check**: Call `gephi_health_check` to confirm Gephi is running. Abort with a clear message if it is not.
+1. **Health check**: Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop.
 
-2. **Graph info**: Call `gephi_get_project_info` to get node/edge counts. Report the graph size to the user.
+2. **Graph info**: Call `gephi_get_project_info`. Tell the user the node/edge counts.
 
-3. **Compute modularity**: Call `gephi_compute_modularity` with resolution `$ARGUMENTS[0]` (default to 1.0 if no argument provided). Report the modularity score and number of communities found.
+3. **Compute modularity**: Call `gephi_compute_modularity` with resolution `$ARGUMENTS[0]` (default 1.0). Tell the user: "Running community detection..." then report the modularity score and number of communities.
 
-4. **Compute degree**: Call `gephi_compute_degree` to create the degree attribute for sizing.
+4. **Compute degree**: Call `gephi_compute_degree`. Tell the user: "Computing degree distribution..."
 
 5. **Color by community**: Call `gephi_color_by_partition` with column `"modularity_class"` and this pastel palette:
    ```json
@@ -37,6 +39,6 @@ Run a complete community detection and visualization workflow on the current Gep
 
 6. **Size by degree**: Call `gephi_size_by_ranking` with column `"degree"`, `min_size: 3`, `max_size: 25`.
 
-7. **Layout**: Call `gephi_run_layout` with algorithm `"forceatlas2"`, 1500 iterations, and properties `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimize": true}`.
+7. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"`, 1500 iterations, and properties `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimize": true}`.
 
 8. **Report results**: Summarize the communities found, their sizes (query nodes to count per community), and the overall modularity score.

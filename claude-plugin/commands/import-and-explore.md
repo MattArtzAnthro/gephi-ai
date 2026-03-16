@@ -8,9 +8,11 @@ allowed-tools: mcp__gephi-mcp__*
 
 Import a graph file into Gephi, run initial analysis, apply styling, and present an overview.
 
+**Tell the user what you're doing at each step** — narrate briefly before each tool call.
+
 ## Steps
 
-1. **Health check**: Call `gephi_health_check` to confirm Gephi is running.
+1. **Health check**: Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop.
 
 2. **Create project**: Call `gephi_create_project` to start fresh.
 
@@ -29,7 +31,7 @@ Import a graph file into Gephi, run initial analysis, apply styling, and present
    - Color by community: `gephi_color_by_partition` with column `"modularity_class"` and pastel palette
    - Size by degree: `gephi_size_by_ranking` with column `"degree"`, min_size 3, max_size 25
 
-8. **Layout**: Call `gephi_run_layout` with algorithm `"forceatlas2"`, 1000 iterations, properties `{"linLogMode": true, "scalingRatio": 100, "gravity": 1.0, "barnesHutOptimize": true}`.
+8. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"`, 1000 iterations, properties `{"linLogMode": true, "scalingRatio": 100, "gravity": 1.0, "barnesHutOptimize": true}`.
 
 9. **Report**: Summarize:
    - Graph size (nodes, edges)
