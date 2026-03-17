@@ -4,36 +4,67 @@ AI-powered network analysis through [Gephi](https://gephi.org) and the [Model Co
 
 Built for researchers working across network science and AI.
 
-## What You Get
+## What you get
 
-**73 MCP tools** for controlling Gephi Desktop -- graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**73 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
 **Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`), a specialized network analyst agent, and workflow skills that teach Claude network science best practices.
 
-**Works with any MCP client** -- Claude Code, Claude Desktop, or any MCP-compatible assistant.
+**Works with any MCP client** — Claude Code, Claude Desktop, or any MCP-compatible assistant.
 
-## Quickstart (Claude Code)
+## Architecture
+
+Three components connect your AI assistant to Gephi Desktop:
+
+```
+Claude / AI Assistant
+        │
+   MCP Protocol (stdio)
+        │
+   MCP Server (Python)          ← Translates MCP tool calls to HTTP
+        │
+   HTTP API (localhost:8080)
+        │
+   Gephi Plugin (Java)          ← Runs inside Gephi Desktop
+        │
+   Gephi Desktop                ← Must be running first
+```
+
+| Component | Directory | What it does |
+|-----------|-----------|-------------|
+| Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
+| MCP Server | `mcp-server/` | Python server that exposes 73 Gephi tools via MCP |
+| Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
+
+All three must be installed. Gephi Desktop must be running before using any tools.
+
+## Setup
 
 ### Prerequisites
 
 - [Gephi Desktop](https://gephi.org/users/download/) 0.10.1+
-- Python 3.10+
-- [Claude Code](https://code.claude.com)
+- [Java JDK 11+](https://adoptium.net/) and [Maven](https://maven.apache.org/) (to build the Gephi plugin)
+- [Python 3.10+](https://www.python.org/) (for the MCP server)
+- [Claude Code](https://claude.ai/code) or [Claude Desktop](https://claude.ai/download) (for AI interaction)
 
-### 1. Install the Gephi Plugin
+### Step 1: Install the Gephi plugin
 
-Build the `.nbm` module and install it through Gephi's plugin manager:
+This adds the HTTP API server inside Gephi Desktop.
 
 ```bash
 cd gephi-mcp-plugin
 mvn clean package
 ```
 
-Then in Gephi: **Tools > Plugins > Downloaded > Add Plugins** -- select `target/gephi-mcp-1.0.0.nbm`.
+Then in Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select `target/nbm/gephi-mcp-1.0.0.nbm`.
 
 Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
-### 2. Install the MCP Server
+**Verify:** Open a browser to `http://127.0.0.1:8080/health` — you should see `{"success": true}`.
+
+### Step 2: Install the MCP server
+
+This bridges MCP clients to the Gephi HTTP API.
 
 ```bash
 cd mcp-server
@@ -42,34 +73,29 @@ pip install -e .
 
 This installs the `gephi-mcp` command on your PATH.
 
-### 3. Install the Claude Code Plugin
+**Verify:** Run `gephi-mcp --help` to confirm it installed.
 
-Inside Claude Code, run:
+### Step 3: Connect your AI assistant
 
-```
-/plugin marketplace add MattArtzAnthro/gephi-ai
-/plugin install gephi-network-analysis@gephi-ai
+#### Claude Code (full plugin — recommended)
+
+```bash
+claude plugin install gephi-ai/gephi-network-analysis
 ```
 
 This adds the MCP server, slash commands, network analyst agent, skills, and a health-check hook.
 
-### 4. Verify
+#### Claude Code (MCP tools only)
 
-Open Gephi, then ask Claude:
+If you just want the 73 tools without skills and commands:
 
-> "Check if Gephi is running"
-
-It should call `gephi_health_check` and confirm the connection. Try a slash command:
-
-```
-/gephi-network-analysis:analyze-network
+```bash
+claude mcp add gephi-mcp -- gephi-mcp
 ```
 
-## Other MCP Clients
+#### Claude Desktop
 
-The MCP server works with any MCP-compatible client, not just Claude Code.
-
-**Claude Desktop** -- Add to `claude_desktop_config.json`:
+Add to your MCP configuration (`claude_desktop_config.json`):
 
 ```json
 {
@@ -81,17 +107,25 @@ The MCP server works with any MCP-compatible client, not just Claude Code.
 }
 ```
 
-**Claude Code (MCP only, without plugin)** -- If you just want the 73 tools without the plugin's skills and commands:
+#### Other MCP clients
 
-```bash
-claude mcp add gephi-mcp -- gephi-mcp
+Point your client at the `gephi-mcp` command using stdio transport.
+
+### Step 4: Verify
+
+With Gephi running, ask your assistant:
+
+> "Check if Gephi is running"
+
+It should call `gephi_health_check` and confirm the connection. In Claude Code, try:
+
+```
+/gephi-network-analysis:import-and-explore path/to/your/graph.gexf
 ```
 
-**Other clients** -- Point your MCP client at the `gephi-mcp` command using stdio transport.
+## What the Claude Code plugin adds
 
-## What the Plugin Adds
-
-The Claude Code plugin (`claude-plugin/`) goes beyond raw MCP tools:
+The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 
 | Component | What it does |
 |-----------|-------------|
@@ -99,11 +133,11 @@ The Claude Code plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Network analyst agent** | Specialized subagent for deep structural analysis, metric comparison, and network classification |
 | **Gephi skill** | Teaches Claude network science workflows, visualization best practices, and known Gephi gotchas |
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
-| **Reference guides** | Tool reference, layout guide, and statistics guide for detailed parameter help |
+| **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tool Categories (73 tools)
+## Tools (73)
 
-| Category | Tools | Examples |
+| Category | Count | Examples |
 |----------|-------|---------|
 | Project & Workspace | 8 | `gephi_create_project`, `gephi_save_project` |
 | Graph Construction | 17 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes` |
@@ -116,21 +150,22 @@ The Claude Code plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
 | Health | 1 | `gephi_health_check` |
 
-## Example Workflows
+## Example workflows
 
-### Community Detection
+### Community detection
 
 ```
 1. gephi_create_project
-2. gephi_add_nodes / gephi_add_edges  (or gephi_import_file)
-3. gephi_compute_modularity           (resolution: 1.0)
-4. gephi_run_layout                   (ForceAtlas 2, 1000 iterations)
+2. gephi_import_file                  (your GEXF, GraphML, or CSV)
+3. gephi_compute_degree
+4. gephi_compute_modularity           (resolution: 1.0)
 5. gephi_color_by_partition           (column: modularity_class)
 6. gephi_size_by_ranking              (column: degree)
-7. gephi_export_png                   (3840x2160 for publication)
+7. gephi_run_layout                   (ForceAtlas 2, 1000 iterations)
+8. gephi_export_png                   (3840x2160 for publication)
 ```
 
-### Centrality Analysis
+### Centrality analysis
 
 ```
 1. Import or build graph
@@ -142,55 +177,31 @@ The Claude Code plugin (`claude-plugin/`) goes beyond raw MCP tools:
 7. gephi_query_nodes                  (find top-ranked nodes)
 ```
 
-## Architecture
-
-```
-Claude / AI Assistant
-        |
-   MCP Protocol (stdio)
-        |
-   MCP Server (Python)
-        |
-   HTTP API (localhost:8080)
-        |
-   Gephi Plugin (Java)
-        |
-   Gephi Desktop
-```
-
-| Component | Path | Description |
-|-----------|------|-------------|
-| Gephi Plugin | `gephi-mcp-plugin/` | Java NetBeans module with HTTP API server |
-| MCP Server | `mcp-server/` | Python MCP server (73 tools) |
-| Claude Plugin | `claude-plugin/` | Claude Code plugin (skills, commands, agent, hooks) |
-| Skills | `.claude/skills/` | Standalone skill + reference guides |
-
 ## Documentation
 
-Detailed reference guides are in `.claude/skills/gephi/`:
+Reference guides are in `claude-plugin/skills/gephi/`:
 
-- **SKILL.md** -- Main skill definition with workflow patterns and best practices
-- **references/tool-reference.md** -- Complete API reference for all 73 tools
-- **references/layout-guide.md** -- Layout algorithm selection and parameter tuning
-- **references/statistics-guide.md** -- Statistics interpretation and visualization guide
+- **SKILL.md** — Workflow patterns, best practices, and critical gotchas
+- **references/tool-reference.md** — Complete API reference for all 73 tools
+- **references/layout-guide.md** — Layout algorithm selection and parameter tuning
+- **references/statistics-guide.md** — Statistics interpretation guide
 
-## Tech Stack
+## Tech stack
 
 - **Gephi Plugin**: Java 11, NetBeans Platform, NanoHTTPD, Gson
 - **MCP Server**: Python 3.10+, MCP SDK (FastMCP), httpx, Pydantic
 - **Target**: Gephi 0.10.1, NetBeans RELEASE126
 
-
 ## Attribution
 
 If you use or adapt this project in your work, please credit:
 
-> Built with gephi-ai (Matt Artz, 2025) -- https://github.com/MattArtzAnthro/gephi-ai
+> Built with gephi-ai (Matt Artz, 2025–2026) — https://github.com/MattArtzAnthro/gephi-ai
 
 ## License
 
-Apache License 2.0 -- see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## Author
 
-**Matt Artz** -- [mattartz.me](https://www.mattartz.me) | [ORCID](https://orcid.org/0000-0002-3822-1429)
+**Matt Artz** — [mattartz.me](https://www.mattartz.me) | [ORCID](https://orcid.org/0000-0002-3822-1429)
