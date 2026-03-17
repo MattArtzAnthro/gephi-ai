@@ -835,20 +835,19 @@ public class GephiControlService {
     }
 
     public JsonObject setEdgeColor(String source, String target, int r, int g, int b, int a) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            Graph graph = currentGraphModel().getGraph();
-            graph.writeLock();
             try {
+                Graph graph = currentGraphModel().getGraph();
                 Node s = graph.getNode(source), t = graph.getNode(target);
                 if (s == null || t == null) return error("Node not found");
                 Edge e = findEdge(graph, s, t);
                 if (e == null) return error("Edge not found");
                 e.setColor(new Color(r, g, b, a));
                 return success("Edge color set");
-            } finally { graph.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     public JsonObject batchSetNodeColors(List<Map<String, Object>> nodeColors) {
@@ -880,68 +879,66 @@ public class GephiControlService {
     }
 
     public JsonObject resetAppearance(int r, int g, int b, float size) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            Graph graph = currentGraphModel().getGraph();
-            Color defaultColor = new Color(r, g, b);
-            graph.writeLock();
             try {
-                for (Node n : graph.getNodes()) {
+                Graph graph = currentGraphModel().getGraph();
+                Color defaultColor = new Color(r, g, b);
+                Node[] allNodes = graph.getNodes().toArray();
+                for (Node n : allNodes) {
                     n.setColor(defaultColor);
                     n.setSize(size);
                 }
                 return success("Appearance reset for all nodes");
-            } finally { graph.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     // ─── Appearance: Color/Size by Attribute ─────────────────────────
 
     public JsonObject colorByPartition(String columnName, Map<String, int[]> colorMap) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
-            Graph graph = gm.getGraph();
-            Column col = gm.getNodeTable().getColumn(columnName);
-            if (col == null) return error("Column not found: " + columnName);
+            try {
+                GraphModel gm = currentGraphModel();
+                Graph graph = gm.getGraph();
+                Column col = gm.getNodeTable().getColumn(columnName);
+                if (col == null) return error("Column not found: " + columnName);
 
-            // Collect distinct values
-            java.util.Map<String, Color> palette = new java.util.LinkedHashMap<>();
-            if (colorMap != null && !colorMap.isEmpty()) {
-                for (Map.Entry<String, int[]> e : colorMap.entrySet()) {
-                    int[] c = e.getValue();
-                    palette.put(e.getKey(), new Color(c[0], c[1], c[2]));
-                }
-            } else {
-                // Auto-generate palette
-                java.util.Set<String> values = new java.util.LinkedHashSet<>();
-                graph.readLock();
-                try {
-                    for (Node n : graph.getNodes()) {
+                // Collect distinct values
+                java.util.Map<String, Color> palette = new java.util.LinkedHashMap<>();
+                if (colorMap != null && !colorMap.isEmpty()) {
+                    for (Map.Entry<String, int[]> e : colorMap.entrySet()) {
+                        int[] c = e.getValue();
+                        palette.put(e.getKey(), new Color(c[0], c[1], c[2]));
+                    }
+                } else {
+                    // Auto-generate palette
+                    java.util.Set<String> values = new java.util.LinkedHashSet<>();
+                    Node[] allNodes = graph.getNodes().toArray();
+                    for (Node n : allNodes) {
                         Object v = n.getAttribute(col);
                         if (v != null) values.add(v.toString());
                     }
-                } finally { graph.readUnlock(); }
 
-                Color[] defaultPalette = {
-                    new Color(31, 119, 180), new Color(255, 127, 14), new Color(44, 160, 44),
-                    new Color(214, 39, 40), new Color(148, 103, 189), new Color(140, 86, 75),
-                    new Color(227, 119, 194), new Color(127, 127, 127), new Color(188, 189, 34),
-                    new Color(23, 190, 207), new Color(174, 199, 232), new Color(255, 187, 120)
-                };
-                int idx = 0;
-                for (String v : values) {
-                    palette.put(v, defaultPalette[idx % defaultPalette.length]);
-                    idx++;
+                    Color[] defaultPalette = {
+                        new Color(31, 119, 180), new Color(255, 127, 14), new Color(44, 160, 44),
+                        new Color(214, 39, 40), new Color(148, 103, 189), new Color(140, 86, 75),
+                        new Color(227, 119, 194), new Color(127, 127, 127), new Color(188, 189, 34),
+                        new Color(23, 190, 207), new Color(174, 199, 232), new Color(255, 187, 120)
+                    };
+                    int idx = 0;
+                    for (String v : values) {
+                        palette.put(v, defaultPalette[idx % defaultPalette.length]);
+                        idx++;
+                    }
                 }
-            }
 
-            graph.writeLock();
-            try {
+                Node[] allNodes = graph.getNodes().toArray();
                 int colored = 0;
-                for (Node n : graph.getNodes()) {
+                for (Node n : allNodes) {
                     Object v = n.getAttribute(col);
                     if (v != null) {
                         Color c = palette.get(v.toString());
@@ -954,24 +951,24 @@ public class GephiControlService {
                 JsonObject r = success("Colored " + colored + " nodes by " + columnName);
                 r.addProperty("partitions", palette.size());
                 return r;
-            } finally { graph.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     public JsonObject colorByRanking(String columnName, int rMin, int gMin, int bMin, int rMax, int gMax, int bMax) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
-            Graph graph = gm.getGraph();
-            Column col = gm.getNodeTable().getColumn(columnName);
-            if (col == null) return error("Column not found: " + columnName);
-
-            // Find min/max values
-            double min = Double.MAX_VALUE, max = Double.MIN_VALUE;
-            graph.readLock();
             try {
-                for (Node n : graph.getNodes()) {
+                GraphModel gm = currentGraphModel();
+                Graph graph = gm.getGraph();
+                Column col = gm.getNodeTable().getColumn(columnName);
+                if (col == null) return error("Column not found: " + columnName);
+
+                // Find min/max values
+                double min = Double.MAX_VALUE, max = Double.MIN_VALUE;
+                Node[] allNodes = graph.getNodes().toArray();
+                for (Node n : allNodes) {
                     Object v = n.getAttribute(col);
                     if (v instanceof Number) {
                         double d = ((Number) v).doubleValue();
@@ -979,16 +976,13 @@ public class GephiControlService {
                         if (d > max) max = d;
                     }
                 }
-            } finally { graph.readUnlock(); }
 
-            if (min == Double.MAX_VALUE) return error("No numeric values in column " + columnName);
-            double range = max - min;
-            if (range == 0) range = 1;
+                if (min == Double.MAX_VALUE) return error("No numeric values in column " + columnName);
+                double range = max - min;
+                if (range == 0) range = 1;
 
-            graph.writeLock();
-            try {
                 int colored = 0;
-                for (Node n : graph.getNodes()) {
+                for (Node n : allNodes) {
                     Object v = n.getAttribute(col);
                     if (v instanceof Number) {
                         double t = (((Number) v).doubleValue() - min) / range;
@@ -1007,23 +1001,23 @@ public class GephiControlService {
                 res.addProperty("min_value", min);
                 res.addProperty("max_value", max);
                 return res;
-            } finally { graph.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     public JsonObject sizeByRanking(String columnName, float minSize, float maxSize) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
-            Graph graph = gm.getGraph();
-            Column col = gm.getNodeTable().getColumn(columnName);
-            if (col == null) return error("Column not found: " + columnName);
-
-            double min = Double.MAX_VALUE, max = Double.MIN_VALUE;
-            graph.readLock();
             try {
-                for (Node n : graph.getNodes()) {
+                GraphModel gm = currentGraphModel();
+                Graph graph = gm.getGraph();
+                Column col = gm.getNodeTable().getColumn(columnName);
+                if (col == null) return error("Column not found: " + columnName);
+
+                double min = Double.MAX_VALUE, max = Double.MIN_VALUE;
+                Node[] allNodes = graph.getNodes().toArray();
+                for (Node n : allNodes) {
                     Object v = n.getAttribute(col);
                     if (v instanceof Number) {
                         double d = ((Number) v).doubleValue();
@@ -1031,16 +1025,13 @@ public class GephiControlService {
                         if (d > max) max = d;
                     }
                 }
-            } finally { graph.readUnlock(); }
 
-            if (min == Double.MAX_VALUE) return error("No numeric values in column " + columnName);
-            double range = max - min;
-            if (range == 0) range = 1;
+                if (min == Double.MAX_VALUE) return error("No numeric values in column " + columnName);
+                double range = max - min;
+                if (range == 0) range = 1;
 
-            graph.writeLock();
-            try {
                 int sized = 0;
-                for (Node n : graph.getNodes()) {
+                for (Node n : allNodes) {
                     Object v = n.getAttribute(col);
                     if (v instanceof Number) {
                         double t = (((Number) v).doubleValue() - min) / range;
@@ -1052,8 +1043,8 @@ public class GephiControlService {
                 res.addProperty("min_value", min);
                 res.addProperty("max_value", max);
                 return res;
-            } finally { graph.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     // ─── Layout ──────────────────────────────────────────────────────
@@ -1382,53 +1373,53 @@ public class GephiControlService {
     // ─── Filters ─────────────────────────────────────────────────────
 
     public JsonObject filterByDegreeRange(int minDegree, int maxDegree) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
-            Graph g = gm.getGraph();
-
-            // Manual filtering: remove nodes outside degree range
-            g.writeLock();
             try {
+                Graph g = currentGraphModel().getGraph();
+                Node[] allNodes = g.getNodes().toArray();
                 java.util.List<Node> toRemove = new java.util.ArrayList<>();
-                for (Node n : g.getNodes()) {
+                for (Node n : allNodes) {
                     int deg = g.getDegree(n);
                     if (deg < minDegree || (maxDegree > 0 && deg > maxDegree)) {
                         toRemove.add(n);
                     }
                 }
                 for (Node n : toRemove) g.removeNode(n);
+                PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
+                if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Filtered by degree [" + minDegree + ", " + maxDegree + "]");
                 r.addProperty("removed", toRemove.size());
                 r.addProperty("remaining_nodes", g.getNodeCount());
                 return r;
-            } finally { g.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     public JsonObject filterByEdgeWeight(double minWeight, double maxWeight) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            Graph g = currentGraphModel().getGraph();
-
-            g.writeLock();
             try {
+                Graph g = currentGraphModel().getGraph();
+                Edge[] allEdges = g.getEdges().toArray();
                 java.util.List<Edge> toRemove = new java.util.ArrayList<>();
-                for (Edge e : g.getEdges()) {
+                for (Edge e : allEdges) {
                     double w = e.getWeight();
                     if (w < minWeight || (maxWeight > 0 && w > maxWeight)) {
                         toRemove.add(e);
                     }
                 }
                 for (Edge e : toRemove) g.removeEdge(e);
+                PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
+                if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Filtered edges by weight [" + minWeight + ", " + maxWeight + "]");
                 r.addProperty("removed", toRemove.size());
                 r.addProperty("remaining_edges", g.getEdgeCount());
                 return r;
-            } finally { g.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     // ─── Preview Settings ────────────────────────────────────────────
@@ -1489,82 +1480,95 @@ public class GephiControlService {
                     if (prop != null) {
                         // Convert value based on property type
                         Class<?> type = prop.getType();
-                        if (type == Color.class && val instanceof String) {
-                            String hex = (String) val;
-                            if (hex.startsWith("#")) hex = hex.substring(1);
-                            prop.setValue(new Color(Integer.parseInt(hex, 16)));
-                        } else if (type == Boolean.class || type == boolean.class) {
-                            prop.setValue(Boolean.parseBoolean(val.toString()));
-                        } else if (type == Float.class || type == float.class) {
-                            prop.setValue(Float.parseFloat(val.toString()));
-                        } else if (type == Integer.class || type == int.class) {
-                            prop.setValue(Integer.parseInt(val.toString()));
-                        } else if (type == java.awt.Font.class && val instanceof String) {
-                            // Parse font string like "Arial 12 Bold" -> Font object
-                            String fontStr = val.toString().trim();
-                            String[] parts = fontStr.split("\\s+");
-                            String name = parts.length > 0 ? parts[0] : "Arial";
-                            int size = 12;
-                            int style = java.awt.Font.PLAIN;
-                            for (int i = 1; i < parts.length; i++) {
-                                try { size = Integer.parseInt(parts[i]); }
-                                catch (NumberFormatException nfe) {
-                                    if ("Bold".equalsIgnoreCase(parts[i])) style = java.awt.Font.BOLD;
-                                    else if ("Italic".equalsIgnoreCase(parts[i])) style = java.awt.Font.ITALIC;
+                        try {
+                            if (type == Color.class && val instanceof String) {
+                                String hex = (String) val;
+                                if (hex.startsWith("#")) hex = hex.substring(1);
+                                prop.setValue(new Color(Integer.parseInt(hex, 16)));
+                            } else if (type == Boolean.class || type == boolean.class) {
+                                prop.setValue(Boolean.parseBoolean(val.toString()));
+                            } else if (type == Float.class || type == float.class) {
+                                prop.setValue(Float.parseFloat(val.toString()));
+                            } else if (type == Integer.class || type == int.class) {
+                                prop.setValue(Integer.parseInt(val.toString()));
+                            } else if (type == java.awt.Font.class && val instanceof String) {
+                                // Parse font string like "Courier New 12 Bold" -> Font object
+                                // Everything before first digit = name, first number = size, rest = style
+                                String fontStr = val.toString().trim();
+                                String name = "Arial";
+                                int fontSize = 12;
+                                int fontStyle = java.awt.Font.PLAIN;
+                                int numStart = -1;
+                                for (int ci = 0; ci < fontStr.length(); ci++) {
+                                    if (Character.isDigit(fontStr.charAt(ci))) { numStart = ci; break; }
                                 }
+                                if (numStart > 0) {
+                                    name = fontStr.substring(0, numStart).trim();
+                                    String[] rest = fontStr.substring(numStart).trim().split("\\s+");
+                                    try { fontSize = Integer.parseInt(rest[0]); } catch (NumberFormatException ignored) {}
+                                    for (int pi = 1; pi < rest.length; pi++) {
+                                        if ("Bold".equalsIgnoreCase(rest[pi])) fontStyle |= java.awt.Font.BOLD;
+                                        else if ("Italic".equalsIgnoreCase(rest[pi])) fontStyle |= java.awt.Font.ITALIC;
+                                    }
+                                } else if (numStart < 0) {
+                                    name = fontStr;
+                                }
+                                prop.setValue(new java.awt.Font(name, fontStyle, fontSize));
+                            } else if (type == java.awt.Font.class) {
+                                continue; // Non-string font value, skip
+                            } else if (type == DependantColor.class && val instanceof String) {
+                                String s = val.toString().trim().toLowerCase();
+                                if ("parent".equals(s)) {
+                                    prop.setValue(new DependantColor(DependantColor.Mode.PARENT));
+                                } else if ("darker".equals(s)) {
+                                    prop.setValue(new DependantColor(DependantColor.Mode.DARKER));
+                                } else if (s.startsWith("#")) {
+                                    prop.setValue(new DependantColor(new Color(Integer.parseInt(s.substring(1), 16))));
+                                } else { continue; }
+                            } else if (type == DependantOriginalColor.class && val instanceof String) {
+                                String s = val.toString().trim().toLowerCase();
+                                if ("parent".equals(s)) {
+                                    prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.PARENT));
+                                } else if ("original".equals(s)) {
+                                    prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.ORIGINAL));
+                                } else if (s.startsWith("#")) {
+                                    prop.setValue(new DependantOriginalColor(new Color(Integer.parseInt(s.substring(1), 16))));
+                                } else { continue; }
+                            } else if (type == EdgeColor.class && val instanceof String) {
+                                // For "source"/"target": color edges individually instead of using
+                                // EdgeColor mode (which corrupts SVG rendering in Gephi 0.10)
+                                String s = val.toString().trim().toLowerCase();
+                                if ("source".equals(s) || "target".equals(s)) {
+                                    boolean useSource = "source".equals(s);
+                                    Graph graph = currentGraphModel().getGraph();
+                                    Node[] graphNodes = graph.getNodes().toArray();
+                                    Edge[] graphEdges = graph.getEdges().toArray();
+                                    java.util.Map<Node, Color> nodeColors = new java.util.HashMap<>();
+                                    for (Node n : graphNodes) nodeColors.put(n, n.getColor());
+                                    for (Edge edge : graphEdges) {
+                                        Node ref = useSource ? edge.getSource() : edge.getTarget();
+                                        Color c = nodeColors.get(ref);
+                                        if (c != null) edge.setColor(c);
+                                    }
+                                    prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
+                                } else if ("mixed".equals(s)) {
+                                    prop.setValue(new EdgeColor(EdgeColor.Mode.MIXED));
+                                } else if ("original".equals(s)) {
+                                    prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
+                                } else if (s.startsWith("#")) {
+                                    prop.setValue(new EdgeColor(new Color(Integer.parseInt(s.substring(1), 16))));
+                                } else { continue; }
+                            } else {
+                                continue; // Skip unknown types
                             }
-                            prop.setValue(new java.awt.Font(name, style, size));
-                        } else if (type == java.awt.Font.class) {
-                            // Non-string font value, skip to avoid corruption
+                            set++;
+                        } catch (NumberFormatException nfe) {
+                            LOGGER.warning("MCP: Invalid number/color value for " + key + ": " + val);
                             continue;
-                        } else if (type == DependantColor.class && val instanceof String) {
-                            // DependantColor supports: "parent", "darker", or "#RRGGBB" hex for custom
-                            String s = val.toString().trim().toLowerCase();
-                            if ("parent".equals(s)) {
-                                prop.setValue(new DependantColor(DependantColor.Mode.PARENT));
-                            } else if ("darker".equals(s)) {
-                                prop.setValue(new DependantColor(DependantColor.Mode.DARKER));
-                            } else if (s.startsWith("#")) {
-                                Color c = new Color(Integer.parseInt(s.substring(1), 16));
-                                prop.setValue(new DependantColor(c));
-                            } else {
-                                continue; // Skip unknown value to avoid corruption
-                            }
-                        } else if (type == DependantOriginalColor.class && val instanceof String) {
-                            // DependantOriginalColor supports: "parent", "original", or "#RRGGBB" hex
-                            String s = val.toString().trim().toLowerCase();
-                            if ("parent".equals(s)) {
-                                prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.PARENT));
-                            } else if ("original".equals(s)) {
-                                prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.ORIGINAL));
-                            } else if (s.startsWith("#")) {
-                                Color c = new Color(Integer.parseInt(s.substring(1), 16));
-                                prop.setValue(new DependantOriginalColor(c));
-                            } else {
-                                continue; // Skip unknown value to avoid corruption
-                            }
-                        } else if (type == EdgeColor.class && val instanceof String) {
-                            // EdgeColor supports: "source", "target", "mixed", "original", or "#RRGGBB" hex
-                            String s = val.toString().trim().toLowerCase();
-                            if ("source".equals(s)) {
-                                prop.setValue(new EdgeColor(EdgeColor.Mode.SOURCE));
-                            } else if ("target".equals(s)) {
-                                prop.setValue(new EdgeColor(EdgeColor.Mode.TARGET));
-                            } else if ("mixed".equals(s)) {
-                                prop.setValue(new EdgeColor(EdgeColor.Mode.MIXED));
-                            } else if ("original".equals(s)) {
-                                prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
-                            } else if (s.startsWith("#")) {
-                                Color c = new Color(Integer.parseInt(s.substring(1), 16));
-                                prop.setValue(new EdgeColor(c));
-                            } else {
-                                continue; // Skip unknown value to avoid corruption
-                            }
-                        } else {
-                            // Skip unknown types to avoid corrupting the preview model
+                        } catch (Exception ex) {
+                            LOGGER.warning("MCP: Failed to set preview property " + key + ": " + ex.getMessage());
                             continue;
                         }
-                        set++;
                     }
                 }
                 JsonObject r = success("Set " + set + " preview properties");
@@ -1789,6 +1793,14 @@ public class GephiControlService {
                 if (processor == null) return error("No processor found");
 
                 ic.process(c, processor, ws);
+
+                // Cap imported node sizes to prevent viz:size from GEXF making nodes enormous
+                Graph importedGraph = getGraphController().getGraphModel(ws).getGraph();
+                Node[] importedNodes = importedGraph.getNodes().toArray();
+                for (Node n : importedNodes) {
+                    if (n.size() > 30.0f) n.setSize(30.0f);
+                }
+
                 Graph g = getGraphController().getGraphModel(ws).getGraph();
                 JsonObject r = success("Imported from " + file.getName());
                 r.addProperty("node_count", g.getNodeCount());
@@ -1820,32 +1832,35 @@ public class GephiControlService {
     }
 
     public JsonObject removeIsolates() {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            Graph g = currentGraphModel().getGraph();
-            g.writeLock();
             try {
+                Graph g = currentGraphModel().getGraph();
+                // Use toArray() to avoid holding iterator read lock
+                Node[] allNodes = g.getNodes().toArray();
                 java.util.List<Node> isolates = new java.util.ArrayList<>();
-                for (Node n : g.getNodes()) {
+                for (Node n : allNodes) {
                     if (g.getDegree(n) == 0) isolates.add(n);
                 }
                 for (Node n : isolates) g.removeNode(n);
+                // Refresh preview so exports reflect the filtered graph
+                PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
+                if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Removed " + isolates.size() + " isolated nodes");
                 r.addProperty("removed", isolates.size());
                 r.addProperty("remaining_nodes", g.getNodeCount());
                 return r;
-            } finally { g.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     public JsonObject extractEgoNetwork(String nodeId, int depth) {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            Graph g = currentGraphModel().getGraph();
-            g.writeLock();
             try {
+                Graph g = currentGraphModel().getGraph();
                 Node center = g.getNode(nodeId);
                 if (center == null) return error("Node not found: " + nodeId);
 
@@ -1872,94 +1887,100 @@ public class GephiControlService {
 
                 // Remove nodes not in keep set
                 java.util.List<Node> toRemove = new java.util.ArrayList<>();
-                for (Node n : g.getNodes()) {
+                Node[] allNodes = g.getNodes().toArray();
+                for (Node n : allNodes) {
                     if (!keep.contains(n)) toRemove.add(n);
                 }
                 for (Node n : toRemove) g.removeNode(n);
+
+                // Refresh preview so exports reflect the filtered graph
+                PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
+                if (pc != null) pc.refreshPreview(ws);
 
                 JsonObject r = success("Ego network extracted for " + nodeId);
                 r.addProperty("kept_nodes", keep.size());
                 r.addProperty("removed_nodes", toRemove.size());
                 return r;
-            } finally { g.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     public JsonObject extractGiantComponent() {
-        try {
+        return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
-            Graph g = gm.getGraph();
+            try {
+                GraphModel gm = currentGraphModel();
+                Graph g = gm.getGraph();
 
-            // First, run connected components
-            StatisticsBuilder ccBuilder = null;
-            for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
-                if (sb.getName().equalsIgnoreCase("ConnectedComponents") ||
-                    sb.getClass().getSimpleName().toLowerCase().contains("connectedcomponents")) {
-                    ccBuilder = sb;
-                    break;
-                }
-            }
-            if (ccBuilder == null) return error("ConnectedComponents statistic not found");
-
-            Statistics stat = ccBuilder.getStatistics();
-            stat.execute(gm);
-
-            // Find the column
-            Column ccCol = gm.getNodeTable().getColumn("componentnumber");
-            if (ccCol == null) {
-                // Try alternate column names
-                for (Column col : gm.getNodeTable()) {
-                    if (col.getTitle().toLowerCase().contains("component")) {
-                        ccCol = col;
+                // First, run connected components
+                StatisticsBuilder ccBuilder = null;
+                for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
+                    if (sb.getName().equalsIgnoreCase("ConnectedComponents") ||
+                        sb.getClass().getSimpleName().toLowerCase().contains("connectedcomponents")) {
+                        ccBuilder = sb;
                         break;
                     }
                 }
-            }
-            if (ccCol == null) return error("Component column not found after running statistics");
+                if (ccBuilder == null) return error("ConnectedComponents statistic not found");
 
-            // Count nodes per component
-            g.readLock();
-            java.util.Map<Integer, Integer> componentSizes = new java.util.HashMap<>();
-            try {
-                for (Node n : g.getNodes()) {
+                Statistics stat = ccBuilder.getStatistics();
+                stat.execute(gm);
+
+                // Find the column
+                Column ccCol = gm.getNodeTable().getColumn("componentnumber");
+                if (ccCol == null) {
+                    // Try alternate column names
+                    for (Column col : gm.getNodeTable()) {
+                        if (col.getTitle().toLowerCase().contains("component")) {
+                            ccCol = col;
+                            break;
+                        }
+                    }
+                }
+                if (ccCol == null) return error("Component column not found after running statistics");
+
+                // Count nodes per component
+                java.util.Map<Integer, Integer> componentSizes = new java.util.HashMap<>();
+                Node[] allNodes = g.getNodes().toArray();
+                for (Node n : allNodes) {
                     Object v = n.getAttribute(ccCol);
                     int comp = v instanceof Number ? ((Number) v).intValue() : 0;
                     componentSizes.put(comp, componentSizes.getOrDefault(comp, 0) + 1);
                 }
-            } finally { g.readUnlock(); }
 
-            // Find largest component
-            int giantComp = 0;
-            int giantSize = 0;
-            for (java.util.Map.Entry<Integer, Integer> e : componentSizes.entrySet()) {
-                if (e.getValue() > giantSize) {
-                    giantSize = e.getValue();
-                    giantComp = e.getKey();
+                // Find largest component
+                int giantComp = 0;
+                int giantSize = 0;
+                for (java.util.Map.Entry<Integer, Integer> e : componentSizes.entrySet()) {
+                    if (e.getValue() > giantSize) {
+                        giantSize = e.getValue();
+                        giantComp = e.getKey();
+                    }
                 }
-            }
 
-            // Remove nodes not in giant component
-            final int gc = giantComp;
-            final Column fccCol = ccCol;
-            g.writeLock();
-            try {
+                // Remove nodes not in giant component
+                final int gc = giantComp;
+                final Column fccCol = ccCol;
                 java.util.List<Node> toRemove = new java.util.ArrayList<>();
-                for (Node n : g.getNodes()) {
+                for (Node n : allNodes) {
                     Object v = n.getAttribute(fccCol);
                     int comp = v instanceof Number ? ((Number) v).intValue() : -1;
                     if (comp != gc) toRemove.add(n);
                 }
                 for (Node n : toRemove) g.removeNode(n);
 
+                // Refresh preview so exports reflect the filtered graph
+                PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
+                if (pc != null) pc.refreshPreview(ws);
+
                 JsonObject r = success("Giant component extracted");
                 r.addProperty("kept_nodes", giantSize);
                 r.addProperty("removed_nodes", toRemove.size());
                 r.addProperty("component_count", componentSizes.size());
                 return r;
-            } finally { g.writeUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
     }
 
     public JsonObject setEdgeThicknessByWeight(float minThickness, float maxThickness) {
