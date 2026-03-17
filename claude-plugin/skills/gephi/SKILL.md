@@ -5,10 +5,10 @@ description: |
   this skill provides workflows and best practices for the 73 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.10+ running with the Gephi MCP Plugin installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.10+ running with the Gephi MCP Plugin v1.1+ installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Gephi Network Analysis Skill
@@ -21,32 +21,26 @@ You have access to 73 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 
 ## Critical Things To Know
 
-These prevent the most common failures:
-
 - **Layout algorithm name**: Use `"ForceAtlas 2"` (with space and capitals), not `"forceatlas2"`
 - **Export file parameter**: Export tools use `file` as the key, not `path`
-- **Never set `node.label.font` via preview settings** — this corrupts Gephi's preview model, causing all subsequent exports to fail with a Font casting error. Use Gephi's default font.
 - **Run statistics before styling** — `modularity_class` and `degree` columns don't exist until you compute them
 - **`node.label.proportinalSize`** — note the typo (missing 'o'). This is Gephi's actual property name.
-- **Always call `project/new` before importing** — stale workspace state from prior operations causes edge rendering to silently fail. A fresh project prevents this.
-- **GEXF viz:size makes nodes huge** — imported GEXF files with `viz:size` attributes can produce nodes with size 60-100, which cover all edges. Always run `size_by_ranking` immediately after import to resize nodes to a reasonable range (e.g., min 4, max 20).
-- **Never restyle after layout** — calling `color_by_partition` or `size_by_ranking` after a layout has run can corrupt the preview edge cache, causing all edges to vanish from exports. The correct order is always: stats → style → layout → export.
-- **Filters break edge rendering** — `remove_isolates`, `giant_component`, and `filter_by_degree` can corrupt the preview model so edges no longer render. If you need to filter, do it externally (Python/networkx) and reimport the filtered GEXF.
-- **NEVER set `edge.color` via preview settings** — setting `edge.color` to ANY value (`"source"`, `"original"`, `"#hex"`) permanently corrupts the preview edge renderer, causing ALL edges to vanish from exports. This corruption is irreversible — you must create a new project and reimport. To get community-colored edges, pre-color them in the GEXF file using `<viz:color>` on each `<edge>` element before importing. Gephi will use these colors by default without needing the `edge.color` preview setting.
+- **Always call `project/new` before importing** — stale workspace state from prior operations can cause issues. A fresh project prevents this.
+- **`edge.color: "source"` colors edges individually** — the plugin automatically colors each edge to match its source node's color and sets mode to ORIGINAL. This is safe and produces the watercolor halo effect.
+- **`node.label.font` supports multi-word names** — e.g., `"Courier New 12 Bold"`. The plugin parses everything before the first digit as the font name.
+- **Imported node sizes are auto-capped at 30** — GEXF files with large `viz:size` values are automatically capped during import to prevent oversized nodes from hiding edges.
+- **Filters refresh the preview automatically** — `remove_isolates`, `giant_component`, `filter_by_degree` now properly refresh the preview model after modifying the graph.
 
 ## Standard Workflow
 
-**This order is strict — do not restyle after layout or edges will vanish:**
-
 1. **Health check** — `gephi_health_check` (stop if Gephi isn't running)
-2. **Fresh project** — always call `gephi_create_project` (or `project/new`) before importing
+2. **Fresh project** — call `gephi_create_project` before importing
 3. **Import** — `gephi_import_file` or build with `gephi_add_nodes`/`gephi_add_edges`
-4. **Resize immediately** — if importing GEXF with viz:size, call `gephi_size_by_ranking` right after import to prevent oversized nodes hiding edges
-5. **Statistics** — compute degree, modularity, etc.
-6. **Style** — color by partition, size by ranking (BEFORE layout)
-7. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"`, then optionally `"Noverlap"`
-8. **Preview** — `gephi_set_preview_settings` (this is OK after layout — only appearance operations break edges)
-9. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc.
+4. **Statistics** — compute degree, modularity, etc.
+5. **Style** — color by partition, size by ranking
+6. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"`, then optionally `"Noverlap"` and `"Label Adjust"`
+7. **Preview** — `gephi_set_preview_settings` for export appearance
+8. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc.
 
 ## Tool Quick Reference
 
@@ -91,22 +85,27 @@ Always override default Gephi colors with this palette for `gephi_color_by_parti
 ```
 
 ### Publication Export Settings
-Clean (no labels): `{"node.label.show": false, "edge.opacity": 20, "edge.curved": true, "edge.color": "source", "node.opacity": 100, "node.border.width": 0.5, "arrow.size": 0}`
+Clean (no labels):
+```json
+{"node.label.show": false, "edge.opacity": 25, "edge.curved": true, "edge.color": "source", "edge.thickness": 2.0, "node.opacity": 100, "node.border.width": 0.3, "arrow.size": 0}
+```
 
-Labeled: `{"node.label.show": true, "node.label.proportinalSize": false, "node.label.outline.size": 3, "node.label.outline.opacity": 90, "edge.opacity": 15}`
-
-**Do NOT include `node.label.font`** — it corrupts the preview model.
+Labeled:
+```json
+{"node.label.show": true, "node.label.proportinalSize": false, "node.label.font": "Arial 10 Plain", "node.label.outline.size": 4, "node.label.outline.opacity": 95, "edge.opacity": 15}
+```
 
 ### Layout
 - ForceAtlas 2 for most graphs: `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimize": true}`, 1000-1500 iterations
-- Size nodes AFTER layout to avoid spacing artifacts
+- Follow with Noverlap (500 iterations, margin 5.0) to push overlapping nodes apart
+- Follow with Label Adjust (500 iterations) if labels are enabled
 
 ## Key Gotchas
 
 - **Filters are destructive** — they permanently remove nodes/edges. Save project first.
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
 - **Workspace switching can deadlock** — if API hangs after workspace switch, Gephi needs restart.
-- **Export at 4K**: width 3840, height 2160. Always export clean + labeled versions.
+- **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
 
 For detailed tool parameters, see [references/tool-reference.md](references/tool-reference.md).
 For layout algorithm details, see [references/layout-guide.md](references/layout-guide.md).
