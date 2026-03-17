@@ -1906,81 +1906,82 @@ public class GephiControlService {
     }
 
     public JsonObject extractGiantComponent() {
-        return runOnEDT(() -> {
+        // Statistics must run OFF the EDT (they dispatch UI work to EDT internally).
+        // Only node removal and preview refresh need the EDT.
+        try {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            try {
-                GraphModel gm = currentGraphModel();
-                Graph g = gm.getGraph();
+            GraphModel gm = currentGraphModel();
+            Graph g = gm.getGraph();
 
-                // First, run connected components
-                StatisticsBuilder ccBuilder = null;
-                for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
-                    if (sb.getName().equalsIgnoreCase("ConnectedComponents") ||
-                        sb.getClass().getSimpleName().toLowerCase().contains("connectedcomponents")) {
-                        ccBuilder = sb;
+            // Run connected components (on HTTP thread, not EDT)
+            StatisticsBuilder ccBuilder = null;
+            for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
+                if (sb.getName().equalsIgnoreCase("ConnectedComponents") ||
+                    sb.getClass().getSimpleName().toLowerCase().contains("connectedcomponents")) {
+                    ccBuilder = sb;
+                    break;
+                }
+            }
+            if (ccBuilder == null) return error("ConnectedComponents statistic not found");
+
+            Statistics stat = ccBuilder.getStatistics();
+            stat.execute(gm);
+
+            // Find the column
+            Column ccCol = gm.getNodeTable().getColumn("componentnumber");
+            if (ccCol == null) {
+                for (Column col : gm.getNodeTable()) {
+                    if (col.getTitle().toLowerCase().contains("component")) {
+                        ccCol = col;
                         break;
                     }
                 }
-                if (ccBuilder == null) return error("ConnectedComponents statistic not found");
+            }
+            if (ccCol == null) return error("Component column not found after running statistics");
 
-                Statistics stat = ccBuilder.getStatistics();
-                stat.execute(gm);
+            // Count nodes per component
+            java.util.Map<Integer, Integer> componentSizes = new java.util.HashMap<>();
+            Node[] allNodes = g.getNodes().toArray();
+            final Column fccCol = ccCol;
+            for (Node n : allNodes) {
+                Object v = n.getAttribute(fccCol);
+                int comp = v instanceof Number ? ((Number) v).intValue() : 0;
+                componentSizes.put(comp, componentSizes.getOrDefault(comp, 0) + 1);
+            }
 
-                // Find the column
-                Column ccCol = gm.getNodeTable().getColumn("componentnumber");
-                if (ccCol == null) {
-                    // Try alternate column names
-                    for (Column col : gm.getNodeTable()) {
-                        if (col.getTitle().toLowerCase().contains("component")) {
-                            ccCol = col;
-                            break;
-                        }
+            int giantComp = 0;
+            int giantSize = 0;
+            for (java.util.Map.Entry<Integer, Integer> e : componentSizes.entrySet()) {
+                if (e.getValue() > giantSize) {
+                    giantSize = e.getValue();
+                    giantComp = e.getKey();
+                }
+            }
+
+            // Remove nodes on EDT (graph modification + preview refresh)
+            final int gc = giantComp;
+            final int gs = giantSize;
+            final int compCount = componentSizes.size();
+            return runOnEDT(() -> {
+                try {
+                    java.util.List<Node> toRemove = new java.util.ArrayList<>();
+                    for (Node n : allNodes) {
+                        Object v = n.getAttribute(fccCol);
+                        int comp = v instanceof Number ? ((Number) v).intValue() : -1;
+                        if (comp != gc) toRemove.add(n);
                     }
-                }
-                if (ccCol == null) return error("Component column not found after running statistics");
-
-                // Count nodes per component
-                java.util.Map<Integer, Integer> componentSizes = new java.util.HashMap<>();
-                Node[] allNodes = g.getNodes().toArray();
-                for (Node n : allNodes) {
-                    Object v = n.getAttribute(ccCol);
-                    int comp = v instanceof Number ? ((Number) v).intValue() : 0;
-                    componentSizes.put(comp, componentSizes.getOrDefault(comp, 0) + 1);
-                }
-
-                // Find largest component
-                int giantComp = 0;
-                int giantSize = 0;
-                for (java.util.Map.Entry<Integer, Integer> e : componentSizes.entrySet()) {
-                    if (e.getValue() > giantSize) {
-                        giantSize = e.getValue();
-                        giantComp = e.getKey();
-                    }
-                }
-
-                // Remove nodes not in giant component
-                final int gc = giantComp;
-                final Column fccCol = ccCol;
-                java.util.List<Node> toRemove = new java.util.ArrayList<>();
-                for (Node n : allNodes) {
-                    Object v = n.getAttribute(fccCol);
-                    int comp = v instanceof Number ? ((Number) v).intValue() : -1;
-                    if (comp != gc) toRemove.add(n);
-                }
-                for (Node n : toRemove) g.removeNode(n);
-
-                // Refresh preview so exports reflect the filtered graph
-                PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
-                if (pc != null) pc.refreshPreview(ws);
-
-                JsonObject r = success("Giant component extracted");
-                r.addProperty("kept_nodes", giantSize);
-                r.addProperty("removed_nodes", toRemove.size());
-                r.addProperty("component_count", componentSizes.size());
-                return r;
-            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
-        });
+                    for (Node n : toRemove) g.removeNode(n);
+                    PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
+                    if (pc != null) pc.refreshPreview(ws);
+                    JsonObject r = success("Giant component extracted");
+                    r.addProperty("kept_nodes", gs);
+                    r.addProperty("removed_nodes", toRemove.size());
+                    r.addProperty("component_count", compCount);
+                    return r;
+                } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            });
+        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
     public JsonObject setEdgeThicknessByWeight(float minThickness, float maxThickness) {

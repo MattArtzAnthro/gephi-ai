@@ -4,7 +4,7 @@ OpenIDE-Module-Localizing-Bundle: org/gephi/plugins/mcp/Bundle.propert
  ies
 OpenIDE-Module-Specification-Version: 1.0.0
 OpenIDE-Module-Implementation-Version: 1.0.0
-OpenIDE-Module-Build-Version: 202603170018
+OpenIDE-Module-Build-Version: 202603170038
 OpenIDE-Module: org.gephi.plugins.gephi.mcp
 OpenIDE-Module-Public-Packages: org.gephi.plugins.mcp.api.*
 OpenIDE-Module-Requires: org.openide.modules.ModuleFormat1

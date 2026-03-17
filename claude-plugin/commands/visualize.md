@@ -22,16 +22,16 @@ Apply publication-quality styling to the current graph and export in multiple fo
      "node.label.show": false,
      "edge.opacity": 25,
      "edge.curved": true,
-     "edge.thickness": 3.0,
+     "edge.color": "source",
+     "edge.thickness": 2.0,
      "node.opacity": 100,
      "node.border.width": 0.3,
      "arrow.size": 0
    }
    ```
-   **Do NOT set `edge.color`** — any value permanently corrupts edge rendering. Pre-color edges in the GEXF file instead.
-   Tell the user: "Setting preview to clean mode — no labels, soft edges."
+   Tell the user: "Setting preview to clean mode — no labels, community-colored edges."
 
-4. **Export clean PNG**: Call `gephi_export_png` with `file` (not `path`) set to the user's path or `~/Desktop/network.png`, at `width: 3840, height: 2160`.
+4. **Export clean PNG**: Call `gephi_export_png` with `file` set to the user's path or `~/Desktop/network.png`, at `width: 3840, height: 2160`.
    Tell the user: "Exporting clean PNG at 4K resolution..."
 
 5. **Enable labels and export annotated version**:
@@ -40,12 +40,12 @@ Apply publication-quality styling to the current graph and export in multiple fo
      {
        "node.label.show": true,
        "node.label.proportinalSize": false,
-       "node.label.outline.size": 3,
-       "node.label.outline.opacity": 90,
+       "node.label.font": "Arial 10 Plain",
+       "node.label.outline.size": 4,
+       "node.label.outline.opacity": 95,
        "edge.opacity": 15
      }
      ```
-   - **Do NOT set `node.label.font`** — this corrupts Gephi's preview model and breaks all subsequent exports. Use Gephi's default font.
    - Export with `_labeled` suffix. Tell the user: "Exporting labeled version..."
 
 6. **Export SVG**: Call `gephi_export_svg` with `file` set to the same base path with `.svg` extension.
@@ -56,5 +56,4 @@ Apply publication-quality styling to the current graph and export in multiple fo
 ## Important
 
 - The export tools use `file` as the parameter name for the output path, not `path`
-- Never set `node.label.font` via preview settings — it corrupts the preview model
 - If any export fails, report the error and continue with remaining exports
