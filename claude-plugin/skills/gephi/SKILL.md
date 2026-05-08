@@ -99,7 +99,7 @@ Labeled:
 New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"node.label.overlapGridSize": 50` controls grid granularity. Both can be combined with existing label settings.
 
 ### Layout
-- ForceAtlas 2 for most graphs: `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimization": true, "sync": true}`, 1000-1500 iterations
+- ForceAtlas 2 for most graphs: `{"scalingRatio": 15, "linLogMode": true, "gravity": 1.0, "sync": true}`, 1000-1500 iterations — scale `scalingRatio` up with node count (see Beautiful Graph Recipe table)
 - Follow with Noverlap: `{"algorithm": "Noverlap", "iterations": 500, "properties": {"margin": 5.0}, "sync": true}`
 - Follow with Label Adjust (500 iterations, sync: true) if labels are enabled
 - **`barnesHutOptimize` is wrong** — the correct key is `barnesHutOptimization`
@@ -115,6 +115,17 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 
 Bad-looking graphs almost always come from one of three problems: layout parameters ignored (the most common), no overlap prevention, or wrong edge/label settings. Follow this recipe for publication-quality output.
 
+### scalingRatio by graph size
+
+`scalingRatio` must be calibrated to node count — too high and communities fly to the canvas edges:
+
+| Nodes | scalingRatio | barnesHutOptimization | distributedAttraction |
+|-------|-------------|----------------------|----------------------|
+| ≤ 50  | 10–20       | false                | false                |
+| 50–300 | 30–80      | true                 | false                |
+| 300–1000 | 100–150  | true                 | true                 |
+| 1000+ | 200–300     | true                 | true                 |
+
 ### Phase 1 — Community layout (1000–1500 iterations)
 ```json
 {
@@ -122,17 +133,17 @@ Bad-looking graphs almost always come from one of three problems: layout paramet
   "iterations": 1200,
   "sync": true,
   "properties": {
-    "scalingRatio": 200,
+    "scalingRatio": 15,
     "linLogMode": true,
     "gravity": 1.0,
-    "barnesHutOptimization": true,
-    "distributedAttraction": true
+    "barnesHutOptimization": false
   }
 }
 ```
 - `linLogMode: true` is the single most important setting — it makes communities pull together as tight clusters with open space between them
-- `distributedAttraction: true` (Dissuade Hubs) pushes highly-connected nodes toward the periphery, keeping communities visually distinct
-- `scalingRatio: 200` gives breathing room between clusters (default 10 is far too low)
+- `scalingRatio` default (10) is fine for small graphs; scale up with node count per the table above
+- `distributedAttraction` (Dissuade Hubs) helps large graphs but pushes communities apart on small ones — avoid for < 300 nodes
+- `barnesHutOptimization` is only needed for large graphs (300+); skip it for small graphs to avoid approximation artifacts
 - Always use `sync: true` so Phase 2 doesn't start on a still-moving graph
 
 ### Phase 2 — Overlap prevention (200 iterations)
@@ -142,16 +153,15 @@ Bad-looking graphs almost always come from one of three problems: layout paramet
   "iterations": 200,
   "sync": true,
   "properties": {
-    "scalingRatio": 200,
+    "scalingRatio": 15,
     "linLogMode": true,
     "gravity": 1.0,
-    "barnesHutOptimization": true,
     "adjustSizes": true
   }
 }
 ```
 - `adjustSizes: true` (Prevent Overlap) runs FA2 while accounting for node sizes — nodes physically push each other apart
-- Keep `scalingRatio` and `linLogMode` the same so community structure is preserved
+- Keep the same `scalingRatio` as Phase 1 so community structure is preserved
 
 ### Phase 3 — Fine-grained separation
 ```json
