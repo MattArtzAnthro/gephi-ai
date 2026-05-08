@@ -13,6 +13,14 @@
     <description>HTTP API for remote Gephi control via MCP</description>
     <url>https://github.com/MattArtzAnthro/gephi-ai</url>
 
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <developers>
         <developer>
             <name>Matt Artz</name>
@@ -22,10 +30,10 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <gephi.version>0.10.1</gephi.version>
-        <netbeans.version>RELEASE126</netbeans.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <gephi.version>0.11.1</gephi.version>
+        <netbeans.version>RELEASE290</netbeans.version>
     </properties>
 
     <repositories>

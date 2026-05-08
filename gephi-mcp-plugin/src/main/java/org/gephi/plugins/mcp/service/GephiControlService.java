@@ -202,7 +202,7 @@ public class GephiControlService {
             if (pc.getCurrentProject() == null) return error("No project open");
             JsonArray arr = new JsonArray();
             Workspace current = pc.getCurrentWorkspace();
-            for (Workspace ws : pc.getCurrentProject().getLookup().lookupAll(Workspace.class)) {
+            for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 JsonObject o = new JsonObject();
                 o.addProperty("id", ws.getId());
                 o.addProperty("current", ws.equals(current));
@@ -220,7 +220,7 @@ public class GephiControlService {
             ProjectController pc = getProjectController();
             if (pc.getCurrentProject() == null) return error("No project open");
             int i = 0;
-            for (Workspace ws : pc.getCurrentProject().getLookup().lookupAll(Workspace.class)) {
+            for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 if (i == index) {
                     pc.openWorkspace(ws);
                     return success("Switched to workspace " + ws.getId());
@@ -236,10 +236,31 @@ public class GephiControlService {
             ProjectController pc = getProjectController();
             if (pc.getCurrentProject() == null) return error("No project open");
             int i = 0;
-            for (Workspace ws : pc.getCurrentProject().getLookup().lookupAll(Workspace.class)) {
+            for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 if (i == index) {
                     pc.deleteWorkspace(ws);
                     return success("Workspace deleted");
+                }
+                i++;
+            }
+            return error("Workspace index out of range: " + index);
+        });
+    }
+
+    public JsonObject duplicateWorkspace(int index) {
+        return runOnEDT(() -> {
+            ProjectController pc = getProjectController();
+            if (pc.getCurrentProject() == null) return error("No project open");
+            int i = 0;
+            for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
+                if (i == index) {
+                    try {
+                        Workspace copy = pc.duplicateWorkspace(ws);
+                        pc.openWorkspace(copy);
+                        JsonObject r = success("Workspace duplicated");
+                        r.addProperty("workspace_id", copy.getId());
+                        return r;
+                    } catch (Exception e) { return error("Failed: " + e.getMessage()); }
                 }
                 i++;
             }
@@ -1446,6 +1467,34 @@ public class GephiControlService {
                             settings.addProperty(name, (Number) val);
                         } else if (val instanceof Boolean) {
                             settings.addProperty(name, (Boolean) val);
+                        } else if (val instanceof java.awt.Font) {
+                            java.awt.Font f = (java.awt.Font) val;
+                            String style = f.isBold() && f.isItalic() ? "BoldItalic" : f.isBold() ? "Bold" : f.isItalic() ? "Italic" : "Plain";
+                            settings.addProperty(name, f.getFamily() + " " + f.getSize() + " " + style);
+                        } else if (val instanceof EdgeColor) {
+                            EdgeColor ec = (EdgeColor) val;
+                            if (ec.getMode() == EdgeColor.Mode.ORIGINAL) settings.addProperty(name, "original");
+                            else if (ec.getMode() == EdgeColor.Mode.MIXED) settings.addProperty(name, "mixed");
+                            else if (ec.getCustomColor() != null) {
+                                Color c = ec.getCustomColor();
+                                settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                            } else settings.addProperty(name, ec.getMode().toString().toLowerCase());
+                        } else if (val instanceof DependantColor) {
+                            DependantColor dc = (DependantColor) val;
+                            if (dc.getMode() == DependantColor.Mode.PARENT) settings.addProperty(name, "parent");
+                            else if (dc.getMode() == DependantColor.Mode.DARKER) settings.addProperty(name, "darker");
+                            else if (dc.getCustomColor() != null) {
+                                Color c = dc.getCustomColor();
+                                settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                            } else settings.addProperty(name, "parent");
+                        } else if (val instanceof DependantOriginalColor) {
+                            DependantOriginalColor doc = (DependantOriginalColor) val;
+                            if (doc.getMode() == DependantOriginalColor.Mode.ORIGINAL) settings.addProperty(name, "original");
+                            else if (doc.getMode() == DependantOriginalColor.Mode.PARENT) settings.addProperty(name, "parent");
+                            else if (doc.getCustomColor() != null) {
+                                Color c = doc.getCustomColor();
+                                settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                            } else settings.addProperty(name, "original");
                         } else {
                             settings.addProperty(name, val.toString());
                         }
@@ -1634,6 +1683,8 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             try {
+                Graph g = currentGraphModel().getGraph();
+                if (g.getNodeCount() == 0) return error("Cannot export PDF: graph has no nodes");
                 PreviewController previewController = Lookup.getDefault().lookup(PreviewController.class);
                 if (previewController != null) previewController.refreshPreview(ws);
 
@@ -1645,6 +1696,8 @@ public class GephiControlService {
                 if (exporter instanceof GraphExporter) ((GraphExporter) exporter).setWorkspace(ws);
                 ec.exportFile(new File(filePath), exporter);
                 return success("Exported to " + filePath);
+            } catch (IllegalArgumentException e) {
+                return error("Export failed: graph nodes may not be positioned — run a layout first");
             } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
         });
     }
@@ -1689,19 +1742,8 @@ public class GephiControlService {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            try {
-                ExportController ec = Lookup.getDefault().lookup(ExportController.class);
-                Exporter exporter = ec.getExporter("csv");
-                if (exporter == null) {
-                    // Manual CSV export fallback
-                    return exportCsvManual(filePath, separator, target);
-                }
-                if (exporter instanceof GraphExporter) {
-                    ((GraphExporter) exporter).setWorkspace(ws);
-                }
-                ec.exportFile(new File(filePath), exporter);
-                return success("Exported to " + filePath);
-            } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+            // Always use manual export — Gephi's built-in CSV exporter produces an adjacency matrix
+            return exportCsvManual(filePath, separator, target);
         });
     }
 
@@ -1792,7 +1834,7 @@ public class GephiControlService {
                 if (processor == null) processor = Lookup.getDefault().lookup(Processor.class);
                 if (processor == null) return error("No processor found");
 
-                ic.process(c, processor, ws);
+                Workspace importedWs = ic.process(c, processor, ws);
 
                 // Cap imported node sizes to prevent viz:size from GEXF making nodes enormous
                 Graph importedGraph = getGraphController().getGraphModel(ws).getGraph();
@@ -1801,7 +1843,8 @@ public class GephiControlService {
                     if (n.size() > 30.0f) n.setSize(30.0f);
                 }
 
-                Graph g = getGraphController().getGraphModel(ws).getGraph();
+                Workspace effectiveWs = importedWs != null ? importedWs : ws;
+                Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
                 JsonObject r = success("Imported from " + file.getName());
                 r.addProperty("node_count", g.getNodeCount());
                 r.addProperty("edge_count", g.getEdgeCount());

@@ -125,6 +125,11 @@ public class GephiAPIServer extends NanoHTTPD {
             return service.deleteWorkspace(index);
         }
 
+        if ("/workspace/duplicate".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("index")) return errorResult("Missing 'index'");
+            return service.duplicateWorkspace(body.get("index").getAsInt());
+        }
+
         // ─── Nodes ───────────────────────────────────────────────────
 
         if ("/graph/node/add".equals(uri) && Method.POST.equals(method)) {

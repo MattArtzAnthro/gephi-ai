@@ -5,15 +5,15 @@ description: |
   this skill provides workflows and best practices for the 73 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.10+ running with the Gephi MCP Plugin v1.1+ installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.2"
+  version: "1.3"
 ---
 
 # Gephi Network Analysis Skill
 
-You have access to 73 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 74 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -45,7 +45,7 @@ You have access to 73 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 ## Tool Quick Reference
 
 ### Project & Workspace
-`gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`
+`gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`, `gephi_duplicate_workspace`
 
 ### Graph Construction
 `gephi_add_node`/`gephi_add_nodes`, `gephi_add_edge`/`gephi_add_edges`, `gephi_remove_node`/`gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`/`gephi_set_edge_label`, `gephi_set_node_position`/`gephi_batch_set_positions`, `gephi_set_edge_weight`, `gephi_query_nodes`/`gephi_query_edges`
@@ -53,13 +53,13 @@ You have access to 73 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 ### Statistics (run before styling)
 - `gephi_compute_modularity` → creates `modularity_class`
 - `gephi_compute_degree` → creates `degree`, `indegree`, `outdegree`
-- `gephi_compute_betweenness` → creates `betweenesscentrality`, closeness, eccentricity
+- `gephi_compute_betweenness` → creates `betweenesscentrality`, `closnesscentrality`, `eccentricity`, `harmonicclosnesscentrality` (0.11.1+)
 - `gephi_compute_pagerank` → creates `pageranks`
 - `gephi_compute_eigenvector` → creates `eigencentrality`
 - `gephi_compute_connected_components` → creates `componentnumber`
 - `gephi_compute_clustering_coefficient` → creates `clustering`
 - `gephi_compute_avg_path_length` → avg path length, diameter
-- `gephi_compute_hits` → creates `Authority`, `Hub`
+- `gephi_compute_hits` → creates `authority`, `hub` (lowercase column names)
 
 ### Appearance
 `gephi_color_by_partition`, `gephi_color_by_ranking`, `gephi_size_by_ranking`, `gephi_set_node_color`/`gephi_set_node_size`, `gephi_set_edge_color`, `gephi_edge_thickness_by_weight`, `gephi_batch_set_node_colors`, `gephi_reset_appearance`
@@ -94,6 +94,8 @@ Labeled:
 ```json
 {"node.label.show": true, "node.label.proportinalSize": false, "node.label.font": "Arial 10 Plain", "node.label.outline.size": 4, "node.label.outline.opacity": 95, "edge.opacity": 15}
 ```
+
+New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"node.label.overlapGridSize": 50` controls grid granularity. Both can be combined with existing label settings.
 
 ### Layout
 - ForceAtlas 2 for most graphs: `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimize": true}`, 1000-1500 iterations

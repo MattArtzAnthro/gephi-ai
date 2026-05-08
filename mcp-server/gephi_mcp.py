@@ -156,6 +156,15 @@ async def gephi_delete_workspace(params: dict) -> str:
     """
     return fmt(await gephi.request("DELETE", "/workspace/delete", params={"index": str(params.get("index", 0))}))
 
+@mcp.tool(name="gephi_duplicate_workspace")
+async def gephi_duplicate_workspace(params: dict) -> str:
+    """Duplicate a workspace by index. Creates a copy with all graph data, statistics, and appearance settings.
+
+    Args:
+        params: {index: int} - zero-based workspace index to duplicate
+    """
+    return fmt(await gephi.request("POST", "/workspace/duplicate", json_data=params))
+
 
 # ─── Nodes ────────────────────────────────────────────────────
 
