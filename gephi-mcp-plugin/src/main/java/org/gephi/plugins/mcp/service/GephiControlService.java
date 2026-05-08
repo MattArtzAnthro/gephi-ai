@@ -1585,6 +1585,15 @@ public class GephiControlService {
                     }
                 }
 
+                // Include background color (not in standard properties array)
+                try {
+                    Object bgVal = pm.getProperties().getValue("backgroundColor");
+                    if (bgVal instanceof Color) {
+                        Color c = (Color) bgVal;
+                        settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                    }
+                } catch (Exception ignored) {}
+
                 JsonObject r = new JsonObject();
                 r.addProperty("success", true);
                 r.add("settings", settings);
@@ -1609,6 +1618,26 @@ public class GephiControlService {
                     String key = e.getKey();
                     Object val = e.getValue();
                     if (val == null) continue;  // Skip null values to avoid corrupting preview model
+
+                    // Background color is not a registered PreviewProperty — handle separately
+                    if ("background.color".equalsIgnoreCase(key) || "backgroundColor".equalsIgnoreCase(key)) {
+                        try {
+                            String hex = val.toString().trim();
+                            if (hex.startsWith("#")) hex = hex.substring(1);
+                            Color bgColor = new Color(Integer.parseInt(hex, 16));
+                            PreviewProperty bgProp = pm.getProperties().getProperty("backgroundColor");
+                            if (bgProp != null) {
+                                bgProp.setValue(bgColor);
+                            } else {
+                                pm.getProperties().putValue("backgroundColor", bgColor);
+                            }
+                            set++;
+                        } catch (NumberFormatException nfe) {
+                            LOGGER.warning("MCP: Invalid background color: " + val);
+                        }
+                        continue;
+                    }
+
                     PreviewProperty prop = pm.getProperties().getProperty(key);
                     if (prop != null) {
                         // Convert value based on property type

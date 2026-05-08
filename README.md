@@ -6,7 +6,7 @@ Built for researchers working across network science and AI.
 
 ## What you get
 
-**73 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**76 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
 **Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`), a specialized network analyst agent, and workflow skills that teach Claude network science best practices.
 
@@ -42,7 +42,7 @@ All three must be installed. Gephi Desktop must be running before using any tool
 
 ### Prerequisites
 
-- [Gephi Desktop](https://gephi.org/users/download/) 0.10.1+
+- [Gephi Desktop](https://gephi.org/users/download/) 0.11.1+
 - [Java JDK 11+](https://adoptium.net/) and [Maven](https://maven.apache.org/) (to build the Gephi plugin)
 - [Python 3.10+](https://www.python.org/) (for the MCP server)
 - [Claude Code](https://claude.ai/code) or [Claude Desktop](https://claude.ai/download) (for AI interaction)
@@ -87,7 +87,7 @@ This adds the MCP server, slash commands, network analyst agent, skills, and a h
 
 #### Claude Code (MCP tools only)
 
-If you just want the 73 tools without skills and commands:
+If you just want the 76 tools without skills and commands:
 
 ```bash
 claude mcp add gephi-mcp -- gephi-mcp
@@ -135,12 +135,12 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (73)
+## Tools (76)
 
 | Category | Count | Examples |
 |----------|-------|---------|
-| Project & Workspace | 8 | `gephi_create_project`, `gephi_save_project` |
-| Graph Construction | 17 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes` |
+| Project & Workspace | 10 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_rename_workspace` |
+| Graph Construction | 18 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node` |
 | Statistics | 9 | `gephi_compute_modularity`, `gephi_compute_pagerank` |
 | Layout | 6 | `gephi_run_layout`, `gephi_get_layout_properties` |
 | Appearance | 9 | `gephi_color_by_partition`, `gephi_size_by_ranking` |
@@ -190,7 +190,7 @@ Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **Gephi Plugin**: Java 11, NetBeans Platform, NanoHTTPD, Gson
 - **MCP Server**: Python 3.10+, MCP SDK (FastMCP), httpx, Pydantic
-- **Target**: Gephi 0.10.1, NetBeans RELEASE126
+- **Target**: Gephi 0.11.1, NetBeans RELEASE290
 
 ## Attribution
 
