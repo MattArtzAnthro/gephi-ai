@@ -2,18 +2,18 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 73 Gephi MCP tools.
+  this skill provides workflows and best practices for the 76 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.3"
+  version: "1.4"
 ---
 
 # Gephi Network Analysis Skill
 
-You have access to 74 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 76 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -30,6 +30,7 @@ You have access to 74 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 - **`node.label.font` supports multi-word names** — e.g., `"Courier New 12 Bold"`. The plugin parses everything before the first digit as the font name.
 - **Imported node sizes are auto-capped at 30** — GEXF files with large `viz:size` values are automatically capped during import to prevent oversized nodes from hiding edges.
 - **Filters refresh the preview automatically** — `remove_isolates`, `giant_component`, `filter_by_degree` now properly refresh the preview model after modifying the graph.
+- **`sync: true` in `gephi_run_layout`** — makes the call block until layout finishes. Always use this so Noverlap and Label Adjust don't start on a still-moving graph.
 
 ## Standard Workflow
 
@@ -45,10 +46,10 @@ You have access to 74 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 ## Tool Quick Reference
 
 ### Project & Workspace
-`gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`, `gephi_duplicate_workspace`
+`gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`, `gephi_duplicate_workspace`, `gephi_rename_workspace`
 
 ### Graph Construction
-`gephi_add_node`/`gephi_add_nodes`, `gephi_add_edge`/`gephi_add_edges`, `gephi_remove_node`/`gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`/`gephi_set_edge_label`, `gephi_set_node_position`/`gephi_batch_set_positions`, `gephi_set_edge_weight`, `gephi_query_nodes`/`gephi_query_edges`
+`gephi_add_node`/`gephi_add_nodes`, `gephi_add_edge`/`gephi_add_edges`, `gephi_remove_node`/`gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`/`gephi_set_edge_label`, `gephi_set_node_position`/`gephi_batch_set_positions`, `gephi_set_edge_weight`, `gephi_query_nodes`, `gephi_get_node`, `gephi_query_edges`
 
 ### Statistics (run before styling)
 - `gephi_compute_modularity` → creates `modularity_class`
@@ -98,9 +99,10 @@ Labeled:
 New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"node.label.overlapGridSize": 50` controls grid granularity. Both can be combined with existing label settings.
 
 ### Layout
-- ForceAtlas 2 for most graphs: `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimize": true}`, 1000-1500 iterations
-- Follow with Noverlap (500 iterations, margin 5.0) to push overlapping nodes apart
-- Follow with Label Adjust (500 iterations) if labels are enabled
+- ForceAtlas 2 for most graphs: `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimization": true, "sync": true}`, 1000-1500 iterations
+- Follow with Noverlap: `{"algorithm": "Noverlap", "iterations": 500, "properties": {"margin": 5.0}, "sync": true}`
+- Follow with Label Adjust (500 iterations, sync: true) if labels are enabled
+- **`barnesHutOptimize` is wrong** — the correct key is `barnesHutOptimization`
 
 ## Key Gotchas
 
@@ -108,6 +110,82 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
 - **Workspace switching can deadlock** — if API hangs after workspace switch, Gephi needs restart.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
+
+## Beautiful Graph Recipe
+
+Bad-looking graphs almost always come from one of three problems: layout parameters ignored (the most common), no overlap prevention, or wrong edge/label settings. Follow this recipe for publication-quality output.
+
+### Phase 1 — Community layout (1000–1500 iterations)
+```json
+{
+  "algorithm": "ForceAtlas 2",
+  "iterations": 1200,
+  "sync": true,
+  "properties": {
+    "scalingRatio": 200,
+    "linLogMode": true,
+    "gravity": 1.0,
+    "barnesHutOptimization": true,
+    "distributedAttraction": true
+  }
+}
+```
+- `linLogMode: true` is the single most important setting — it makes communities pull together as tight clusters with open space between them
+- `distributedAttraction: true` (Dissuade Hubs) pushes highly-connected nodes toward the periphery, keeping communities visually distinct
+- `scalingRatio: 200` gives breathing room between clusters (default 10 is far too low)
+- Always use `sync: true` so Phase 2 doesn't start on a still-moving graph
+
+### Phase 2 — Overlap prevention (200 iterations)
+```json
+{
+  "algorithm": "ForceAtlas 2",
+  "iterations": 200,
+  "sync": true,
+  "properties": {
+    "scalingRatio": 200,
+    "linLogMode": true,
+    "gravity": 1.0,
+    "barnesHutOptimization": true,
+    "adjustSizes": true
+  }
+}
+```
+- `adjustSizes: true` (Prevent Overlap) runs FA2 while accounting for node sizes — nodes physically push each other apart
+- Keep `scalingRatio` and `linLogMode` the same so community structure is preserved
+
+### Phase 3 — Fine-grained separation
+```json
+{"algorithm": "Noverlap", "iterations": 300, "sync": true, "properties": {"margin": 3.0}}
+```
+
+### Phase 4 — Label positioning (only if showing labels)
+```json
+{"algorithm": "Label Adjust", "iterations": 300, "sync": true}
+```
+
+### Preview settings for community graphs
+```json
+{
+  "node.label.show": false,
+  "edge.color": "source",
+  "edge.opacity": 20,
+  "edge.curved": true,
+  "edge.thickness": 1.5,
+  "node.opacity": 100,
+  "node.border.width": 0.5,
+  "node.label.avoidOverlap": true,
+  "arrow.size": 0
+}
+```
+- `edge.color: "source"` creates the watercolor halo effect where edges fade into their source community color
+- `edge.opacity: 20` keeps edges from overwhelming the community structure
+- `node.label.avoidOverlap: true` (0.11.1+) prevents label collisions without needing Label Adjust
+
+### Troubleshooting
+- **Nodes in a ball**: gravity is too high OR layout parameters weren't applied (check you're using correct key names). Fix: run Random Layout (1 iteration), then re-run Phase 1.
+- **Communities not separating**: `linLogMode` is off, or `scalingRatio` is too low. Verify properties are accepted.
+- **Nodes still overlapping after Phase 2**: run Noverlap with higher margin (5–8).
+- **Labels colliding**: run Label Adjust, or enable `node.label.avoidOverlap: true` in preview settings.
 
 For detailed tool parameters, see [references/tool-reference.md](references/tool-reference.md).
 For layout algorithm details, see [references/layout-guide.md](references/layout-guide.md).

@@ -165,6 +165,15 @@ async def gephi_duplicate_workspace(params: dict) -> str:
     """
     return fmt(await gephi.request("POST", "/workspace/duplicate", json_data=params))
 
+@mcp.tool(name="gephi_rename_workspace")
+async def gephi_rename_workspace(params: dict) -> str:
+    """Rename a workspace by index.
+
+    Args:
+        params: {index: int, name: str}
+    """
+    return fmt(await gephi.request("POST", "/workspace/rename", json_data=params))
+
 
 # ─── Nodes ────────────────────────────────────────────────────
 
@@ -227,6 +236,18 @@ async def gephi_query_nodes(params: dict) -> str:
     """
     query_params = {"limit": params.get("limit", 100), "offset": params.get("offset", 0)}
     return fmt(await gephi.request("GET", "/graph/nodes", params=query_params))
+
+@mcp.tool(name="gephi_get_node")
+async def gephi_get_node(params: dict) -> str:
+    """Get full details for a single node by ID.
+
+    Returns id, label, x/y position, size, color (r/g/b), and all attributes.
+
+    Args:
+        params: {id: str}
+    """
+    node_id = params.get("id", "")
+    return fmt(await gephi.request("GET", f"/graph/node/get/{node_id}"))
 
 @mcp.tool(name="gephi_set_node_label")
 async def gephi_set_node_label(params: dict) -> str:
@@ -484,22 +505,29 @@ async def gephi_size_by_ranking(params: dict) -> str:
 async def gephi_run_layout(params: dict) -> str:
     """Run a layout algorithm to position nodes.
 
-    Available algorithms typically include:
-    - 'forceatlas2': Force-directed, good for most networks
-    - 'yifanhu': Fast force-directed for large graphs
-    - 'fruchterman': Classic force-directed (Fruchterman-Reingold)
-    - 'circular': Arrange nodes in a circle
-    - 'random': Random positions
-
-    The layout runs asynchronously. Use gephi_get_layout_status to check progress
-    and gephi_stop_layout to stop it early.
-
-    Optionally pass 'properties' dict to tune layout parameters.
+    Pass `sync: true` to wait until the layout finishes before returning.
+    Without sync, returns immediately with status "running" — use
+    gephi_get_layout_status to poll for completion.
 
     Args:
-        params: RunLayoutInput with algorithm name and iterations
+        params: {algorithm: str, iterations: int, properties: dict (optional), sync: bool (optional)}
     """
-    return fmt(await gephi.request("POST", "/layout/run", json_data=params))
+    sync = params.pop("sync", False)
+    result = await gephi.request("POST", "/layout/run", json_data=params)
+    if not sync or not result.get("success"):
+        return fmt(result)
+    # Poll until layout stops
+    import asyncio
+    for _ in range(300):  # max ~5 minutes at 1s intervals
+        await asyncio.sleep(1)
+        status = await gephi.request("GET", "/layout/status")
+        if not status.get("running", True):
+            result["status"] = "completed"
+            result["message"] = f"Layout finished after polling"
+            return fmt(result)
+    result["status"] = "timeout"
+    result["message"] = "Layout still running after 5 minutes"
+    return fmt(result)
 
 @mcp.tool(name="gephi_stop_layout")
 async def gephi_stop_layout(params: dict) -> str:
@@ -671,8 +699,10 @@ async def gephi_filter_by_degree(params: dict) -> str:
 
     Warning: This is destructive - filtered nodes are permanently removed.
 
+    Pass `dry_run: true` to see how many nodes would be removed without actually removing them.
+
     Args:
-        params: {min: int, max: int} - degree range (max=0 means no upper limit)
+        params: {min: int, max: int (0 = no upper limit), dry_run: bool (optional)}
     """
     return fmt(await gephi.request("POST", "/filter/degree", json_data=params))
 
@@ -682,8 +712,10 @@ async def gephi_filter_by_edge_weight(params: dict) -> str:
 
     Warning: This is destructive - filtered edges are permanently removed.
 
+    Pass `dry_run: true` to see how many edges would be removed without actually removing them.
+
     Args:
-        params: {min: float, max: float} - weight range (max=0 means no upper limit)
+        params: {min: float, max: float (0 = no upper limit), dry_run: bool (optional)}
     """
     return fmt(await gephi.request("POST", "/filter/edge-weight", json_data=params))
 

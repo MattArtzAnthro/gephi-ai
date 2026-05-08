@@ -205,7 +205,17 @@ public class GephiControlService {
             for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 JsonObject o = new JsonObject();
                 o.addProperty("id", ws.getId());
+                o.addProperty("name", ws.getName() != null ? ws.getName() : "Workspace " + ws.getId());
                 o.addProperty("current", ws.equals(current));
+                GraphModel gm = getGraphController().getGraphModel(ws);
+                if (gm != null) {
+                    Graph g = gm.getGraph();
+                    o.addProperty("node_count", g.getNodeCount());
+                    o.addProperty("edge_count", g.getEdgeCount());
+                } else {
+                    o.addProperty("node_count", 0);
+                    o.addProperty("edge_count", 0);
+                }
                 arr.add(o);
             }
             JsonObject r = new JsonObject();
@@ -260,6 +270,24 @@ public class GephiControlService {
                         JsonObject r = success("Workspace duplicated");
                         r.addProperty("workspace_id", copy.getId());
                         return r;
+                    } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+                }
+                i++;
+            }
+            return error("Workspace index out of range: " + index);
+        });
+    }
+
+    public JsonObject renameWorkspace(int index, String name) {
+        return runOnEDT(() -> {
+            ProjectController pc = getProjectController();
+            if (pc.getCurrentProject() == null) return error("No project open");
+            int i = 0;
+            for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
+                if (i == index) {
+                    try {
+                        pc.renameWorkspace(ws, name);
+                        return success("Workspace renamed to: " + name);
                     } catch (Exception e) { return error("Failed: " + e.getMessage()); }
                 }
                 i++;
@@ -417,6 +445,40 @@ public class GephiControlService {
                 r.add("nodes", arr);
                 return r;
             } finally { g.readUnlock(); }
+        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+    }
+
+    public JsonObject getNode(String id) {
+        try {
+            Workspace ws = currentWorkspace();
+            if (ws == null) return error("No project open");
+            GraphModel gm = getGraphController().getGraphModel(ws);
+            Graph g = gm.getGraph();
+            Node n = g.getNode(id);
+            if (n == null) return error("Node not found: " + id);
+            JsonObject o = new JsonObject();
+            o.addProperty("id", n.getId().toString());
+            o.addProperty("label", n.getLabel());
+            o.addProperty("x", n.x());
+            o.addProperty("y", n.y());
+            o.addProperty("size", n.size());
+            o.addProperty("r", (int)(n.r() * 255));
+            o.addProperty("g", (int)(n.g() * 255));
+            o.addProperty("b", (int)(n.b() * 255));
+            JsonObject attrs = new JsonObject();
+            for (Column col : gm.getNodeTable()) {
+                if (col.isProperty()) continue;
+                Object v = n.getAttribute(col);
+                if (v == null) continue;
+                if (v instanceof Number) attrs.addProperty(col.getTitle(), (Number) v);
+                else if (v instanceof Boolean) attrs.addProperty(col.getTitle(), (Boolean) v);
+                else attrs.addProperty(col.getTitle(), v.toString());
+            }
+            o.add("attributes", attrs);
+            JsonObject r = new JsonObject();
+            r.addProperty("success", true);
+            r.add("node", o);
+            return r;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -1191,15 +1253,23 @@ public class GephiControlService {
                 LayoutProperty[] props = layout.getProperties();
                 if (props != null) {
                     for (LayoutProperty prop : props) {
-                        String name = prop.getCanonicalName() != null ? prop.getCanonicalName() : prop.getProperty().getDisplayName();
+                        String canonicalName = prop.getCanonicalName() != null ? prop.getCanonicalName() : "";
                         String displayName = prop.getProperty().getDisplayName();
-                        // Match by canonical name or display name
-                        Object val = properties.get(name);
+                        // Extract middle key from "AlgoName.propertyKey.name" pattern
+                        String canonicalKey = "";
+                        if (!canonicalName.isEmpty()) {
+                            String[] parts = canonicalName.split("\\.");
+                            if (parts.length >= 3) canonicalKey = parts[parts.length - 2];
+                        }
+                        Object val = properties.get(canonicalKey);
+                        if (val == null && !canonicalName.isEmpty()) val = properties.get(canonicalName);
                         if (val == null) val = properties.get(displayName);
                         if (val == null) {
-                            // Try case-insensitive match
                             for (Map.Entry<String, Object> e : properties.entrySet()) {
-                                if (e.getKey().equalsIgnoreCase(name) || e.getKey().equalsIgnoreCase(displayName)) {
+                                String k = e.getKey();
+                                if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
+                                        || k.equalsIgnoreCase(displayName)
+                                        || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
                                     val = e.getValue();
                                     break;
                                 }
@@ -1393,7 +1463,7 @@ public class GephiControlService {
 
     // ─── Filters ─────────────────────────────────────────────────────
 
-    public JsonObject filterByDegreeRange(int minDegree, int maxDegree) {
+    public JsonObject filterByDegreeRange(int minDegree, int maxDegree, boolean dryRun) {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
@@ -1407,6 +1477,13 @@ public class GephiControlService {
                         toRemove.add(n);
                     }
                 }
+                if (dryRun) {
+                    JsonObject r = success("Dry run: " + toRemove.size() + " nodes would be removed");
+                    r.addProperty("would_remove", toRemove.size());
+                    r.addProperty("would_remain", g.getNodeCount() - toRemove.size());
+                    r.addProperty("dry_run", true);
+                    return r;
+                }
                 for (Node n : toRemove) g.removeNode(n);
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
@@ -1418,7 +1495,7 @@ public class GephiControlService {
         });
     }
 
-    public JsonObject filterByEdgeWeight(double minWeight, double maxWeight) {
+    public JsonObject filterByEdgeWeight(double minWeight, double maxWeight, boolean dryRun) {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
@@ -1431,6 +1508,13 @@ public class GephiControlService {
                     if (w < minWeight || (maxWeight > 0 && w > maxWeight)) {
                         toRemove.add(e);
                     }
+                }
+                if (dryRun) {
+                    JsonObject r = success("Dry run: " + toRemove.size() + " edges would be removed");
+                    r.addProperty("would_remove", toRemove.size());
+                    r.addProperty("would_remain", g.getEdgeCount() - toRemove.size());
+                    r.addProperty("dry_run", true);
+                    return r;
                 }
                 for (Edge e : toRemove) g.removeEdge(e);
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);

@@ -77,7 +77,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "2.0.0");
+            result.addProperty("version", "1.0.0-beta");
             result.addProperty("status", "running");
             return result;
         }
@@ -130,6 +130,11 @@ public class GephiAPIServer extends NanoHTTPD {
             return service.duplicateWorkspace(body.get("index").getAsInt());
         }
 
+        if ("/workspace/rename".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("index") || !body.has("name")) return errorResult("Missing 'index' or 'name'");
+            return service.renameWorkspace(body.get("index").getAsInt(), body.get("name").getAsString());
+        }
+
         // ─── Nodes ───────────────────────────────────────────────────
 
         if ("/graph/node/add".equals(uri) && Method.POST.equals(method)) {
@@ -165,6 +170,12 @@ public class GephiAPIServer extends NanoHTTPD {
             int limit = parseIntParam(params.get("limit"), 100);
             int offset = parseIntParam(params.get("offset"), 0);
             return service.queryNodes(null, null, limit, offset);
+        }
+
+        if (uri.startsWith("/graph/node/get/") && Method.GET.equals(method)) {
+            String nodeId = uri.substring("/graph/node/get/".length());
+            if (nodeId.isEmpty()) return errorResult("Missing node ID");
+            return service.getNode(nodeId);
         }
 
         if ("/graph/node/label".equals(uri) && Method.POST.equals(method)) {
@@ -448,13 +459,15 @@ public class GephiAPIServer extends NanoHTTPD {
         if ("/filter/degree".equals(uri) && Method.POST.equals(method)) {
             int min = body != null && body.has("min") ? body.get("min").getAsInt() : 0;
             int max = body != null && body.has("max") ? body.get("max").getAsInt() : 0;
-            return service.filterByDegreeRange(min, max);
+            boolean dryRun = body != null && body.has("dry_run") && body.get("dry_run").getAsBoolean();
+            return service.filterByDegreeRange(min, max, dryRun);
         }
 
         if ("/filter/edge-weight".equals(uri) && Method.POST.equals(method)) {
             double min = body != null && body.has("min") ? body.get("min").getAsDouble() : 0;
             double max = body != null && body.has("max") ? body.get("max").getAsDouble() : 0;
-            return service.filterByEdgeWeight(min, max);
+            boolean dryRun = body != null && body.has("dry_run") && body.get("dry_run").getAsBoolean();
+            return service.filterByEdgeWeight(min, max, dryRun);
         }
 
         if ("/filter/remove-isolates".equals(uri) && Method.POST.equals(method)) {
