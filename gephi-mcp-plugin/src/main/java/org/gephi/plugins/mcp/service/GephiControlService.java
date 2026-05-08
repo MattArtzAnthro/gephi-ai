@@ -3,8 +3,11 @@ package org.gephi.plugins.mcp.service;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.StringWriter;
+import javax.imageio.ImageIO;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +61,8 @@ public class GephiControlService {
     private volatile String currentLayoutName = null;
     private volatile Future<?> layoutFuture = null;
     private final ExecutorService layoutExecutor = Executors.newSingleThreadExecutor();
+    // Stored when setPreviewSettings receives background.color — used by exportPng to composite background
+    private volatile Color exportBackgroundColor = null;
 
     private GephiControlService() {}
 
@@ -1585,9 +1590,9 @@ public class GephiControlService {
                     }
                 }
 
-                // Include background color (not in standard properties array)
+                // Include background color if not already captured by the main loop
                 try {
-                    Object bgVal = pm.getProperties().getValue("backgroundColor");
+                    Object bgVal = pm.getProperties().getValue("background.color");
                     if (bgVal instanceof Color) {
                         Color c = (Color) bgVal;
                         settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
@@ -1619,17 +1624,18 @@ public class GephiControlService {
                     Object val = e.getValue();
                     if (val == null) continue;  // Skip null values to avoid corrupting preview model
 
-                    // Background color is not a registered PreviewProperty — handle separately
+                    // Background color: store for PNG compositing and try to set on preview model
                     if ("background.color".equalsIgnoreCase(key) || "backgroundColor".equalsIgnoreCase(key)) {
                         try {
                             String hex = val.toString().trim();
                             if (hex.startsWith("#")) hex = hex.substring(1);
                             Color bgColor = new Color(Integer.parseInt(hex, 16));
-                            PreviewProperty bgProp = pm.getProperties().getProperty("backgroundColor");
+                            exportBackgroundColor = bgColor;  // always store for exportPng compositing
+                            PreviewProperty bgProp = pm.getProperties().getProperty("background.color");
                             if (bgProp != null) {
                                 bgProp.setValue(bgColor);
                             } else {
-                                pm.getProperties().putValue("backgroundColor", bgColor);
+                                pm.getProperties().putValue("background.color", bgColor);
                             }
                             set++;
                         } catch (NumberFormatException nfe) {
@@ -1786,6 +1792,23 @@ public class GephiControlService {
                 }
 
                 ec.exportFile(new File(filePath), exporter);
+
+                // Post-process: composite onto background color if one was set via setPreviewSettings.
+                // Gephi's PNG exporter renders a transparent background; this fills it.
+                Color bgColor = exportBackgroundColor;
+                if (bgColor != null && !bgColor.equals(Color.WHITE)) {
+                    BufferedImage exported = ImageIO.read(new File(filePath));
+                    if (exported != null) {
+                        BufferedImage result = new BufferedImage(exported.getWidth(), exported.getHeight(), BufferedImage.TYPE_INT_RGB);
+                        Graphics2D g2d = result.createGraphics();
+                        g2d.setColor(bgColor);
+                        g2d.fillRect(0, 0, result.getWidth(), result.getHeight());
+                        g2d.drawImage(exported, 0, 0, null);
+                        g2d.dispose();
+                        ImageIO.write(result, "PNG", new File(filePath));
+                    }
+                }
+
                 return success("Exported to " + filePath);
             } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
         });

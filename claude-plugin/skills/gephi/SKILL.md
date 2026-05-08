@@ -8,7 +8,7 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.4"
+  version: "1.5"
 ---
 
 # Gephi Network Analysis Skill
@@ -109,7 +109,13 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **Filters are destructive** — they permanently remove nodes/edges. Save project first.
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
 - **Workspace switching can deadlock** — if API hangs after workspace switch, Gephi needs restart.
+- **`gephi_extract_giant_component` can deadlock Gephi** — avoid it. To contain outlier nodes that blow out the bounding box, use high FA2 gravity (5–8) instead. This keeps all nodes in frame without any destructive filter.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
+- **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
+- **For dark backgrounds, use a vibrant/saturated color palette** — the default pastel palette is designed for white. Pastels on dark backgrounds are barely visible. Use saturated colors like `[255,90,70]` (coral), `[60,150,255]` (blue), `[140,230,70]` (lime) etc.
+- **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
+- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. Fix: use gravity 5–8 in FA2. Alternatively, post-process in Python: crop to content bounds and upscale to fill the canvas.
+- **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
 
 ## Beautiful Graph Recipe
 
@@ -190,6 +196,44 @@ Bad-looking graphs almost always come from one of three problems: layout paramet
 - `edge.color: "source"` creates the watercolor halo effect where edges fade into their source community color
 - `edge.opacity: 20` keeps edges from overwhelming the community structure
 - `node.label.avoidOverlap: true` (0.11.1+) prevents label collisions without needing Label Adjust
+
+## Dark Background Workflow
+
+Gephi's PNG exporter always writes a white background regardless of `background.color`. Use this Python post-processing recipe after `gephi_export_png`:
+
+```python
+from PIL import Image
+import numpy as np
+
+img = Image.open('export.png').convert('RGB')
+arr = np.array(img, dtype=np.float32)
+bg = np.array([28, 28, 46], dtype=np.float32)   # dark navy #1C1C2E
+
+dist = 255.0 - arr
+alpha = np.clip(np.max(dist, axis=2) / 255.0 * 1.8, 0, 1)
+a_safe = np.maximum(alpha, 0.02)[:,:,np.newaxis]
+recovered = np.clip((arr - 255.0*(1-alpha[:,:,np.newaxis])) / a_safe, 0, 255)
+result = np.clip(bg + alpha[:,:,np.newaxis]*(recovered - bg), 0, 255).astype(np.uint8)
+Image.fromarray(result).save('export-dark.png')
+```
+
+**Requirements for this to work well:**
+- `edge.opacity` must be at least 60 (pastels at 25% produce near-white pixels; recovery fails)
+- Use saturated/vibrant colors, not pastels
+- Works best for unlabeled exports — labels turn invisible after compositing (white outlines → navy)
+
+**For labeled exports**, use white background (`background.color: "#FFFFFF"`). Labels are readable on white natively.
+
+**Crop and scale to fill canvas** (for graphs where outliers push content to a corner):
+```python
+mask = alpha > 0.03
+rows, cols = np.any(mask, axis=1), np.any(mask, axis=0)
+r0,r1 = np.where(rows)[0][[0,-1]]
+c0,c1 = np.where(cols)[0][[0,-1]]
+pad = 150
+cropped = result[max(0,r0-pad):r1+pad, max(0,c0-pad):c1+pad]
+Image.fromarray(cropped).resize((3840, 2160), Image.LANCZOS).save('export-dark-scaled.png')
+```
 
 ### Troubleshooting
 - **Nodes in a ball**: gravity is too high OR layout parameters weren't applied (check you're using correct key names). Fix: run Random Layout (1 iteration), then re-run Phase 1.
