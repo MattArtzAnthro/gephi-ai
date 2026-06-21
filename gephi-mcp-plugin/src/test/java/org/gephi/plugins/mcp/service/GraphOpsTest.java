@@ -1,0 +1,152 @@
+package org.gephi.plugins.mcp.service;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.google.gson.JsonObject;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.gephi.graph.api.Column;
+import org.gephi.graph.api.Edge;
+import org.gephi.graph.api.Graph;
+import org.gephi.graph.api.GraphModel;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Integration tests for the graph-mutation cores against a standalone in-memory
+ * GraphModel (no NetBeans platform / running Gephi required). These exercise the
+ * actual fixes: batch attributes, edge directedness, the negative-value ranking
+ * regression, and CSV assembly.
+ */
+class GraphOpsTest {
+
+    private static GraphModel newModel() {
+        return GraphModel.Factory.newInstance();
+    }
+
+    /** Build a node map {id, attributes:{...}} from id + alternating attr key/value pairs. */
+    private static Map<String, Object> node(String id, Object... attrKv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", id);
+        if (attrKv.length > 0) {
+            Map<String, Object> attrs = new LinkedHashMap<>();
+            for (int i = 0; i + 1 < attrKv.length; i += 2) attrs.put((String) attrKv[i], attrKv[i + 1]);
+            m.put("attributes", attrs);
+        }
+        return m;
+    }
+
+    @Test
+    void batchAddAppliesPerNodeAttributes() {
+        GraphModel gm = newModel();
+        JsonObject r = GephiControlService.addNodesToModel(gm,
+            List.of(node("a", "team", "red"), node("b", "team", "blue")));
+        assertTrue(r.get("success").getAsBoolean());
+        assertEquals(2, r.get("added").getAsInt());
+
+        Graph g = gm.getGraph();
+        Column team = gm.getNodeTable().getColumn("team");
+        assertNotNull(team, "attribute column should be auto-created");
+        assertEquals("red", g.getNode("a").getAttribute(team));
+        assertEquals("blue", g.getNode("b").getAttribute(team));
+    }
+
+    @Test
+    void batchAddSkipsDuplicateIds() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodeToModel(gm, "a", null, null);
+        JsonObject r = GephiControlService.addNodesToModel(gm, List.of(node("a"), node("b")));
+        assertEquals(1, r.get("added").getAsInt());
+        assertEquals(1, r.get("skipped").getAsInt());
+    }
+
+    @Test
+    void addEdgeRespectsUndirectedFlag() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodeToModel(gm, "a", null, null);
+        GephiControlService.addNodeToModel(gm, "b", null, null);
+        JsonObject r = GephiControlService.addEdgeToModel(gm, "a", "b", 2.0, false);
+        assertTrue(r.get("success").getAsBoolean());
+
+        Graph g = gm.getGraph();
+        Edge e = g.getEdge(g.getNode("a"), g.getNode("b"), 0); // type 0 == undirected
+        assertNotNull(e, "undirected edge (type 0) should exist");
+        assertFalse(e.isDirected());
+        assertEquals(2.0, e.getWeight(), 1e-9);
+    }
+
+    @Test
+    void addEdgeRejectsDuplicate() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodeToModel(gm, "a", null, null);
+        GephiControlService.addNodeToModel(gm, "b", null, null);
+        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true).get("success").getAsBoolean());
+        assertFalse(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true).get("success").getAsBoolean());
+    }
+
+    @Test
+    void batchAddEdgesHonorsDirectedLabelAndAttributes() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodesToModel(gm, List.of(node("a"), node("b")));
+
+        Map<String, Object> edge = new LinkedHashMap<>();
+        edge.put("source", "a");
+        edge.put("target", "b");
+        edge.put("directed", false);
+        edge.put("label", "knows");
+        Map<String, Object> attrs = new LinkedHashMap<>();
+        attrs.put("since", 1999);
+        edge.put("attributes", attrs);
+
+        JsonObject r = GephiControlService.addEdgesToModel(gm, List.of(edge));
+        assertEquals(1, r.get("added").getAsInt());
+
+        Graph g = gm.getGraph();
+        Edge e = GephiControlService.findEdge(g, g.getNode("a"), g.getNode("b"));
+        assertNotNull(e);
+        assertFalse(e.isDirected());
+        assertEquals("knows", e.getLabel());
+        Column since = gm.getEdgeTable().getColumn("since");
+        assertNotNull(since);
+        assertEquals(1999, ((Number) e.getAttribute(since)).intValue());
+    }
+
+    @Test
+    void numericRangeHandlesAllNegativeValues() {
+        // The regression that motivated the fix: a column whose values are all negative.
+        // The old Double.MIN_VALUE seed left max at a tiny positive number here.
+        GraphModel gm = newModel();
+        GephiControlService.addNodesToModel(gm,
+            List.of(node("a", "score", -10.0), node("b", "score", -2.0), node("c", "score", -7.0)));
+        Column score = gm.getNodeTable().getColumn("score");
+        double[] mm = GephiControlService.numericRange(gm.getGraph(), score);
+        assertNotNull(mm);
+        assertEquals(-10.0, mm[0], 1e-9, "min");
+        assertEquals(-2.0, mm[1], 1e-9, "max");
+    }
+
+    @Test
+    void numericRangeIsNullWhenNoNumericValues() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodesToModel(gm, List.of(node("a", "tag", "x")));
+        Column tag = gm.getNodeTable().getColumn("tag");
+        assertNull(GephiControlService.numericRange(gm.getGraph(), tag));
+    }
+
+    @Test
+    void buildCsvQuotesFieldsContainingSeparator() {
+        GraphModel gm = newModel();
+        Map<String, Object> n = new LinkedHashMap<>();
+        n.put("id", "a");
+        n.put("label", "Smith, John"); // label contains the separator -> must be quoted
+        GephiControlService.addNodesToModel(gm, List.of(n));
+
+        String[] lines = GephiControlService.buildCsv(gm, ",", "nodes").split("\n");
+        assertEquals("Id,Label", lines[0]);
+        assertEquals("a,\"Smith, John\"", lines[1]);
+    }
+}

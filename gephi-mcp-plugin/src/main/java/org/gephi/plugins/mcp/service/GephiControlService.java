@@ -99,14 +99,14 @@ public class GephiControlService {
         return (T) result[0];
     }
 
-    private JsonObject success(String msg) {
+    static JsonObject success(String msg) {
         JsonObject r = new JsonObject();
         r.addProperty("success", true);
         r.addProperty("message", msg);
         return r;
     }
 
-    private JsonObject error(String msg) {
+    static JsonObject error(String msg) {
         JsonObject r = new JsonObject();
         r.addProperty("success", false);
         r.addProperty("error", msg);
@@ -123,7 +123,7 @@ public class GephiControlService {
     }
 
     /** Find an edge between two nodes, checking all edge types (directed type 1 and undirected type 0). */
-    private Edge findEdge(Graph g, Node source, Node target) {
+    static Edge findEdge(Graph g, Node source, Node target) {
         Edge e = g.getEdge(source, target, 1);  // directed
         if (e == null) e = g.getEdge(source, target, 0);  // undirected
         if (e == null) e = g.getEdge(source, target);  // default
@@ -322,10 +322,14 @@ public class GephiControlService {
     // ─── Node Operations ─────────────────────────────────────────────
 
     public JsonObject addNode(String id, String label, Map<String, Object> attrs) {
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No project open");
+        return addNodeToModel(getGraphController().getGraphModel(ws), id, label, attrs);
+    }
+
+    /** Core node-add against an explicit model. Package-private + static so it is testable with a standalone GraphModel. */
+    static JsonObject addNodeToModel(GraphModel gm, String id, String label, Map<String, Object> attrs) {
         try {
-            Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
-            GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
             g.writeLock();
             try {
@@ -349,10 +353,14 @@ public class GephiControlService {
     }
 
     public JsonObject addNodes(List<Map<String, Object>> nodes) {
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No project open");
+        return addNodesToModel(getGraphController().getGraphModel(ws), nodes);
+    }
+
+    /** Core batch node-add against an explicit model (applies per-node attributes). */
+    static JsonObject addNodesToModel(GraphModel gm, List<Map<String, Object>> nodes) {
         try {
-            Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
-            GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
             int added = 0, skipped = 0;
             g.writeLock();
@@ -572,10 +580,14 @@ public class GephiControlService {
     // ─── Edge Operations ─────────────────────────────────────────────
 
     public JsonObject addEdge(String src, String tgt, Double weight, boolean directed) {
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No project open");
+        return addEdgeToModel(getGraphController().getGraphModel(ws), src, tgt, weight, directed);
+    }
+
+    /** Core edge-add against an explicit model. Type and directedness are kept consistent. */
+    static JsonObject addEdgeToModel(GraphModel gm, String src, String tgt, Double weight, boolean directed) {
         try {
-            Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
-            GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
             g.writeLock();
             try {
@@ -591,10 +603,14 @@ public class GephiControlService {
     }
 
     public JsonObject addEdges(List<Map<String, Object>> edges) {
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No project open");
+        return addEdgesToModel(getGraphController().getGraphModel(ws), edges);
+    }
+
+    /** Core batch edge-add against an explicit model (honors per-edge directed/label/attributes). */
+    static JsonObject addEdgesToModel(GraphModel gm, List<Map<String, Object>> edges) {
         try {
-            Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
-            GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
             int added = 0, skipped = 0;
             g.writeLock();
@@ -880,7 +896,7 @@ public class GephiControlService {
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
-    private void ensureColumnAndSet(Table table, Object element, String key, Object value) {
+    static void ensureColumnAndSet(Table table, Object element, String key, Object value) {
         Column col = table.getColumn(key);
         if (col == null) {
             Class<?> cls = String.class;
@@ -1087,6 +1103,28 @@ public class GephiControlService {
         });
     }
 
+    /**
+     * Min and max over the numeric values of {@code col}, as {@code [min, max]}, or null when
+     * the column holds no numeric values. Seeded with infinities so a column whose values are
+     * entirely negative ranks correctly — the old {@code Double.MIN_VALUE} seed (smallest
+     * positive double) silently broke that case. Package-private + static for unit testing.
+     */
+    static double[] numericRange(Graph g, Column col) {
+        double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+        g.readLock();
+        try {
+            for (Node n : g.getNodes()) {
+                Object v = n.getAttribute(col);
+                if (v instanceof Number) {
+                    double d = ((Number) v).doubleValue();
+                    if (d < min) min = d;
+                    if (d > max) max = d;
+                }
+            }
+        } finally { g.readUnlock(); }
+        return min == Double.POSITIVE_INFINITY ? null : new double[]{min, max};
+    }
+
     public JsonObject colorByRanking(String columnName, int rMin, int gMin, int bMin, int rMax, int gMax, int bMax) {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
@@ -1097,28 +1135,16 @@ public class GephiControlService {
                 Column col = gm.getNodeTable().getColumn(columnName);
                 if (col == null) return error("Column not found: " + columnName);
 
-                // Find min/max values. Init with infinities (not Double.MIN_VALUE,
-                // which is the smallest *positive* double and silently breaks
-                // columns whose values are all negative).
-                double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
-                Node[] allNodes = graph.getNodes().toArray();
-                for (Node n : allNodes) {
-                    Object v = n.getAttribute(col);
-                    if (v instanceof Number) {
-                        double d = ((Number) v).doubleValue();
-                        if (d < min) min = d;
-                        if (d > max) max = d;
-                    }
-                }
-
-                if (min == Double.POSITIVE_INFINITY) return error("No numeric values in column " + columnName);
+                double[] mm = numericRange(graph, col);
+                if (mm == null) return error("No numeric values in column " + columnName);
+                double min = mm[0], max = mm[1];
                 double range = max - min;
                 if (range == 0) range = 1;
 
                 int colored = 0;
                 graph.writeLock();
                 try {
-                    for (Node n : allNodes) {
+                    for (Node n : graph.getNodes()) {
                         Object v = n.getAttribute(col);
                         if (v instanceof Number) {
                             double t = (((Number) v).doubleValue() - min) / range;
@@ -1152,26 +1178,16 @@ public class GephiControlService {
                 Column col = gm.getNodeTable().getColumn(columnName);
                 if (col == null) return error("Column not found: " + columnName);
 
-                // Init with infinities (not Double.MIN_VALUE — see colorByRanking).
-                double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
-                Node[] allNodes = graph.getNodes().toArray();
-                for (Node n : allNodes) {
-                    Object v = n.getAttribute(col);
-                    if (v instanceof Number) {
-                        double d = ((Number) v).doubleValue();
-                        if (d < min) min = d;
-                        if (d > max) max = d;
-                    }
-                }
-
-                if (min == Double.POSITIVE_INFINITY) return error("No numeric values in column " + columnName);
+                double[] mm = numericRange(graph, col);
+                if (mm == null) return error("No numeric values in column " + columnName);
+                double min = mm[0], max = mm[1];
                 double range = max - min;
                 if (range == 0) range = 1;
 
                 int sized = 0;
                 graph.writeLock();
                 try {
-                    for (Node n : allNodes) {
+                    for (Node n : graph.getNodes()) {
                         Object v = n.getAttribute(col);
                         if (v instanceof Number) {
                             double t = (((Number) v).doubleValue() - min) / range;
@@ -1922,11 +1938,23 @@ public class GephiControlService {
 
     private JsonObject exportCsvManual(String filePath, String separator, String target) {
         try {
-            GraphModel gm = currentGraphModel();
-            Graph g = gm.getGraph();
-            String sep = separator != null ? separator : ",";
-            StringBuilder sb = new StringBuilder();
+            String csvText = buildCsv(currentGraphModel(), separator, target);
+            try (java.io.Writer fw = new java.io.OutputStreamWriter(
+                    new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
+                fw.write(csvText);
+            }
+            return success("Exported to " + filePath);
+        } catch (Exception e) {
+            return error("CSV export failed: " + e.getMessage());
+        }
+    }
 
+    /** Build node/edge CSV text from a model (RFC 4180 quoted). Package-private + static for unit testing. */
+    static String buildCsv(GraphModel gm, String separator, String target) {
+        Graph g = gm.getGraph();
+        String sep = separator != null ? separator : ",";
+        StringBuilder sb = new StringBuilder();
+        {
             if (!"edges".equalsIgnoreCase(target)) {
                 // Export nodes
                 sb.append(csv("Id", sep)).append(sep).append(csv("Label", sep));
@@ -1973,15 +2001,8 @@ public class GephiControlService {
                     }
                 } finally { g.readUnlock(); }
             }
-
-            try (java.io.Writer fw = new java.io.OutputStreamWriter(
-                    new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
-                fw.write(sb.toString());
-            }
-            return success("Exported to " + filePath);
-        } catch (Exception e) {
-            return error("CSV export failed: " + e.getMessage());
         }
+        return sb.toString();
     }
 
     /**
