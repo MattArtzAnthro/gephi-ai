@@ -76,9 +76,18 @@ public class GephiAPIServer extends NanoHTTPD {
 
     /** True when the request's Host header is absent or resolves to the loopback interface. */
     private boolean isLocalHost(IHTTPSession session) {
-        String host = session.getHeaders().get("host");
-        if (host == null || host.isEmpty()) return true; // no Host header (non-browser client)
-        // Strip any port suffix; handle bare IPv6 "[::1]:8080" too.
+        return isLoopbackHost(session.getHeaders().get("host"));
+    }
+
+    /**
+     * True when {@code host} (a raw HTTP Host header value, possibly null or with a
+     * port and/or IPv6 brackets) names the loopback interface. A null/empty header is
+     * allowed (non-browser clients like the MCP server may omit it); any non-loopback
+     * name is rejected, which is what blocks DNS-rebinding attacks from a web page.
+     * Package-private and static so it can be unit-tested without a live server.
+     */
+    static boolean isLoopbackHost(String host) {
+        if (host == null || host.isEmpty()) return true;
         String name = host;
         int colon = name.lastIndexOf(':');
         if (colon > -1 && name.indexOf(']') < colon) name = name.substring(0, colon);

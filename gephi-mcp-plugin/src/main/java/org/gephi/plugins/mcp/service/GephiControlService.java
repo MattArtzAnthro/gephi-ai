@@ -900,7 +900,7 @@ public class GephiControlService {
         else if (element instanceof Edge) ((Edge) element).setAttribute(col, converted);
     }
 
-    private Object convertToColumnType(Object value, Class<?> targetType) {
+    static Object convertToColumnType(Object value, Class<?> targetType) {
         if (value == null) return null;
         if (targetType.isInstance(value)) return value;
         String s = value.toString();
@@ -914,7 +914,7 @@ public class GephiControlService {
         return s;
     }
 
-    private Class<?> typeStringToClass(String type) {
+    static Class<?> typeStringToClass(String type) {
         if (type == null) return null;
         switch (type.toLowerCase()) {
             case "string": return String.class;
@@ -1343,7 +1343,7 @@ public class GephiControlService {
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
-    private Object convertLayoutProperty(Object val, Class<?> type) {
+    static Object convertLayoutProperty(Object val, Class<?> type) {
         if (val == null) return null;
         String s = val.toString();
         try {
@@ -1989,7 +1989,7 @@ public class GephiControlService {
      * quote) when it contains the separator, a quote, or a line break. Without this,
      * a label or attribute containing the separator silently corrupts the columns.
      */
-    private String csv(String value, String sep) {
+    static String csv(String value, String sep) {
         if (value == null) value = "";
         boolean needsQuote = value.contains(sep) || value.contains("\"")
                 || value.contains("\n") || value.contains("\r");

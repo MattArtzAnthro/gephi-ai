@@ -1,0 +1,100 @@
+package org.gephi.plugins.mcp.service;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+import org.junit.jupiter.api.Test;
+
+/**
+ * Unit tests for the pure helpers in GephiControlService — CSV quoting, type-string
+ * resolution, and value coercion. These need no Gephi runtime.
+ */
+class HelpersTest {
+
+    // ── CSV (RFC 4180) escaping ──────────────────────────────────────────
+
+    @Test
+    void csvLeavesPlainValuesUnquoted() {
+        assertEquals("hello", GephiControlService.csv("hello", ","));
+        assertEquals("123", GephiControlService.csv("123", ","));
+    }
+
+    @Test
+    void csvQuotesValuesContainingSeparator() {
+        assertEquals("\"a,b\"", GephiControlService.csv("a,b", ","));
+    }
+
+    @Test
+    void csvDoublesInternalQuotes() {
+        assertEquals("\"she said \"\"hi\"\"\"", GephiControlService.csv("she said \"hi\"", ","));
+    }
+
+    @Test
+    void csvQuotesNewlines() {
+        assertEquals("\"line1\nline2\"", GephiControlService.csv("line1\nline2", ","));
+    }
+
+    @Test
+    void csvRespectsCustomSeparator() {
+        // a ';' is safe under a ',' separator but must be quoted under a ';' separator
+        assertEquals("a;b", GephiControlService.csv("a;b", ","));
+        assertEquals("\"a;b\"", GephiControlService.csv("a;b", ";"));
+    }
+
+    @Test
+    void csvHandlesNull() {
+        assertEquals("", GephiControlService.csv(null, ","));
+    }
+
+    // ── type string -> class ─────────────────────────────────────────────
+
+    @Test
+    void typeStringToClassKnownTypes() {
+        assertEquals(String.class, GephiControlService.typeStringToClass("string"));
+        assertEquals(Integer.class, GephiControlService.typeStringToClass("INT"));
+        assertEquals(Integer.class, GephiControlService.typeStringToClass("integer"));
+        assertEquals(Double.class, GephiControlService.typeStringToClass("double"));
+        assertEquals(Boolean.class, GephiControlService.typeStringToClass("bool"));
+        assertEquals(Long.class, GephiControlService.typeStringToClass("long"));
+    }
+
+    @Test
+    void typeStringToClassUnknownIsNull() {
+        assertNull(GephiControlService.typeStringToClass("nope"));
+        assertNull(GephiControlService.typeStringToClass(null));
+    }
+
+    // ── value coercion to a column's type ────────────────────────────────
+
+    @Test
+    void convertToColumnTypeParsesNumbers() {
+        assertEquals(7, GephiControlService.convertToColumnType("7.9", Integer.class)); // truncates
+        assertEquals(3.5, GephiControlService.convertToColumnType("3.5", Double.class));
+        assertEquals(true, GephiControlService.convertToColumnType("true", Boolean.class));
+    }
+
+    @Test
+    void convertToColumnTypePassesThroughMatchingType() {
+        assertEquals(42, GephiControlService.convertToColumnType(42, Integer.class));
+    }
+
+    @Test
+    void convertToColumnTypeFallsBackToStringOnGarbage() {
+        assertEquals("abc", GephiControlService.convertToColumnType("abc", Integer.class));
+    }
+
+    // ── layout property coercion (e.g. "100.0" -> int 100) ───────────────
+
+    @Test
+    void convertLayoutPropertyHandlesNumericStrings() {
+        assertEquals(100, GephiControlService.convertLayoutProperty("100.0", int.class));
+        assertEquals(2.5, GephiControlService.convertLayoutProperty("2.5", double.class));
+        assertEquals(true, GephiControlService.convertLayoutProperty("true", boolean.class));
+        assertEquals(1.5f, GephiControlService.convertLayoutProperty("1.5", float.class));
+    }
+
+    @Test
+    void convertLayoutPropertyReturnsNullOnGarbage() {
+        assertNull(GephiControlService.convertLayoutProperty("xyz", int.class));
+    }
+}
