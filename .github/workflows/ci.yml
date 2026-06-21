@@ -29,12 +29,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install
+      - name: Install dependencies
         working-directory: mcp-server
-        run: pip install -e . pytest pytest-asyncio ruff
+        # Install runtime + dev deps only (not the package itself) so CI never depends on
+        # the build backend; `python -m pytest` puts the cwd on sys.path to import gephi_mcp.
+        run: pip install mcp httpx pytest pytest-asyncio ruff
       - name: Lint
         working-directory: mcp-server
         run: ruff check .
       - name: Test
         working-directory: mcp-server
-        run: pytest -q
+        run: python -m pytest -q
