@@ -122,6 +122,61 @@ public class GephiControlService {
         return ws != null ? getGraphController().getGraphModel(ws) : null;
     }
 
+    // ─── Write-lock acquisition (VizEngine-deadlock-safe) ────────────────
+
+    private static volatile java.lang.reflect.Field WRITE_LOCK_FIELD;
+
+    /**
+     * Acquire the graph write lock by polling a non-queuing tryLock() instead of the
+     * blocking writeLock(). Gephi's OpenGL VizEngine runs a concurrent "world updater"
+     * that holds read locks while join()-ing on sub-tasks that also need read locks; a
+     * writer parked indefinitely in the lock's wait queue blocks those sub-readers (writer
+     * preference) and deadlocks the renderer permanently (the chronic macOS hang).
+     *
+     * We instead use a SHORT timed tryLock: it queues only briefly, so it still gets
+     * writer-preference and acquires even while the renderer reads near-continuously
+     * (e.g. right after a layout) — but if it lands in the nested-read window it times out,
+     * dequeues, lets the renderer drain, and retries. So it can never wedge. Once we hold
+     * the lock, any Gephi-internal writeLock() on this same thread (setVisibleView, etc.)
+     * re-enters for free, which is why callers wrap those calls too. Falls back to the plain
+     * blocking lock only if the underlying lock can't be reflected. Throws after ~15s, which
+     * callers turn into a "graph busy" error instead of hanging forever.
+     */
+    private static void lockWrite(Graph g) {
+        java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl = writeLockHandle(g);
+        if (wl == null) { g.writeLock(); return; }
+        long deadline = System.nanoTime() + 15_000_000_000L;
+        try {
+            while (!wl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                if (System.nanoTime() > deadline)
+                    throw new RuntimeException("Graph is busy (renderer holds the lock); please retry");
+                Thread.sleep(5);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while acquiring the write lock");
+        }
+    }
+
+    /** The underlying ReentrantReadWriteLock.WriteLock behind Graph.getLock(), or null if unreachable. */
+    private static java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock writeLockHandle(Graph g) {
+        try {
+            org.gephi.graph.api.GraphLock lock = g.getLock();
+            if (lock == null) return null;
+            java.lang.reflect.Field f = WRITE_LOCK_FIELD;
+            if (f == null || !f.getDeclaringClass().isInstance(lock)) {
+                f = lock.getClass().getDeclaredField("writeLock");
+                f.setAccessible(true);
+                WRITE_LOCK_FIELD = f;
+            }
+            Object v = f.get(lock);
+            return (v instanceof java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock)
+                ? (java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock) v : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** Find an edge between two nodes, checking all edge types (directed type 1 and undirected type 0). */
     static Edge findEdge(Graph g, Node source, Node target) {
         Edge e = g.getEdge(source, target, 1);  // directed
@@ -349,7 +404,7 @@ public class GephiControlService {
     static JsonObject addNodeToModel(GraphModel gm, String id, String label, Map<String, Object> attrs) {
         try {
             Graph g = gm.getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 if (g.getNode(id) != null) return error("Node exists: " + id);
                 Node n = gm.factory().newNode(id);
@@ -381,7 +436,7 @@ public class GephiControlService {
         try {
             Graph g = gm.getGraph();
             int added = 0, skipped = 0;
-            g.writeLock();
+            lockWrite(g);
             try {
                 for (Map<String, Object> nd : nodes) {
                     String id = (String) nd.get("id");
@@ -417,7 +472,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = getGraphController().getGraphModel(ws).getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node n = g.getNode(id);
                 if (n == null) return error("Node not found: " + id);
@@ -435,7 +490,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = getGraphController().getGraphModel(ws).getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 int removed = 0, notFound = 0;
                 for (String id : ids) {
@@ -544,7 +599,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = currentGraphModel().getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node n = g.getNode(id);
                 if (n == null) return error("Node not found: " + id);
@@ -559,7 +614,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = currentGraphModel().getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node n = g.getNode(id);
                 if (n == null) return error("Node not found: " + id);
@@ -575,7 +630,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = currentGraphModel().getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 int set = 0, notFound = 0;
                 for (Map<String, Object> pos : positions) {
@@ -607,7 +662,7 @@ public class GephiControlService {
     static JsonObject addEdgeToModel(GraphModel gm, String src, String tgt, Double weight, boolean directed) {
         try {
             Graph g = gm.getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node s = g.getNode(src), t = g.getNode(tgt);
                 if (s == null) return error("Source not found: " + src);
@@ -631,7 +686,7 @@ public class GephiControlService {
         try {
             Graph g = gm.getGraph();
             int added = 0, skipped = 0;
-            g.writeLock();
+            lockWrite(g);
             try {
                 for (Map<String, Object> ed : edges) {
                     String src = (String) ed.get("source");
@@ -669,7 +724,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = currentGraphModel().getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node s = g.getNode(source), t = g.getNode(target);
                 if (s == null || t == null) return error("Node not found");
@@ -686,7 +741,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = currentGraphModel().getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node s = g.getNode(source), t = g.getNode(target);
                 if (s == null || t == null) return error("Node not found");
@@ -703,7 +758,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph g = currentGraphModel().getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node s = g.getNode(source), t = g.getNode(target);
                 if (s == null || t == null) return error("Node not found");
@@ -849,7 +904,7 @@ public class GephiControlService {
             Class<?> cls = typeStringToClass(type);
             if (cls == null) return error("Unknown type: " + type + ". Use: string, integer, double, float, boolean, long");
             Graph g = gm.getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 if (table.getColumn(name) != null) return error("Column already exists: " + name);
                 table.addColumn(name, cls);
@@ -864,7 +919,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node n = g.getNode(id);
                 if (n == null) return error("Node not found: " + id);
@@ -882,7 +937,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 int set = 0, notFound = 0;
                 for (Map<String, Object> update : updates) {
@@ -913,7 +968,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 Node s = g.getNode(source), t = g.getNode(target);
                 if (s == null || t == null) return error("Node not found");
@@ -981,7 +1036,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph graph = currentGraphModel().getGraph();
-            graph.writeLock();
+            lockWrite(graph);
             try {
                 Node n = graph.getNode(id);
                 if (n == null) return error("Node not found: " + id);
@@ -996,7 +1051,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph graph = currentGraphModel().getGraph();
-            graph.writeLock();
+            lockWrite(graph);
             try {
                 Node n = graph.getNode(id);
                 if (n == null) return error("Node not found: " + id);
@@ -1012,7 +1067,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             try {
                 Graph graph = currentGraphModel().getGraph();
-                graph.writeLock();
+                lockWrite(graph);
                 try {
                     Node s = graph.getNode(source), t = graph.getNode(target);
                     if (s == null || t == null) return error("Node not found");
@@ -1030,7 +1085,7 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             Graph graph = currentGraphModel().getGraph();
-            graph.writeLock();
+            lockWrite(graph);
             try {
                 int set = 0, notFound = 0;
                 for (Map<String, Object> nc : nodeColors) {
@@ -1060,7 +1115,7 @@ public class GephiControlService {
             try {
                 Graph graph = currentGraphModel().getGraph();
                 Color defaultColor = new Color(r, g, b);
-                graph.writeLock();
+                lockWrite(graph);
                 try {
                     for (Node n : graph.getNodes()) {
                         n.setColor(defaultColor);
@@ -1114,7 +1169,7 @@ public class GephiControlService {
                 }
 
                 int colored = 0;
-                graph.writeLock();
+                lockWrite(graph);
                 try {
                     for (Node n : graph.getNodes()) {
                         Object v = n.getAttribute(col);
@@ -1173,7 +1228,7 @@ public class GephiControlService {
                 if (range == 0) range = 1;
 
                 int colored = 0;
-                graph.writeLock();
+                lockWrite(graph);
                 try {
                     for (Node n : graph.getNodes()) {
                         Object v = n.getAttribute(col);
@@ -1216,7 +1271,7 @@ public class GephiControlService {
                 if (range == 0) range = 1;
 
                 int sized = 0;
-                graph.writeLock();
+                lockWrite(graph);
                 try {
                     for (Node n : graph.getNodes()) {
                         Object v = n.getAttribute(col);
@@ -1569,7 +1624,7 @@ public class GephiControlService {
                     r.addProperty("dry_run", true);
                     return r;
                 }
-                g.writeLock();
+                lockWrite(g);
                 try { for (Node n : toRemove) g.removeNode(n); }
                 finally { g.writeUnlock(); }
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
@@ -1603,7 +1658,7 @@ public class GephiControlService {
                     r.addProperty("dry_run", true);
                     return r;
                 }
-                g.writeLock();
+                lockWrite(g);
                 try { for (Edge e : toRemove) g.removeEdge(e); }
                 finally { g.writeUnlock(); }
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
@@ -2102,7 +2157,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
-            g.writeLock();
+            lockWrite(g);
             try {
                 int nodeCount = g.getNodeCount();
                 int edgeCount = g.getEdgeCount();
@@ -2122,7 +2177,7 @@ public class GephiControlService {
             try {
                 Graph g = currentGraphModel().getGraph();
                 java.util.List<Node> isolates = new java.util.ArrayList<>();
-                g.writeLock();
+                lockWrite(g);
                 try {
                     for (Node n : g.getNodes().toArray()) {
                         if (g.getDegree(n) == 0) isolates.add(n);
@@ -2172,7 +2227,7 @@ public class GephiControlService {
 
                 // Remove nodes not in keep set
                 java.util.List<Node> toRemove = new java.util.ArrayList<>();
-                g.writeLock();
+                lockWrite(g);
                 try {
                     for (Node n : g.getNodes().toArray()) {
                         if (!keep.contains(n)) toRemove.add(n);
@@ -2258,7 +2313,7 @@ public class GephiControlService {
                         int comp = v instanceof Number ? ((Number) v).intValue() : -1;
                         if (comp != gc) toRemove.add(n);
                     }
-                    g.writeLock();
+                    lockWrite(g);
                     try { for (Node n : toRemove) g.removeNode(n); }
                     finally { g.writeUnlock(); }
                     PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
@@ -2320,8 +2375,13 @@ public class GephiControlService {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             GraphModel gm = currentGraphModel();
-            // Reset visible view to the main view (show all nodes/edges)
-            gm.setVisibleView(null);
+            Graph g = gm.getGraph();
+            // setVisibleView() takes Gephi's own blocking write lock; hold our deadlock-safe
+            // lock first so that call re-enters instead of queuing behind the renderer.
+            lockWrite(g);
+            try {
+                gm.setVisibleView(null);
+            } finally { g.writeUnlock(); }
             return success("Filters reset - full graph view restored");
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }

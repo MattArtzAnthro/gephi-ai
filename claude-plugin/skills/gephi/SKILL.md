@@ -106,10 +106,11 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 
 ## Key Gotchas
 
+- **macOS render deadlock — work in one pass (most important).** On macOS, Gephi's OpenGL view (the concurrent VizEngine "World Updater") and the Data Laboratory table both hold the graph's read lock almost continuously while rendering, and Gephi's own write operations block on it. A burst of API **writes against a large, actively-rendering graph can deadlock Gephi** (every write call times out; only `gephi_health_check` still answers). This is a Gephi-core limitation, not the plugin — the v1.1.x plugin hardens its own locking so a single clean pass works, but it can't fix Gephi's renderer. **Working envelope:** do **build/import → compute stats → style → layout → export** as one focused sequence, then stop. Avoid long interactive sessions that keep mutating an already-laid-out, on-screen graph. Keep graphs reasonably sized. If a write call times out, the view has deadlocked — **restart Gephi** (fully quit + reopen) to recover; there is no other recovery.
 - **Filters are destructive** — they permanently remove nodes/edges. Save project first.
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
-- **Workspace switching can deadlock** — if API hangs after workspace switch, Gephi needs restart.
-- **`gephi_extract_giant_component` can deadlock Gephi** — avoid it. To contain outlier nodes that blow out the bounding box, use high FA2 gravity (5–8) instead. This keeps all nodes in frame without any destructive filter.
+- **Workspace switching can deadlock** — same render-deadlock cause as above; if the API hangs after a workspace switch, restart Gephi.
+- **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer high FA2 gravity (5–8) over destructive filters.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
 - **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
 - **For dark backgrounds, use a vibrant/saturated color palette** — the default pastel palette is designed for white. Pastels on dark backgrounds are barely visible. Use saturated colors like `[255,90,70]` (coral), `[60,150,255]` (blue), `[140,230,70]` (lime) etc.

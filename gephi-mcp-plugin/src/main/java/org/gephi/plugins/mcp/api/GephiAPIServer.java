@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.1.1");
+            result.addProperty("version", "1.1.3");
             result.addProperty("status", "running");
             return result;
         }
