@@ -138,6 +138,20 @@ class GraphOpsTest {
     }
 
     @Test
+    void addColumnCreatesAndRejectsDuplicateAndBadType() {
+        GraphModel gm = newModel();
+        assertTrue(GephiControlService.addColumnToModel(gm, "weight2", "double", "node")
+            .get("success").getAsBoolean());
+        assertNotNull(gm.getNodeTable().getColumn("weight2"));
+        // duplicate name -> error
+        assertFalse(GephiControlService.addColumnToModel(gm, "weight2", "double", "node")
+            .get("success").getAsBoolean());
+        // unknown type -> error
+        assertFalse(GephiControlService.addColumnToModel(gm, "other", "notatype", "node")
+            .get("success").getAsBoolean());
+    }
+
+    @Test
     void buildCsvQuotesFieldsContainingSeparator() {
         GraphModel gm = newModel();
         Map<String, Object> n = new LinkedHashMap<>();

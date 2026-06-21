@@ -832,15 +832,28 @@ public class GephiControlService {
     }
 
     public JsonObject addColumn(String name, String type, String target) {
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No project open");
+        return addColumnToModel(currentGraphModel(), name, type, target);
+    }
+
+    /**
+     * Add a column under the graph write lock. Taking the lock matters for ordering:
+     * ensureColumnAndSet() also adds columns while holding the write lock, so doing it
+     * lock-free here created an A-holds-graph/wants-column vs B-holds-column/wants-graph
+     * deadlock under concurrent requests. Package-private + static for unit testing.
+     */
+    static JsonObject addColumnToModel(GraphModel gm, String name, String type, String target) {
         try {
-            Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
             Table table = "edge".equalsIgnoreCase(target) ? gm.getEdgeTable() : gm.getNodeTable();
-            if (table.getColumn(name) != null) return error("Column already exists: " + name);
             Class<?> cls = typeStringToClass(type);
             if (cls == null) return error("Unknown type: " + type + ". Use: string, integer, double, float, boolean, long");
-            table.addColumn(name, cls);
+            Graph g = gm.getGraph();
+            g.writeLock();
+            try {
+                if (table.getColumn(name) != null) return error("Column already exists: " + name);
+                table.addColumn(name, cls);
+            } finally { g.writeUnlock(); }
             return success("Column '" + name + "' added");
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
