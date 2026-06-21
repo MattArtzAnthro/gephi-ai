@@ -12,20 +12,22 @@ Claude Code Skill:
 Developed by Matt Artz (https://www.mattartz.me)
 """
 
+import asyncio
 import json
 import logging
-from typing import Optional, List, Dict, Any
-from enum import Enum
+import os
+from typing import Any
 
 import httpx
-from pydantic import BaseModel, Field, ConfigDict
 from mcp.server.fastmcp import FastMCP
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gephi_mcp")
 
-GEPHI_API_URL = "http://127.0.0.1:8080"
-REQUEST_TIMEOUT = 60.0
+# Both are overridable via environment so the server can target a non-default
+# Gephi host/port or a slower machine without code changes.
+GEPHI_API_URL = os.environ.get("GEPHI_API_URL", "http://127.0.0.1:8080")
+REQUEST_TIMEOUT = float(os.environ.get("GEPHI_REQUEST_TIMEOUT", "60.0"))
 
 mcp = FastMCP("gephi_mcp")
 
@@ -38,8 +40,8 @@ class GephiClient:
         self.timeout = REQUEST_TIMEOUT
 
     async def request(self, method: str, endpoint: str,
-                      params: Optional[Dict[str, Any]] = None,
-                      json_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                      params: dict[str, Any] | None = None,
+                      json_data: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -63,7 +65,7 @@ gephi = GephiClient()
 
 # ==================== Response Formatting ====================
 
-def fmt(data: Dict[str, Any]) -> str:
+def fmt(data: dict[str, Any]) -> str:
     return json.dumps(data, indent=2)
 
 
@@ -84,7 +86,7 @@ async def gephi_create_project(params: dict) -> str:
     """Create a new empty Gephi project/workspace.
 
     Args:
-        params: CreateProjectInput with optional project name
+        params: {name: str (optional)} - project name, defaults to "New Project"
     """
     return fmt(await gephi.request("POST", "/project/new", json_data=params or {}))
 
@@ -93,7 +95,7 @@ async def gephi_open_project(params: dict) -> str:
     """Open an existing Gephi project file (.gephi).
 
     Args:
-        params: OpenProjectInput with file path
+        params: {file: str} - absolute path to the .gephi file
     """
     return fmt(await gephi.request("POST", "/project/open", json_data=params))
 
@@ -102,7 +104,7 @@ async def gephi_save_project(params: dict) -> str:
     """Save the current Gephi project to a file.
 
     Args:
-        params: SaveProjectInput with destination file path
+        params: {file: str} - absolute destination path for the .gephi file
     """
     return fmt(await gephi.request("POST", "/project/save", json_data=params))
 
@@ -113,7 +115,7 @@ async def gephi_get_project_info(params: dict) -> str:
     Returns workspace status, node/edge counts, and graph type information.
 
     Args:
-        params: GetProjectInfoInput for response format
+        params: {} - no parameters
     """
     return fmt(await gephi.request("GET", "/project/info"))
 
@@ -186,7 +188,7 @@ async def gephi_add_node(params: dict) -> str:
     running a layout algorithm.
 
     Args:
-        params: AddNodeInput with node ID, label, and attributes
+        params: {id: str, label: str (optional), attributes: {key: value, ...} (optional)}
     """
     return fmt(await gephi.request("POST", "/graph/node/add", json_data=params))
 
@@ -195,10 +197,11 @@ async def gephi_add_nodes(params: dict) -> str:
     """Add multiple nodes to the graph in a single batch operation.
 
     More efficient than adding nodes one at a time for large datasets.
-    Nodes with duplicate IDs will be skipped.
+    Nodes with duplicate IDs will be skipped. Per-node `attributes` are applied
+    just like gephi_add_node.
 
     Args:
-        params: AddNodesInput with list of node data
+        params: {nodes: [{id: str, label: str (optional), attributes: {key: value} (optional)}, ...]}
     """
     return fmt(await gephi.request("POST", "/graph/nodes/add", json_data=params))
 
@@ -210,7 +213,7 @@ async def gephi_remove_node(params: dict) -> str:
     connected to this node will also be removed.
 
     Args:
-        params: RemoveNodeInput with node ID
+        params: {id: str}
     """
     node_id = params.get("id", "")
     return fmt(await gephi.request("DELETE", f"/graph/node/{node_id}"))
@@ -232,7 +235,7 @@ async def gephi_query_nodes(params: dict) -> str:
     Supports pagination for large graphs.
 
     Args:
-        params: QueryNodesInput with optional filters and pagination
+        params: {limit: int (default 100), offset: int (default 0)}
     """
     query_params = {"limit": params.get("limit", 100), "offset": params.get("offset", 0)}
     return fmt(await gephi.request("GET", "/graph/nodes", params=query_params))
@@ -287,7 +290,7 @@ async def gephi_add_edge(params: dict) -> str:
     must already exist in the graph.
 
     Args:
-        params: AddEdgeInput with source, target, weight, and direction
+        params: {source: str, target: str, weight: float (optional, default 1.0), directed: bool (optional, default true)}
     """
     return fmt(await gephi.request("POST", "/graph/edge/add", json_data=params))
 
@@ -296,10 +299,11 @@ async def gephi_add_edges(params: dict) -> str:
     """Add multiple edges to the graph in a single batch operation.
 
     More efficient than adding edges one at a time. Edges referencing
-    non-existent nodes will be skipped.
+    non-existent nodes (or duplicate edges) will be skipped. Per-edge
+    `directed`, `label`, and `attributes` are honored like gephi_add_edge.
 
     Args:
-        params: AddEdgesInput with list of edge data
+        params: {edges: [{source: str, target: str, weight: float (optional), directed: bool (optional, default true), label: str (optional), attributes: {key: value} (optional)}, ...]}
     """
     return fmt(await gephi.request("POST", "/graph/edges/add", json_data=params))
 
@@ -350,7 +354,7 @@ async def gephi_get_graph_stats(params: dict) -> str:
     Returns node count, edge count, density, average degree, and graph type.
 
     Args:
-        params: GetGraphStatsInput for response format
+        params: {} - no parameters
     """
     return fmt(await gephi.request("GET", "/graph/stats"))
 
@@ -517,13 +521,12 @@ async def gephi_run_layout(params: dict) -> str:
     if not sync or not result.get("success"):
         return fmt(result)
     # Poll until layout stops
-    import asyncio
     for _ in range(300):  # max ~5 minutes at 1s intervals
         await asyncio.sleep(1)
         status = await gephi.request("GET", "/layout/status")
         if not status.get("running", True):
             result["status"] = "completed"
-            result["message"] = f"Layout finished after polling"
+            result["message"] = "Layout finished after polling"
             return fmt(result)
     result["status"] = "timeout"
     result["message"] = "Layout still running after 5 minutes"
@@ -534,7 +537,7 @@ async def gephi_stop_layout(params: dict) -> str:
     """Stop a currently running layout algorithm.
 
     Args:
-        params: StopLayoutInput for response format
+        params: {} - no parameters
     """
     return fmt(await gephi.request("POST", "/layout/stop"))
 
@@ -543,7 +546,7 @@ async def gephi_get_layout_status(params: dict) -> str:
     """Check if a layout algorithm is currently running.
 
     Args:
-        params: GetLayoutStatusInput for response format
+        params: {} - no parameters
     """
     return fmt(await gephi.request("GET", "/layout/status"))
 
@@ -552,7 +555,7 @@ async def gephi_get_available_layouts(params: dict) -> str:
     """Get list of available layout algorithms.
 
     Args:
-        params: GetAvailableLayoutsInput for response format
+        params: {} - no parameters
     """
     return fmt(await gephi.request("GET", "/layout/available"))
 
@@ -590,7 +593,7 @@ async def gephi_compute_modularity(params: dict) -> str:
     Results are stored in node attribute 'modularity_class'.
 
     Args:
-        params: ComputeModularityInput with resolution parameter
+        params: {resolution: float (optional, default 1.0)} - higher values yield fewer, larger communities
     """
     return fmt(await gephi.request("POST", "/statistics/modularity", json_data=params or {}))
 
@@ -602,7 +605,7 @@ async def gephi_compute_degree(params: dict) -> str:
     Results are stored in node attributes 'degree', 'indegree', 'outdegree'.
 
     Args:
-        params: ComputeDegreeInput for response format
+        params: {} - no parameters
     """
     return fmt(await gephi.request("POST", "/statistics/degree"))
 
@@ -827,7 +830,7 @@ async def gephi_export_gexf(params: dict) -> str:
     node/edge attributes, positions, and visualization properties.
 
     Args:
-        params: ExportGexfInput with output file path
+        params: {file: str} - absolute output path
     """
     return fmt(await gephi.request("POST", "/export/gexf", json_data=params))
 
@@ -839,7 +842,7 @@ async def gephi_export_png(params: dict) -> str:
     Run a layout algorithm first to position nodes meaningfully.
 
     Args:
-        params: ExportPngInput with file path and dimensions
+        params: {file: str, width: int (optional, default 1920), height: int (optional, default 1080)}
     """
     return fmt(await gephi.request("POST", "/export/png", json_data=params))
 
@@ -892,7 +895,7 @@ async def gephi_import_gexf(params: dict) -> str:
     The imported data is merged with any existing graph.
 
     Args:
-        params: ImportGexfInput with source file path
+        params: {file: str} - absolute path to the GEXF file
     """
     return fmt(await gephi.request("POST", "/import/gexf", json_data=params))
 
@@ -918,7 +921,9 @@ async def gephi_import_csv(params: dict) -> str:
 async def gephi_import_file(params: dict) -> str:
     """Import a graph from any supported file format (auto-detected by extension).
 
-    Supports: GEXF, GraphML, GML, CSV, DOT, Pajek, and more.
+    Supports: GEXF, GraphML, GML, CSV, DOT, Pajek, and more. Imported node sizes
+    are capped at 30 so a viz:size from the source file can't render nodes
+    enormous; re-size afterward with gephi_size_by_ranking if needed.
 
     Args:
         params: {file: str}

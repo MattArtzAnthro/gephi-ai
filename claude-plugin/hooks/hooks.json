@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__gephi-mcp__gephi_add_nodes|mcp__gephi-mcp__gephi_add_edges|mcp__gephi-mcp__gephi_import_file|mcp__gephi-mcp__gephi_import_gexf|mcp__gephi-mcp__gephi_import_graphml|mcp__gephi-mcp__gephi_import_csv",
+        "matcher": "mcp__gephi-mcp__gephi_add_node|mcp__gephi-mcp__gephi_add_nodes|mcp__gephi-mcp__gephi_add_edge|mcp__gephi-mcp__gephi_add_edges|mcp__gephi-mcp__gephi_import_file|mcp__gephi-mcp__gephi_import_gexf|mcp__gephi-mcp__gephi_import_graphml|mcp__gephi-mcp__gephi_import_csv|mcp__gephi-mcp__gephi_clear_graph|mcp__gephi-mcp__gephi_run_layout",
         "hooks": [
           {
             "type": "command",

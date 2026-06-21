@@ -33,10 +33,15 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 73 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 76 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 All three must be installed. Gephi Desktop must be running before using any tools.
+
+> **Security note:** the plugin's HTTP API binds to `127.0.0.1` only, validates the
+> request `Host` header (DNS-rebinding defense), and sends no CORS headers — it is
+> reachable only by local processes such as the MCP server, never by a web page.
+> It is not authenticated, so do not expose port 8080 beyond localhost.
 
 ## Setup
 
@@ -56,7 +61,7 @@ cd gephi-mcp-plugin
 mvn clean package
 ```
 
-Then in Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select `target/nbm/gephi-mcp-1.0.0.nbm`.
+Then in Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select `target/nbm/gephi-mcp-1.1.0.nbm`.
 
 Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
@@ -182,7 +187,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 73 tools
+- **references/tool-reference.md** — Complete API reference for all 76 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

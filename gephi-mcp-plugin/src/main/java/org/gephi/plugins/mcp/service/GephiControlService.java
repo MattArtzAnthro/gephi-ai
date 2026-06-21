@@ -130,6 +130,24 @@ public class GephiControlService {
         return e;
     }
 
+    /**
+     * Locate a layout builder by name: prefer an exact (case-insensitive) match,
+     * fall back to the first substring match. Avoids "force" silently selecting
+     * the wrong ForceAtlas variant, or a short query matching an unintended layout.
+     */
+    private Layout findLayout(String algo) {
+        if (algo == null || algo.isEmpty()) return null;
+        String needle = algo.toLowerCase();
+        LayoutBuilder substringMatch = null;
+        for (LayoutBuilder b : Lookup.getDefault().lookupAll(LayoutBuilder.class)) {
+            String name = b.getName();
+            if (name == null) continue;
+            if (name.equalsIgnoreCase(algo)) return b.buildLayout();
+            if (substringMatch == null && name.toLowerCase().contains(needle)) substringMatch = b;
+        }
+        return substringMatch != null ? substringMatch.buildLayout() : null;
+    }
+
     // ─── Project Management ──────────────────────────────────────────
 
     public JsonObject createProject(String name) {
@@ -349,6 +367,14 @@ public class GephiControlService {
                     n.setY((float)(Math.random() * 1000 - 500));
                     n.setSize(10f);
                     g.addNode(n);
+                    Object attrsObj = nd.get("attributes");
+                    if (attrsObj instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> attrs = (Map<String, Object>) attrsObj;
+                        for (Map.Entry<String, Object> e : attrs.entrySet()) {
+                            ensureColumnAndSet(gm.getNodeTable(), n, e.getKey(), e.getValue());
+                        }
+                    }
                     added++;
                 }
                 JsonObject r = new JsonObject();
@@ -557,7 +583,7 @@ public class GephiControlService {
                 if (s == null) return error("Source not found: " + src);
                 if (t == null) return error("Target not found: " + tgt);
                 if (findEdge(g, s, t) != null) return error("Edge exists");
-                Edge e = gm.factory().newEdge(s, t, directed ? 1 : 0, weight != null ? weight : 1.0, true);
+                Edge e = gm.factory().newEdge(s, t, directed ? 1 : 0, weight != null ? weight : 1.0, directed);
                 g.addEdge(e);
                 return success("Edge added");
             } finally { g.writeUnlock(); }
@@ -580,8 +606,19 @@ public class GephiControlService {
                     Node s = g.getNode(src), t = g.getNode(tgt);
                     if (s == null || t == null || findEdge(g, s, t) != null) { skipped++; continue; }
                     Double w = ed.containsKey("weight") ? ((Number) ed.get("weight")).doubleValue() : 1.0;
-                    Edge e = gm.factory().newEdge(s, t, 1, w, true);
+                    boolean directed = !ed.containsKey("directed") || Boolean.TRUE.equals(ed.get("directed"));
+                    Edge e = gm.factory().newEdge(s, t, directed ? 1 : 0, w, directed);
+                    Object label = ed.get("label");
+                    if (label != null) e.setLabel(label.toString());
                     g.addEdge(e);
+                    Object attrsObj = ed.get("attributes");
+                    if (attrsObj instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> attrs = (Map<String, Object>) attrsObj;
+                        for (Map.Entry<String, Object> en : attrs.entrySet()) {
+                            ensureColumnAndSet(gm.getEdgeTable(), e, en.getKey(), en.getValue());
+                        }
+                    }
                     added++;
                 }
                 JsonObject r = new JsonObject();
@@ -928,12 +965,15 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             try {
                 Graph graph = currentGraphModel().getGraph();
-                Node s = graph.getNode(source), t = graph.getNode(target);
-                if (s == null || t == null) return error("Node not found");
-                Edge e = findEdge(graph, s, t);
-                if (e == null) return error("Edge not found");
-                e.setColor(new Color(r, g, b, a));
-                return success("Edge color set");
+                graph.writeLock();
+                try {
+                    Node s = graph.getNode(source), t = graph.getNode(target);
+                    if (s == null || t == null) return error("Node not found");
+                    Edge e = findEdge(graph, s, t);
+                    if (e == null) return error("Edge not found");
+                    e.setColor(new Color(r, g, b, a));
+                    return success("Edge color set");
+                } finally { graph.writeUnlock(); }
             } catch (Exception e) { return error("Failed: " + e.getMessage()); }
         });
     }
@@ -973,11 +1013,13 @@ public class GephiControlService {
             try {
                 Graph graph = currentGraphModel().getGraph();
                 Color defaultColor = new Color(r, g, b);
-                Node[] allNodes = graph.getNodes().toArray();
-                for (Node n : allNodes) {
-                    n.setColor(defaultColor);
-                    n.setSize(size);
-                }
+                graph.writeLock();
+                try {
+                    for (Node n : graph.getNodes()) {
+                        n.setColor(defaultColor);
+                        n.setSize(size);
+                    }
+                } finally { graph.writeUnlock(); }
                 return success("Appearance reset for all nodes");
             } catch (Exception e) { return error("Failed: " + e.getMessage()); }
         });
@@ -1024,18 +1066,20 @@ public class GephiControlService {
                     }
                 }
 
-                Node[] allNodes = graph.getNodes().toArray();
                 int colored = 0;
-                for (Node n : allNodes) {
-                    Object v = n.getAttribute(col);
-                    if (v != null) {
-                        Color c = palette.get(v.toString());
-                        if (c != null) {
-                            n.setColor(c);
-                            colored++;
+                graph.writeLock();
+                try {
+                    for (Node n : graph.getNodes()) {
+                        Object v = n.getAttribute(col);
+                        if (v != null) {
+                            Color c = palette.get(v.toString());
+                            if (c != null) {
+                                n.setColor(c);
+                                colored++;
+                            }
                         }
                     }
-                }
+                } finally { graph.writeUnlock(); }
                 JsonObject r = success("Colored " + colored + " nodes by " + columnName);
                 r.addProperty("partitions", palette.size());
                 return r;
@@ -1053,8 +1097,10 @@ public class GephiControlService {
                 Column col = gm.getNodeTable().getColumn(columnName);
                 if (col == null) return error("Column not found: " + columnName);
 
-                // Find min/max values
-                double min = Double.MAX_VALUE, max = Double.MIN_VALUE;
+                // Find min/max values. Init with infinities (not Double.MIN_VALUE,
+                // which is the smallest *positive* double and silently breaks
+                // columns whose values are all negative).
+                double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
                 Node[] allNodes = graph.getNodes().toArray();
                 for (Node n : allNodes) {
                     Object v = n.getAttribute(col);
@@ -1065,26 +1111,29 @@ public class GephiControlService {
                     }
                 }
 
-                if (min == Double.MAX_VALUE) return error("No numeric values in column " + columnName);
+                if (min == Double.POSITIVE_INFINITY) return error("No numeric values in column " + columnName);
                 double range = max - min;
                 if (range == 0) range = 1;
 
                 int colored = 0;
-                for (Node n : allNodes) {
-                    Object v = n.getAttribute(col);
-                    if (v instanceof Number) {
-                        double t = (((Number) v).doubleValue() - min) / range;
-                        int r = (int)(rMin + t * (rMax - rMin));
-                        int g = (int)(gMin + t * (gMax - gMin));
-                        int b = (int)(bMin + t * (bMax - bMin));
-                        n.setColor(new Color(
-                            Math.max(0, Math.min(255, r)),
-                            Math.max(0, Math.min(255, g)),
-                            Math.max(0, Math.min(255, b))
-                        ));
-                        colored++;
+                graph.writeLock();
+                try {
+                    for (Node n : allNodes) {
+                        Object v = n.getAttribute(col);
+                        if (v instanceof Number) {
+                            double t = (((Number) v).doubleValue() - min) / range;
+                            int r = (int)(rMin + t * (rMax - rMin));
+                            int g = (int)(gMin + t * (gMax - gMin));
+                            int b = (int)(bMin + t * (bMax - bMin));
+                            n.setColor(new Color(
+                                Math.max(0, Math.min(255, r)),
+                                Math.max(0, Math.min(255, g)),
+                                Math.max(0, Math.min(255, b))
+                            ));
+                            colored++;
+                        }
                     }
-                }
+                } finally { graph.writeUnlock(); }
                 JsonObject res = success("Colored " + colored + " nodes by ranking on " + columnName);
                 res.addProperty("min_value", min);
                 res.addProperty("max_value", max);
@@ -1103,7 +1152,8 @@ public class GephiControlService {
                 Column col = gm.getNodeTable().getColumn(columnName);
                 if (col == null) return error("Column not found: " + columnName);
 
-                double min = Double.MAX_VALUE, max = Double.MIN_VALUE;
+                // Init with infinities (not Double.MIN_VALUE — see colorByRanking).
+                double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
                 Node[] allNodes = graph.getNodes().toArray();
                 for (Node n : allNodes) {
                     Object v = n.getAttribute(col);
@@ -1114,19 +1164,22 @@ public class GephiControlService {
                     }
                 }
 
-                if (min == Double.MAX_VALUE) return error("No numeric values in column " + columnName);
+                if (min == Double.POSITIVE_INFINITY) return error("No numeric values in column " + columnName);
                 double range = max - min;
                 if (range == 0) range = 1;
 
                 int sized = 0;
-                for (Node n : allNodes) {
-                    Object v = n.getAttribute(col);
-                    if (v instanceof Number) {
-                        double t = (((Number) v).doubleValue() - min) / range;
-                        n.setSize((float)(minSize + t * (maxSize - minSize)));
-                        sized++;
+                graph.writeLock();
+                try {
+                    for (Node n : allNodes) {
+                        Object v = n.getAttribute(col);
+                        if (v instanceof Number) {
+                            double t = (((Number) v).doubleValue() - min) / range;
+                            n.setSize((float)(minSize + t * (maxSize - minSize)));
+                            sized++;
+                        }
                     }
-                }
+                } finally { graph.writeUnlock(); }
                 JsonObject res = success("Sized " + sized + " nodes by " + columnName);
                 res.addProperty("min_value", min);
                 res.addProperty("max_value", max);
@@ -1138,23 +1191,16 @@ public class GephiControlService {
     // ─── Layout ──────────────────────────────────────────────────────
 
     public JsonObject runLayout(String algo, int iterations) {
-        if (layoutRunning.get()) return error("Layout already running");
         try {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             GraphModel gm = getGraphController().getGraphModel(ws);
-            Layout layout = null;
-            for (LayoutBuilder b : Lookup.getDefault().lookupAll(LayoutBuilder.class)) {
-                if (b.getName().toLowerCase().contains(algo.toLowerCase())) {
-                    layout = b.buildLayout();
-                    break;
-                }
-            }
+            Layout layout = findLayout(algo);
             if (layout == null) return error("Layout not found: " + algo);
             layout.setGraphModel(gm);
             final Layout fl = layout;
             final int iters = iterations > 0 ? iterations : 1000;
-            layoutRunning.set(true);
+            if (!layoutRunning.compareAndSet(false, true)) return error("Layout already running");
             currentLayoutName = algo;
             layoutFuture = layoutExecutor.submit(() -> {
                 try {
@@ -1202,13 +1248,7 @@ public class GephiControlService {
 
     public JsonObject getLayoutProperties(String algo) {
         try {
-            Layout layout = null;
-            for (LayoutBuilder b : Lookup.getDefault().lookupAll(LayoutBuilder.class)) {
-                if (b.getName().toLowerCase().contains(algo.toLowerCase())) {
-                    layout = b.buildLayout();
-                    break;
-                }
-            }
+            Layout layout = findLayout(algo);
             if (layout == null) return error("Layout not found: " + algo);
             // Need a graph model for the layout to report properties
             Workspace ws = currentWorkspace();
@@ -1238,18 +1278,11 @@ public class GephiControlService {
     }
 
     public JsonObject setLayoutProperties(String algo, Map<String, Object> properties, int iterations) {
-        if (layoutRunning.get()) return error("Layout already running");
         try {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             GraphModel gm = currentGraphModel();
-            Layout layout = null;
-            for (LayoutBuilder b : Lookup.getDefault().lookupAll(LayoutBuilder.class)) {
-                if (b.getName().toLowerCase().contains(algo.toLowerCase())) {
-                    layout = b.buildLayout();
-                    break;
-                }
-            }
+            Layout layout = findLayout(algo);
             if (layout == null) return error("Layout not found: " + algo);
             layout.setGraphModel(gm);
 
@@ -1292,7 +1325,7 @@ public class GephiControlService {
             // Run layout with configured properties
             final Layout fl = layout;
             final int iters = iterations > 0 ? iterations : 1000;
-            layoutRunning.set(true);
+            if (!layoutRunning.compareAndSet(false, true)) return error("Layout already running");
             currentLayoutName = algo;
             layoutFuture = layoutExecutor.submit(() -> {
                 try {
@@ -1336,7 +1369,7 @@ public class GephiControlService {
             StatisticsBuilder matchedBuilder = null;
             for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
                 String name = sb.getName();
-                LOGGER.info("MCP: Found StatisticsBuilder: " + name + " (" + sb.getClass().getName() + ")");
+                LOGGER.fine("MCP: Found StatisticsBuilder: " + name + " (" + sb.getClass().getName() + ")");
                 if (name.equalsIgnoreCase(builderName) || sb.getClass().getSimpleName().toLowerCase().contains(builderName.toLowerCase())) {
                     matchedBuilder = sb;
                     break;
@@ -1489,7 +1522,9 @@ public class GephiControlService {
                     r.addProperty("dry_run", true);
                     return r;
                 }
-                for (Node n : toRemove) g.removeNode(n);
+                g.writeLock();
+                try { for (Node n : toRemove) g.removeNode(n); }
+                finally { g.writeUnlock(); }
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Filtered by degree [" + minDegree + ", " + maxDegree + "]");
@@ -1521,7 +1556,9 @@ public class GephiControlService {
                     r.addProperty("dry_run", true);
                     return r;
                 }
-                for (Edge e : toRemove) g.removeEdge(e);
+                g.writeLock();
+                try { for (Edge e : toRemove) g.removeEdge(e); }
+                finally { g.writeUnlock(); }
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Filtered edges by weight [" + minWeight + ", " + maxWeight + "]");
@@ -1892,19 +1929,20 @@ public class GephiControlService {
 
             if (!"edges".equalsIgnoreCase(target)) {
                 // Export nodes
-                sb.append("Id").append(sep).append("Label");
+                sb.append(csv("Id", sep)).append(sep).append(csv("Label", sep));
                 for (Column col : gm.getNodeTable()) {
-                    if (!col.isProperty()) sb.append(sep).append(col.getTitle());
+                    if (!col.isProperty()) sb.append(sep).append(csv(col.getTitle(), sep));
                 }
                 sb.append("\n");
                 g.readLock();
                 try {
                     for (Node n : g.getNodes()) {
-                        sb.append(n.getId()).append(sep).append(n.getLabel() != null ? n.getLabel() : "");
+                        sb.append(csv(String.valueOf(n.getId()), sep)).append(sep)
+                          .append(csv(n.getLabel() != null ? n.getLabel() : "", sep));
                         for (Column col : gm.getNodeTable()) {
                             if (!col.isProperty()) {
                                 Object v = n.getAttribute(col);
-                                sb.append(sep).append(v != null ? v.toString() : "");
+                                sb.append(sep).append(csv(v != null ? v.toString() : "", sep));
                             }
                         }
                         sb.append("\n");
@@ -1914,19 +1952,21 @@ public class GephiControlService {
 
             if ("edges".equalsIgnoreCase(target) || "both".equalsIgnoreCase(target)) {
                 if (sb.length() > 0) sb.append("\n");
-                sb.append("Source").append(sep).append("Target").append(sep).append("Weight");
+                sb.append(csv("Source", sep)).append(sep).append(csv("Target", sep)).append(sep).append(csv("Weight", sep));
                 for (Column col : gm.getEdgeTable()) {
-                    if (!col.isProperty()) sb.append(sep).append(col.getTitle());
+                    if (!col.isProperty()) sb.append(sep).append(csv(col.getTitle(), sep));
                 }
                 sb.append("\n");
                 g.readLock();
                 try {
                     for (Edge e : g.getEdges()) {
-                        sb.append(e.getSource().getId()).append(sep).append(e.getTarget().getId()).append(sep).append(e.getWeight());
+                        sb.append(csv(String.valueOf(e.getSource().getId()), sep)).append(sep)
+                          .append(csv(String.valueOf(e.getTarget().getId()), sep)).append(sep)
+                          .append(csv(String.valueOf(e.getWeight()), sep));
                         for (Column col : gm.getEdgeTable()) {
                             if (!col.isProperty()) {
                                 Object v = e.getAttribute(col);
-                                sb.append(sep).append(v != null ? v.toString() : "");
+                                sb.append(sep).append(csv(v != null ? v.toString() : "", sep));
                             }
                         }
                         sb.append("\n");
@@ -1934,13 +1974,26 @@ public class GephiControlService {
                 } finally { g.readUnlock(); }
             }
 
-            java.io.FileWriter fw = new java.io.FileWriter(filePath);
-            fw.write(sb.toString());
-            fw.close();
+            try (java.io.Writer fw = new java.io.OutputStreamWriter(
+                    new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
+                fw.write(sb.toString());
+            }
             return success("Exported to " + filePath);
         } catch (Exception e) {
             return error("CSV export failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * RFC 4180 field quoting: wrap the value in double quotes (doubling any internal
+     * quote) when it contains the separator, a quote, or a line break. Without this,
+     * a label or attribute containing the separator silently corrupts the columns.
+     */
+    private String csv(String value, String sep) {
+        if (value == null) value = "";
+        boolean needsQuote = value.contains(sep) || value.contains("\"")
+                || value.contains("\n") || value.contains("\r");
+        return needsQuote ? "\"" + value.replace("\"", "\"\"") + "\"" : value;
     }
 
     // ─── Import ──────────────────────────────────────────────────────
@@ -2016,14 +2069,15 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             try {
                 Graph g = currentGraphModel().getGraph();
-                // Use toArray() to avoid holding iterator read lock
-                Node[] allNodes = g.getNodes().toArray();
                 java.util.List<Node> isolates = new java.util.ArrayList<>();
-                for (Node n : allNodes) {
-                    if (g.getDegree(n) == 0) isolates.add(n);
-                }
-                for (Node n : isolates) g.removeNode(n);
-                // Refresh preview so exports reflect the filtered graph
+                g.writeLock();
+                try {
+                    for (Node n : g.getNodes().toArray()) {
+                        if (g.getDegree(n) == 0) isolates.add(n);
+                    }
+                    for (Node n : isolates) g.removeNode(n);
+                } finally { g.writeUnlock(); }
+                // Refresh preview so exports reflect the filtered graph (outside the lock)
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Removed " + isolates.size() + " isolated nodes");
@@ -2066,13 +2120,15 @@ public class GephiControlService {
 
                 // Remove nodes not in keep set
                 java.util.List<Node> toRemove = new java.util.ArrayList<>();
-                Node[] allNodes = g.getNodes().toArray();
-                for (Node n : allNodes) {
-                    if (!keep.contains(n)) toRemove.add(n);
-                }
-                for (Node n : toRemove) g.removeNode(n);
+                g.writeLock();
+                try {
+                    for (Node n : g.getNodes().toArray()) {
+                        if (!keep.contains(n)) toRemove.add(n);
+                    }
+                    for (Node n : toRemove) g.removeNode(n);
+                } finally { g.writeUnlock(); }
 
-                // Refresh preview so exports reflect the filtered graph
+                // Refresh preview so exports reflect the filtered graph (outside the lock)
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
 
@@ -2150,7 +2206,9 @@ public class GephiControlService {
                         int comp = v instanceof Number ? ((Number) v).intValue() : -1;
                         if (comp != gc) toRemove.add(n);
                     }
-                    for (Node n : toRemove) g.removeNode(n);
+                    g.writeLock();
+                    try { for (Node n : toRemove) g.removeNode(n); }
+                    finally { g.writeUnlock(); }
                     PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                     if (pc != null) pc.refreshPreview(ws);
                     JsonObject r = success("Giant component extracted");

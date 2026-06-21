@@ -114,8 +114,10 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
 - **For dark backgrounds, use a vibrant/saturated color palette** — the default pastel palette is designed for white. Pastels on dark backgrounds are barely visible. Use saturated colors like `[255,90,70]` (coral), `[60,150,255]` (blue), `[140,230,70]` (lime) etc.
 - **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
-- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. Fix: use gravity 5–8 in FA2. Alternatively, post-process in Python: crop to content bounds and upscale to fill the canvas.
+- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. Fix: use gravity 5–8 in FA2. Post-process in Python using centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
 - **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
+- **Vivid source colors are required for white-background visibility** — "soft pastel" appearance on white comes from vivid node colors rendered at high opacity (not from literally pale colors). Pastel node colors (e.g., [227,185,216]) are near-white and disappear even at 90% opacity. Use fully saturated colors (e.g., [220,30,80], [150,30,220]) — at 100% opacity with thick edges they produce a vivid, readable graph. Reduce opacity only if the graph is dense enough that overlapping edges create unwanted solid blobs.
+- **White background KG final settings that work** — `edge.opacity: 100`, `edge.thickness: 6`, `node size min 8 max 30`, vivid modularity colors, centroid-crop the export. These settings produce clearly visible colored lines on white.
 
 ## Beautiful Graph Recipe
 
@@ -224,16 +226,42 @@ Image.fromarray(result).save('export-dark.png')
 
 **For labeled exports**, use white background (`background.color: "#FFFFFF"`). Labels are readable on white natively.
 
-**Crop and scale to fill canvas** (for graphs where outliers push content to a corner):
+**Crop and scale to fill canvas** — use centroid-based cropping, not alpha-threshold bounding box. Alpha-threshold fails on sparse graphs (outlier nodes at canvas edges push the bounding box to full canvas width). Centroid method finds the center of mass of visible content and crops a fixed window around it:
+
 ```python
-mask = alpha > 0.03
-rows, cols = np.any(mask, axis=1), np.any(mask, axis=0)
-r0,r1 = np.where(rows)[0][[0,-1]]
-c0,c1 = np.where(cols)[0][[0,-1]]
-pad = 150
-cropped = result[max(0,r0-pad):r1+pad, max(0,c0-pad):c1+pad]
-Image.fromarray(cropped).resize((3840, 2160), Image.LANCZOS).save('export-dark-scaled.png')
+dist = 255.0 - arr
+alpha = np.clip(np.max(dist, axis=2) / 255.0 * 1.8, 0, 1)
+mask = alpha > 0.12
+ys, xs = np.where(mask)
+cy, cx = int(ys.mean()), int(xs.mean())
+half_w, half_h = 900, 700   # tune to graph density
+img.crop((max(0,cx-half_w), max(0,cy-half_h),
+          min(W,cx+half_w), min(H,cy+half_h))).resize((3840,2160), Image.LANCZOS).save('export-zoom.png')
 ```
+
+- Adjust `half_w`/`half_h` based on how spread out the graph is (900/700 works for KGs with bounding box blowout)
+- For dark background compositing, apply the compositing step first, then centroid-crop the result
+
+## Community Labels (Post-Processing)
+
+Gephi has no native community label feature. Use Python to overlay one label per modularity class after export.
+
+**Workflow:**
+
+1. Run `gephi_query_nodes` (limit covers all nodes, attributes: `["modularity_class"]`) to get x/y positions and colors per node.
+2. Group by modularity class, compute centroid: `cx = mean(xs)`, `cy = mean(ys)`.
+3. Map Gephi coordinates → pixels using the full coordinate bounding box:
+   ```python
+   px = (cx - x_min) / (x_max - x_min) * W
+   py = H - (cy - y_min) / (y_max - y_min) * H   # Y axis is inverted
+   ```
+4. Draw text at those pixel positions using PIL, with a white outline (draw at ±2px offsets before drawing the colored label).
+5. Exclude any class whose centroid is a known outlier (single node pushed far from the main cluster by FA2 repulsion — centroid will be far outside the visible region).
+6. Compute the crop window from the min/max of in-frame centroid pixels + 320px margin each side, then resize to target canvas.
+
+**Gotchas:**
+- FA2 can push a single-node class (degree-1 node) to extreme coordinates (e.g. x = -233494). Always check centroids for outliers before cropping.
+- Community centroids land inside the edge mass, not cleanly beside clusters (hub-and-spoke topology means all clusters overlap in the center). This is a known limitation for this graph type.
 
 ### Troubleshooting
 - **Nodes in a ball**: gravity is too high OR layout parameters weren't applied (check you're using correct key names). Fix: run Random Layout (1 iteration), then re-run Phase 1.

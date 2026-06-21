@@ -31,10 +31,20 @@ public class GephiAPIServer extends NanoHTTPD {
 
         LOGGER.info("MCP API: " + method + " " + uri);
 
+        // Defense against DNS-rebinding: the API is reachable only from local
+        // processes (the MCP server is a local Python process, not a browser).
+        // Reject any request whose Host header points at a non-local name, which
+        // is how a malicious web page would try to reach 127.0.0.1 via a rebound
+        // hostname. Requests with no Host header (e.g. raw curl) are allowed.
+        if (!isLocalHost(session)) {
+            JsonObject error = new JsonObject();
+            error.addProperty("success", false);
+            error.addProperty("error", "Forbidden: requests must target localhost");
+            return newFixedLengthResponse(Response.Status.FORBIDDEN, "application/json", GSON.toJson(error));
+        }
+
         if (Method.OPTIONS.equals(method)) {
-            Response response = newFixedLengthResponse(Response.Status.OK, "text/plain", "");
-            addCorsHeaders(response);
-            return response;
+            return newFixedLengthResponse(Response.Status.OK, "text/plain", "");
         }
 
         try {
@@ -53,19 +63,27 @@ public class GephiAPIServer extends NanoHTTPD {
             Response.Status status = result.has("success") && result.get("success").getAsBoolean()
                 ? Response.Status.OK : Response.Status.BAD_REQUEST;
 
-            Response response = newFixedLengthResponse(status, "application/json", GSON.toJson(result));
-            addCorsHeaders(response);
-            return response;
+            return newFixedLengthResponse(status, "application/json", GSON.toJson(result));
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "API error", e);
             JsonObject error = new JsonObject();
             error.addProperty("success", false);
             error.addProperty("error", e.getMessage());
-            Response response = newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", GSON.toJson(error));
-            addCorsHeaders(response);
-            return response;
+            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", GSON.toJson(error));
         }
+    }
+
+    /** True when the request's Host header is absent or resolves to the loopback interface. */
+    private boolean isLocalHost(IHTTPSession session) {
+        String host = session.getHeaders().get("host");
+        if (host == null || host.isEmpty()) return true; // no Host header (non-browser client)
+        // Strip any port suffix; handle bare IPv6 "[::1]:8080" too.
+        String name = host;
+        int colon = name.lastIndexOf(':');
+        if (colon > -1 && name.indexOf(']') < colon) name = name.substring(0, colon);
+        name = name.replace("[", "").replace("]", "").trim().toLowerCase();
+        return name.equals("127.0.0.1") || name.equals("localhost") || name.equals("::1");
     }
 
     @SuppressWarnings("unchecked")
@@ -77,7 +95,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.0.0-beta");
+            result.addProperty("version", "1.1.0");
             result.addProperty("status", "running");
             return result;
         }
@@ -586,12 +604,6 @@ public class GephiAPIServer extends NanoHTTPD {
         result.addProperty("success", false);
         result.addProperty("error", message);
         return result;
-    }
-
-    private void addCorsHeaders(Response response) {
-        response.addHeader("Access-Control-Allow-Origin", "*");
-        response.addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        response.addHeader("Access-Control-Allow-Headers", "Content-Type");
     }
 
     public void startServer() throws IOException {

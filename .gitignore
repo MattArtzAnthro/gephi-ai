@@ -1,1 +1,9 @@
 gephi-mcp-plugin/target/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
