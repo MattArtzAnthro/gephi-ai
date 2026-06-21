@@ -61,7 +61,7 @@ cd gephi-mcp-plugin
 mvn clean package
 ```
 
-Then in Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select `target/nbm/gephi-mcp-1.1.0.nbm`.
+Then in Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select `target/nbm/gephi-mcp-1.1.1.nbm`.
 
 Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 

@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.1.0");
+            result.addProperty("version", "1.1.1");
             result.addProperty("status", "running");
             return result;
         }
@@ -616,7 +616,9 @@ public class GephiAPIServer extends NanoHTTPD {
     }
 
     public void startServer() throws IOException {
-        start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
+        // daemon=true: the listener thread must never keep the JVM alive on Gephi
+        // shutdown. With a non-daemon listener, a missed/slow stop() would hang close.
+        start(NanoHTTPD.SOCKET_READ_TIMEOUT, true);
         LOGGER.info("Gephi MCP API started on http://127.0.0.1:" + getListeningPort());
     }
 

@@ -69,14 +69,29 @@ public class Installer extends ModuleInstall {
     }
 
     private void stopServer() {
-        if (server != null) {
+        final GephiAPIServer s = server;
+        server = null;
+        if (s == null) return;
+        // Stop on a daemon watchdog so a slow/stuck socket close can never block
+        // Gephi's shutdown (which runs on the EDT). Wait at most 3s, then continue
+        // regardless; the daemon threads can't keep the JVM alive.
+        Thread stopper = new Thread(() -> {
             try {
-                server.stopServer();
-                server = null;
+                s.stopServer();
                 LOGGER.info("########## MCP server stopped ##########");
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Error stopping server", e);
             }
+        }, "MCP-Server-Stopper");
+        stopper.setDaemon(true);
+        stopper.start();
+        try {
+            stopper.join(3000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (stopper.isAlive()) {
+            LOGGER.warning("MCP server stop exceeded 3s; continuing Gephi shutdown");
         }
     }
 }
