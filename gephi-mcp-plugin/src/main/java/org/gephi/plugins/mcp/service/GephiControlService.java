@@ -130,22 +130,40 @@ public class GephiControlService {
         return e;
     }
 
-    /**
-     * Locate a layout builder by name: prefer an exact (case-insensitive) match,
-     * fall back to the first substring match. Avoids "force" silently selecting
-     * the wrong ForceAtlas variant, or a short query matching an unintended layout.
-     */
+    /** Locate a layout builder by name (see bestLayoutMatch for the matching rules). */
     private Layout findLayout(String algo) {
-        if (algo == null || algo.isEmpty()) return null;
-        String needle = algo.toLowerCase();
-        LayoutBuilder substringMatch = null;
+        java.util.List<LayoutBuilder> builders = new java.util.ArrayList<>();
+        java.util.List<String> names = new java.util.ArrayList<>();
         for (LayoutBuilder b : Lookup.getDefault().lookupAll(LayoutBuilder.class)) {
-            String name = b.getName();
-            if (name == null) continue;
-            if (name.equalsIgnoreCase(algo)) return b.buildLayout();
-            if (substringMatch == null && name.toLowerCase().contains(needle)) substringMatch = b;
+            builders.add(b);
+            names.add(b.getName());
         }
-        return substringMatch != null ? substringMatch.buildLayout() : null;
+        int idx = bestLayoutMatch(names, algo);
+        return idx >= 0 ? builders.get(idx).buildLayout() : null;
+    }
+
+    /**
+     * Index of the best layout-name match for {@code query}, or -1. An exact match wins
+     * (case- and space-insensitive, so the documented "forceatlas2" matches "ForceAtlas 2"
+     * and "yifanhu" matches "Yifan Hu"); otherwise the first substring match. Space-folding
+     * is what makes the short names in the docs/skill actually resolve. Package-private +
+     * static for unit testing without the layout registry.
+     */
+    static int bestLayoutMatch(java.util.List<String> names, String query) {
+        if (query == null) return -1;
+        String q = query.toLowerCase().trim();
+        String qns = q.replace(" ", "");
+        if (qns.isEmpty()) return -1;
+        int substr = -1;
+        for (int i = 0; i < names.size(); i++) {
+            String name = names.get(i);
+            if (name == null) continue;
+            String n = name.toLowerCase();
+            String nns = n.replace(" ", "");
+            if (n.equals(q) || nns.equals(qns)) return i;
+            if (substr == -1 && (n.contains(q) || nns.contains(qns))) substr = i;
+        }
+        return substr;
     }
 
     // ─── Project Management ──────────────────────────────────────────

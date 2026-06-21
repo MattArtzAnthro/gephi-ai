@@ -3,6 +3,7 @@ package org.gephi.plugins.mcp.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -96,5 +97,32 @@ class HelpersTest {
     @Test
     void convertLayoutPropertyReturnsNullOnGarbage() {
         assertNull(GephiControlService.convertLayoutProperty("xyz", int.class));
+    }
+
+    // ── layout name matching (real Gephi builder names) ──────────────────
+
+    private static final List<String> LAYOUTS = List.of(
+        "Yifan Hu", "Yifan Hu Proportional", "Force Atlas", "ForceAtlas 2",
+        "Fruchterman Reingold", "Label Adjust", "Noverlap", "OpenOrd", "Random Layout");
+
+    @Test
+    void layoutMatchFoldsSpacesForDocumentedShortNames() {
+        // The names the skill/docs use must resolve to the real builders.
+        assertEquals("ForceAtlas 2", LAYOUTS.get(GephiControlService.bestLayoutMatch(LAYOUTS, "forceatlas2")));
+        assertEquals("Yifan Hu", LAYOUTS.get(GephiControlService.bestLayoutMatch(LAYOUTS, "yifanhu")));
+        assertEquals("Fruchterman Reingold", LAYOUTS.get(GephiControlService.bestLayoutMatch(LAYOUTS, "fruchterman")));
+    }
+
+    @Test
+    void layoutMatchPrefersExactOverSubstring() {
+        // "Force Atlas" must not be hijacked by "ForceAtlas 2" (and vice-versa).
+        assertEquals("Force Atlas", LAYOUTS.get(GephiControlService.bestLayoutMatch(LAYOUTS, "Force Atlas")));
+        assertEquals("ForceAtlas 2", LAYOUTS.get(GephiControlService.bestLayoutMatch(LAYOUTS, "ForceAtlas 2")));
+    }
+
+    @Test
+    void layoutMatchReturnsMinusOneWhenNoMatch() {
+        assertEquals(-1, GephiControlService.bestLayoutMatch(LAYOUTS, "nonexistent"));
+        assertEquals(-1, GephiControlService.bestLayoutMatch(LAYOUTS, null));
     }
 }
