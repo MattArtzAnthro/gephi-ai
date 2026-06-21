@@ -43,6 +43,13 @@ All three must be installed. Gephi Desktop must be running before using any tool
 > reachable only by local processes such as the MCP server, never by a web page.
 > It is not authenticated, so do not expose port 8080 beyond localhost.
 
+> **macOS note:** Gephi's OpenGL graph view holds the graph's read lock almost
+> continuously while rendering, so a burst of API *writes* against a large, actively
+> rendered graph can deadlock Gephi (calls time out; only `gephi_health_check` answers).
+> The plugin hardens its own locking so a single focused pass works, but the renderer is
+> Gephi-core. Best practice: do **build/import → compute → style → layout → export** as one
+> sequence; if a write call ever hangs, fully quit and reopen Gephi to recover.
+
 ## Setup
 
 ### Prerequisites

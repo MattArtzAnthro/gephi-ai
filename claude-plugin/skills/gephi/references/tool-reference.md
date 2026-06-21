@@ -54,6 +54,17 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{index: int}` - zero-based index
 - **Returns**: `{success, message}`
 
+### gephi_duplicate_workspace
+- **Method**: POST `/workspace/duplicate`
+- **Params**: `{index: int}` - zero-based index to duplicate
+- **Returns**: `{success, workspace_id}`
+- **Notes**: Copies all graph data, statistics, and appearance settings into a new workspace.
+
+### gephi_rename_workspace
+- **Method**: POST `/workspace/rename`
+- **Params**: `{index: int, name: str}`
+- **Returns**: `{success, message}`
+
 ## Node Operations
 
 ### gephi_add_node
@@ -84,6 +95,12 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{limit?: int (100), offset?: int (0)}`
 - **Returns**: `{success, total, count, nodes: [{id, label, x, y, size, degree, r, g, b, a, attributes}]}`
 - **Notes**: Includes all custom attributes per node.
+
+### gephi_get_node
+- **Method**: GET `/graph/node/get/{id}`
+- **Params**: `{id: str}`
+- **Returns**: `{success, node: {id, label, x, y, size, r, g, b, attributes}}`
+- **Notes**: Full detail for a single node by ID.
 
 ### gephi_set_node_label
 - **Method**: POST `/graph/node/label`

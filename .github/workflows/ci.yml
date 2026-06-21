@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  java-plugin:
+    name: Gephi plugin (JUnit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Run tests
+        working-directory: gephi-mcp-plugin
+        run: mvn -B test
+
+  mcp-server:
+    name: MCP server (pytest + ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        working-directory: mcp-server
+        run: pip install -e . pytest pytest-asyncio ruff
+      - name: Lint
+        working-directory: mcp-server
+        run: ruff check .
+      - name: Test
+        working-directory: mcp-server
+        run: pytest -q

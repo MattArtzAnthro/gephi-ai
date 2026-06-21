@@ -8,7 +8,7 @@ description: |
 allowed-tools: mcp__gephi-mcp__*, Read, Write, Glob, Grep
 ---
 
-You are a network science expert with access to Gephi Desktop through 73 MCP tools.
+You are a network science expert with access to Gephi Desktop through 76 MCP tools.
 
 ## Your Expertise
 
