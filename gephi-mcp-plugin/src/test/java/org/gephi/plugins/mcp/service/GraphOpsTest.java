@@ -151,6 +151,30 @@ class GraphOpsTest {
             .get("success").getAsBoolean());
     }
 
+    // ── the deadlock-safe write lock (reflection linchpin) ──────────────
+
+    @Test
+    void writeLockHandleResolvesGephiInternalLock() {
+        // If Gephi ever renames GraphLockImpl.writeLock, this returns null and lockWrite
+        // silently degrades to the deadlocking blocking lock. This test guards that.
+        GraphModel gm = newModel();
+        assertNotNull(GephiControlService.writeLockHandle(gm.getGraph()),
+            "reflection into the graph's WriteLock must resolve");
+    }
+
+    @Test
+    void lockWriteAcquiresAndReleasesViaWriteUnlock() {
+        GraphModel gm = newModel();
+        Graph g = gm.getGraph();
+        GephiControlService.lockWrite(g);
+        try {
+            assertEquals(1, g.getLock().getWriteHoldCount(), "lockWrite must hold the write lock");
+        } finally {
+            g.writeUnlock();
+        }
+        assertEquals(0, g.getLock().getWriteHoldCount(), "writeUnlock must release what lockWrite took");
+    }
+
     @Test
     void buildCsvQuotesFieldsContainingSeparator() {
         GraphModel gm = newModel();

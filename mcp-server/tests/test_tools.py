@@ -154,3 +154,34 @@ async def test_import_file(rec):
     assert rec.last["method"] == "POST"
     assert rec.last["endpoint"] == "/import/file"
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
+
+
+def test_all_76_tools_registered():
+    """Regression guard: every tool stays registered with its expected name."""
+    names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
+    assert len(names) == 76, f"expected 76 tools, found {len(names)}"
+    for expected in (
+        "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
+        "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
+        "gephi_color_by_ranking", "gephi_filter_by_degree",
+    ):
+        assert expected in names, f"{expected} not registered"
+
+
+async def test_color_by_ranking_forwards_full_gradient(rec):
+    await out_of(
+        gephi_mcp.gephi_color_by_ranking, column="degree",
+        r_min=0, g_min=0, b_min=0, r_max=255, g_max=255, b_max=255,
+    )
+    assert rec.last["endpoint"] == "/appearance/ranking/color"
+    assert rec.last["json"] == {
+        "column": "degree",
+        "r_min": 0, "g_min": 0, "b_min": 0,
+        "r_max": 255, "g_max": 255, "b_max": 255,
+    }
+
+
+async def test_filter_by_degree_body(rec):
+    await out_of(gephi_mcp.gephi_filter_by_degree, min=2, max=10, dry_run=True)
+    assert rec.last["endpoint"] == "/filter/degree"
+    assert rec.last["json"] == {"min": 2, "max": 10, "dry_run": True}

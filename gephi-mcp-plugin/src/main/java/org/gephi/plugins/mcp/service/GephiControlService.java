@@ -142,7 +142,7 @@ public class GephiControlService {
      * blocking lock only if the underlying lock can't be reflected. Throws after ~15s, which
      * callers turn into a "graph busy" error instead of hanging forever.
      */
-    private static void lockWrite(Graph g) {
+    static void lockWrite(Graph g) {
         java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl = writeLockHandle(g);
         if (wl == null) { g.writeLock(); return; }
         long deadline = System.nanoTime() + 15_000_000_000L;
@@ -159,7 +159,7 @@ public class GephiControlService {
     }
 
     /** The underlying ReentrantReadWriteLock.WriteLock behind Graph.getLock(), or null if unreachable. */
-    private static java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock writeLockHandle(Graph g) {
+    static java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock writeLockHandle(Graph g) {
         try {
             org.gephi.graph.api.GraphLock lock = g.getLock();
             if (lock == null) return null;

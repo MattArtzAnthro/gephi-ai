@@ -1,0 +1,66 @@
+# Changelog
+
+Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
+(`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
+(`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
+
+## [1.1.3]
+
+A security, correctness, robustness, and test pass over the 1.0.0 baseline. Versions
+1.1.1–1.1.2 were incremental build markers during the same effort (the `/health`
+endpoint reports the version so you can confirm which jar Gephi loaded).
+
+### Security
+- **Removed wildcard CORS** (`Access-Control-Allow-Origin: *`) from the plugin's HTTP
+  API. It served no purpose for the local (non-browser) MCP client and was pure
+  cross-origin attack surface.
+- **Added a `Host`-header guard** that rejects any non-loopback host — a defense against
+  DNS-rebinding attacks from a malicious web page. Requests with no `Host` (raw local
+  clients) are still allowed.
+
+### Fixed
+- **macOS render deadlock (mitigated).** External graph *writes* could deadlock Gephi's
+  concurrent OpenGL VizEngine, which holds the graph read lock almost continuously while
+  rendering. Writes now acquire the write lock with a non-deadlocking **timed `tryLock`
+  poll** (reflected from Gephi's `GraphLockImpl.writeLock`) instead of the blocking
+  `writeLock()`, and `resetFilters` wraps Gephi's internal `setVisibleView` in that lock
+  so it re-enters rather than queuing. A single focused **build → analyze → style → layout
+  → export** pass is now reliable with the live view open. The residual limit under
+  sustained heavy rendering is Gephi-core (see the macOS note in the README and SKILL).
+- **Batch tools drop nothing.** `gephi_add_nodes` / `gephi_add_edges` now apply per-item
+  `attributes` (and edges honor `directed` + `label`), which were previously silently dropped.
+- **Edge directedness.** Single `gephi_add_edge` now honors `directed` — undirected edges
+  were always created directed.
+- **`gephi_add_column` lock ordering.** It now takes the graph write lock, fixing a
+  deadlock against the attribute-setters under concurrent requests.
+- **Ranking with negative values.** `color_by_ranking` / `size_by_ranking` handle
+  all-negative columns correctly (the min/max seed was `Double.MIN_VALUE`, the smallest
+  *positive* double).
+- **Layout name matching.** Names match case- and space-insensitively, so documented short
+  names like `forceatlas2` resolve to `ForceAtlas 2`.
+- **CSV export.** Fields are quoted per RFC 4180 (separators / quotes / newlines no longer
+  corrupt columns) and written as UTF-8.
+- **Health-check hook** now actually blocks the tool (exit 2) when Gephi is unreachable,
+  instead of printing a message and proceeding.
+- **MCP package installs again** — added `mcp-server/README.md` so `pip install` no longer
+  fails metadata generation on a missing readme.
+
+### Changed
+- **Typed MCP tools.** All 76 tools expose typed, per-field parameters, so clients receive
+  a precise JSON schema per tool instead of an opaque `params` object.
+- **Lifecycle hardening.** Daemon HTTP listener thread + a watchdog on shutdown so the
+  plugin can never block Gephi's quit.
+- **Configurable.** `GEPHI_API_URL` and `GEPHI_REQUEST_TIMEOUT` are read from the environment.
+
+### Added
+- **51 automated tests** — 30 JUnit (Host-header guard, pure helpers, in-memory graph
+  integration via a standalone `GraphModel`, and the write-lock reflection linchpin) +
+  19 pytest (tool→HTTP mapping, sync-layout polling, all-76-registered regression guard) +
+  2 hook tests.
+- **CI** (`.github/workflows/ci.yml`) runs both suites + ruff on every push and PR.
+- Complete docs: tool reference for all 76 tools, README security + macOS notes, SKILL
+  working-envelope gotcha.
+
+## [1.0.0]
+- Initial release: Gephi plugin HTTP API, MCP server, and Claude Code plugin
+  (commands, network-analyst agent, skill, health-check hook).
