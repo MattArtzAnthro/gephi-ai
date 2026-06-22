@@ -8,7 +8,7 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.5"
+  version: "1.6"
 ---
 
 # Gephi Network Analysis Skill
@@ -119,6 +119,9 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
 - **Vivid source colors are required for white-background visibility** — "soft pastel" appearance on white comes from vivid node colors rendered at high opacity (not from literally pale colors). Pastel node colors (e.g., [227,185,216]) are near-white and disappear even at 90% opacity. Use fully saturated colors (e.g., [220,30,80], [150,30,220]) — at 100% opacity with thick edges they produce a vivid, readable graph. Reduce opacity only if the graph is dense enough that overlapping edges create unwanted solid blobs.
 - **White background KG final settings that work** — `edge.opacity: 100`, `edge.thickness: 6`, `node size min 8 max 30`, vivid modularity colors, centroid-crop the export. These settings produce clearly visible colored lines on white.
+- **Hand-authored GEXF must XML-escape `"` (and `'`) in attribute values** — when you generate a GEXF yourself to import, node `label`/attribute values containing a double-quote (e.g. titles like `"Un/Doing Race"` or `Sorting Things Out: …`) produce malformed XML and `gephi_import_file` fails with `java.lang.RuntimeException` SEVERE. Escape `<>&"'` in every attribute, then validate the file parses (`python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" file.gexf`) before importing.
+- **`gephi_query_nodes` `sort_by`/`descending` may not sort** — observed returning nodes in alphabetical id order regardless. To rank, pull the nodes and sort client-side, or read `pageranks`/`degree` from an exported GEXF/CSV.
+- **Re-styling right after an export is a lock hotspot** — `gephi_color_by_partition` / `gephi_size_by_ranking` called immediately after a PNG export frequently returns `Graph is busy (renderer holds the lock); please retry`. Retry once or twice; if it persists, don't fight it — `gephi_export_gexf` and finish styling/labeling externally (see "Render externally from GEXF" below).
 
 ## Beautiful Graph Recipe
 
@@ -262,7 +265,90 @@ Gephi has no native community label feature. Use Python to overlay one label per
 
 **Gotchas:**
 - FA2 can push a single-node class (degree-1 node) to extreme coordinates (e.g. x = -233494). Always check centroids for outliers before cropping.
-- Community centroids land inside the edge mass, not cleanly beside clusters (hub-and-spoke topology means all clusters overlap in the center). This is a known limitation for this graph type.
+- Community centroids land inside the edge mass, not cleanly beside clusters (hub-and-spoke topology means all clusters overlap in the center). See "Radial leader-line labels" below for the fix.
+
+### Render externally from GEXF (exact coords, full control)
+
+When you need labels, distinct community colors, or any layout the overlay-on-PNG
+path can't give cleanly, **don't pull coordinates with `gephi_query_nodes` and
+don't use `export_csv`** (the node CSV has no x/y). Instead `gephi_export_gexf`
+— it bakes `<viz:position>` plus every attribute (`modularity_class`,
+`pageranks`) — then re-render the whole figure in matplotlib. This sidesteps the
+white-background compositing entirely and gives full control over color (no
+look-alike-palette collisions) and label placement.
+
+Parse the viz namespace **by local tag name** (`position`/`size`/`color` are in
+`gexf.net/.../viz`, not the default namespace):
+
+```python
+import xml.etree.ElementTree as ET
+import numpy as np, matplotlib; matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+import matplotlib.patheffects as pe
+
+local = lambda t: t.split('}')[-1]
+root = ET.parse('graph-positions.gexf').getroot()
+pos, comm, pr = {}, {}, {}
+for n in root.iter():
+    if local(n.tag) != 'node': continue
+    nid = n.get('id')
+    for c in n:
+        if local(c.tag) == 'position': pos[nid] = (float(c.get('x')), float(c.get('y')))
+        elif local(c.tag) == 'attvalues':
+            for av in c:
+                if av.get('for') == 'modularity_class': comm[nid] = int(float(av.get('value')))
+                elif av.get('for') == 'pageranks':       pr[nid]   = float(av.get('value'))
+edges = [(e.get('source'), e.get('target')) for e in root.iter()
+         if local(e.tag) == 'edge' and e.get('source') in pos and e.get('target') in pos]
+
+PAL = {0:'#e74c3c',1:'#e98b1f',2:'#f1c40f',3:'#8bc34a',4:'#2ecc71',
+       5:'#1abc9c',6:'#3498db',7:'#ff2e88',8:'#9b59b6',9:'#00d0e0'}  # 10 distinct hues
+nodes = list(pos)
+fig, ax = plt.subplots(figsize=(17,17), dpi=240)
+fig.patch.set_facecolor('#0a0c1a'); ax.set_facecolor('#0a0c1a')
+ax.add_collection(LineCollection([[pos[s],pos[t]] for s,t in edges],
+    colors=[PAL[comm.get(s,0)] for s,_ in edges], linewidths=0.35, alpha=0.10))
+pv = np.array([pr.get(n,0) for n in nodes])
+ax.scatter([pos[n][0] for n in nodes], [pos[n][1] for n in nodes],
+    s=18 + (pv/pv.max())*2600, c=[PAL[comm.get(n,0)] for n in nodes],
+    edgecolors='none', alpha=0.95, zorder=3)
+```
+
+(Edges colored by **source** community = the watercolor halo; nodes sized by
+PageRank. matplotlib renders ~7k edges fine.)
+
+### Radial leader-line labels (fixes centroid pile-up)
+
+Because community centroids overlap in the dense core, labels placed *at* the
+centroids collide. Instead place labels on a **ring** around the graph, evenly
+spaced by each centroid's angle, with a **leader line** back to a marker at the
+true centroid — no overlaps, locations still exact:
+
+```python
+xs = np.array([pos[n][0] for n in nodes]); ys = np.array([pos[n][1] for n in nodes])
+cx, cy = np.median(xs), np.median(ys)
+R = np.percentile(np.hypot(xs-cx, ys-cy), 98)         # cloud radius (98th pct ignores outliers)
+anchor = {k: (np.median([pos[n][0] for n in nodes if comm.get(n)==k]),
+              np.median([pos[n][1] for n in nodes if comm.get(n)==k])) for k in PAL}
+order = sorted(PAL, key=lambda k: np.arctan2(anchor[k][1]-cy, anchor[k][0]-cx))
+base  = np.arctan2(anchor[order[0]][1]-cy, anchor[order[0]][0]-cx)
+for i, k in enumerate(order):
+    ang = base + 2*np.pi*i/len(order)                 # even spacing → guaranteed no overlap
+    lx, ly = cx + R*1.32*np.cos(ang), cy + R*1.32*np.sin(ang)
+    ax.plot([anchor[k][0], lx], [anchor[k][1], ly], color=PAL[k], lw=1.2, alpha=0.55, zorder=4)
+    ax.scatter([anchor[k][0]], [anchor[k][1]], s=140, facecolor=PAL[k],
+               edgecolor='white', lw=1.5, zorder=6)
+    t = ax.text(lx, ly, NAMES[k], color='white', ha='left' if lx>=cx else 'right',
+                va='center', fontsize=16, fontweight='bold', zorder=7)
+    t.set_path_effects([pe.withStroke(linewidth=4.5, foreground=PAL[k]),
+                        pe.withStroke(linewidth=9, foreground='#0a0c1a')])
+ax.set_aspect('equal'); ax.axis('off')
+plt.savefig('graph-labeled.png', facecolor='#0a0c1a', bbox_inches='tight', pad_inches=0.25)
+```
+
+`NAMES` is your `{modularity_class: "Theme"}` map — name each community from its
+top-PageRank members (`gephi_query_nodes` or the exported node table).
 
 ### Troubleshooting
 - **Nodes in a ball**: gravity is too high OR layout parameters weren't applied (check you're using correct key names). Fix: run Random Layout (1 iteration), then re-run Phase 1.
