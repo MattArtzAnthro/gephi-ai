@@ -31,9 +31,10 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         working-directory: mcp-server
-        # Install runtime + dev deps only (not the package itself) so CI never depends on
-        # the build backend; `python -m pytest` puts the cwd on sys.path to import gephi_mcp.
-        run: pip install mcp httpx pytest pytest-asyncio ruff
+        # Editable install so pyproject.toml stays the single source of truth for
+        # runtime deps + [dev] extras — a hand-maintained list here drifts (defusedxml
+        # was missed when the viewer landed).
+        run: pip install -e ".[dev]"
       - name: Lint
         working-directory: mcp-server
         run: ruff check .

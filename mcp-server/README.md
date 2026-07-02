@@ -32,7 +32,7 @@ The Gephi MCP plugin must be installed and Gephi Desktop running first. Then poi
 client at the `gephi-mcp` command, e.g. for Claude Desktop:
 
 ```json
-{ "mcpServers": { "gephi-mcp": { "command": "gephi-mcp" } } }
+{ "mcpServers": { "gephi-mcp": { "command": "uvx", "args": ["gephi-mcp"] } } }
 ```
 
 ## Configuration
