@@ -25,7 +25,7 @@ from typing import Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
-from mcp.types import EmbeddedResource, TextContent, TextResourceContents
+from mcp.types import CallToolResult, TextContent
 
 import gephi_mcp_viewer
 
@@ -573,41 +573,46 @@ async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes
     return fmt(await gephi.request("POST", "/export/csv",
                                    json_data={"file": file, "separator": separator, "target": target}))
 
-@mcp.tool(name="gephi_view_graph")
-async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view") -> list:
+@mcp.resource("ui://gephi/graph-view", name="gephi-graph-view",
+              mime_type="text/html;profile=mcp-app")
+def gephi_graph_view_app() -> str:
+    """Static MCP App page that renders graph data pushed by the host."""
+    return gephi_mcp_viewer.build_app_html()
+
+@mcp.tool(name="gephi_view_graph",
+          meta={"ui": {"resourceUri": "ui://gephi/graph-view"}})
+async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view") -> CallToolResult:
     """Render the current graph as an interactive in-chat view (MCP App).
 
-    Exports the graph (positions, colors, sizes) and returns a self-contained
-    interactive HTML visualization. Run a layout first so nodes are positioned.
-    Graphs larger than max_nodes are trimmed to the highest-degree nodes.
+    In hosts that support MCP Apps (Claude, Claude Desktop) this renders an
+    interactive visualization inline: pan, zoom, hover labels, click a node for
+    its attributes. Other hosts get a text summary; use gephi_export_png there.
+    Run a layout first so nodes are positioned. Graphs larger than max_nodes
+    are trimmed to the highest-degree nodes.
     """
     fd, path = tempfile.mkstemp(suffix=".gexf")
     os.close(fd)
     try:
         result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
         if not result.get("success", False):
-            return [TextContent(type="text", text=fmt(result))]
+            return CallToolResult(
+                content=[TextContent(type="text", text=fmt(result))], isError=True)
         graph = gephi_mcp_viewer.parse_gexf(path, max_nodes=max_nodes)
-        html = gephi_mcp_viewer.build_html(graph, title=title)
     finally:
         with contextlib.suppress(OSError):
             os.unlink(path)
 
     if graph["truncated"]:
-        summary = (f"Showing the {len(graph['nodes'])} highest-degree of "
+        summary = (f"Interactive view rendered with the {len(graph['nodes'])} highest-degree of "
                    f"{graph['node_count_total']} nodes ({len(graph['edges'])} edges shown). "
                    f"Raise max_nodes to show more.")
     else:
-        summary = (f"Rendered {graph['node_count_total']} nodes and "
+        summary = (f"Interactive view rendered: {graph['node_count_total']} nodes and "
                    f"{graph['edge_count_total']} edges.")
-    return [
-        EmbeddedResource(
-            type="resource",
-            resource=TextResourceContents(
-                uri="ui://gephi/graph-view", mimeType="text/html", text=html),
-        ),
-        TextContent(type="text", text=summary),
-    ]
+    return CallToolResult(
+        content=[TextContent(type="text", text=summary)],
+        structuredContent={**graph, "title": title},
+    )
 
 
 # ─── Import ──────────────────────────────────────────────────

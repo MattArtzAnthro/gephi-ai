@@ -4,6 +4,22 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.2.1]
+
+### Fixed
+- **`gephi_view_graph` now actually renders in Claude and Claude Desktop.** v1.2.0
+  returned the viewer as an embedded HTML resource in the tool result, a pattern those
+  hosts do not render (they fell back to text, and models reached for `gephi_export_png`
+  instead). The viewer now implements the formal MCP Apps extension (spec 2026-01-26):
+  the app page is a declared resource at `ui://gephi/graph-view` with mimeType
+  `text/html;profile=mcp-app`, the tool advertises it via `_meta.ui.resourceUri`, and
+  the page performs the `ui/initialize` handshake, receiving graph data through
+  `ui/notifications/tool-result`. Data now travels in the result's `structuredContent`
+  instead of a ~300KB HTML blob per call, which also keeps tool results small for
+  non-app hosts (they get a one-line text summary; use `gephi_export_png` there).
+  No new dependencies: the handshake is hand-rolled, sigma.js and graphology remain
+  vendored, and the server side is plain FastMCP `meta`/resource declarations.
+
 ## [1.2.0]
 
 ### Added

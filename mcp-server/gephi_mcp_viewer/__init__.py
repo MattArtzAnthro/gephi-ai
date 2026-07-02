@@ -1,5 +1,4 @@
-"""Build a self-contained sigma.js HTML view from a Gephi GEXF export."""
-import json
+"""Parse Gephi GEXF exports and serve the sigma.js MCP App viewer."""
 from importlib import resources
 
 import defusedxml.ElementTree as ET  # noqa: N817 — stdlib-conventional alias
@@ -81,31 +80,17 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
     }
 
 
-def build_html(graph: dict, title: str = "Network view") -> str:
+def build_app_html() -> str:
+    """The static MCP App page (ui://gephi/graph-view).
+
+    Fully self-contained: vendored graphology + sigma.js are inlined so the
+    sandboxed iframe needs no network. Graph data arrives at runtime via the
+    host's ui/notifications/tool-result message, never baked into the HTML.
+    """
     pkg = resources.files("gephi_mcp_viewer")
     template = (pkg / "template.html").read_text(encoding="utf-8")
     graphology_js = (pkg / "assets" / "graphology.umd.min.js").read_text(encoding="utf-8")
     sigma_js = (pkg / "assets" / "sigma.min.js").read_text(encoding="utf-8")
-
-    safe_title = (title.replace("&", "&amp;").replace("<", "&lt;")
-                  .replace(">", "&gt;").replace('"', "&quot;"))
-    shown = len(graph["nodes"])
-    if graph["truncated"]:
-        meta = f'{shown} of {graph["node_count_total"]} nodes, {len(graph["edges"])} edges'
-    else:
-        meta = f'{graph["node_count_total"]} nodes, {graph["edge_count_total"]} edges'
-
-    # Escape sequences that could terminate the inline <script> context:
-    # a node label containing "</script>" must not break out and execute.
-    graph_json = (json.dumps(graph)
-                  .replace("</", "<\\/")
-                  .replace("\u2028", "\\u2028")
-                  .replace("\u2029", "\\u2029"))
-
-    # str.replace, not str.format: the JS is full of braces.
     return (template
-            .replace("__TITLE__", safe_title)
-            .replace("__META__", meta)
             .replace("__GRAPHOLOGY_JS__", graphology_js)
-            .replace("__SIGMA_JS__", sigma_js)
-            .replace("__GRAPH_DATA__", graph_json))
+            .replace("__SIGMA_JS__", sigma_js))

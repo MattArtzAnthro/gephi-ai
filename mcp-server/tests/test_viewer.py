@@ -2,7 +2,6 @@
 import textwrap
 
 import pytest
-from mcp.types import EmbeddedResource, TextContent
 
 import gephi_mcp
 from gephi_mcp_viewer import parse_gexf
@@ -75,26 +74,26 @@ def test_parse_gexf_truncates_by_degree(gexf_file):
         assert e["source"] in keys and e["target"] in keys
 
 
-def test_build_html_is_self_contained(gexf_file):
-    from gephi_mcp_viewer import build_html
-    html = build_html(parse_gexf(gexf_file), title="My graph")
+def test_build_app_html_is_self_contained():
+    from gephi_mcp_viewer import build_app_html
+    html = build_app_html()
     assert html.startswith("<!DOCTYPE html>")
-    assert "My graph" in html
-    assert '"Alice"' in html                      # graph data inlined
-    assert "__GRAPH_DATA__" not in html and "__TITLE__" not in html
     assert "__GRAPHOLOGY_JS__" not in html and "__SIGMA_JS__" not in html
-    assert "__META__" not in html
-    assert len(html) > 100_000                     # vendored libs actually inlined
+    assert "__GRAPH_DATA__" not in html          # data must NOT be inlined anymore
+    assert len(html) > 100_000                    # vendored libs actually inlined
+    # the MCP Apps handshake must be present
+    assert "ui/initialize" in html
+    assert "ui/notifications/initialized" in html
+    assert "ui/notifications/tool-result" in html
 
 
-def test_build_html_escapes_title(gexf_file):
-    from gephi_mcp_viewer import build_html
-    html = build_html(parse_gexf(gexf_file), title="<script>alert(1)</script>")
-    assert "<script>alert(1)</script>" not in html
+def test_build_app_html_is_static():
+    from gephi_mcp_viewer import build_app_html
+    assert build_app_html() == build_app_html()
 
 
 # No async markers needed: pyproject sets asyncio_mode = "auto".
-async def test_view_graph_returns_ui_resource(gexf_file, monkeypatch):
+async def test_view_graph_returns_structured_result(gexf_file, monkeypatch):
     async def fake_request(method, endpoint, params=None, json_data=None):
         assert endpoint == "/export/gexf"
         import shutil
@@ -102,30 +101,35 @@ async def test_view_graph_returns_ui_resource(gexf_file, monkeypatch):
         return {"success": True}
     monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
 
-    blocks = await gephi_mcp.gephi_view_graph()
-    resource = blocks[0]
-    assert isinstance(resource, EmbeddedResource)
-    assert str(resource.resource.uri).startswith("ui://gephi/graph-view")
-    assert resource.resource.mimeType == "text/html"
-    assert '"Alice"' in resource.resource.text
-    summary = blocks[1]
-    assert isinstance(summary, TextContent)
-    assert "3 nodes" in summary.text
+    result = await gephi_mcp.gephi_view_graph(title="My net")
+    from mcp.types import CallToolResult
+    assert isinstance(result, CallToolResult)
+    assert result.isError is False
+    assert "3 nodes" in result.content[0].text
+    sc = result.structuredContent
+    assert sc["title"] == "My net"
+    assert {n["key"] for n in sc["nodes"]} == {"a", "b", "c"}
 
 
-async def test_view_graph_export_failure_returns_error(monkeypatch):
+async def test_view_graph_export_failure_is_error(monkeypatch):
     async def fake_request(method, endpoint, params=None, json_data=None):
         return {"success": False, "error": "no workspace"}
     monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
-    blocks = await gephi_mcp.gephi_view_graph()
-    assert len(blocks) == 1 and isinstance(blocks[0], TextContent)
-    assert "no workspace" in blocks[0].text
+    result = await gephi_mcp.gephi_view_graph()
+    from mcp.types import CallToolResult
+    assert isinstance(result, CallToolResult)
+    assert result.isError is True
+    assert "no workspace" in result.content[0].text
 
 
-def test_build_html_escapes_script_breakout_in_data(gexf_file, tmp_path):
-    malicious = GEXF.replace('label="Alice"', 'label="&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;"')
-    p = tmp_path / "evil.gexf"
-    p.write_text(malicious, encoding="utf-8")
-    from gephi_mcp_viewer import build_html
-    html = build_html(parse_gexf(str(p)))
-    assert "</script><script>alert(1)" not in html
+async def test_view_graph_tool_declares_app():
+    tools = await gephi_mcp.mcp.list_tools()
+    tool = next(t for t in tools if t.name == "gephi_view_graph")
+    assert tool.meta == {"ui": {"resourceUri": "ui://gephi/graph-view"}}
+
+
+async def test_app_resource_registered():
+    contents = await gephi_mcp.mcp.read_resource("ui://gephi/graph-view")
+    item = list(contents)[0]
+    assert item.mime_type == "text/html;profile=mcp-app"
+    assert "ui/initialize" in item.content

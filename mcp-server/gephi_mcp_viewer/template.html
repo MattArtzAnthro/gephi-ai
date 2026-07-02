@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>__TITLE__</title>
+<title>Gephi network view</title>
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, "Segoe UI", sans-serif; }
   #container { width: 100%; height: 100%; }
@@ -19,35 +19,74 @@
 <body>
 <div id="container"></div>
 <div id="panel"></div>
-<div id="meta">__META__</div>
+<div id="meta">Waiting for graph data…</div>
 <script>__GRAPHOLOGY_JS__</script>
 <script>__SIGMA_JS__</script>
 <script>
-  const data = __GRAPH_DATA__;
-  const g = new graphology.Graph({ multi: true, type: data.directed ? "directed" : "undirected" });
-  for (const n of data.nodes) {
-    g.addNode(n.key, { label: n.label, x: n.x, y: n.y, size: n.size, color: n.color,
-                       gephiAttrs: n.attributes });
+  // ── MCP Apps handshake (spec 2026-01-26) ──────────────────────────────
+  // App -> host: ui/initialize request, then ui/notifications/initialized.
+  // Host -> app: ui/notifications/tool-result carries structuredContent.
+  let reqId = 0;
+  const pending = {};
+  function send(method, params, expectReply) {
+    const msg = { jsonrpc: "2.0", method: method, params: params || {} };
+    if (expectReply) { msg.id = ++reqId; pending[msg.id] = method; }
+    window.parent.postMessage(msg, "*");
   }
-  for (const e of data.edges) {
-    try {
-      g.addEdge(e.source, e.target, { size: Math.min(e.size, 6),
-                                      color: e.color || "#cccccc" });
-    } catch (err) { /* skip edges referencing missing nodes */ }
-  }
-  const renderer = new Sigma(g, document.getElementById("container"),
-                             { renderEdgeLabels: false, labelDensity: 0.6 });
-  const panel = document.getElementById("panel");
-  renderer.on("clickNode", ({ node }) => {
-    const a = g.getNodeAttributes(node);
-    let rows = "";
-    for (const [k, v] of Object.entries(a.gephiAttrs || {})) {
-      rows += `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`;
+  window.addEventListener("message", (ev) => {
+    const m = ev.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id !== undefined && pending[m.id] === "ui/initialize") {
+      delete pending[m.id];
+      send("ui/notifications/initialized");
+      return;
     }
-    panel.innerHTML = `<h3>${esc(a.label)}</h3><dl><dt>degree</dt><dd>${g.degree(node)}</dd>${rows}</dl>`;
-    panel.style.display = "block";
+    if (m.method === "ui/notifications/tool-result") {
+      const sc = m.params && m.params.structuredContent;
+      if (sc && sc.nodes) renderGraph(sc);
+      return;
+    }
+    if (m.method === "ui/notifications/tool-cancelled") {
+      document.getElementById("meta").textContent = "Tool call was cancelled.";
+    }
+    // ui/notifications/tool-input and anything else: ignored.
   });
-  renderer.on("clickStage", () => { panel.style.display = "none"; });
+  send("ui/initialize", { appCapabilities: { availableDisplayModes: ["inline"] } }, true);
+
+  // ── Rendering ─────────────────────────────────────────────────────────
+  let renderer = null;
+  function renderGraph(data) {
+    if (renderer) { renderer.kill(); renderer = null; }
+    if (data.title) document.title = data.title;
+    const g = new graphology.Graph({ multi: true, type: data.directed ? "directed" : "undirected" });
+    for (const n of data.nodes) {
+      g.addNode(n.key, { label: n.label, x: n.x, y: n.y, size: n.size, color: n.color,
+                         gephiAttrs: n.attributes });
+    }
+    for (const e of data.edges) {
+      try {
+        g.addEdge(e.source, e.target, { size: Math.min(e.size, 6),
+                                        color: e.color || "#cccccc" });
+      } catch (err) { /* skip edges referencing missing nodes */ }
+    }
+    renderer = new Sigma(g, document.getElementById("container"),
+                         { renderEdgeLabels: false, labelDensity: 0.6 });
+    const meta = data.truncated
+      ? `${data.nodes.length} of ${data.node_count_total} nodes, ${data.edges.length} edges`
+      : `${data.node_count_total} nodes, ${data.edge_count_total} edges`;
+    document.getElementById("meta").textContent = meta;
+    const panel = document.getElementById("panel");
+    renderer.on("clickNode", ({ node }) => {
+      const a = g.getNodeAttributes(node);
+      let rows = "";
+      for (const [k, v] of Object.entries(a.gephiAttrs || {})) {
+        rows += `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`;
+      }
+      panel.innerHTML = `<h3>${esc(a.label)}</h3><dl><dt>degree</dt><dd>${g.degree(node)}</dd>${rows}</dl>`;
+      panel.style.display = "block";
+    });
+    renderer.on("clickStage", () => { panel.style.display = "none"; });
+  }
   function esc(s) { const d = document.createElement("div"); d.innerText = s; return d.innerHTML; }
 </script>
 </body>

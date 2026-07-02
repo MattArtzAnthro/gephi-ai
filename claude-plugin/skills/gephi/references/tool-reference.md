@@ -386,11 +386,12 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_view_graph
 - **Method**: POST `/export/gexf` (internal temp file), rendered client-side
 - **Params**: `{max_nodes?: int (1500), title?: str ("Network view")}`
-- **Notes**: Returns an interactive sigma.js visualization as an embedded `ui://` HTML
-  resource — MCP Apps hosts (claude.ai, Claude Desktop) render it inline in the chat.
+- **Notes**: MCP App tool. In hosts that support MCP Apps (claude.ai, Claude Desktop)
+  it renders an interactive sigma.js view inline in the chat (pan, zoom, hover labels,
+  click a node for attributes); graph data travels in the result's structuredContent.
+  Hosts without MCP Apps get a text summary only, so use `gephi_export_png` there.
   Run a layout first so nodes are positioned. Graphs over `max_nodes` are trimmed to
-  the highest-degree nodes (the summary says so). Prefer this for interactive
-  exploration; use `gephi_export_png` for publication stills.
+  the highest-degree nodes (the summary says so).
 
 ## Import
 
