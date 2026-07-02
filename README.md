@@ -55,45 +55,62 @@ All three must be installed. Gephi Desktop must be running before using any tool
 ### Prerequisites
 
 - [Gephi Desktop](https://gephi.org/users/download/) 0.11.1+
-- [Java JDK 11+](https://adoptium.net/) and [Maven](https://maven.apache.org/) (to build the Gephi plugin)
 - [Python 3.10+](https://www.python.org/) (for the MCP server)
 - [Claude Code](https://claude.ai/code) or [Claude Desktop](https://claude.ai/download) (for AI interaction)
+- [Java JDK 11+](https://adoptium.net/) and [Maven](https://maven.apache.org/) — only if you want to build the Gephi plugin from source
 
 ### Step 1: Install the Gephi plugin
 
-This adds the HTTP API server inside Gephi Desktop.
+This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
+
+1. Download `gephi-mcp-1.1.3.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
+3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
+
+**Verify:** Open a browser to `http://127.0.0.1:8080/health` — you should see `{"success": true}`.
+
+<details>
+<summary>Alternative: build the plugin from source</summary>
+
+Requires JDK 11+ and Maven:
 
 ```bash
 cd gephi-mcp-plugin
 mvn clean package
 ```
 
-Then in Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select `target/nbm/gephi-mcp-1.1.3.nbm`.
+The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.1.3.nbm`. Install it in Gephi as described above.
 
-Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
-
-**Verify:** Open a browser to `http://127.0.0.1:8080/health` — you should see `{"success": true}`.
+</details>
 
 ### Step 2: Install the MCP server
 
-This bridges MCP clients to the Gephi HTTP API.
+This bridges MCP clients to the Gephi HTTP API. Install it with [pipx](https://pipx.pypa.io/) so the `gephi-mcp` command lands on your global `PATH`, where MCP clients can find it:
 
 ```bash
-cd mcp-server
-pip install -e .
+pipx install ./mcp-server
 ```
 
-This installs the `gephi-mcp` command on your PATH.
+**Verify:** Run `which gephi-mcp` (macOS/Linux) or `where gephi-mcp` (Windows) — it should print a path.
 
-**Verify:** Run `gephi-mcp --help` to confirm it installed.
+> **Avoid installing into a project virtual environment.** `pip install -e ./mcp-server`
+> works, but if you run it inside an activated `.venv`, the `gephi-mcp` command only
+> exists on that venv's `PATH`. Claude Code and Claude Desktop launch MCP servers
+> outside your shell, so they won't find it and the server will fail to start with
+> "Executable not found in $PATH" — even though `which gephi-mcp` succeeds in your
+> activated shell. If you must use a venv, point your MCP configuration at the absolute
+> path of the venv's `gephi-mcp` executable instead of the bare command.
 
 ### Step 3: Connect your AI assistant
 
 #### Claude Code (full plugin — recommended)
 
 ```bash
-claude plugin install gephi-ai/gephi-network-analysis
+claude plugin marketplace add MattArtzAnthro/gephi-ai
+claude plugin install gephi-network-analysis@gephi-ai
 ```
+
+(Or run the same two commands as `/plugin marketplace add …` and `/plugin install …` inside a Claude Code session.)
 
 This adds the MCP server, slash commands, network analyst agent, skills, and a health-check hook.
 
@@ -125,7 +142,9 @@ Point your client at the `gephi-mcp` command using stdio transport.
 
 ### Step 4: Verify
 
-With Gephi running, ask your assistant:
+First confirm the MCP server actually connected. In Claude Code, run `/mcp` — `gephi-mcp` should be listed as **connected**. (In Claude Desktop, check that the tools appear in the tools menu.) If it shows a failure like "Executable not found in $PATH", the `gephi-mcp` command isn't on the global `PATH` — see the note in Step 2.
+
+Then, with Gephi running, ask your assistant:
 
 > "Check if Gephi is running"
 

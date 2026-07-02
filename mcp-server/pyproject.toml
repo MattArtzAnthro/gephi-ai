@@ -9,16 +9,15 @@ authors = [
     { name = "Matt Artz" }
 ]
 keywords = ["gephi", "mcp", "graph", "network", "visualization", "claude"]
-
-[project.urls]
-Homepage = "https://www.mattartz.me"
-Repository = "https://github.com/MattArtzAnthro/gephi-ai"
-
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
 ]
+
+[project.urls]
+Homepage = "https://www.mattartz.me"
+Repository = "https://github.com/MattArtzAnthro/gephi-ai"
 
 [project.optional-dependencies]
 dev = [

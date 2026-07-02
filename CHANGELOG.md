@@ -4,6 +4,26 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [Unreleased]
+
+### Fixed
+- **`pip install -e .` installs dependencies again** (#1, #3). The `dependencies` array in
+  `mcp-server/pyproject.toml` sat below the `[project.urls]` table header, so TOML parsed it
+  as `project.urls.dependencies` and the package declared no dependencies at all — installs
+  either failed metadata validation or installed without `mcp`/`httpx`/`pydantic`. Moved it
+  into the `[project]` table where it belongs.
+
+### Changed
+- **Install docs overhauled** (#4 and feedback from Mathieu Jacomy). The README now points
+  users at the pre-built `.nbm` (Releases page / repo root) instead of requiring JDK + Maven
+  to build the Gephi plugin from source (build-from-source is retained as a collapsible
+  alternative, with the artifact path corrected to `gephi-mcp-plugin/target/`). The MCP
+  server install now recommends `pipx` so the `gephi-mcp` command lands on the global `PATH`
+  where MCP clients can find it, documents the venv-`PATH` pitfall, and verification now
+  says to confirm the server is *connected* via `/mcp` rather than `which gephi-mcp`. The
+  Claude Code plugin install command is corrected to
+  `claude plugin install gephi-network-analysis@gephi-ai` (#2).
+
 ## [1.1.3]
 
 A security, correctness, robustness, and test pass over the 1.0.0 baseline. Versions

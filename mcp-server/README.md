@@ -15,10 +15,12 @@ see the top-level repository for the Gephi plugin, the Claude Code plugin, and f
 ## Install
 
 ```bash
-pip install -e .
+pipx install .
 ```
 
-Installs the `gephi-mcp` command (stdio transport).
+Installs the `gephi-mcp` command (stdio transport) on your global `PATH`, where MCP clients
+can find it. `pip install -e .` also works, but inside a virtual environment the command is
+only visible on that venv's `PATH` — MCP clients launched outside your shell won't find it.
 
 ## Use
 
