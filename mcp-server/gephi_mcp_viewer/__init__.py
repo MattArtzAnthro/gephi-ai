@@ -95,10 +95,17 @@ def build_html(graph: dict, title: str = "Network view") -> str:
     else:
         meta = f'{graph["node_count_total"]} nodes, {graph["edge_count_total"]} edges'
 
+    # Escape sequences that could terminate the inline <script> context:
+    # a node label containing "</script>" must not break out and execute.
+    graph_json = (json.dumps(graph)
+                  .replace("</", "<\\/")
+                  .replace("\u2028", "\\u2028")
+                  .replace("\u2029", "\\u2029"))
+
     # str.replace, not str.format: the JS is full of braces.
     return (template
             .replace("__TITLE__", safe_title)
             .replace("__META__", meta)
             .replace("__GRAPHOLOGY_JS__", graphology_js)
             .replace("__SIGMA_JS__", sigma_js)
-            .replace("__GRAPH_DATA__", json.dumps(graph)))
+            .replace("__GRAPH_DATA__", graph_json))
