@@ -41,7 +41,7 @@ You have access to 77 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 5. **Style** — color by partition, size by ranking
 6. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"`, then optionally `"Noverlap"` and `"Label Adjust"`
 7. **Preview** — `gephi_set_preview_settings` for export appearance
-8. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation; use `gephi_export_png` for publication stills.
+8. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation; use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
 
 ## Tool Quick Reference
 
