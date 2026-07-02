@@ -16,13 +16,18 @@ Developed by Matt Artz (https://www.mattartz.me)
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import tempfile
 from typing import Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.types import EmbeddedResource, TextContent, TextResourceContents
+
+import gephi_mcp_viewer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gephi_mcp")
@@ -567,6 +572,42 @@ async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes
     """Export the graph to CSV. target: "nodes" | "edges" | "both"."""
     return fmt(await gephi.request("POST", "/export/csv",
                                    json_data={"file": file, "separator": separator, "target": target}))
+
+@mcp.tool(name="gephi_view_graph")
+async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view") -> list:
+    """Render the current graph as an interactive in-chat view (MCP App).
+
+    Exports the graph (positions, colors, sizes) and returns a self-contained
+    interactive HTML visualization. Run a layout first so nodes are positioned.
+    Graphs larger than max_nodes are trimmed to the highest-degree nodes.
+    """
+    fd, path = tempfile.mkstemp(suffix=".gexf")
+    os.close(fd)
+    try:
+        result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
+        if not result.get("success", False):
+            return [TextContent(type="text", text=fmt(result))]
+        graph = gephi_mcp_viewer.parse_gexf(path, max_nodes=max_nodes)
+        html = gephi_mcp_viewer.build_html(graph, title=title)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+
+    if graph["truncated"]:
+        summary = (f"Showing the {len(graph['nodes'])} highest-degree of "
+                   f"{graph['node_count_total']} nodes ({len(graph['edges'])} edges shown). "
+                   f"Raise max_nodes to show more.")
+    else:
+        summary = (f"Rendered {graph['node_count_total']} nodes and "
+                   f"{graph['edge_count_total']} edges.")
+    return [
+        EmbeddedResource(
+            type="resource",
+            resource=TextResourceContents(
+                uri="ui://gephi/graph-view", mimeType="text/html", text=html),
+        ),
+        TextContent(type="text", text=summary),
+    ]
 
 
 # ─── Import ──────────────────────────────────────────────────

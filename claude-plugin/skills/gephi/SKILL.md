@@ -2,7 +2,7 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 76 Gephi MCP tools.
+  this skill provides workflows and best practices for the 77 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
@@ -13,7 +13,7 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-You have access to 76 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 77 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -41,7 +41,7 @@ You have access to 76 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 5. **Style** — color by partition, size by ranking
 6. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"`, then optionally `"Noverlap"` and `"Label Adjust"`
 7. **Preview** — `gephi_set_preview_settings` for export appearance
-8. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc.
+8. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation; use `gephi_export_png` for publication stills.
 
 ## Tool Quick Reference
 
@@ -72,7 +72,7 @@ You have access to 76 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 `gephi_filter_by_degree`, `gephi_filter_by_edge_weight`, `gephi_remove_isolates`, `gephi_extract_ego_network`, `gephi_extract_giant_component`, `gephi_reset_filters`
 
 ### Preview & Export
-`gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`
+`gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`, `gephi_view_graph` (interactive in-chat view, no `file` param)
 
 ### Import
 `gephi_import_file`, `gephi_import_gexf`/`gephi_import_graphml`/`gephi_import_csv`

@@ -156,14 +156,14 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_76_tools_registered():
+def test_all_77_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 76, f"expected 76 tools, found {len(names)}"
+    assert len(names) == 77, f"expected 77 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
-        "gephi_color_by_ranking", "gephi_filter_by_degree",
+        "gephi_color_by_ranking", "gephi_filter_by_degree", "gephi_view_graph",
     ):
         assert expected in names, f"{expected} not registered"
 

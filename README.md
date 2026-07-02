@@ -4,9 +4,11 @@ AI-powered network analysis through [Gephi](https://gephi.org) and the [Model Co
 
 Built for researchers working across network science and AI.
 
+> **Status: public beta.** APIs may change between minor versions.
+
 ## What you get
 
-**76 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**77 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
 **Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`), a specialized network analyst agent, and workflow skills that teach Claude network science best practices.
 
@@ -33,7 +35,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 76 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 77 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 All three must be installed. Gephi Desktop must be running before using any tools.
@@ -118,7 +120,7 @@ This adds the MCP server, slash commands, network analyst agent, skills, and a h
 
 #### Claude Code (MCP tools only)
 
-If you just want the 76 tools without skills and commands:
+If you just want the 77 tools without skills and commands:
 
 ```bash
 claude mcp add gephi-mcp -- gephi-mcp
@@ -168,7 +170,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (76)
+## Tools (77)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -179,7 +181,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | Appearance | 9 | `gephi_color_by_partition`, `gephi_size_by_ranking` |
 | Filtering | 6 | `gephi_filter_by_degree`, `gephi_extract_giant_component` |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
-| Preview & Export | 8 | `gephi_export_png`, `gephi_export_pdf`, `gephi_export_gexf` |
+| Preview & Export | 9 | `gephi_export_png`, `gephi_export_gexf`, `gephi_view_graph` |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
 | Health | 1 | `gephi_health_check` |
 
@@ -215,7 +217,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 76 tools
+- **references/tool-reference.md** — Complete API reference for all 77 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

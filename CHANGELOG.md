@@ -4,7 +4,18 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased]
+## [1.2.0]
+
+### Added
+- **`gephi_view_graph` MCP App viewer (tool #77).** Returns the current graph as a
+  self-contained interactive sigma.js visualization in an embedded `ui://` HTML
+  resource. MCP Apps hosts (claude.ai, Claude Desktop) render it inline in the
+  conversation: pan/zoom, hover labels, click a node for its attributes. Graphs over
+  `max_nodes` (default 1500) are trimmed to the highest-degree nodes, and the tool
+  says so. sigma.js and graphology are vendored (MIT) so the view needs no network.
+  GEXF parsing uses `defusedxml` (new dependency) rather than the XXE-prone stdlib
+  parser.
+- **Public beta status called out in the README.**
 
 ### Fixed
 - **`pip install -e .` installs dependencies again** (#1, #3). The `dependencies` array in
