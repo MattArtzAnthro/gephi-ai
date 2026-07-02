@@ -17,6 +17,18 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
   parser.
 - **Public beta status called out in the README.**
 
+### Changed
+- **The Claude Code plugin is now self-contained.** Its bundled MCP config launches the
+  server with `uv run --directory ${CLAUDE_PLUGIN_ROOT}/../mcp-server gephi-mcp`, so
+  installing the plugin is the whole setup — no separate `pip`/`pipx` step, and no
+  dependence on a `gephi-mcp` command being on the global `PATH` (the failure behind #4).
+  `uv` is the one prerequisite; `mcp-server/uv.lock` is committed so every install
+  resolves identical dependency versions.
+- **`gephi-mcp` is published to PyPI.** Non-plugin MCP clients (Claude Desktop, `claude
+  mcp add`, anything stdio) now use `uvx gephi-mcp` — fetched and cached on first run —
+  or `pipx install gephi-mcp`. The README install docs are rewritten around this and
+  PyPI classifiers were added to the package metadata.
+
 ### Fixed
 - **`pip install -e .` installs dependencies again** (#1, #3). The `dependencies` array in
   `mcp-server/pyproject.toml` sat below the `[project.urls]` table header, so TOML parsed it

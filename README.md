@@ -57,7 +57,7 @@ All three must be installed. Gephi Desktop must be running before using any tool
 ### Prerequisites
 
 - [Gephi Desktop](https://gephi.org/users/download/) 0.11.1+
-- [Python 3.10+](https://www.python.org/) (for the MCP server)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (runs the MCP server; one-line install, manages Python for you)
 - [Claude Code](https://claude.ai/code) or [Claude Desktop](https://claude.ai/download) (for AI interaction)
 - [Java JDK 11+](https://adoptium.net/) and [Maven](https://maven.apache.org/) — only if you want to build the Gephi plugin from source
 
@@ -85,27 +85,7 @@ The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.1.3.nbm`. Install it
 
 </details>
 
-### Step 2: Install the MCP server
-
-This bridges MCP clients to the Gephi HTTP API. Install it with [pipx](https://pipx.pypa.io/) so the `gephi-mcp` command lands on your global `PATH`, where MCP clients can find it. No clone needed:
-
-```bash
-pipx install "git+https://github.com/MattArtzAnthro/gephi-ai.git#subdirectory=mcp-server"
-```
-
-(If you've cloned this repository, `pipx install ./mcp-server` from the repo root does the same thing.)
-
-**Verify:** Run `which gephi-mcp` (macOS/Linux) or `where gephi-mcp` (Windows) — it should print a path.
-
-> **Avoid installing into a project virtual environment.** `pip install -e ./mcp-server`
-> works, but if you run it inside an activated `.venv`, the `gephi-mcp` command only
-> exists on that venv's `PATH`. Claude Code and Claude Desktop launch MCP servers
-> outside your shell, so they won't find it and the server will fail to start with
-> "Executable not found in $PATH" — even though `which gephi-mcp` succeeds in your
-> activated shell. If you must use a venv, point your MCP configuration at the absolute
-> path of the venv's `gephi-mcp` executable instead of the bare command.
-
-### Step 3: Connect your AI assistant
+### Step 2: Connect your AI assistant
 
 #### Claude Code (full plugin — recommended)
 
@@ -116,14 +96,14 @@ claude plugin install gephi-network-analysis@gephi-ai
 
 (Or run the same two commands as `/plugin marketplace add …` and `/plugin install …` inside a Claude Code session.)
 
-This adds the MCP server, slash commands, network analyst agent, skills, and a health-check hook.
+That's it — the plugin bundles and runs the MCP server itself (via uv), and adds slash commands, the network analyst agent, skills, and a health-check hook. No separate server install.
 
 #### Claude Code (MCP tools only)
 
 If you just want the 77 tools without skills and commands:
 
 ```bash
-claude mcp add gephi-mcp -- gephi-mcp
+claude mcp add gephi-mcp -- uvx gephi-mcp
 ```
 
 #### Claude Desktop
@@ -134,7 +114,8 @@ Add to your MCP configuration (`claude_desktop_config.json`):
 {
   "mcpServers": {
     "gephi-mcp": {
-      "command": "gephi-mcp"
+      "command": "uvx",
+      "args": ["gephi-mcp"]
     }
   }
 }
@@ -142,11 +123,20 @@ Add to your MCP configuration (`claude_desktop_config.json`):
 
 #### Other MCP clients
 
-Point your client at the `gephi-mcp` command using stdio transport.
+Point your client at `uvx gephi-mcp` using stdio transport. `uvx` fetches the
+[`gephi-mcp` package from PyPI](https://pypi.org/project/gephi-mcp/) on first run and
+caches it. If you prefer a persistent named command on your `PATH` instead, install it
+with `pipx install gephi-mcp` and use `gephi-mcp` as the command.
 
-### Step 4: Verify
+> **If you install with pip instead:** avoid a project virtual environment. Inside an
+> activated `.venv` the `gephi-mcp` command only exists on that venv's `PATH`, and MCP
+> clients launch servers outside your shell — the server fails with "Executable not
+> found in $PATH" even though `which gephi-mcp` succeeds. Use `uvx`/`pipx`, or point
+> your MCP config at the venv executable's absolute path.
 
-First confirm the MCP server actually connected. In Claude Code, run `/mcp` — `gephi-mcp` should be listed as **connected**. (In Claude Desktop, check that the tools appear in the tools menu.) If it shows a failure like "Executable not found in $PATH", the `gephi-mcp` command isn't on the global `PATH` — see the note in Step 2.
+### Step 3: Verify
+
+First confirm the MCP server actually connected. In Claude Code, run `/mcp` — `gephi-mcp` should be listed as **connected**. (In Claude Desktop, check that the tools appear in the tools menu.) If it shows a failure like "Executable not found in $PATH", the launcher (`uv`/`uvx` or `gephi-mcp`) isn't on the global `PATH` — see the notes in Step 2.
 
 Then, with Gephi running, ask your assistant:
 

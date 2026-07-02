@@ -14,13 +14,17 @@ see the top-level repository for the Gephi plugin, the Claude Code plugin, and f
 
 ## Install
 
+No install needed with [uv](https://docs.astral.sh/uv/) — point your MCP client at:
+
 ```bash
-pipx install .
+uvx gephi-mcp
 ```
 
-Installs the `gephi-mcp` command (stdio transport) on your global `PATH`, where MCP clients
-can find it. `pip install -e .` also works, but inside a virtual environment the command is
-only visible on that venv's `PATH` — MCP clients launched outside your shell won't find it.
+`uvx` fetches [`gephi-mcp` from PyPI](https://pypi.org/project/gephi-mcp/) on first run
+and caches it. For a persistent `gephi-mcp` command on your `PATH` instead, use
+`pipx install gephi-mcp` (or `pipx install .` from this directory). Avoid plain
+`pip install -e .` inside a virtual environment: the command is then only visible on
+that venv's `PATH`, and MCP clients launched outside your shell won't find it.
 
 ## Use
 
