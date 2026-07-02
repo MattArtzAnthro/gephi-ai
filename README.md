@@ -85,11 +85,13 @@ The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.1.3.nbm`. Install it
 
 ### Step 2: Install the MCP server
 
-This bridges MCP clients to the Gephi HTTP API. Install it with [pipx](https://pipx.pypa.io/) so the `gephi-mcp` command lands on your global `PATH`, where MCP clients can find it:
+This bridges MCP clients to the Gephi HTTP API. Install it with [pipx](https://pipx.pypa.io/) so the `gephi-mcp` command lands on your global `PATH`, where MCP clients can find it. No clone needed:
 
 ```bash
-pipx install ./mcp-server
+pipx install "git+https://github.com/MattArtzAnthro/gephi-ai.git#subdirectory=mcp-server"
 ```
+
+(If you've cloned this repository, `pipx install ./mcp-server` from the repo root does the same thing.)
 
 **Verify:** Run `which gephi-mcp` (macOS/Linux) or `where gephi-mcp` (Windows) — it should print a path.
 
