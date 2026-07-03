@@ -313,6 +313,14 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Method**: POST `/statistics/hits`
 - **Creates**: `Authority`, `Hub` on nodes
 
+### gephi_label_clusters
+- **Method**: GEXF export + per-node label writes + preview settings
+- **Params**: `{partition_column: str, names?: {group_value: caption}, restore?: bool}`
+- **Returns**: `{labeled: {group: {node, label}}, blanked}` or `{restored}`
+- **Usage**: Caption clusters the VNA way — blanks all labels, names each cluster's
+  top-degree hub (hubs sit near their region's center), labeled preview with white
+  outline. Originals saved to `label_backup`; `restore: true` reverses everything.
+
 ## Filters
 
 ### gephi_filter_by_degree

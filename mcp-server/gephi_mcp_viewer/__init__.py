@@ -197,3 +197,24 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
         }
 
     return result
+
+
+def pick_cluster_hubs(graph: dict, partition_column: str) -> dict:
+    """Top-degree node per partition value: {group_value: node_key}.
+
+    Ties break toward the larger rendered node, then lexicographic key, so the
+    result is deterministic. Nodes without the attribute are ignored.
+    """
+    degree: dict[str, int] = {}
+    for e in graph["edges"]:
+        degree[e["source"]] = degree.get(e["source"], 0) + 1
+        degree[e["target"]] = degree.get(e["target"], 0) + 1
+    best: dict = {}
+    for n in graph["nodes"]:
+        g = n["attributes"].get(partition_column)
+        if g is None:
+            continue
+        score = (degree.get(n["key"], 0), n["size"], n["key"])
+        if g not in best or score > best[g][0]:
+            best[g] = (score, n["key"])
+    return {g: key for g, (_, key) in best.items()}

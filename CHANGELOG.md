@@ -4,6 +4,17 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.3.1]
+
+### Added
+- **`gephi_label_clusters` (tool #79) — cluster captions the VNA way.** Gephi has no
+  native cluster-label feature; the visual network analysis practice is to label only
+  each region's most salient node. The tool blanks all labels, names each cluster's
+  top-degree hub (hubs sit near their region's center of gravity, so captions land on
+  the regions), and switches preview to outlined labels. Every original label is
+  backed up to a `label_backup` attribute and `restore: true` reverses the whole
+  operation.
+
 ## [1.3.0]
 
 ### Added

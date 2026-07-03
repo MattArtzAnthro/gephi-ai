@@ -44,11 +44,15 @@ inspection say what you saw and what you're changing.
    warning; change ONE layout parameter per rerun. Repeat up to 3 times or until both
    zoom levels read well (distinct regions in overview, distinguishable nodes within).
 
-6. **Final export.** Use `extent.suggested_export` from the last QA for the canvas
+6. **Cluster captions (optional).** If the communities have meaningful names, offer
+   `gephi_label_clusters` with a names map — one outlined caption per region, hub-anchored,
+   reversible with `restore: true`.
+
+7. **Final export.** Use `extent.suggested_export` from the last QA for the canvas
    dimensions (scale up ~2400 on the long side for publication). Export PNG where the
    user asked (default: their Desktop). In MCP Apps hosts also offer
    `gephi_view_graph` for the interactive version.
 
-7. **Report.** Before/after summary: what the baseline looked like, what changed and
+8. **Report.** Before/after summary: what the baseline looked like, what changed and
    why, and anything about the data itself the QA surfaced (fake groupings, missing
    structure, disconnected components).

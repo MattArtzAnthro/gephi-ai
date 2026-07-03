@@ -632,6 +632,74 @@ async def gephi_visual_qa(partition_column: str | None = None) -> str:
     return fmt(gephi_mcp_viewer.analyze_graph(graph, partition_column=partition_column))
 
 
+@mcp.tool(name="gephi_label_clusters")
+async def gephi_label_clusters(partition_column: str,
+                               names: dict[str, str] | None = None,
+                               restore: bool = False) -> str:
+    """Caption each cluster by labeling only its most salient (top-degree) node.
+
+    The visual network analysis move for naming regions: every other label is
+    blanked, each cluster's hub gets the cluster's name (from `names`, keyed by
+    the partition value, e.g. {"1.0": "Engineering"}) or keeps its own label if
+    no name is given, and preview switches to labeled mode with a white outline.
+    Hubs sit near their cluster's center of gravity, so the caption lands on the
+    region. Original labels are saved to a `label_backup` node attribute;
+    restore=True puts everything back and hides labels again.
+    """
+    fd, path = tempfile.mkstemp(suffix=".gexf")
+    os.close(fd)
+    try:
+        result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
+        if not result.get("success", False):
+            return fmt(result)
+        graph = gephi_mcp_viewer.parse_gexf(path, max_nodes=1000000)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+
+    if restore:
+        restored = 0
+        for n in graph["nodes"]:
+            original = n["attributes"].get("label_backup")
+            if original is not None:
+                await gephi.request("POST", "/graph/node/label",
+                                    json_data={"id": n["key"], "label": original})
+                restored += 1
+        await gephi.request("POST", "/preview/settings",
+                            json_data={"node.label.show": False})
+        return fmt({"success": True, "restored": restored})
+
+    hubs = gephi_mcp_viewer.pick_cluster_hubs(graph, partition_column)
+    if not hubs:
+        return fmt({"success": False,
+                    "error": f"no nodes carry the attribute '{partition_column}'"})
+    hub_keys = set(hubs.values())
+
+    await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": [
+        {"id": n["key"], "attributes": {"label_backup": n["label"]}}
+        for n in graph["nodes"]]})
+
+    labeled, blanked = {}, 0
+    label_by_key = {n["key"]: n["label"] for n in graph["nodes"]}
+    for n in graph["nodes"]:
+        if n["key"] in hub_keys:
+            continue
+        await gephi.request("POST", "/graph/node/label",
+                            json_data={"id": n["key"], "label": ""})
+        blanked += 1
+    for group, key in hubs.items():
+        caption = (names or {}).get(str(group), label_by_key[key])
+        await gephi.request("POST", "/graph/node/label",
+                            json_data={"id": key, "label": caption})
+        labeled[str(group)] = {"node": key, "label": caption}
+
+    await gephi.request("POST", "/preview/settings", json_data={
+        "node.label.show": True, "node.label.proportinalSize": False,
+        "node.label.font": "Arial 16 Bold", "node.label.outline.size": 4.0,
+        "node.label.outline.opacity": 95.0, "node.label.avoidOverlap": True})
+    return fmt({"success": True, "labeled": labeled, "blanked": blanked})
+
+
 @mcp.resource("ui://gephi/graph-view", name="gephi-graph-view",
               mime_type="text/html;profile=mcp-app")
 def gephi_graph_view_app() -> str:

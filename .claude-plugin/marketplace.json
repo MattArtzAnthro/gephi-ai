@@ -1,6 +1,6 @@
 {
   "name": "gephi-ai",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "AI-powered network analysis and visualization using Gephi Desktop",
   "owner": {
     "name": "Matt Artz"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "gephi-network-analysis",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "source": "./claude-plugin"
     }
   ]
