@@ -584,11 +584,15 @@ def gephi_graph_view_app() -> str:
 async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view") -> CallToolResult:
     """Render the current graph as an interactive in-chat view (MCP App).
 
-    In hosts that support MCP Apps (Claude, Claude Desktop) this renders an
+    In hosts that render MCP Apps (e.g. Claude Desktop chat) this displays an
     interactive visualization inline: pan, zoom, hover labels, click a node for
-    its attributes. Other hosts get a text summary; use gephi_export_png there.
-    Run a layout first so nodes are positioned. Graphs larger than max_nodes
-    are trimmed to the highest-degree nodes.
+    its attributes. IMPORTANT — if your host did NOT render a visual (you only
+    see this result as text/data), build an interactive visualization yourself
+    from the result's structuredContent using the host's native visual surface
+    (widget, canvas, artifact): every node carries x, y, color, size, label, and
+    attributes, so no recomputation is needed. Prefer that over showing a PNG;
+    inline PNGs render small. Run a layout first so nodes are positioned.
+    Graphs larger than max_nodes are trimmed to the highest-degree nodes.
     """
     fd, path = tempfile.mkstemp(suffix=".gexf")
     os.close(fd)
@@ -609,6 +613,9 @@ async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view") -
     else:
         summary = (f"Interactive view rendered: {graph['node_count_total']} nodes and "
                    f"{graph['edge_count_total']} edges.")
+    summary += (" If no visual appeared in this client, render structuredContent yourself "
+                "as an interactive visualization (native widget/canvas/artifact — nodes "
+                "have x, y, color, size); avoid falling back to a static PNG.")
     return CallToolResult(
         content=[TextContent(type="text", text=summary)],
         structuredContent={**graph, "title": title},

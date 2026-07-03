@@ -4,6 +4,17 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.2.2]
+
+### Changed
+- **`gephi_view_graph` teaches its own fallback.** Not every chat surface renders MCP
+  Apps (Claude Desktop chat does; Cowork, for example, does not). The tool's docstring
+  and result summary now instruct the model directly: if no visual appeared, build an
+  interactive visualization from the result's `structuredContent` using the host's
+  native surface (widget, canvas, artifact) instead of falling back to a static PNG,
+  which chat clients render small. Node positions, colors, and sizes are already in
+  the payload, so the fallback needs no recomputation.
+
 ## [1.2.1]
 
 ### Fixed
