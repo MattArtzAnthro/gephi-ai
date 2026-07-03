@@ -693,11 +693,19 @@ async def gephi_label_clusters(partition_column: str,
                             json_data={"id": key, "label": caption})
         labeled[str(group)] = {"node": key, "label": caption}
 
+    # Preview fonts render in graph-coordinate space, so caption size must scale
+    # with the layout extent (empirically ~extent/64 reads as a map caption).
+    xs = [n["x"] for n in graph["nodes"]] or [0.0]
+    ys = [n["y"] for n in graph["nodes"]] or [0.0]
+    extent_long = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+    font_size = max(14, int(extent_long / 64))
     await gephi.request("POST", "/preview/settings", json_data={
         "node.label.show": True, "node.label.proportinalSize": False,
-        "node.label.font": "Arial 16 Bold", "node.label.outline.size": 4.0,
+        "node.label.font": f"Arial {font_size} Bold",
+        "node.label.outline.size": max(4.0, font_size / 7),
         "node.label.outline.opacity": 95.0, "node.label.avoidOverlap": True})
-    return fmt({"success": True, "labeled": labeled, "blanked": blanked})
+    return fmt({"success": True, "labeled": labeled, "blanked": blanked,
+                "caption_font": font_size})
 
 
 @mcp.resource("ui://gephi/graph-view", name="gephi-graph-view",

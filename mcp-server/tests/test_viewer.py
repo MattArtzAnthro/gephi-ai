@@ -267,9 +267,11 @@ async def test_label_clusters(gexf_file, monkeypatch, tmp_path):
 
     preview = next(c for c in calls if c["endpoint"] == "/preview/settings")
     assert preview["json"]["node.label.show"] is True
+    # caption font scales with layout extent (small fixture -> floor of 14)
+    assert preview["json"]["node.label.font"] == "Arial 14 Bold"
     assert out["labeled"] == {"A": {"node": "a1", "label": "Alpha Team"},
                               "B": {"node": "b1", "label": "Beta Team"}}
-    assert out["blanked"] == 4
+    assert out["blanked"] == 4 and out["caption_font"] == 14
 
 
 async def test_label_clusters_restore(monkeypatch, tmp_path):

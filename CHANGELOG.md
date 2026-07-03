@@ -4,6 +4,15 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.3.2]
+
+### Fixed
+- **Cluster captions are now legibly sized on any graph.** Gephi renders preview label
+  fonts in graph-coordinate space, so a fixed point size vanishes on large layouts (a
+  36pt caption is ~4px on an 18,000-unit extent). `gephi_label_clusters` now computes
+  the caption font from the layout extent (~extent/64, floor 14) with a matching
+  outline, and reports the chosen size as `caption_font`.
+
 ## [1.3.1]
 
 ### Added
