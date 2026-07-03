@@ -156,15 +156,15 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_79_tools_registered():
+def test_all_80_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 79, f"expected 79 tools, found {len(names)}"
+    assert len(names) == 80, f"expected 80 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
         "gephi_color_by_ranking", "gephi_filter_by_degree", "gephi_view_graph",
-        "gephi_visual_qa", "gephi_label_clusters",
+        "gephi_visual_qa", "gephi_label_clusters", "gephi_focus_view",
     ):
         assert expected in names, f"{expected} not registered"
 
@@ -186,3 +186,13 @@ async def test_filter_by_degree_body(rec):
     await out_of(gephi_mcp.gephi_filter_by_degree, min=2, max=10, dry_run=True)
     assert rec.last["endpoint"] == "/filter/degree"
     assert rec.last["json"] == {"min": 2, "max": 10, "dry_run": True}
+
+
+async def test_focus_view_modes(rec):
+    await out_of(gephi_mcp.gephi_focus_view, mode="node", id="n5")
+    assert rec.last["endpoint"] == "/view/focus"
+    assert rec.last["json"] == {"mode": "node", "id": "n5"}
+    await out_of(gephi_mcp.gephi_focus_view, mode="region", x=0, y=0, w=100, h=80, zoom=1.5)
+    assert rec.last["json"] == {"mode": "region", "x": 0, "y": 0, "w": 100, "h": 80, "zoom": 1.5}
+    await out_of(gephi_mcp.gephi_focus_view, select=["a", "b"])
+    assert rec.last["json"] == {"mode": "graph", "select": ["a", "b"]}

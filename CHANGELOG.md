@@ -4,6 +4,28 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.5.0]
+
+### Added
+- **Gephi plugin 1.2.0 — the "protect the teaching mode" build.** Three defenses
+  against the macOS renderer wedge plus camera control:
+  - **Writes pause the renderer.** The viz engine's own `pauseUpdating()` /
+    `resumeUpdating()` (reference-counted, reflective, no-op when headless) now
+    brackets every write section, removing the read-lock pressure that caused the
+    chronic deadlock while Claude mutates the graph under a live view.
+  - **Nothing hangs anymore.** Read-lock acquisition is now timed (like writes have
+    been), and UI-thread calls use a bounded wait — a wedged Gephi returns an
+    immediate "Gephi is wedged; fully quit and reopen it" error instead of hanging
+    until the client times out. `/health` gains a `graph_lock` probe ("ok"/"busy")
+    as a cheap wedge detector.
+  - **`gephi_focus_view` (tool #80).** Camera and attention control for the Gephi
+    window: fit the graph, center on a node/edge/region, visually select nodes, set
+    zoom — so Claude can direct the human viewer's eyes while it works. The missing
+    piece for watch-along sessions.
+- **`/teach` command + Teaching Mode skill section**: narrated pacing, chunked
+  layouts, camera direction before discussion, observation pauses — codifying
+  watch-Gephi-operate as a first-class use.
+
 ## [1.4.0]
 
 ### Added

@@ -87,14 +87,26 @@ public class GephiControlService {
             try { return callable.call(); }
             catch (Exception e) { throw new RuntimeException(e); }
         }
+        // Bounded wait: invokeAndWait parks forever when the EDT is wedged (the
+        // "health answers but nothing else does" symptom). Fail fast with guidance
+        // instead of hanging until the client's timeout.
         final Object[] result = new Object[1];
         final Exception[] exception = new Exception[1];
+        final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        SwingUtilities.invokeLater(() -> {
+            try { result[0] = callable.call(); }
+            catch (Exception e) { exception[0] = e; }
+            finally { done.countDown(); }
+        });
         try {
-            SwingUtilities.invokeAndWait(() -> {
-                try { result[0] = callable.call(); }
-                catch (Exception e) { exception[0] = e; }
-            });
-        } catch (Exception e) { throw new RuntimeException(e); }
+            if (!done.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new RuntimeException(
+                    "Gephi's UI thread is unresponsive — the app is likely wedged; fully quit and reopen Gephi");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for Gephi's UI thread");
+        }
         if (exception[0] != null) throw new RuntimeException(exception[0]);
         return (T) result[0];
     }
@@ -143,18 +155,77 @@ public class GephiControlService {
      * callers turn into a "graph busy" error instead of hanging forever.
      */
     static void lockWrite(Graph g) {
-        java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl = writeLockHandle(g);
-        if (wl == null) { g.writeLock(); return; }
-        long deadline = System.nanoTime() + 15_000_000_000L;
+        RenderPause.pause();   // free the renderer's read-lock pressure for this section
+        boolean acquired = false;
         try {
+            java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl = writeLockHandle(g);
+            if (wl == null) { g.writeLock(); acquired = true; return; }
+            long deadline = System.nanoTime() + 15_000_000_000L;
             while (!wl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 if (System.nanoTime() > deadline)
                     throw new RuntimeException("Graph is busy (renderer holds the lock); please retry");
                 Thread.sleep(5);
             }
+            acquired = true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while acquiring the write lock");
+        } finally {
+            if (!acquired) RenderPause.resume();
+        }
+    }
+
+    /** Release the write lock and resume the renderer paused by lockWrite. */
+    static void unlockWrite(Graph g) {
+        try {
+            g.writeUnlock();
+        } finally {
+            RenderPause.resume();
+        }
+    }
+
+    private static volatile java.lang.reflect.Field READ_LOCK_FIELD;
+
+    /**
+     * Timed read-lock acquisition. Plain readLock() parks unboundedly in the lock's
+     * wait queue; when a writer is already parked (Gephi's own blocking writeLock())
+     * every new reader queues behind it and the request hangs until the client's
+     * timeout — the chronic "health answers but nothing else does" symptom. A timed
+     * tryLock turns that into an immediate, actionable error instead.
+     */
+    static void lockRead(Graph g) {
+        java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
+        if (rl == null) { lockRead(g); return; }
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        try {
+            while (!rl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                if (System.nanoTime() > deadline)
+                    throw new RuntimeException(
+                        "Graph is busy (lock unavailable) — if this persists, Gephi is wedged; fully quit and reopen it");
+                Thread.sleep(5);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while acquiring the read lock");
+        }
+    }
+
+    /** The underlying ReentrantReadWriteLock.ReadLock behind Graph.getLock(), or null if unreachable. */
+    static java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock readLockHandle(Graph g) {
+        try {
+            org.gephi.graph.api.GraphLock lock = g.getLock();
+            if (lock == null) return null;
+            java.lang.reflect.Field f = READ_LOCK_FIELD;
+            if (f == null || !f.getDeclaringClass().isInstance(lock)) {
+                f = lock.getClass().getDeclaredField("readLock");
+                f.setAccessible(true);
+                READ_LOCK_FIELD = f;
+            }
+            Object v = f.get(lock);
+            return (v instanceof java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock)
+                ? (java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock) v : null;
+        } catch (Throwable t) {
+            return null;
         }
     }
 
@@ -421,7 +492,7 @@ public class GephiControlService {
                 JsonObject r = success("Node added");
                 r.addProperty("node_id", id);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -463,7 +534,7 @@ public class GephiControlService {
                 r.addProperty("added", added);
                 r.addProperty("skipped", skipped);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -481,7 +552,7 @@ public class GephiControlService {
                 JsonObject r = success("Node removed");
                 r.addProperty("edges_removed", edgesRemoved);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -504,7 +575,7 @@ public class GephiControlService {
                 r.addProperty("removed", removed);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -514,7 +585,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
-            g.readLock();
+            lockRead(g);
             try {
                 JsonArray arr = new JsonArray();
                 int count = 0, skip = 0;
@@ -605,7 +676,7 @@ public class GephiControlService {
                 if (n == null) return error("Node not found: " + id);
                 n.setLabel(label);
                 return success("Label set");
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -621,7 +692,7 @@ public class GephiControlService {
                 n.setX(x);
                 n.setY(y);
                 return success("Position set");
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -646,7 +717,7 @@ public class GephiControlService {
                 r.addProperty("set", set);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -671,7 +742,7 @@ public class GephiControlService {
                 Edge e = gm.factory().newEdge(s, t, directed ? 1 : 0, weight != null ? weight : 1.0, directed);
                 g.addEdge(e);
                 return success("Edge added");
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -715,7 +786,7 @@ public class GephiControlService {
                 r.addProperty("added", added);
                 r.addProperty("skipped", skipped);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -732,7 +803,7 @@ public class GephiControlService {
                 if (e == null) return error("Edge not found");
                 g.removeEdge(e);
                 return success("Edge removed");
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -749,7 +820,7 @@ public class GephiControlService {
                 if (e == null) return error("Edge not found");
                 e.setWeight(weight);
                 return success("Weight set to " + weight);
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -766,7 +837,7 @@ public class GephiControlService {
                 if (e == null) return error("Edge not found");
                 e.setLabel(label);
                 return success("Edge label set");
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -776,7 +847,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
-            g.readLock();
+            lockRead(g);
             try {
                 JsonArray arr = new JsonArray();
                 int count = 0, skip = 0;
@@ -828,7 +899,7 @@ public class GephiControlService {
             if (ws == null) return error("No project open");
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
-            g.readLock();
+            lockRead(g);
             try {
                 int nc = g.getNodeCount(), ec = g.getEdgeCount();
                 double density = nc > 1 ? (2.0 * ec) / (nc * (nc - 1)) : 0;
@@ -908,7 +979,7 @@ public class GephiControlService {
             try {
                 if (table.getColumn(name) != null) return error("Column already exists: " + name);
                 table.addColumn(name, cls);
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
             return success("Column '" + name + "' added");
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -927,7 +998,7 @@ public class GephiControlService {
                     ensureColumnAndSet(gm.getNodeTable(), n, e.getKey(), e.getValue());
                 }
                 return success("Attributes set on node " + id);
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -958,7 +1029,7 @@ public class GephiControlService {
                 r.addProperty("set", set);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -978,7 +1049,7 @@ public class GephiControlService {
                     ensureColumnAndSet(gm.getEdgeTable(), e, entry.getKey(), entry.getValue());
                 }
                 return success("Attributes set on edge");
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -1042,7 +1113,7 @@ public class GephiControlService {
                 if (n == null) return error("Node not found: " + id);
                 n.setColor(new Color(r, g, b, a));
                 return success("Node color set");
-            } finally { graph.writeUnlock(); }
+            } finally { unlockWrite(graph); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -1057,7 +1128,7 @@ public class GephiControlService {
                 if (n == null) return error("Node not found: " + id);
                 n.setSize(size);
                 return success("Node size set to " + size);
-            } finally { graph.writeUnlock(); }
+            } finally { unlockWrite(graph); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -1075,7 +1146,7 @@ public class GephiControlService {
                     if (e == null) return error("Edge not found");
                     e.setColor(new Color(r, g, b, a));
                     return success("Edge color set");
-                } finally { graph.writeUnlock(); }
+                } finally { unlockWrite(graph); }
             } catch (Exception e) { return error("Failed: " + e.getMessage()); }
         });
     }
@@ -1104,7 +1175,7 @@ public class GephiControlService {
                 res.addProperty("set", set);
                 res.addProperty("not_found", notFound);
                 return res;
-            } finally { graph.writeUnlock(); }
+            } finally { unlockWrite(graph); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -1121,7 +1192,7 @@ public class GephiControlService {
                         n.setColor(defaultColor);
                         n.setSize(size);
                     }
-                } finally { graph.writeUnlock(); }
+                } finally { unlockWrite(graph); }
                 return success("Appearance reset for all nodes");
             } catch (Exception e) { return error("Failed: " + e.getMessage()); }
         });
@@ -1181,7 +1252,7 @@ public class GephiControlService {
                             }
                         }
                     }
-                } finally { graph.writeUnlock(); }
+                } finally { unlockWrite(graph); }
                 JsonObject r = success("Colored " + colored + " nodes by " + columnName);
                 r.addProperty("partitions", palette.size());
                 return r;
@@ -1197,7 +1268,7 @@ public class GephiControlService {
      */
     static double[] numericRange(Graph g, Column col) {
         double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
-        g.readLock();
+        lockRead(g);
         try {
             for (Node n : g.getNodes()) {
                 Object v = n.getAttribute(col);
@@ -1245,7 +1316,7 @@ public class GephiControlService {
                             colored++;
                         }
                     }
-                } finally { graph.writeUnlock(); }
+                } finally { unlockWrite(graph); }
                 JsonObject res = success("Colored " + colored + " nodes by ranking on " + columnName);
                 res.addProperty("min_value", min);
                 res.addProperty("max_value", max);
@@ -1281,7 +1352,7 @@ public class GephiControlService {
                             sized++;
                         }
                     }
-                } finally { graph.writeUnlock(); }
+                } finally { unlockWrite(graph); }
                 JsonObject res = success("Sized " + sized + " nodes by " + columnName);
                 res.addProperty("min_value", min);
                 res.addProperty("max_value", max);
@@ -1626,7 +1697,7 @@ public class GephiControlService {
                 }
                 lockWrite(g);
                 try { for (Node n : toRemove) g.removeNode(n); }
-                finally { g.writeUnlock(); }
+                finally { unlockWrite(g); }
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Filtered by degree [" + minDegree + ", " + maxDegree + "]");
@@ -1660,7 +1731,7 @@ public class GephiControlService {
                 }
                 lockWrite(g);
                 try { for (Edge e : toRemove) g.removeEdge(e); }
-                finally { g.writeUnlock(); }
+                finally { unlockWrite(g); }
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
                 JsonObject r = success("Filtered edges by weight [" + minWeight + ", " + maxWeight + "]");
@@ -2048,7 +2119,7 @@ public class GephiControlService {
                     if (!col.isProperty()) sb.append(sep).append(csv(col.getTitle(), sep));
                 }
                 sb.append("\n");
-                g.readLock();
+                lockRead(g);
                 try {
                     for (Node n : g.getNodes()) {
                         sb.append(csv(String.valueOf(n.getId()), sep)).append(sep)
@@ -2071,7 +2142,7 @@ public class GephiControlService {
                     if (!col.isProperty()) sb.append(sep).append(csv(col.getTitle(), sep));
                 }
                 sb.append("\n");
-                g.readLock();
+                lockRead(g);
                 try {
                     for (Edge e : g.getEdges()) {
                         sb.append(csv(String.valueOf(e.getSource().getId()), sep)).append(sep)
@@ -2166,7 +2237,7 @@ public class GephiControlService {
                 r.addProperty("nodes_removed", nodeCount);
                 r.addProperty("edges_removed", edgeCount);
                 return r;
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
@@ -2183,7 +2254,7 @@ public class GephiControlService {
                         if (g.getDegree(n) == 0) isolates.add(n);
                     }
                     for (Node n : isolates) g.removeNode(n);
-                } finally { g.writeUnlock(); }
+                } finally { unlockWrite(g); }
                 // Refresh preview so exports reflect the filtered graph (outside the lock)
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                 if (pc != null) pc.refreshPreview(ws);
@@ -2233,7 +2304,7 @@ public class GephiControlService {
                         if (!keep.contains(n)) toRemove.add(n);
                     }
                     for (Node n : toRemove) g.removeNode(n);
-                } finally { g.writeUnlock(); }
+                } finally { unlockWrite(g); }
 
                 // Refresh preview so exports reflect the filtered graph (outside the lock)
                 PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
@@ -2315,7 +2386,7 @@ public class GephiControlService {
                     }
                     lockWrite(g);
                     try { for (Node n : toRemove) g.removeNode(n); }
-                    finally { g.writeUnlock(); }
+                    finally { unlockWrite(g); }
                     PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
                     if (pc != null) pc.refreshPreview(ws);
                     JsonObject r = success("Giant component extracted");
@@ -2381,7 +2452,7 @@ public class GephiControlService {
             lockWrite(g);
             try {
                 gm.setVisibleView(null);
-            } finally { g.writeUnlock(); }
+            } finally { unlockWrite(g); }
             return success("Filters reset - full graph view restored");
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -2392,4 +2463,101 @@ public class GephiControlService {
         layoutRunning.set(false);
         layoutExecutor.shutdownNow();
     }
+
+    /**
+     * Cheap wedge detector for /health: try the graph read lock briefly.
+     * "ok" = acquired instantly; "busy" = could not acquire (a writer is parked or
+     * the renderer is saturating the lock — if persistent, Gephi needs a restart);
+     * "none" = no workspace open.
+     */
+    public String graphLockProbe() {
+        try {
+            GraphModel gm = currentGraphModel();
+            if (gm == null) return "none";
+            Graph g = gm.getGraph();
+            java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
+            if (rl == null) return "unknown";
+            if (rl.tryLock(150, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                rl.unlock();
+                return "ok";
+            }
+            return "busy";
+        } catch (Throwable t) {
+            return "unknown";
+        }
+    }
+
+    // ─── View / camera control (teaching mode) ──────────────────────────
+
+    /**
+     * Direct the human viewer's attention in the Gephi window: center the camera on
+     * the graph, a node, an edge, or a region; optionally select nodes (visual
+     * highlight) and set zoom. No-op modes never touch the graph write lock.
+     */
+    public JsonObject focusView(String mode, String nodeId, String source, String target,
+                                Double x, Double y, Double w, Double h,
+                                Double zoom, java.util.List<String> select) {
+        org.gephi.visualization.api.VisualizationController vc =
+            Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
+        if (vc == null) return error("No visualization available (headless or view not started)");
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        Graph g = gm.getGraph();
+        try {
+            String m = mode == null ? "graph" : mode.toLowerCase();
+            switch (m) {
+                case "graph":
+                    vc.centerOnGraph();
+                    break;
+                case "zero":
+                    vc.centerOnZero();
+                    break;
+                case "node": {
+                    if (nodeId == null) return error("Missing 'id' for mode=node");
+                    Node n = g.getNode(nodeId);
+                    if (n == null) return error("Node not found: " + nodeId);
+                    vc.centerOnNode(n);
+                    break;
+                }
+                case "edge": {
+                    if (source == null || target == null) return error("Missing 'source'/'target' for mode=edge");
+                    Node ns = g.getNode(source), nt = g.getNode(target);
+                    if (ns == null || nt == null) return error("Edge endpoints not found");
+                    Edge e = g.getEdge(ns, nt);
+                    if (e == null) e = g.getEdge(nt, ns);
+                    if (e == null) return error("Edge not found: " + source + " -> " + target);
+                    vc.centerOnEdge(e);
+                    break;
+                }
+                case "region": {
+                    if (x == null || y == null || w == null || h == null)
+                        return error("Missing x/y/w/h for mode=region");
+                    vc.centerOn(x.floatValue(), y.floatValue(), w.floatValue(), h.floatValue());
+                    break;
+                }
+                default:
+                    return error("Unknown mode: " + mode + " (use graph|zero|node|edge|region)");
+            }
+            if (select != null) {
+                if (select.isEmpty()) {
+                    vc.resetSelection();
+                } else {
+                    java.util.List<Node> nodes = new java.util.ArrayList<>();
+                    for (String id : select) {
+                        Node n = g.getNode(id);
+                        if (n != null) nodes.add(n);
+                    }
+                    vc.selectNodes(nodes.toArray(new Node[0]));
+                }
+            }
+            if (zoom != null) vc.setZoom(zoom.floatValue());
+            JsonObject r = success("View focused (" + m + ")");
+            r.addProperty("mode", m);
+            if (select != null) r.addProperty("selected", select.size());
+            return r;
+        } catch (Exception e) {
+            return error("Focus failed: " + e.getMessage());
+        }
+    }
+
 }

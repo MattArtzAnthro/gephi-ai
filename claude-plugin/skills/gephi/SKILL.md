@@ -2,7 +2,7 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 79 Gephi MCP tools.
+  this skill provides workflows and best practices for the 80 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
@@ -13,7 +13,7 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-You have access to 79 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 80 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -44,6 +44,17 @@ You have access to 79 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 8. **Preview** — `gephi_set_preview_settings` for export appearance
 9. **Export** — size the canvas to the layout shape using `extent.suggested_export` from `gephi_visual_qa`, then `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation (pass `caption_column` for floating cluster captions; the app offers per-node ask-Claude, ego highlighting, in-place refresh, and a time slider on dynamic graphs); use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
 
+## Teaching Mode (watch-along sessions)
+
+When a human is watching the Gephi window while you work (teaching, demos, paired
+analysis), switch to narrated pacing: announce each step and what to watch for
+BEFORE doing it; use `gephi_focus_view` to direct their eyes (fit graph after
+import/layout, center+select a cluster before discussing it); run layouts in
+200-300 iteration chunks with narration between passes instead of one long blast;
+pause after each visible change and invite their observations. The /teach command
+codifies the full pattern. Watching the instrument operate is the pedagogy — never
+do anything the viewer can't follow.
+
 ## Tool Quick Reference
 
 ### Project & Workspace
@@ -68,6 +79,9 @@ You have access to 79 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 
 ### Layout
 `gephi_run_layout` (use `"ForceAtlas 2"`, `"Yifan Hu"`, `"Fruchterman Reingold"`, `"Circular"`, `"Random Layout"`), `gephi_stop_layout`, `gephi_get_layout_status`, `gephi_get_available_layouts`, `gephi_get_layout_properties`/`gephi_set_layout_properties`
+
+### View / Camera (Desktop only)
+`gephi_focus_view` (mode graph|zero|node|edge|region, select highlights nodes, zoom) — directs the human viewer's attention in the Gephi window; essential in teaching mode
 
 ### Filtering
 `gephi_filter_by_degree`, `gephi_filter_by_edge_weight`, `gephi_remove_isolates`, `gephi_extract_ego_network`, `gephi_extract_giant_component`, `gephi_reset_filters`
@@ -118,7 +132,7 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 
 ## Key Gotchas
 
-- **macOS render deadlock — work in one pass (most important).** On macOS, Gephi's OpenGL view (the concurrent VizEngine "World Updater") and the Data Laboratory table both hold the graph's read lock almost continuously while rendering, and Gephi's own write operations block on it. A burst of API **writes against a large, actively-rendering graph can deadlock Gephi** (every write call times out; only `gephi_health_check` still answers). This is a Gephi-core limitation, not the plugin — the v1.1.x plugin hardens its own locking so a single clean pass works, but it can't fix Gephi's renderer. **Working envelope:** do **build/import → compute stats → style → layout → export** as one focused sequence, then stop. Avoid long interactive sessions that keep mutating an already-laid-out, on-screen graph. Keep graphs reasonably sized. If a write call times out, the view has deadlocked — **restart Gephi** (fully quit + reopen) to recover; there is no other recovery.
+- **macOS render deadlock — work in one pass (most important).** On macOS, Gephi's OpenGL view (the concurrent VizEngine "World Updater") and the Data Laboratory table both hold the graph's read lock almost continuously while rendering, and Gephi's own write operations block on it. A burst of API **writes against a large, actively-rendering graph can deadlock Gephi** (every write call times out; only `gephi_health_check` still answers). This is a Gephi-core limitation, not the plugin — the v1.1.x plugin hardens its own locking so a single clean pass works, but it can't fix Gephi's renderer. **Working envelope:** do **build/import → compute stats → style → layout → export** as one focused sequence, then stop. Avoid long interactive sessions that keep mutating an already-laid-out, on-screen graph. Keep graphs reasonably sized. Since plugin 1.2.0 the failure is contained: writes pause the renderer while they run, reads and UI-thread calls time out with a clear "Gephi is wedged; restart it" error instead of hanging, and `gephi_health_check` reports `graph_lock: busy` as a wedge detector. Recovery is still a full Gephi restart (quit + reopen) — the plugin can detect and avoid the wedge, not undo it.
 - **Preview settings do not affect Gephi's Overview canvas.** Everything set via `gephi_set_preview_settings` (including `node.label.show`) applies to exports and the Preview tab only. To see labels live in the Overview window, the user must click the black **T** toggle in the toolbar at the bottom of the graph canvas — only they can do that.
 - **Label fonts render in graph-coordinate space and clamp weirdly.** A fixed point size vanishes on large layouts, and with `node.label.proportinalSize: false` Gephi clamps every label to its node's bounds (bigger fonts silently do nothing). For readable hub captions use `gephi_label_clusters` (proportional sizing + extent-scaled font handled for you); when hand-tuning, set proportional TRUE and scale the base font to the layout extent.
 - **Filters are destructive** — they permanently remove nodes/edges. Save project first.

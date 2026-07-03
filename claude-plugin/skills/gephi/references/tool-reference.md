@@ -21,6 +21,15 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
   get export dimensions matching the layout shape. Fix every warning before the
   final export.
 
+### gephi_focus_view
+- **Method**: POST `/view/focus`
+- **Params**: `{mode: "graph"|"zero"|"node"|"edge"|"region", id?, source?, target?, x?, y?, w?, h?, zoom?: float, select?: [node ids]}`
+- **Returns**: `{success, mode, selected?}`
+- **Usage**: Camera/attention control for the Gephi Desktop window: fit the graph,
+  center on a node/edge/region, visually select nodes (empty select clears), set
+  zoom. Desktop only — errors politely when headless. Use in teaching mode so the
+  viewer always sees what you're describing.
+
 ## Project Management
 
 ### gephi_create_project

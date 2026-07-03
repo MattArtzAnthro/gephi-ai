@@ -89,7 +89,12 @@ def _body(**kwargs: Any) -> dict[str, Any]:
 
 @mcp.tool(name="gephi_health_check")
 async def gephi_health_check() -> str:
-    """Check if Gephi Desktop is running and the MCP plugin is accessible."""
+    """Check if Gephi Desktop is running and the MCP plugin is accessible.
+
+    The response's graph_lock field is a wedge detector: "ok" is healthy; a
+    persistent "busy" means Gephi's graph lock is unavailable and the app needs a
+    full restart (known macOS renderer issue).
+    """
     return fmt(await gephi.request("GET", "/health"))
 
 
@@ -607,6 +612,29 @@ async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes
     """Export the graph to CSV. target: "nodes" | "edges" | "both"."""
     return fmt(await gephi.request("POST", "/export/csv",
                                    json_data={"file": file, "separator": separator, "target": target}))
+
+@mcp.tool(name="gephi_focus_view")
+async def gephi_focus_view(mode: str = "graph", id: str | None = None,
+                           source: str | None = None, target: str | None = None,
+                           x: float | None = None, y: float | None = None,
+                           w: float | None = None, h: float | None = None,
+                           zoom: float | None = None,
+                           select: list[str] | None = None) -> str:
+    """Move Gephi Desktop's camera to direct the human viewer's attention.
+
+    Use this in teaching/demo sessions so the person watching Gephi sees what you
+    are working on: mode "graph" fits the whole graph, "node" centers on a node
+    (id), "edge" on an edge (source+target), "region" on a rectangle (x, y, w, h in
+    graph coordinates). Optional select highlights nodes visually (empty list
+    clears the selection); zoom sets the zoom level. Call it after layouts, before
+    narrating a cluster, or when saying "watch this part". Desktop only; returns an
+    error when no visualization is available (headless).
+    """
+    return fmt(await gephi.request("POST", "/view/focus",
+                                   json_data=_body(mode=mode, id=id, source=source,
+                                                   target=target, x=x, y=y, w=w, h=h,
+                                                   zoom=zoom, select=select)))
+
 
 @mcp.tool(name="gephi_visual_qa")
 async def gephi_visual_qa(partition_column: str | None = None) -> str:
