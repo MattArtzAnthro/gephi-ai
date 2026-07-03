@@ -12,7 +12,7 @@ Built for researchers working across network science and AI.
 
 **Interactive in-chat visualization** — `gephi_view_graph` renders your network as a pannable, zoomable [MCP App](https://modelcontextprotocol.io/extensions/apps/overview) directly inside Claude and Claude Desktop: hover for labels, click a node to highlight its connections or ask Claude about it, float cluster captions over communities, refresh from Gephi in place, and scrub a time slider on dynamic networks.
 
-**Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`), a specialized network analyst agent, and workflow skills that teach Claude network science best practices.
+**Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`), a specialized network analyst agent, and workflow skills that teach network science best practices.
 
 **Works with any MCP client** — Claude Code, Claude Desktop, or any MCP-compatible assistant.
 
