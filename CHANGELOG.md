@@ -4,6 +4,30 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.3.0]
+
+### Added
+- **`gephi_visual_qa` (tool #78) — visual-design diagnostics.** One call returns node
+  size range, distinct color count with near-white detection, layout extent with
+  export dimensions matched to the graph's shape, and, given a partition column, the
+  within-group edge share versus the random baseline with a strong/weak/none verdict.
+  The "none" verdict catches decorative groupings whose edges are actually wired at
+  random — coloring by those misleads, and a live test session showed exactly that
+  failure. Warnings are actionable instructions, so any host (including skill-less
+  ones like Claude Desktop and Cowork) can inspect and fix its own renders.
+- **`/beautify` command** — runs the full inspect-and-adjust loop on the open graph:
+  baseline QA, data-truth gate, validated styling, VNA layout, up to three diagnose
+  and adjust rounds, and a shape-matched final export.
+
+### Changed
+- **Skill workflow gains a data-truth step**: verify claimed groupings against
+  topology before coloring by them, and wire real structure (not decorative labels)
+  when generating demo networks. Community-colored graphs now tint edges by source
+  at 30-40 opacity; export canvases match the layout extent.
+- **`gephi_size_by_ranking` defaults raised to min 10, max 60** (5 rendered as
+  invisible specks), and **`gephi_set_preview_settings` now warns when some property
+  names did not match** instead of silently reporting success.
+
 ## [1.2.4]
 
 ### Changed

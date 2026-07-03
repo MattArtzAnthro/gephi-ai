@@ -359,7 +359,7 @@ async def gephi_color_by_ranking(column: str,
                                               "r_max": r_max, "g_max": g_max, "b_max": b_max}))
 
 @mcp.tool(name="gephi_size_by_ranking")
-async def gephi_size_by_ranking(column: str, min_size: float = 5, max_size: float = 50) -> str:
+async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: float = 60) -> str:
     """Size nodes by a numeric attribute, mapping values between min_size and max_size.
 
     Always do this before exporting or viewing — unsized nodes render as invisible
@@ -552,9 +552,17 @@ async def gephi_set_preview_settings(settings: dict[str, Any]) -> str:
     """Set preview/rendering settings used for export (PNG/PDF/SVG).
 
     settings is a {property: value} map, e.g. {"background.color": "#ffffff",
-    "node.label.show": true, "edge.thickness": 2}.
+    "node.label.show": true, "edge.thickness": 2}. Valid property names are the
+    keys returned by gephi_get_preview_settings.
     """
-    return fmt(await gephi.request("POST", "/preview/settings", json_data=settings))
+    result = await gephi.request("POST", "/preview/settings", json_data=settings)
+    applied = result.get("properties_set")
+    if result.get("success") and applied is not None and applied < len(settings):
+        result["warning"] = (
+            f"only {applied} of {len(settings)} properties matched — check the "
+            "property names against gephi_get_preview_settings (unknown names are "
+            "silently ignored)")
+    return fmt(result)
 
 
 # ─── Export ──────────────────────────────────────────────────
@@ -599,6 +607,30 @@ async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes
     """Export the graph to CSV. target: "nodes" | "edges" | "both"."""
     return fmt(await gephi.request("POST", "/export/csv",
                                    json_data={"file": file, "separator": separator, "target": target}))
+
+@mcp.tool(name="gephi_visual_qa")
+async def gephi_visual_qa(partition_column: str | None = None) -> str:
+    """Run visual-design diagnostics on the current graph. Cheap; use it often.
+
+    Call BEFORE styling with partition_column set (e.g. "group", "modularity_class")
+    to verify a claimed grouping is topologically real — if the verdict is "none",
+    coloring by it would mislead; compute real communities instead. Call again AFTER
+    styling/layout to catch invisible node sizes, near-white colors, gradient color
+    schemes, and to get the export dimensions that match the layout's shape
+    (extent.suggested_export). Fix every warning before the final export.
+    """
+    fd, path = tempfile.mkstemp(suffix=".gexf")
+    os.close(fd)
+    try:
+        result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
+        if not result.get("success", False):
+            return fmt(result)
+        graph = gephi_mcp_viewer.parse_gexf(path, max_nodes=1000000)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
+    return fmt(gephi_mcp_viewer.analyze_graph(graph, partition_column=partition_column))
+
 
 @mcp.resource("ui://gephi/graph-view", name="gephi-graph-view",
               mime_type="text/html;profile=mcp-app")

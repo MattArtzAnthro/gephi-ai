@@ -1,7 +1,7 @@
 {
   "name": "gephi-network-analysis",
-  "description": "AI-powered network analysis, visualization, and export using Gephi Desktop. Provides 77 MCP tools for graph construction, community detection, centrality analysis, layout algorithms, and publication-ready export.",
-  "version": "1.2.4",
+  "description": "AI-powered network analysis, visualization, and export using Gephi Desktop. Provides 78 MCP tools for graph construction, community detection, centrality analysis, layout algorithms, and publication-ready export.",
+  "version": "1.3.0",
   "author": {
     "name": "Matt Artz",
     "url": "https://www.mattartz.me"

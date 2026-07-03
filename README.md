@@ -8,11 +8,11 @@ Built for researchers working across network science and AI.
 
 ## What you get
 
-**77 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**78 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
 **Interactive in-chat visualization** — `gephi_view_graph` renders your network as a pannable, zoomable [MCP App](https://modelcontextprotocol.io/extensions/apps/overview) directly inside Claude and Claude Desktop: hover for labels, click any node for its attributes.
 
-**Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`), a specialized network analyst agent, and workflow skills that teach Claude network science best practices.
+**Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`), a specialized network analyst agent, and workflow skills that teach Claude network science best practices.
 
 **Works with any MCP client** — Claude Code, Claude Desktop, or any MCP-compatible assistant.
 
@@ -37,7 +37,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 77 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 78 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -102,7 +102,7 @@ That's it — the plugin bundles and runs the MCP server itself (via uv), and ad
 
 #### Claude Code (MCP tools only)
 
-If you just want the 77 tools without skills and commands:
+If you just want the 78 tools without skills and commands:
 
 ```bash
 claude mcp add gephi-mcp -- uvx gephi-mcp
@@ -156,13 +156,13 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 
 | Component | What it does |
 |-----------|-------------|
-| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore` |
+| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify` |
 | **Network analyst agent** | Specialized subagent for deep structural analysis, metric comparison, and network classification |
 | **Gephi skill** | Teaches Claude network science workflows, visualization best practices, and known Gephi gotchas |
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (77)
+## Tools (78)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -175,7 +175,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
 | Preview & Export | 9 | `gephi_export_png`, `gephi_export_gexf`, `gephi_view_graph` |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
-| Health | 1 | `gephi_health_check` |
+| Health & Diagnostics | 2 | `gephi_health_check`, `gephi_visual_qa` |
 
 ## Example workflows
 
@@ -209,7 +209,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 77 tools
+- **references/tool-reference.md** — Complete API reference for all 78 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

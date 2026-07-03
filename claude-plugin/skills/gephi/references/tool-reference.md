@@ -10,6 +10,17 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, service, version, status}`
 - **Usage**: Call first to verify Gephi is running
 
+### gephi_visual_qa
+- **Method**: GEXF export (internal temp file), analyzed server-side
+- **Params**: `{partition_column?: str}`
+- **Returns**: `{nodes, edges, sizes, colors, extent (with suggested_export), partition?, warnings[]}`
+- **Usage**: Visual-design diagnostics. Call BEFORE styling with `partition_column`
+  to verify a claimed grouping is topologically real (verdict "none" means coloring
+  by it would mislead — compute modularity instead), and AFTER styling/layout to
+  catch invisible node sizes, near-white colors, and gradient color schemes, and to
+  get export dimensions matching the layout shape. Fix every warning before the
+  final export.
+
 ## Project Management
 
 ### gephi_create_project

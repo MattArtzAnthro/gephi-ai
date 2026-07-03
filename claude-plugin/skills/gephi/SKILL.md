@@ -2,7 +2,7 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 77 Gephi MCP tools.
+  this skill provides workflows and best practices for the 78 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
@@ -13,7 +13,7 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-You have access to 77 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 78 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -38,10 +38,11 @@ You have access to 77 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 2. **Fresh project** — call `gephi_create_project` before importing
 3. **Import** — `gephi_import_file` or build with `gephi_add_nodes`/`gephi_add_edges`
 4. **Statistics** — compute degree, modularity, etc.
-5. **Style** — color by partition, size by ranking
-6. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"` (linLogMode true, gravity 0), then export a small PNG and visually inspect; adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
-7. **Preview** — `gephi_set_preview_settings` for export appearance
-8. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation; use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
+5. **Data-truth check** — before coloring by any claimed grouping, run `gephi_visual_qa` with `partition_column` set. If the verdict is "none", the attribute does not match the topology and coloring by it would mislead; compute real communities with `gephi_compute_modularity` instead (and say so). When building demo/synthetic networks, wire real structure: preferential attachment within communities, hub-biased bridges between them, within-group edge share above 60% — never random edges with decorative group labels.
+6. **Style** — color by partition, size by ranking. With community colors applied, tint edges by their source (`edge.color` set to `source`, `edge.opacity` 30-40) so edges carry community identity without noise.
+7. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"` (linLogMode true, gravity 0), then run `gephi_visual_qa` and export a small PNG to inspect; fix every warning and adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
+8. **Preview** — `gephi_set_preview_settings` for export appearance
+9. **Export** — size the canvas to the layout shape using `extent.suggested_export` from `gephi_visual_qa`, then `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation; use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
 
 ## Tool Quick Reference
 

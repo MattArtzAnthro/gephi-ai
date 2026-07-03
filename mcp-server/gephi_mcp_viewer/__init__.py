@@ -94,3 +94,106 @@ def build_app_html() -> str:
     return (template
             .replace("__GRAPHOLOGY_JS__", graphology_js)
             .replace("__SIGMA_JS__", sigma_js))
+
+
+def _luminance(color: str) -> float:
+    """Approximate relative luminance (0-1) of 'rgb(r,g,b)' or '#rrggbb' strings."""
+    try:
+        if color.startswith("rgb"):
+            r, g, b = (int(v) for v in color[color.index("(") + 1:color.index(")")].split(","))
+        elif color.startswith("#") and len(color) >= 7:
+            r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+        else:
+            return 0.5
+    except ValueError:
+        return 0.5
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+
+
+def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
+    """Visual-design diagnostics over a parsed graph (see parse_gexf).
+
+    Checks the things that make renders unreadable: invisible node sizes,
+    near-white colors on white exports, gradient-instead-of-categorical color
+    use, layout extent vs export aspect — and, when partition_column is given,
+    whether that grouping is topologically real (within-group edge share vs
+    the random baseline) or would mislead if used for coloring.
+    """
+    nodes, edges = graph["nodes"], graph["edges"]
+    warnings = []
+
+    sizes = sorted(n["size"] for n in nodes) or [0.0]
+    size_info = {"min": sizes[0], "median": sizes[len(sizes) // 2], "max": sizes[-1],
+                 "flat": sizes[0] == sizes[-1]}
+    if size_info["min"] < 8:
+        warnings.append(
+            f"smallest node size is {size_info['min']:g}; sizes under 8 render as "
+            "invisible specks — re-run gephi_size_by_ranking with min_size >= 10")
+    if size_info["flat"] and len(nodes) > 1:
+        warnings.append("all nodes are the same size; size by degree (or another "
+                        "ranking) to create visual hierarchy")
+
+    colors = {n["color"] for n in nodes}
+    near_white = [c for c in colors if _luminance(c) > 0.85]
+    color_info = {"distinct": len(colors), "near_white": len(near_white)}
+    if near_white:
+        warnings.append(
+            f"{len(near_white)} node color(s) are near-white and will be invisible "
+            "on white exports — use the validated palette (see gephi_color_by_partition)")
+    if len(colors) > 12:
+        warnings.append(
+            f"{len(colors)} distinct node colors — this looks like a continuous "
+            "gradient; if color should show categories, use a categorical palette "
+            "(and never double-encode the variable already shown by size)")
+
+    xs = [n["x"] for n in nodes] or [0.0]
+    ys = [n["y"] for n in nodes] or [0.0]
+    w, h = max(xs) - min(xs), max(ys) - min(ys)
+    aspect = (w / h) if h else 1.0
+    long_side = 2000
+    if aspect >= 1:
+        sug = {"width": long_side, "height": max(800, int(long_side / max(aspect, 0.1) / 10) * 10)}
+    else:
+        sug = {"width": max(800, int(long_side * aspect / 10) * 10), "height": long_side}
+    extent = {"width": round(w, 1), "height": round(h, 1), "aspect": round(aspect, 2),
+              "suggested_export": sug}
+
+    result = {
+        "nodes": len(nodes), "edges": len(edges),
+        "directed": graph.get("directed", False),
+        "sizes": size_info, "colors": color_info, "extent": extent,
+        "warnings": warnings,
+    }
+
+    if partition_column:
+        group = {n["key"]: n["attributes"].get(partition_column) for n in nodes}
+        counted = [g for g in group.values() if g is not None]
+        shares = {}
+        for g in counted:
+            shares[g] = shares.get(g, 0) + 1
+        n_total = len(counted) or 1
+        baseline = sum((c / n_total) ** 2 for c in shares.values())
+        within = sum(1 for e in edges
+                     if group.get(e["source"]) is not None
+                     and group.get(e["source"]) == group.get(e["target"]))
+        fraction = within / len(edges) if edges else 0.0
+        ratio = fraction / baseline if baseline else 0.0
+        if fraction >= 0.6 or ratio >= 3:
+            verdict = "strong"
+        elif ratio >= 1.5:
+            verdict = "weak"
+        else:
+            verdict = "none"
+            warnings.append(
+                f"'{partition_column}' does not match the topology (within-group edge "
+                f"share {fraction:.0%} vs random baseline {baseline:.0%}) — coloring by "
+                "it would be misleading; compute real communities with "
+                "gephi_compute_modularity instead")
+        result["partition"] = {
+            "column": partition_column, "groups": len(shares),
+            "within_fraction": round(fraction, 3),
+            "random_baseline": round(baseline, 3),
+            "ratio_vs_random": round(ratio, 2), "verdict": verdict,
+        }
+
+    return result
