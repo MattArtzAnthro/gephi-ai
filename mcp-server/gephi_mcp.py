@@ -93,7 +93,10 @@ async def gephi_health_check() -> str:
 
     The response's graph_lock field is a wedge detector: "ok" is healthy; a
     persistent "busy" means Gephi's graph lock is unavailable and the app needs a
-    full restart (known macOS renderer issue).
+    full restart (known macOS renderer issue). graph_lock_stats gives the live
+    lock counters: a nonzero "readers" while Gephi is idle means a leaked read
+    hold (writes will fail until restart); "queued" > 0 for long means a writer
+    is starving.
     """
     return fmt(await gephi.request("GET", "/health"))
 

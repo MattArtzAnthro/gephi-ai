@@ -175,6 +175,46 @@ class GraphOpsTest {
         assertEquals(0, g.getLock().getWriteHoldCount(), "writeUnlock must release what lockWrite took");
     }
 
+    /**
+     * Regression guard for the wedge-by-leak bug: breaking out of a live
+     * auto-locked NodeIterable/EdgeIterable before exhaustion leaks a read hold
+     * that is never released (and, on a dying request thread, never releasable),
+     * after which no writer can ever acquire the lock. Query endpoints must
+     * iterate a toArray() snapshot instead. This encodes the graphstore contract
+     * both patterns rely on.
+     */
+    @Test
+    void earlyBreakOverToArraySnapshotLeavesNoReadHold() throws Exception {
+        GraphModel gm = newModel();
+        for (int i = 0; i < 10; i++) {
+            gm.getGraph().addNode(gm.factory().newNode("n" + i));
+        }
+        Graph g = gm.getGraph();
+
+        // the fixed pattern: snapshot, then break early
+        int count = 0;
+        for (org.gephi.graph.api.Node n : g.getNodes().toArray()) {
+            if (count >= 3) break;
+            count++;
+        }
+
+        java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl =
+            GephiControlService.writeLockHandle(g);
+        assertNotNull(wl, "write lock must be reachable via reflection");
+        assertTrue(wl.tryLock(200, java.util.concurrent.TimeUnit.MILLISECONDS),
+            "write lock must be immediately acquirable after an early-broken toArray loop");
+        wl.unlock();
+
+        // and the trap itself, for documentation: a live-iterable early break leaks
+        java.util.Iterator<org.gephi.graph.api.Node> it = g.getNodes().iterator();
+        it.next(); // iterator constructor auto-acquired the read lock
+        assertFalse(wl.tryLock(50, java.util.concurrent.TimeUnit.MILLISECONDS),
+            "an unexhausted live iterator holds the read lock (the leak this guards against)");
+        while (it.hasNext()) it.next(); // exhaustion releases it
+        assertTrue(wl.tryLock(200, java.util.concurrent.TimeUnit.MILLISECONDS));
+        wl.unlock();
+    }
+
     @Test
     void buildCsvQuotesFieldsContainingSeparator() {
         GraphModel gm = newModel();

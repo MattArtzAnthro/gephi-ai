@@ -108,6 +108,7 @@ public class GephiAPIServer extends NanoHTTPD {
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
+            result.add("graph_lock_stats", service.graphLockStats());
             return result;
         }
 

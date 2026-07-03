@@ -195,7 +195,7 @@ public class GephiControlService {
      */
     static void lockRead(Graph g) {
         java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
-        if (rl == null) { lockRead(g); return; }
+        if (rl == null) { g.readLock(); return; }
         long deadline = System.nanoTime() + 10_000_000_000L;
         try {
             while (!rl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
@@ -589,7 +589,9 @@ public class GephiControlService {
             try {
                 JsonArray arr = new JsonArray();
                 int count = 0, skip = 0;
-                for (Node n : g.getNodes()) {
+                // toArray, not the live iterable: breaking out of an auto-locked
+                // iterator before exhaustion leaks its read hold permanently.
+                for (Node n : g.getNodes().toArray()) {
                     if (skip++ < offset) continue;
                     if (count >= limit) break;
                     JsonObject o = new JsonObject();
@@ -851,7 +853,9 @@ public class GephiControlService {
             try {
                 JsonArray arr = new JsonArray();
                 int count = 0, skip = 0;
-                for (Edge e : g.getEdges()) {
+                // toArray, not the live iterable: breaking out of an auto-locked
+                // iterator before exhaustion leaks its read hold permanently.
+                for (Edge e : g.getEdges().toArray()) {
                     if (skip++ < offset) continue;
                     if (count >= limit) break;
                     JsonObject o = new JsonObject();
@@ -2487,6 +2491,38 @@ public class GephiControlService {
         }
     }
 
+    /**
+     * Live counters from the underlying ReentrantReadWriteLock: active read holds,
+     * write-locked flag, and queued threads. Diagnostic companion to graphLockProbe;
+     * a nonzero reader count while Gephi is idle means a leaked read hold (the
+     * precursor of a permanent wedge). All values -1 when unreachable.
+     */
+    public JsonObject graphLockStats() {
+        JsonObject o = new JsonObject();
+        o.addProperty("readers", -1);
+        o.addProperty("write_locked", false);
+        o.addProperty("queued", -1);
+        try {
+            GraphModel gm = currentGraphModel();
+            if (gm == null) return o;
+            org.gephi.graph.api.GraphLock lock = gm.getGraph().getLock();
+            if (lock == null) return o;
+            java.lang.reflect.Field f = lock.getClass().getDeclaredField("readWriteLock");
+            f.setAccessible(true);
+            Object v = f.get(lock);
+            if (v instanceof java.util.concurrent.locks.ReentrantReadWriteLock) {
+                java.util.concurrent.locks.ReentrantReadWriteLock rwl =
+                    (java.util.concurrent.locks.ReentrantReadWriteLock) v;
+                o.addProperty("readers", rwl.getReadLockCount());
+                o.addProperty("write_locked", rwl.isWriteLocked());
+                o.addProperty("queued", rwl.getQueueLength());
+            }
+        } catch (Throwable t) {
+            // leave the -1 defaults
+        }
+        return o;
+    }
+
     // ─── View / camera control (teaching mode) ──────────────────────────
 
     /**
@@ -2523,7 +2559,11 @@ public class GephiControlService {
                     if (source == null || target == null) return error("Missing 'source'/'target' for mode=edge");
                     Node ns = g.getNode(source), nt = g.getNode(target);
                     if (ns == null || nt == null) return error("Edge endpoints not found");
-                    Edge e = g.getEdge(ns, nt);
+                    Edge e = g.getEdge(ns, nt, 1);  // directed
+                    if (e == null) e = g.getEdge(ns, nt, 0);  // undirected
+                    if (e == null) e = g.getEdge(ns, nt);  // default
+                    if (e == null) e = g.getEdge(nt, ns, 1);
+                    if (e == null) e = g.getEdge(nt, ns, 0);
                     if (e == null) e = g.getEdge(nt, ns);
                     if (e == null) return error("Edge not found: " + source + " -> " + target);
                     vc.centerOnEdge(e);

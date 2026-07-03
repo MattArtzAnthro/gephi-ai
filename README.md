@@ -47,12 +47,15 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 > reachable only by local processes such as the MCP server, never by a web page.
 > It is not authenticated, so do not expose port 8080 beyond localhost.
 
-> **macOS note:** Gephi's OpenGL graph view holds the graph's read lock almost
-> continuously while rendering, so a burst of API *writes* against a large, actively
-> rendered graph can deadlock Gephi (calls time out; only `gephi_health_check` answers).
-> The plugin hardens its own locking so a single focused pass works, but the renderer is
-> Gephi-core. Best practice: do **build/import → compute → style → layout → export** as one
-> sequence; if a write call ever hangs, fully quit and reopen Gephi to recover.
+> **macOS note:** older plugin versions could wedge Gephi during sustained writes
+> against a large rendered graph (calls hang; only `gephi_health_check` answers).
+> Plugin 1.2.0 fixes the two causes on our side: writes now pause the renderer via
+> Gephi's own viz-engine API, and a read-lock leak in the query endpoints (the main
+> culprit) is closed. All lock waits are bounded, so a genuinely wedged Gephi returns
+> an immediate "fully quit and reopen Gephi" error instead of hanging, and
+> `gephi_health_check` exposes lock probes (`graph_lock`, `graph_lock_stats`) that
+> detect the condition. If you ever see persistent "Graph is busy" errors, restart
+> Gephi — and make sure you are on plugin 1.2.0 or newer.
 
 ## Setup
 

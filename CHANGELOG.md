@@ -25,6 +25,20 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 - **`/teach` command + Teaching Mode skill section**: narrated pacing, chunked
   layouts, camera direction before discussion, observation pauses — codifying
   watch-Gephi-operate as a first-class use.
+- `/health` also reports `graph_lock_stats` (live reader count, write-locked flag,
+  queue length from the underlying lock) — a nonzero reader count while Gephi is
+  idle means a leaked read hold, the precursor of a wedge.
+
+### Fixed
+- **A long-standing wedge source found and killed.** `get_nodes` / `get_edges` with
+  a `limit` smaller than the graph (the defaults!) broke out of a live auto-locked
+  graphstore iterator, permanently leaking a read hold on a dying request thread.
+  One queued write later, every graph operation blocked forever while `/health`
+  kept answering — the exact "healthy but hung" wedge seen in real sessions on
+  macOS. The bug predates 1.0; query endpoints now iterate a `toArray()` snapshot,
+  with a JUnit regression guard encoding the iterator contract.
+- `gephi_focus_view` mode `edge` now finds directed edges (the lookup was missing
+  the edge-type argument used at creation).
 
 ## [1.4.0]
 
