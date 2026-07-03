@@ -10,6 +10,8 @@ Built for researchers working across network science and AI.
 
 **77 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
+**Interactive in-chat visualization** — `gephi_view_graph` renders your network as a pannable, zoomable [MCP App](https://modelcontextprotocol.io/extensions/apps/overview) directly inside Claude and Claude Desktop: hover for labels, click any node for its attributes.
+
 **Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`), a specialized network analyst agent, and workflow skills that teach Claude network science best practices.
 
 **Works with any MCP client** — Claude Code, Claude Desktop, or any MCP-compatible assistant.
@@ -38,7 +40,7 @@ Claude / AI Assistant
 | MCP Server | `mcp-server/` | Python server that exposes 77 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
-All three must be installed. Gephi Desktop must be running before using any tools.
+Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
 
 > **Security note:** the plugin's HTTP API binds to `127.0.0.1` only, validates the
 > request `Host` header (DNS-rebinding defense), and sends no CORS headers — it is
@@ -214,7 +216,7 @@ Reference guides are in `claude-plugin/skills/gephi/`:
 ## Tech stack
 
 - **Gephi Plugin**: Java 11, NetBeans Platform, NanoHTTPD, Gson
-- **MCP Server**: Python 3.10+, MCP SDK (FastMCP), httpx, Pydantic
+- **MCP Server**: Python 3.10+, MCP SDK (FastMCP), httpx, Pydantic, defusedxml; vendored sigma.js + graphology for the in-chat viewer
 - **Target**: Gephi 0.11.1, NetBeans RELEASE290
 
 ## Attribution
