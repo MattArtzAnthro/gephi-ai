@@ -4,6 +4,22 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.2.3]
+
+### Changed
+- **Layout guidance rebuilt on the visual network analysis literature** (prompted by
+  Mathieu Jacomy's review noting too-strong gravity and suboptimal micro/macro
+  balance). The layout guide, skill, and `gephi_run_layout` docstring now teach the
+  VNA reference configuration for ForceAtlas 2 — LinLog mode on, **gravity 0** on
+  connected graphs (gravity only exists to keep disconnected components in frame;
+  excess packs the graph into a central blob) — plus an explicit inspect-and-adjust
+  loop with a symptom table (blob, hairball, smeared clusters, unreadable cluster
+  interiors) and micro/macro balancing via `scalingRatio`, grounded in Venturini,
+  Jacomy, and Jensen (2021) and Noack's LinLog results. Previous guidance recommended
+  gravity 1.0-2.0, which caused exactly the over-compacted layouts reviewers saw.
+  Also corrects `barnesHutOptimize` to the real key `barnesHutOptimization` in the
+  layout guide.
+
 ## [1.2.2]
 
 ### Changed

@@ -39,7 +39,7 @@ You have access to 77 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 3. **Import** — `gephi_import_file` or build with `gephi_add_nodes`/`gephi_add_edges`
 4. **Statistics** — compute degree, modularity, etc.
 5. **Style** — color by partition, size by ranking
-6. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"`, then optionally `"Noverlap"` and `"Label Adjust"`
+6. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"` (linLogMode true, gravity 0), then export a small PNG and visually inspect; adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
 7. **Preview** — `gephi_set_preview_settings` for export appearance
 8. **Export** — `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation; use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
 
@@ -99,7 +99,8 @@ Labeled:
 New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"node.label.overlapGridSize": 50` controls grid granularity. Both can be combined with existing label settings.
 
 ### Layout
-- ForceAtlas 2 for most graphs: `{"scalingRatio": 15, "linLogMode": true, "gravity": 1.0, "sync": true}`, 1000-1500 iterations — scale `scalingRatio` up with node count (see Beautiful Graph Recipe table)
+- ForceAtlas 2 for most graphs: `{"scalingRatio": 15, "linLogMode": true, "gravity": 0, "sync": true}`, 1000-1500 iterations — scale `scalingRatio` up with node count (see Beautiful Graph Recipe table). Gravity stays 0 on connected graphs (use 0.5-1.0 only to keep disconnected components in frame); excessive gravity packs nodes into a central blob and is the most common layout mistake. LinLog mode + gravity 0 is the reference config for making communities visible (Venturini, Jacomy, and Jensen 2021).
+- **Inspect and adjust, always:** after the layout, export a small PNG, look at it, diagnose with the symptom table in references/layout-guide.md (blob = gravity too high; hairball = LinLog off or scaling too low; unreadable cluster interiors = raise scalingRatio), change ONE parameter, rerun ~300 iterations. Two or three loops usually converge — say what you saw and changed.
 - Follow with Noverlap: `{"algorithm": "Noverlap", "iterations": 500, "properties": {"margin": 5.0}, "sync": true}`
 - Follow with Label Adjust (500 iterations, sync: true) if labels are enabled
 - **`barnesHutOptimize` is wrong** — the correct key is `barnesHutOptimization`
@@ -110,7 +111,7 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **Filters are destructive** — they permanently remove nodes/edges. Save project first.
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
 - **Workspace switching can deadlock** — same render-deadlock cause as above; if the API hangs after a workspace switch, restart Gephi.
-- **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer high FA2 gravity (5–8) over destructive filters.
+- **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer high FA2 gravity (5–8) over destructive filters — as a temporary containment tactic only; revert gravity to 0 for the final layout.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
 - **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
 - **For dark backgrounds, use a vibrant/saturated color palette** — the default pastel palette is designed for white. Pastels on dark backgrounds are barely visible. Use saturated colors like `[255,90,70]` (coral), `[60,150,255]` (blue), `[140,230,70]` (lime) etc.

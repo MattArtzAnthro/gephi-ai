@@ -367,9 +367,19 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
                            properties: dict[str, Any] | None = None, sync: bool = False) -> str:
     """Run a layout algorithm to position nodes.
 
-    properties: optional {name: value} tuning map (gravity, scaling, speed, ...).
-    sync=True waits until the layout finishes before returning; otherwise it returns
-    immediately with status "running" (poll gephi_get_layout_status for completion).
+    For community readability with "ForceAtlas 2", start from the visual network
+    analysis reference config: {"linLogMode": true, "gravity": 0, "scalingRatio": 2.0}
+    (Venturini, Jacomy, and Jensen 2021). Gravity only keeps disconnected components
+    in frame (use 0.5-1.0 then); raising it packs nodes into an unreadable central
+    blob. To tighten or spread the layout, adjust scalingRatio, not gravity. After
+    the run, visually inspect a small export and iterate: central blob = lower
+    gravity; hairball = linLogMode on and raise scalingRatio; clusters too dense
+    inside = raise scalingRatio. Change one parameter per rerun.
+
+    properties: optional {name: value} tuning map (gravity, scalingRatio, linLogMode,
+    barnesHutOptimization, ...). sync=True waits until the layout finishes before
+    returning; otherwise it returns immediately with status "running" (poll
+    gephi_get_layout_status for completion).
     """
     result = await gephi.request("POST", "/layout/run",
                                  json_data=_body(algorithm=algorithm, iterations=iterations,
