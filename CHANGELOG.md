@@ -4,6 +4,28 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.5.1]
+
+### Added
+- **Gephi plugin 1.2.1 — leak-hardening + ergonomics.**
+  - Every live NodeIterable/EdgeIterable iteration in the plugin now runs over a
+    `toArray()` snapshot, closing the *exception-path* variant of the read-hold
+    leak fixed in 1.2.0 (an exception mid-iteration leaked the same way an early
+    break did). The iteration rule is codified next to the lock helpers.
+  - `size_by_ranking` / `color_by_ranking` by a degree column now auto-compute
+    the degree statistic instead of failing with "Column not found" on a cold
+    graph; missing-column errors name the fix.
+  - `export_gexf` without a file path (or with `inline: true`) returns the GEXF
+    document in the response — no file round-trip.
+- `gephi_run_layout` guidance and the layout guide now give size-banded starting
+  `scalingRatio` values (under ~1k nodes start 1-2; 1k-10k start 2-4; above 10k
+  start 4-8) — starting high over-spreads into specks.
+- Skill: the "Graph is busy" gotcha now tells Claude exactly how to act on the
+  wedge detectors (`graph_lock`, `graph_lock_stats.readers`, `queued`), including
+  saying plainly when only a Gephi restart will recover.
+- `parse_gexf` in the viewer package accepts a GEXF document string as well as a
+  file path.
+
 ## [1.5.0]
 
 ### Added

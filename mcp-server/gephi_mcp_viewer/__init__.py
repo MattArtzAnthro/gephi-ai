@@ -44,7 +44,11 @@ def _spells(elem):
 
 
 def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
-    root = ET.parse(path).getroot()
+    """Parse GEXF from a file path or a GEXF document string."""
+    if path.lstrip().startswith("<"):
+        root = ET.fromstring(path)
+    else:
+        root = ET.parse(path).getroot()
     graph_el = _children(root, "graph")[0]
     directed = graph_el.get("defaultedgetype", "undirected") == "directed"
 

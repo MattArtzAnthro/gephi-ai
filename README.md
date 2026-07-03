@@ -55,7 +55,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 > an immediate "fully quit and reopen Gephi" error instead of hanging, and
 > `gephi_health_check` exposes lock probes (`graph_lock`, `graph_lock_stats`) that
 > detect the condition. If you ever see persistent "Graph is busy" errors, restart
-> Gephi — and make sure you are on plugin 1.2.0 or newer.
+> Gephi — and make sure you are on plugin 1.2.1 or newer.
 
 ## Setup
 
@@ -70,7 +70,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-mcp-1.2.0.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-mcp-1.2.1.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
@@ -86,7 +86,7 @@ cd gephi-mcp-plugin
 mvn clean package
 ```
 
-The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.2.0.nbm`. Install it in Gephi as described above.
+The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.2.1.nbm`. Install it in Gephi as described above.
 
 </details>
 

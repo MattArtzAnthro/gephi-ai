@@ -186,6 +186,16 @@ public class GephiControlService {
 
     private static volatile java.lang.reflect.Field READ_LOCK_FIELD;
 
+    /*
+     * ITERATION RULE (wedge prevention): never iterate a live NodeIterable /
+     * EdgeIterable directly — always iterate .toArray(). A live iterator
+     * auto-acquires the graph read lock in its constructor and releases it only
+     * on exhaustion or doBreak(); an early break, return, or exception leaks the
+     * hold, and because NanoHTTPD threads die after their request, the leak is
+     * permanent and wedges every future write (found the hard way; see
+     * GraphOpsTest#earlyBreakOverToArraySnapshotLeavesNoReadHold).
+     */
+
     /**
      * Timed read-lock acquisition. Plain readLock() parks unboundedly in the lock's
      * wait queue; when a writer is already parked (Gephi's own blocking writeLock())
@@ -1192,7 +1202,7 @@ public class GephiControlService {
                 Color defaultColor = new Color(r, g, b);
                 lockWrite(graph);
                 try {
-                    for (Node n : graph.getNodes()) {
+                    for (Node n : graph.getNodes().toArray()) {
                         n.setColor(defaultColor);
                         n.setSize(size);
                     }
@@ -1246,7 +1256,7 @@ public class GephiControlService {
                 int colored = 0;
                 lockWrite(graph);
                 try {
-                    for (Node n : graph.getNodes()) {
+                    for (Node n : graph.getNodes().toArray()) {
                         Object v = n.getAttribute(col);
                         if (v != null) {
                             Color c = palette.get(v.toString());
@@ -1274,7 +1284,7 @@ public class GephiControlService {
         double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
         lockRead(g);
         try {
-            for (Node n : g.getNodes()) {
+            for (Node n : g.getNodes().toArray()) {
                 Object v = n.getAttribute(col);
                 if (v instanceof Number) {
                     double d = ((Number) v).doubleValue();
@@ -1286,6 +1296,29 @@ public class GephiControlService {
         return min == Double.POSITIVE_INFINITY ? null : new double[]{min, max};
     }
 
+    /**
+     * Column lookup for ranking operations. When a degree column is requested
+     * before the degree statistic has run (the #1 cold-start stumble), computes
+     * it on the spot instead of failing.
+     */
+    private Column resolveRankingColumn(GraphModel gm, String columnName) {
+        Column col = gm.getNodeTable().getColumn(columnName);
+        if (col == null && columnName != null) {
+            String lc = columnName.toLowerCase();
+            if (lc.equals("degree") || lc.equals("indegree") || lc.equals("outdegree")) {
+                runStatistic("Degree", null);
+                col = gm.getNodeTable().getColumn(columnName);
+            }
+        }
+        return col;
+    }
+
+    private static JsonObject columnNotFound(String columnName) {
+        return error("Column not found: " + columnName
+            + " — compute the metric first (degree, pagerank, betweenness, modularity"
+            + " via the statistics tools) or check the columns list");
+    }
+
     public JsonObject colorByRanking(String columnName, int rMin, int gMin, int bMin, int rMax, int gMax, int bMax) {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
@@ -1293,8 +1326,8 @@ public class GephiControlService {
             try {
                 GraphModel gm = currentGraphModel();
                 Graph graph = gm.getGraph();
-                Column col = gm.getNodeTable().getColumn(columnName);
-                if (col == null) return error("Column not found: " + columnName);
+                Column col = resolveRankingColumn(gm, columnName);
+                if (col == null) return columnNotFound(columnName);
 
                 double[] mm = numericRange(graph, col);
                 if (mm == null) return error("No numeric values in column " + columnName);
@@ -1305,7 +1338,7 @@ public class GephiControlService {
                 int colored = 0;
                 lockWrite(graph);
                 try {
-                    for (Node n : graph.getNodes()) {
+                    for (Node n : graph.getNodes().toArray()) {
                         Object v = n.getAttribute(col);
                         if (v instanceof Number) {
                             double t = (((Number) v).doubleValue() - min) / range;
@@ -1336,8 +1369,8 @@ public class GephiControlService {
             try {
                 GraphModel gm = currentGraphModel();
                 Graph graph = gm.getGraph();
-                Column col = gm.getNodeTable().getColumn(columnName);
-                if (col == null) return error("Column not found: " + columnName);
+                Column col = resolveRankingColumn(gm, columnName);
+                if (col == null) return columnNotFound(columnName);
 
                 double[] mm = numericRange(graph, col);
                 if (mm == null) return error("No numeric values in column " + columnName);
@@ -1348,7 +1381,7 @@ public class GephiControlService {
                 int sized = 0;
                 lockWrite(graph);
                 try {
-                    for (Node n : graph.getNodes()) {
+                    for (Node n : graph.getNodes().toArray()) {
                         Object v = n.getAttribute(col);
                         if (v instanceof Number) {
                             double t = (((Number) v).doubleValue() - min) / range;
@@ -1982,6 +2015,28 @@ public class GephiControlService {
         });
     }
 
+    /** GEXF export returned inline as a string — no file round-trip. */
+    public JsonObject exportGexfContent() {
+        return runOnEDT(() -> {
+            Workspace ws = currentWorkspace();
+            if (ws == null) return error("No project open");
+            try {
+                ExportController ec = Lookup.getDefault().lookup(ExportController.class);
+                Exporter exporter = ec.getExporter("gexf");
+                if (exporter == null) return error("GEXF exporter not available");
+                if (exporter instanceof GraphExporter) {
+                    ((GraphExporter) exporter).setExportVisible(true);
+                    ((GraphExporter) exporter).setWorkspace(ws);
+                }
+                java.io.StringWriter sw = new java.io.StringWriter();
+                ec.exportWriter(sw, (org.gephi.io.exporter.spi.CharacterExporter) exporter);
+                JsonObject r = success("GEXF exported inline");
+                r.addProperty("content", sw.toString());
+                return r;
+            } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        });
+    }
+
     public JsonObject exportPng(String filePath, int w, int h) {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
@@ -2125,7 +2180,7 @@ public class GephiControlService {
                 sb.append("\n");
                 lockRead(g);
                 try {
-                    for (Node n : g.getNodes()) {
+                    for (Node n : g.getNodes().toArray()) {
                         sb.append(csv(String.valueOf(n.getId()), sep)).append(sep)
                           .append(csv(n.getLabel() != null ? n.getLabel() : "", sep));
                         for (Column col : gm.getNodeTable()) {
@@ -2148,7 +2203,7 @@ public class GephiControlService {
                 sb.append("\n");
                 lockRead(g);
                 try {
-                    for (Edge e : g.getEdges()) {
+                    for (Edge e : g.getEdges().toArray()) {
                         sb.append(csv(String.valueOf(e.getSource().getId()), sep)).append(sep)
                           .append(csv(String.valueOf(e.getTarget().getId()), sep)).append(sep)
                           .append(csv(String.valueOf(e.getWeight()), sep));
@@ -2291,7 +2346,7 @@ public class GephiControlService {
                     Node current = queue.poll();
                     int dist = distances.get(current);
                     if (dist >= depth) continue;
-                    for (Node neighbor : g.getNeighbors(current)) {
+                    for (Node neighbor : g.getNeighbors(current).toArray()) {
                         if (!keep.contains(neighbor)) {
                             keep.add(neighbor);
                             queue.add(neighbor);

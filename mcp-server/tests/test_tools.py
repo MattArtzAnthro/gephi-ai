@@ -188,6 +188,14 @@ async def test_filter_by_degree_body(rec):
     assert rec.last["json"] == {"min": 2, "max": 10, "dry_run": True}
 
 
+async def test_export_gexf_inline_and_file(rec):
+    await out_of(gephi_mcp.gephi_export_gexf)
+    assert rec.last["endpoint"] == "/export/gexf"
+    assert rec.last["json"] == {"inline": True}
+    await out_of(gephi_mcp.gephi_export_gexf, file="/tmp/g.gexf")
+    assert rec.last["json"] == {"file": "/tmp/g.gexf"}
+
+
 async def test_focus_view_modes(rec):
     await out_of(gephi_mcp.gephi_focus_view, mode="node", id="n5")
     assert rec.last["endpoint"] == "/view/focus"

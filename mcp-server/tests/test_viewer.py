@@ -43,6 +43,11 @@ def gexf_file(tmp_path):
     return str(p)
 
 
+def test_parse_gexf_accepts_content_string():
+    g = parse_gexf(GEXF)
+    assert g["node_count_total"] == 3 and g["edge_count_total"] == 2
+
+
 def test_parse_gexf_nodes(gexf_file):
     g = parse_gexf(gexf_file)
     assert g["node_count_total"] == 3 and g["edge_count_total"] == 2

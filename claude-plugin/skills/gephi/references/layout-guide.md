@@ -45,7 +45,7 @@ most common cause of unreadable, over-compacted layouts.
 |-----------|-------------------|--------|
 | `linLogMode` | **true** for community readability | Logarithmic repulsion; clusters become compact and separated |
 | `gravity` | **0** (0.5–1.0 only for disconnected graphs) | Pulls everything centerward; excess packs the graph into a blob |
-| `scalingRatio` | 2.0 (raise to spread, lower to tighten) | Overall expansion; the correct knob for micro/macro balance |
+| `scalingRatio` | by node count: <1k start 1-2; 1k-10k start 2-4; >10k start 4-8 (raise to spread, lower to tighten) | Overall expansion; the correct knob for micro/macro balance. Start low and expand only if cramped — starting high over-spreads into specks |
 | `barnesHutOptimization` | true above ~5k nodes | Faster with slight approximation |
 | `edgeWeightInfluence` | 1.0 (0 to ignore weights) | How strongly weights pull |
 | `jitterTolerance` | 1.0 | Higher = faster, less precise |

@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.0");
+            result.addProperty("version", "1.2.1");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -564,7 +564,11 @@ public class GephiAPIServer extends NanoHTTPD {
         // ─── Export ──────────────────────────────────────────────────
 
         if ("/export/gexf".equals(uri) && Method.POST.equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            // no "file" (or inline:true) -> return the GEXF as a string in "content"
+            if (body == null || !body.has("file")
+                    || (body.has("inline") && body.get("inline").getAsBoolean())) {
+                return service.exportGexfContent();
+            }
             return service.exportGexf(body.get("file").getAsString());
         }
 

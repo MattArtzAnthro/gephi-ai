@@ -385,13 +385,16 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     """Run a layout algorithm to position nodes.
 
     For community readability with "ForceAtlas 2", start from the visual network
-    analysis reference config: {"linLogMode": true, "gravity": 0, "scalingRatio": 2.0}
-    (Venturini, Jacomy, and Jensen 2021). Gravity only keeps disconnected components
-    in frame (use 0.5-1.0 then); raising it packs nodes into an unreadable central
-    blob. To tighten or spread the layout, adjust scalingRatio, not gravity. After
-    the run, visually inspect a small export and iterate: central blob = lower
-    gravity; hairball = linLogMode on and raise scalingRatio; clusters too dense
-    inside = raise scalingRatio. Change one parameter per rerun.
+    analysis reference config: {"linLogMode": true, "gravity": 0, "scalingRatio": <by
+    size>} (Venturini, Jacomy, and Jensen 2021). Pick the starting scalingRatio by
+    node count and expand only if cramped — starting high over-spreads (nodes render
+    as specks): under ~1k nodes start at 1-2; 1k-10k start at 2-4; above 10k start
+    at 4-8. Gravity only keeps disconnected components in frame (use 0.5-1.0 then);
+    raising it packs nodes into an unreadable central blob. To tighten or spread the
+    layout, adjust scalingRatio, not gravity. After the run, check gephi_visual_qa
+    (it flags over-spread) and iterate: central blob = lower gravity; hairball =
+    linLogMode on and raise scalingRatio; clusters too dense inside = raise
+    scalingRatio; over-spread warning = lower scalingRatio. One parameter per rerun.
 
     properties: optional {name: value} tuning map (gravity, scalingRatio, linLogMode,
     barnesHutOptimization, ...). sync=True waits until the layout finishes before
@@ -576,9 +579,14 @@ async def gephi_set_preview_settings(settings: dict[str, Any]) -> str:
 # ─── Export ──────────────────────────────────────────────────
 
 @mcp.tool(name="gephi_export_gexf")
-async def gephi_export_gexf(file: str) -> str:
-    """Export the graph to GEXF (preserves attributes, positions, and viz properties)."""
-    return fmt(await gephi.request("POST", "/export/gexf", json_data={"file": file}))
+async def gephi_export_gexf(file: str | None = None) -> str:
+    """Export the graph to GEXF (preserves attributes, positions, and viz properties).
+
+    With a file path, writes to disk. Without one, returns the GEXF document
+    inline in the response's "content" field (plugin 1.2.1+) — no file round-trip.
+    """
+    payload = {"file": file} if file else {"inline": True}
+    return fmt(await gephi.request("POST", "/export/gexf", json_data=payload))
 
 @mcp.tool(name="gephi_export_png")
 async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> str:
