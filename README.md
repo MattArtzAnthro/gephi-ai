@@ -108,7 +108,12 @@ If you just want the 79 tools without skills and commands:
 claude mcp add gephi-mcp -- uvx gephi-mcp
 ```
 
-#### Claude Desktop
+#### Claude Desktop (one-click bundle — easiest)
+
+Download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it — Claude Desktop installs the server with all dependencies bundled. No terminal, no config file. (Requires Python 3.10+ on your system, which modern macOS provides.)
+
+<details>
+<summary>Alternative: Claude Desktop via config file</summary>
 
 Add to your MCP configuration (`claude_desktop_config.json`):
 
@@ -122,6 +127,8 @@ Add to your MCP configuration (`claude_desktop_config.json`):
   }
 }
 ```
+
+</details>
 
 #### Other MCP clients
 

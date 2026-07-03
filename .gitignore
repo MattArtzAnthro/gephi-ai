@@ -9,3 +9,7 @@ __pycache__/
 .mypy_cache/
 .venv/
 mcp-server/dist/
+
+# MCPB build artifacts
+mcpb/server/lib/
+*.mcpb

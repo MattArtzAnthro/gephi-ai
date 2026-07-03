@@ -7,6 +7,11 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 ## [1.4.0]
 
 ### Added
+- **One-click Claude Desktop install (`gephi-ai-<version>.mcpb`).** An MCP Bundle
+  containing the server and every dependency — download from Releases, double-click,
+  done. No terminal, no uv, no config file. Built reproducibly by
+  `scripts/build-mcpb.sh` from the published PyPI artifact; runs on the system
+  `python3` (3.10+). The uvx/JSON-config path remains for users who prefer it.
 - **The viewer is now a two-way instrument.** Three interactive capabilities in the
   MCP App (all verified end to end against a scripted host):
   - **Click-driven exploration**: clicking a node offers "Highlight connections"
