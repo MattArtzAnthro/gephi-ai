@@ -20,22 +20,23 @@ Run a complete community detection and visualization workflow on the current Gep
 
 4. **Compute degree**: Call `gephi_compute_degree`. Tell the user: "Computing degree distribution..."
 
-5. **Color by community**: Call `gephi_color_by_partition` with column `"modularity_class"` and this pastel palette:
+5. **Color by community**: Call `gephi_color_by_partition` with column `"modularity_class"` and the validated palette (readable on white exports, colorblind-safe):
    ```json
    {
      "column": "modularity_class",
      "colors": {
-       "0": [212, 222, 99],
-       "1": [227, 185, 216],
-       "2": [89, 238, 200],
-       "3": [154, 226, 255],
-       "4": [255, 171, 125],
-       "5": [255, 173, 203],
-       "6": [255, 220, 130],
-       "7": [190, 170, 230]
+       "0": [42, 120, 214],
+       "1": [27, 175, 122],
+       "2": [237, 161, 0],
+       "3": [0, 131, 0],
+       "4": [74, 58, 167],
+       "5": [227, 73, 72],
+       "6": [232, 123, 164],
+       "7": [235, 104, 52]
      }
    }
    ```
+   With more than 8 communities, color the 8 largest and set the rest to gray [153,153,153].
 
 6. **Size by degree**: Call `gephi_size_by_ranking` with column `"degree"`, `min_size: 3`, `max_size: 25`.
 

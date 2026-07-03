@@ -336,6 +336,11 @@ async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | N
     """Color nodes by a categorical attribute (e.g. modularity_class, type).
 
     colors: optional {value: [r, g, b]} map; otherwise a distinct palette is assigned.
+    Recommended palette (validated for readability on white exports and colorblind
+    separation; pale/pastel colors are near-invisible on white): {"0": [42,120,214],
+    "1": [27,175,122], "2": [237,161,0], "3": [0,131,0], "4": [74,58,167],
+    "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}. With more than 8
+    categories, color the 8 largest and set the rest to gray [153,153,153].
     """
     return fmt(await gephi.request("POST", "/appearance/partition/color",
                                    json_data=_body(column=column, colors=colors)))
@@ -355,7 +360,11 @@ async def gephi_color_by_ranking(column: str,
 
 @mcp.tool(name="gephi_size_by_ranking")
 async def gephi_size_by_ranking(column: str, min_size: float = 5, max_size: float = 50) -> str:
-    """Size nodes by a numeric attribute, mapping values between min_size and max_size."""
+    """Size nodes by a numeric attribute, mapping values between min_size and max_size.
+
+    Always do this before exporting or viewing — unsized nodes render as invisible
+    specks. Degree with min 10, max 60 is a good default; scale up for large canvases.
+    """
     return fmt(await gephi.request("POST", "/appearance/ranking/size",
                                    json_data={"column": column, "min_size": min_size, "max_size": max_size}))
 
@@ -557,7 +566,15 @@ async def gephi_export_gexf(file: str) -> str:
 
 @mcp.tool(name="gephi_export_png")
 async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> str:
-    """Export the graph visualization as PNG. Run a layout first to position nodes."""
+    """Export the graph visualization as PNG. Run a layout first to position nodes.
+
+    Default rendering yields near-invisible output; before exporting: (1) size nodes
+    with gephi_size_by_ranking (e.g. degree, 10-60); (2) color with the validated
+    palette (see gephi_color_by_partition); (3) call gephi_set_preview_settings with
+    {"edge.opacity": 25, "edge.thickness": 2.0, "node.opacity": 100,
+    "node.border.width": 0.3, "arrow.size": 0}. Then export, look at the image, and
+    fix what is unreadable before declaring done.
+    """
     return fmt(await gephi.request("POST", "/export/png",
                                    json_data={"file": file, "width": width, "height": height}))
 

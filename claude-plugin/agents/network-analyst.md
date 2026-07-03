@@ -59,7 +59,7 @@ When analyzing a network:
 
 ## Visualization Guidelines
 
-- Use pastel colors for communities (see skill reference)
+- Use the validated community palette (see skill reference); never pale/pastel colors on white backgrounds
 - Edge opacity 15-30 for the "watercolor effect"
 - Color edges by source node for community-colored halos
 - Size nodes by a continuous metric (degree, PageRank)

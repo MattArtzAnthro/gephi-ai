@@ -79,11 +79,21 @@ You have access to 77 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 
 ## Styling Defaults
 
-### Pastel Community Colors
-Always override default Gephi colors with this palette for `gephi_color_by_partition`:
+### Community Colors (validated palette)
+Always override default Gephi colors for `gephi_color_by_partition`. This palette is
+validated for categorical use on light backgrounds (lightness band, chroma floor,
+colorblind separation, contrast — the old pastel palette failed all four and was
+near-invisible on white exports):
 ```json
-{"0": [212,222,99], "1": [227,185,216], "2": [89,238,200], "3": [154,226,255], "4": [255,171,125], "5": [255,173,203], "6": [255,220,130], "7": [190,170,230]}
+{"0": [42,120,214], "1": [27,175,122], "2": [237,161,0], "3": [0,131,0], "4": [74,58,167], "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}
 ```
+On dark backgrounds use the dark-surface variant:
+```json
+{"0": [57,135,229], "1": [25,158,112], "2": [201,133,0], "3": [0,131,0], "4": [144,133,233], "5": [230,103,103], "6": [213,81,129], "7": [217,89,38]}
+```
+More than 8 communities: color the 8 largest, set the rest to neutral gray
+[153,153,153] — extra generated hues stop being distinguishable. Enable node labels
+for the largest nodes; color must not be the only way to identify a community.
 
 ### Publication Export Settings
 Clean (no labels):
@@ -114,7 +124,7 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer high FA2 gravity (5–8) over destructive filters — as a temporary containment tactic only; revert gravity to 0 for the final layout.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
 - **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
-- **For dark backgrounds, use a vibrant/saturated color palette** — the default pastel palette is designed for white. Pastels on dark backgrounds are barely visible. Use saturated colors like `[255,90,70]` (coral), `[60,150,255]` (blue), `[140,230,70]` (lime) etc.
+- **For dark backgrounds, use the dark-surface variant of the community palette** (see Styling Defaults) — palettes tuned for white surfaces lose contrast on dark ones and vice versa.
 - **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
 - **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. Fix: use gravity 5–8 in FA2. Post-process in Python using centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
 - **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.

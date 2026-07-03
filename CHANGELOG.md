@@ -4,6 +4,20 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.2.4]
+
+### Changed
+- **Readable renders by default.** The pastel community palette failed a formal
+  palette validation on every check (too light for white exports, three colors
+  reading as gray, colorblind separation below floor, contrast 1.3-2:1) — real-world
+  result: exports where no node was visible at all. Replaced in the skill with a
+  validated 8-color palette (plus a dark-surface variant and an over-8-categories
+  rule), and the essentials now travel in tool docstrings so skill-less hosts
+  (Claude Desktop, Cowork) get them too: `gephi_color_by_partition` recommends the
+  validated palette, `gephi_size_by_ranking` warns that unsized nodes render as
+  invisible specks, and `gephi_export_png` carries the pre-export checklist
+  (size, color, preview settings, then look at the result).
+
 ## [1.2.3]
 
 ### Changed
