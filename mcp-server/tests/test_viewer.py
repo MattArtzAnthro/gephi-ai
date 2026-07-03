@@ -61,7 +61,7 @@ def test_parse_gexf_defaults(gexf_file):
 
 def test_parse_gexf_edges(gexf_file):
     edges = parse_gexf(gexf_file)["edges"]
-    assert {"source": "a", "target": "b", "size": 2.0, "color": None} in edges
+    assert {"source": "a", "target": "b", "size": 2.0, "color": None, "spells": None} in edges
 
 
 def test_parse_gexf_truncates_by_degree(gexf_file):
@@ -377,3 +377,67 @@ def test_analyze_flags_overspread_layout():
         n["x"] /= 10.0
     d2 = analyze_graph(graph)
     assert not any("over-spread" in w for w in d2["warnings"])
+
+
+# ── dynamic GEXF (time) ──────────────────────────────────────────
+
+def test_parse_gexf_dynamics(tmp_path):
+    gexf = """<?xml version="1.0" encoding="UTF-8"?>
+    <gexf xmlns="http://gexf.net/1.3" xmlns:viz="http://gexf.net/1.3/viz" version="1.3">
+      <graph defaultedgetype="undirected" mode="dynamic" timeformat="double">
+        <nodes>
+          <node id="a" label="A" start="1.0" end="5.0">
+            <viz:position x="0" y="0" z="0"/><viz:size value="10"/>
+          </node>
+          <node id="b" label="B">
+            <spells><spell start="2.0" end="3.0"/><spell start="4.0"/></spells>
+            <viz:position x="1" y="1" z="0"/><viz:size value="10"/>
+          </node>
+          <node id="c" label="C">
+            <viz:position x="2" y="0" z="0"/><viz:size value="10"/>
+          </node>
+        </nodes>
+        <edges><edge id="0" source="a" target="b" start="2.5"/></edges>
+      </graph>
+    </gexf>"""
+    p = tmp_path / "dyn.gexf"
+    p.write_text(gexf, encoding="utf-8")
+    g = parse_gexf(str(p))
+    a = next(n for n in g["nodes"] if n["key"] == "a")
+    b = next(n for n in g["nodes"] if n["key"] == "b")
+    c = next(n for n in g["nodes"] if n["key"] == "c")
+    assert a["spells"] == [[1.0, 5.0]]
+    assert b["spells"] == [[2.0, 3.0], [4.0, None]]
+    assert c["spells"] is None                      # static node: always visible
+    assert g["edges"][0]["spells"] == [[2.5, None]]
+    assert g["dynamic"] is True
+    assert g["time_min"] == 1.0 and g["time_max"] == 5.0
+
+
+def test_parse_gexf_static_has_no_dynamics(gexf_file):
+    g = parse_gexf(gexf_file)
+    assert g["dynamic"] is False
+    assert all(n["spells"] is None for n in g["nodes"])
+
+
+async def test_view_graph_captions_param(gexf_file, monkeypatch):
+    async def fake_request(method, endpoint, params=None, json_data=None):
+        import shutil
+        shutil.copy(gexf_file, json_data["file"])
+        return {"success": True}
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
+    result = await gephi_mcp.gephi_view_graph(
+        caption_column="team", caption_names={"A": "Alpha"})
+    sc = result.structuredContent
+    assert sc["captions"] == {"column": "team", "names": {"A": "Alpha"}}
+    result2 = await gephi_mcp.gephi_view_graph()
+    assert "captions" not in result2.structuredContent
+
+
+def test_app_html_has_interactive_features():
+    from gephi_mcp_viewer import build_app_html
+    html = build_app_html()
+    for marker in ("tools/call", "ui/message", "btn-refresh", "btn-ego", "btn-ask",
+                   "captions", "timeslider", "inSpells", "graphToViewport"):
+        assert marker in html, f"missing {marker}"
+    assert "__GRAPH_DATA__" not in html and len(html) > 100_000

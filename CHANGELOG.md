@@ -4,6 +4,26 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.4.0]
+
+### Added
+- **The viewer is now a two-way instrument.** Three interactive capabilities in the
+  MCP App (all verified end to end against a scripted host):
+  - **Click-driven exploration**: clicking a node offers "Highlight connections"
+    (client-side ego highlight that dims the rest of the graph) and **"Ask Claude"**,
+    which sends a question about that node into the conversation via the MCP Apps
+    `ui/message` request — the visualization talks back.
+  - **Refresh from Gephi**: a toolbar button re-fetches the graph through an
+    app-initiated `tools/call` of `gephi_view_graph`, preserving caption settings —
+    change the graph in Gephi or by asking Claude, then update the view in place.
+  - **Cluster captions done properly**: `gephi_view_graph` gains `caption_column` and
+    `caption_names`; the app computes size-weighted community centroids and floats
+    toggleable map-style captions in an overlay — no blanked labels, no hub anchors
+    (that remains `gephi_label_clusters` for PNG exports).
+  - **Time slider for dynamic GEXF**: the parser now reads `start`/`end` attributes
+    and `<spells>`; dynamic graphs get a scrubber that filters nodes and edges by
+    spell containment. Numeric and date times supported.
+
 ## [1.3.6]
 
 ### Added

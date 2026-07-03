@@ -6,39 +6,72 @@
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, "Segoe UI", sans-serif; }
   #container { width: 100%; height: 100%; }
-  #panel { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,.95);
+  #panel { position: absolute; top: 46px; left: 10px; background: rgba(255,255,255,.96);
            border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; font-size: 13px;
-           max-width: 280px; display: none; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+           max-width: 300px; display: none; box-shadow: 0 2px 8px rgba(0,0,0,.08); z-index: 30; }
   #panel h3 { margin: 0 0 6px; font-size: 14px; }
-  #panel dl { margin: 0; } #panel dt { font-weight: 600; float: left; clear: left; margin-right: 6px; }
+  #panel dl { margin: 0 0 8px; } #panel dt { font-weight: 600; float: left; clear: left; margin-right: 6px; }
   #panel dd { margin: 0 0 2px 0; overflow: hidden; }
+  #panel button { font-size: 12px; margin-right: 6px; padding: 3px 8px; cursor: pointer;
+                  border: 1px solid #bbb; border-radius: 4px; background: #f7f7f7; }
+  #panel button:hover { background: #ececec; }
   #meta { position: absolute; bottom: 10px; left: 10px; font-size: 12px; color: #666;
-          background: rgba(255,255,255,.9); padding: 4px 8px; border-radius: 4px; }
+          background: rgba(255,255,255,.9); padding: 4px 8px; border-radius: 4px; z-index: 30; }
+  #toolbar { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; align-items: center;
+             background: rgba(255,255,255,.94); border: 1px solid #ddd; border-radius: 6px;
+             padding: 5px 8px; font-size: 12px; z-index: 30; }
+  #toolbar button { font-size: 12px; padding: 3px 9px; cursor: pointer; border: 1px solid #bbb;
+                    border-radius: 4px; background: #f7f7f7; }
+  #toolbar button:hover { background: #ececec; }
+  #toolbar button.active { background: #2a78d6; color: #fff; border-color: #2a78d6; }
+  #timebox { display: none; align-items: center; gap: 6px; }
+  #timebox input[type=range] { width: 160px; }
+  #captions { position: absolute; inset: 0; pointer-events: none; z-index: 20; display: none; }
+  .caption { position: absolute; transform: translate(-50%, -50%); font-weight: 800;
+             letter-spacing: .04em; color: #222;
+             text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 6px #fff, 0 0 8px #fff; }
 </style>
 </head>
 <body>
 <div id="container"></div>
+<div id="captions"></div>
+<div id="toolbar">
+  <button id="btn-refresh" title="Re-fetch the graph from Gephi">&#8635; Refresh</button>
+  <button id="btn-captions" title="Toggle cluster captions" style="display:none">Labels</button>
+  <button id="btn-clear" title="Clear highlight" style="display:none">Clear highlight</button>
+  <span id="timebox">
+    <label><input id="timechk" type="checkbox"> time</label>
+    <input id="timeslider" type="range" min="0" max="1000" value="0" disabled>
+    <span id="timeval"></span>
+  </span>
+</div>
 <div id="panel"></div>
-<div id="meta">Waiting for graph data…</div>
+<div id="meta">Waiting for graph data&hellip;</div>
 <script>__GRAPHOLOGY_JS__</script>
 <script>__SIGMA_JS__</script>
 <script>
-  // ── MCP Apps handshake (spec 2026-01-26) ──────────────────────────────
-  // App -> host: ui/initialize request, then ui/notifications/initialized.
-  // Host -> app: ui/notifications/tool-result carries structuredContent.
+  // ── MCP Apps transport (spec 2026-01-26) ─────────────────────────────
+  // App -> host requests: ui/initialize, tools/call, ui/message.
+  // Host -> app: responses by id, plus ui/notifications/tool-result.
   let reqId = 0;
-  const pending = {};
-  function send(method, params, expectReply) {
-    const msg = { jsonrpc: "2.0", method: method, params: params || {} };
-    if (expectReply) { msg.id = ++reqId; pending[msg.id] = method; }
-    window.parent.postMessage(msg, "*");
+  const pending = {};   // id -> {method, resolve}
+  function request(method, params) {
+    return new Promise((resolve) => {
+      const id = ++reqId;
+      pending[id] = { method, resolve };
+      window.parent.postMessage({ jsonrpc: "2.0", id, method, params: params || {} }, "*");
+    });
+  }
+  function notify(method, params) {
+    window.parent.postMessage({ jsonrpc: "2.0", method, params: params || {} }, "*");
   }
   window.addEventListener("message", (ev) => {
     const m = ev.data;
     if (!m || m.jsonrpc !== "2.0") return;
-    if (m.id !== undefined && pending[m.id] === "ui/initialize") {
-      delete pending[m.id];
-      send("ui/notifications/initialized");
+    if (m.id !== undefined && pending[m.id]) {
+      const p = pending[m.id]; delete pending[m.id];
+      if (p.method === "ui/initialize") notify("ui/notifications/initialized");
+      p.resolve(m.result);
       return;
     }
     if (m.method === "ui/notifications/tool-result") {
@@ -49,45 +82,193 @@
     if (m.method === "ui/notifications/tool-cancelled") {
       document.getElementById("meta").textContent = "Tool call was cancelled.";
     }
-    // ui/notifications/tool-input and anything else: ignored.
   });
-  send("ui/initialize", { appCapabilities: { availableDisplayModes: ["inline"] } }, true);
+  request("ui/initialize", { appCapabilities: { availableDisplayModes: ["inline"] } });
 
-  // ── Rendering ─────────────────────────────────────────────────────────
-  let renderer = null;
-  function renderGraph(data) {
+  // ── State ────────────────────────────────────────────────────────────
+  let renderer = null, g = null, data = null;
+  let egoSet = null;                 // Set of node keys to highlight, else null
+  let timeT = null;                  // active time (number), else null = all time
+  let captionsOn = true;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => { const d = document.createElement("div"); d.innerText = s; return d.innerHTML; };
+  const toTime = (v) => (typeof v === "number" ? v : (v == null ? null : Date.parse(v)));
+  const inSpells = (spells, t) => !spells || spells.some(([s, e]) => {
+    const ss = toTime(s), ee = toTime(e);
+    return (ss == null || ss <= t) && (ee == null || t < ee);
+  });
+
+  // ── Rendering ────────────────────────────────────────────────────────
+  function renderGraph(sc) {
+    data = sc;
     if (renderer) { renderer.kill(); renderer = null; }
+    egoSet = null; timeT = null; $("btn-clear").style.display = "none";
     if (data.title) document.title = data.title;
-    const g = new graphology.Graph({ multi: true, type: data.directed ? "directed" : "undirected" });
+
+    g = new graphology.Graph({ multi: true, type: data.directed ? "directed" : "undirected" });
     for (const n of data.nodes) {
       g.addNode(n.key, { label: n.label, x: n.x, y: n.y, size: n.size, color: n.color,
-                         gephiAttrs: n.attributes });
+                         gephiAttrs: n.attributes, spells: n.spells });
     }
     for (const e of data.edges) {
       try {
         g.addEdge(e.source, e.target, { size: Math.min(e.size, 6),
-                                        color: e.color || "#cccccc" });
+                                        color: e.color || "#cccccc", spells: e.spells });
       } catch (err) { /* skip edges referencing missing nodes */ }
     }
-    renderer = new Sigma(g, document.getElementById("container"),
-                         { renderEdgeLabels: false, labelDensity: 0.6 });
+
+    renderer = new Sigma(g, $("container"), {
+      renderEdgeLabels: false, labelDensity: 0.6,
+      nodeReducer: (node, attrs) => {
+        const out = { ...attrs };
+        if (timeT != null && !inSpells(attrs.spells, timeT)) { out.hidden = true; return out; }
+        if (egoSet && !egoSet.has(node)) { out.color = "#e3e3e3"; out.label = null; out.zIndex = 0; }
+        else if (egoSet) { out.zIndex = 1; }
+        return out;
+      },
+      edgeReducer: (edge, attrs) => {
+        const out = { ...attrs };
+        if (timeT != null && !inSpells(attrs.spells, timeT)) { out.hidden = true; return out; }
+        if (egoSet) {
+          const [s, t] = g.extremities(edge);
+          if (!(egoSet.has(s) && egoSet.has(t))) out.hidden = true;
+        }
+        return out;
+      },
+    });
+
+    setupPanel();
+    setupCaptions();
+    setupTime();
+    updateMeta();
+    renderer.on("afterRender", placeCaptions);
+    placeCaptions();
+  }
+
+  function updateMeta() {
     const meta = data.truncated
       ? `${data.nodes.length} of ${data.node_count_total} nodes, ${data.edges.length} edges`
       : `${data.node_count_total} nodes, ${data.edge_count_total} edges`;
-    document.getElementById("meta").textContent = meta;
-    const panel = document.getElementById("panel");
+    $("meta").textContent = meta + (timeT != null ? ` · t=${$("timeval").textContent}` : "");
+  }
+
+  // ── Node panel: attributes + ego highlight + ask Claude ─────────────
+  function setupPanel() {
+    const panel = $("panel");
     renderer.on("clickNode", ({ node }) => {
       const a = g.getNodeAttributes(node);
       let rows = "";
       for (const [k, v] of Object.entries(a.gephiAttrs || {})) {
         rows += `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`;
       }
-      panel.innerHTML = `<h3>${esc(a.label)}</h3><dl><dt>degree</dt><dd>${g.degree(node)}</dd>${rows}</dl>`;
+      panel.innerHTML =
+        `<h3>${esc(a.label)}</h3>` +
+        `<dl><dt>degree</dt><dd>${g.degree(node)}</dd>${rows}</dl>` +
+        `<button id="btn-ego">Highlight connections</button>` +
+        `<button id="btn-ask">Ask Claude</button>`;
       panel.style.display = "block";
+      $("btn-ego").onclick = () => {
+        egoSet = new Set([node, ...g.neighbors(node)]);
+        $("btn-clear").style.display = "";
+        renderer.refresh();
+      };
+      $("btn-ask").onclick = () => {
+        notifyAsk(a.label, node, g.degree(node));
+        panel.style.display = "none";
+      };
     });
     renderer.on("clickStage", () => { panel.style.display = "none"; });
   }
-  function esc(s) { const d = document.createElement("div"); d.innerText = s; return d.innerHTML; }
+  function notifyAsk(label, key, degree) {
+    request("ui/message", { role: "user", content: { type: "text",
+      text: `In the current Gephi graph, tell me about the node "${label}" (id ${key}, degree ${degree}): its structural role, which communities it connects, and its most important relationships.` } });
+  }
+
+  // ── Refresh from Gephi (tools/call round trip) ───────────────────────
+  $("btn-refresh").onclick = async () => {
+    $("meta").textContent = "Refreshing from Gephi…";
+    const args = {};
+    if (data && data.captions) {
+      args.caption_column = data.captions.column;
+      args.caption_names = data.captions.names;
+    }
+    const result = await request("tools/call", { name: "gephi_view_graph", arguments: args });
+    if (result && result.structuredContent && result.structuredContent.nodes) {
+      renderGraph(result.structuredContent);
+    } else { updateMeta(); }
+  };
+
+  // ── Cluster caption overlay ──────────────────────────────────────────
+  let captionData = [];
+  function setupCaptions() {
+    const layer = $("captions"), btn = $("btn-captions");
+    captionData = [];
+    layer.innerHTML = "";
+    if (!data.captions) { btn.style.display = "none"; layer.style.display = "none"; return; }
+    const col = data.captions.column, names = data.captions.names || {};
+    const groups = {};
+    for (const n of data.nodes) {
+      const gval = n.attributes ? n.attributes[col] : null;
+      if (gval == null) continue;
+      (groups[gval] = groups[gval] || []).push(n);
+    }
+    const sizes = Object.values(groups).map(m => m.length);
+    const maxSize = Math.max(...sizes, 1);
+    for (const [gval, members] of Object.entries(groups)) {
+      const w = members.reduce((acc, n) => acc + n.size, 0);
+      const cx = members.reduce((acc, n) => acc + n.x * n.size, 0) / w;
+      const cy = members.reduce((acc, n) => acc + n.y * n.size, 0) / w;
+      const div = document.createElement("div");
+      div.className = "caption";
+      div.textContent = (names[gval] || String(gval)).toUpperCase();
+      div.style.fontSize = `${13 + 9 * (members.length / maxSize)}px`;
+      layer.appendChild(div);
+      captionData.push({ x: cx, y: cy, div });
+    }
+    btn.style.display = "";
+    btn.classList.toggle("active", captionsOn);
+    layer.style.display = captionsOn ? "block" : "none";
+    btn.onclick = () => {
+      captionsOn = !captionsOn;
+      layer.style.display = captionsOn ? "block" : "none";
+      btn.classList.toggle("active", captionsOn);
+    };
+  }
+  function placeCaptions() {
+    if (!captionData.length) return;
+    for (const c of captionData) {
+      const p = renderer.graphToViewport({ x: c.x, y: c.y });
+      c.div.style.left = `${p.x}px`;
+      c.div.style.top = `${p.y}px`;
+    }
+  }
+
+  // ── Time slider (dynamic GEXF) ───────────────────────────────────────
+  function setupTime() {
+    const box = $("timebox"), chk = $("timechk"), slider = $("timeslider"), val = $("timeval");
+    if (!data.dynamic) { box.style.display = "none"; timeT = null; return; }
+    box.style.display = "flex";
+    let tmin = toTime(data.time_min), tmax = toTime(data.time_max);
+    if (tmin == null || tmax == null || tmin === tmax) { tmin = 0; tmax = 1; }
+    const toT = () => tmin + (slider.value / 1000) * (tmax - tmin);
+    const show = (t) => { val.textContent = Number.isFinite(t) ? (Math.round(t * 100) / 100) : t; };
+    chk.checked = false; slider.disabled = true; timeT = null; val.textContent = "all";
+    chk.onchange = () => {
+      slider.disabled = !chk.checked;
+      timeT = chk.checked ? toT() : null;
+      if (chk.checked) show(timeT); else val.textContent = "all";
+      updateMeta(); renderer.refresh();
+    };
+    slider.oninput = () => {
+      if (!chk.checked) return;
+      timeT = toT(); show(timeT); updateMeta(); renderer.refresh();
+    };
+  }
+
+  // ── Clear highlight ──────────────────────────────────────────────────
+  $("btn-clear").onclick = () => {
+    egoSet = null; timeT = null; $("btn-clear").style.display = "none"; renderer.refresh();
+  };
 </script>
 </body>
 </html>

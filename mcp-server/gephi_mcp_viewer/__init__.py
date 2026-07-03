@@ -20,6 +20,29 @@ def _children(elem, name):
     return [c for c in elem.iter() if _local(c.tag) == name]
 
 
+def _time(value):
+    """Coerce a GEXF time value: float when possible, else the raw string."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def _spells(elem):
+    """GEXF dynamics: [[start, end], ...] from start/end attrs or <spells>, else None."""
+    spells = []
+    for c in elem:
+        if _local(c.tag) == "spells":
+            for sp in c:
+                if _local(sp.tag) == "spell":
+                    spells.append([_time(sp.get("start")), _time(sp.get("end"))])
+    if not spells and (elem.get("start") is not None or elem.get("end") is not None):
+        spells.append([_time(elem.get("start")), _time(elem.get("end"))])
+    return spells or None
+
+
 def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
     root = ET.parse(path).getroot()
     graph_el = _children(root, "graph")[0]
@@ -64,6 +87,7 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
                     node["attributes"][key] = av.get("value")
         for title, value in defaults.items():
             node["attributes"].setdefault(title, value)
+        node["spells"] = _spells(n)
         nodes.append(node)
 
     edges = []
@@ -75,6 +99,7 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
         edges.append({
             "source": e.get("source"), "target": e.get("target"),
             "size": float(e.get("weight", 1)), "color": color,
+            "spells": _spells(e),
         })
 
     node_count_total, edge_count_total = len(nodes), len(edges)
@@ -89,10 +114,15 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
         kept = {n["key"] for n in nodes}
         edges = [e for e in edges if e["source"] in kept and e["target"] in kept]
 
+    times = [t for item in nodes + edges for sp in (item.get("spells") or [])
+             for t in sp if isinstance(t, (int, float))]
     return {
         "nodes": nodes, "edges": edges, "directed": directed,
         "node_count_total": node_count_total,
         "edge_count_total": edge_count_total, "truncated": truncated,
+        "dynamic": any(item.get("spells") for item in nodes + edges),
+        "time_min": min(times) if times else None,
+        "time_max": max(times) if times else None,
     }
 
 

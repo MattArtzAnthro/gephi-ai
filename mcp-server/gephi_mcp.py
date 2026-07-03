@@ -728,7 +728,9 @@ def gephi_graph_view_app() -> str:
 
 @mcp.tool(name="gephi_view_graph",
           meta={"ui": {"resourceUri": "ui://gephi/graph-view"}})
-async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view") -> CallToolResult:
+async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
+                           caption_column: str | None = None,
+                           caption_names: dict[str, str] | None = None) -> CallToolResult:
     """Render the current graph as an interactive in-chat view (MCP App).
 
     In hosts that render MCP Apps (e.g. Claude Desktop chat) this displays an
@@ -763,9 +765,13 @@ async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view") -
     summary += (" If no visual appeared in this client, render structuredContent yourself "
                 "as an interactive visualization (native widget/canvas/artifact — nodes "
                 "have x, y, color, size); avoid falling back to a static PNG.")
+    structured = {**graph, "title": title}
+    if caption_column:
+        structured["captions"] = {"column": caption_column,
+                                  "names": caption_names or {}}
     return CallToolResult(
         content=[TextContent(type="text", text=summary)],
-        structuredContent={**graph, "title": title},
+        structuredContent=structured,
     )
 
 
