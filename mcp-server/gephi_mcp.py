@@ -635,6 +635,8 @@ async def gephi_visual_qa(partition_column: str | None = None) -> str:
 @mcp.tool(name="gephi_label_clusters")
 async def gephi_label_clusters(partition_column: str,
                                names: dict[str, str] | None = None,
+                               caption_scale: float = 1.0,
+                               prefer: str = "degree",
                                restore: bool = False) -> str:
     """Caption each cluster by labeling only its most salient (top-degree) node.
 
@@ -643,7 +645,10 @@ async def gephi_label_clusters(partition_column: str,
     the partition value, e.g. {"1.0": "Engineering"}) or keeps its own label if
     no name is given, and preview switches to labeled mode with a white outline.
     Hubs sit near their cluster's center of gravity, so the caption lands on the
-    region. Original labels are saved to a `label_backup` node attribute;
+    region. caption_scale multiplies the auto-computed caption size (1.5-2 for
+    louder, map-style captions); prefer="size" anchors captions on the visually
+    largest node instead of the highest-degree one. Original labels are saved to
+    a `label_backup` node attribute (never overwritten on repeat runs);
     restore=True puts everything back and hides labels again.
     """
     fd, path = tempfile.mkstemp(suffix=".gexf")
@@ -669,18 +674,22 @@ async def gephi_label_clusters(partition_column: str,
                             json_data={"node.label.show": False})
         return fmt({"success": True, "restored": restored})
 
-    hubs = gephi_mcp_viewer.pick_cluster_hubs(graph, partition_column)
+    hubs = gephi_mcp_viewer.pick_cluster_hubs(graph, partition_column, prefer=prefer)
     if not hubs:
         return fmt({"success": False,
                     "error": f"no nodes carry the attribute '{partition_column}'"})
     hub_keys = set(hubs.values())
 
-    await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": [
-        {"id": n["key"], "attributes": {"label_backup": n["label"]}}
-        for n in graph["nodes"]]})
+    backups = [{"id": n["key"], "attributes": {"label_backup": n["label"]}}
+               for n in graph["nodes"]
+               if n["attributes"].get("label_backup") is None]
+    if backups:
+        await gephi.request("POST", "/graph/nodes/attributes",
+                            json_data={"updates": backups})
 
     labeled, blanked = {}, 0
-    label_by_key = {n["key"]: n["label"] for n in graph["nodes"]}
+    label_by_key = {n["key"]: n["attributes"].get("label_backup") or n["label"]
+                    for n in graph["nodes"]}
     for n in graph["nodes"]:
         if n["key"] in hub_keys:
             continue
@@ -693,16 +702,19 @@ async def gephi_label_clusters(partition_column: str,
                             json_data={"id": key, "label": caption})
         labeled[str(group)] = {"node": key, "label": caption}
 
-    # Preview fonts render in graph-coordinate space, so caption size must scale
-    # with the layout extent (empirically ~extent/64 reads as a map caption).
+    # Two Gephi label facts drive this recipe: with proportional size OFF the
+    # renderer clamps labels to the node's bounds (captions can never outgrow
+    # the hub), and with it ON the font multiplies by node size — which works in
+    # our favor, since caption hosts are the biggest hubs. Base font still
+    # scales with layout extent (fonts render in graph-coordinate space).
     xs = [n["x"] for n in graph["nodes"]] or [0.0]
     ys = [n["y"] for n in graph["nodes"]] or [0.0]
     extent_long = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
-    font_size = max(14, int(extent_long / 64))
+    font_size = max(12, int(extent_long / 200 * caption_scale))
     await gephi.request("POST", "/preview/settings", json_data={
-        "node.label.show": True, "node.label.proportinalSize": False,
+        "node.label.show": True, "node.label.proportinalSize": True,
         "node.label.font": f"Arial {font_size} Bold",
-        "node.label.outline.size": max(4.0, font_size / 7),
+        "node.label.outline.size": max(4.0, font_size / 5),
         "node.label.outline.opacity": 95.0, "node.label.avoidOverlap": True})
     return fmt({"success": True, "labeled": labeled, "blanked": blanked,
                 "caption_font": font_size})

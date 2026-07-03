@@ -267,11 +267,12 @@ async def test_label_clusters(gexf_file, monkeypatch, tmp_path):
 
     preview = next(c for c in calls if c["endpoint"] == "/preview/settings")
     assert preview["json"]["node.label.show"] is True
-    # caption font scales with layout extent (small fixture -> floor of 14)
-    assert preview["json"]["node.label.font"] == "Arial 14 Bold"
+    # caption font scales with layout extent (small fixture -> floor of 12)
+    assert preview["json"]["node.label.font"] == "Arial 12 Bold"
+    assert preview["json"]["node.label.proportinalSize"] is True
     assert out["labeled"] == {"A": {"node": "a1", "label": "Alpha Team"},
                               "B": {"node": "b1", "label": "Beta Team"}}
-    assert out["blanked"] == 4 and out["caption_font"] == 14
+    assert out["blanked"] == 4 and out["caption_font"] == 12
 
 
 async def test_label_clusters_restore(monkeypatch, tmp_path):
@@ -301,3 +302,21 @@ async def test_label_clusters_restore(monkeypatch, tmp_path):
     preview = next(c for c in calls if c["endpoint"] == "/preview/settings")
     assert preview["json"]["node.label.show"] is False
     assert out["restored"] == 1
+
+
+def test_pick_cluster_hubs_prefer_size():
+    from gephi_mcp_viewer import pick_cluster_hubs
+    graph = {
+        "nodes": [
+            {"key": "hi-deg", "label": "", "x": 0, "y": 0, "size": 10, "color": "#333", "attributes": {"g": "1"}},
+            {"key": "big", "label": "", "x": 1, "y": 1, "size": 30, "color": "#333", "attributes": {"g": "1"}},
+            {"key": "other", "label": "", "x": 2, "y": 0, "size": 5, "color": "#333", "attributes": {"g": "1"}},
+        ],
+        "edges": [
+            {"source": "hi-deg", "target": "other", "size": 1, "color": None},
+            {"source": "hi-deg", "target": "big", "size": 1, "color": None},
+        ],
+        "directed": False, "node_count_total": 3, "edge_count_total": 2, "truncated": False,
+    }
+    assert pick_cluster_hubs(graph, "g") == {"1": "hi-deg"}
+    assert pick_cluster_hubs(graph, "g", prefer="size") == {"1": "big"}

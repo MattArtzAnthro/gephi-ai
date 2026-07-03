@@ -4,6 +4,27 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.3.4]
+
+### Fixed
+- **Cluster captions render at true map-caption size.** Discovery from iterating on a
+  live graph: with proportional label size OFF, Gephi clamps every label to its node's
+  bounds, so caption fonts silently stopped growing. The recipe is the opposite of the
+  intuitive one — proportional size ON, letting the hub's node size amplify the caption
+  (with the pleasant cartographic side effect that bigger communities get bigger
+  captions). `gephi_label_clusters` now uses that recipe with an extent-scaled base
+  font.
+
+## [1.3.3]
+
+### Changed
+- **`gephi_label_clusters` polish from design review.** New `caption_scale` parameter
+  (multiplies the auto-computed caption size; 1.5-2 gives louder, map-style captions)
+  and `prefer: "size"` to anchor captions on the visually largest node when degree
+  and rendered size disagree. Repeat runs no longer overwrite `label_backup` with
+  blanked labels, so restore always recovers the true originals, and hub captions
+  resolve from the backup on re-runs.
+
 ## [1.3.2]
 
 ### Fixed

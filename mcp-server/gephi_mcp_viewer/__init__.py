@@ -199,11 +199,13 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
     return result
 
 
-def pick_cluster_hubs(graph: dict, partition_column: str) -> dict:
-    """Top-degree node per partition value: {group_value: node_key}.
+def pick_cluster_hubs(graph: dict, partition_column: str, prefer: str = "degree") -> dict:
+    """Most salient node per partition value: {group_value: node_key}.
 
-    Ties break toward the larger rendered node, then lexicographic key, so the
-    result is deterministic. Nodes without the attribute are ignored.
+    prefer="degree" ranks by degree then rendered size; prefer="size" ranks by
+    rendered size then degree (use when captions should sit on the visually
+    biggest circle). Lexicographic key breaks remaining ties, so the result is
+    deterministic. Nodes without the attribute are ignored.
     """
     degree: dict[str, int] = {}
     for e in graph["edges"]:
@@ -214,7 +216,8 @@ def pick_cluster_hubs(graph: dict, partition_column: str) -> dict:
         g = n["attributes"].get(partition_column)
         if g is None:
             continue
-        score = (degree.get(n["key"], 0), n["size"], n["key"])
+        d, sz = degree.get(n["key"], 0), n["size"]
+        score = (sz, d, n["key"]) if prefer == "size" else (d, sz, n["key"])
         if g not in best or score > best[g][0]:
             best[g] = (score, n["key"])
     return {g: key for g, (_, key) in best.items()}
