@@ -4,6 +4,36 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.3.6]
+
+### Added
+- **`gephi_visual_qa` detects over-spread layouts** — the gap found during the live
+  500-node session, where QA passed a render whose nodes were specks in whitespace.
+  When the largest node is under 1% of the layout extent's long side it now warns,
+  with the fix spelled out (lower scalingRatio or raise sizes). The layout guide's
+  symptom table gained the matching row, plus a composition tip (short final
+  higher-gravity pass to round a straggly layout into the frame).
+- **`docs/RELEASING.md`** — the full release playbook: PyPI steps (with the
+  pytest-pipe exit-code hazard called out), marketplace sync incl. the local-fetch
+  fallback, GitHub release ghost-asset recovery, and the portal update procedure
+  with the valid category vocabulary from gephi-maven-plugin's source.
+
+### Changed
+- **Skill gotchas now cover the two label traps**: preview settings never affect
+  Gephi's Overview canvas (the user's T toggle does), and label fonts render in
+  graph-coordinate space with proportional-off clamping labels to node bounds.
+- **Viewer module documents its GEXF spec coverage**, including what is consciously
+  unsupported (per-edge type overrides, viz:shape, nested nodes, dynamic graphs).
+
+## [1.3.5]
+
+### Fixed
+- **GEXF spec conformance in the parser** (checked against gephi/gexf). Attribute
+  `<default>` values now apply to nodes lacking an explicit `attvalue` — previously
+  such nodes were silently excluded from `gephi_visual_qa` partition math, which
+  could skew or flip the grouping verdict on spec-compliant files. `viz:color`
+  alpha is now preserved as `rgba()` instead of being dropped.
+
 ## [1.3.4]
 
 ### Fixed

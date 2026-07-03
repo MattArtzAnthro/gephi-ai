@@ -320,3 +320,60 @@ def test_pick_cluster_hubs_prefer_size():
     }
     assert pick_cluster_hubs(graph, "g") == {"1": "hi-deg"}
     assert pick_cluster_hubs(graph, "g", prefer="size") == {"1": "big"}
+
+
+# ── GEXF spec conformance (gephi/gexf) ───────────────────────────
+
+def test_parse_gexf_attribute_defaults_and_alpha(tmp_path):
+    gexf = """<?xml version="1.0" encoding="UTF-8"?>
+    <gexf xmlns="http://gexf.net/1.3" xmlns:viz="http://gexf.net/1.3/viz" version="1.3">
+      <graph defaultedgetype="undirected">
+        <attributes class="node">
+          <attribute id="0" title="team" type="string"><default>Unassigned</default></attribute>
+        </attributes>
+        <nodes>
+          <node id="x" label="X">
+            <attvalues><attvalue for="0" value="A"/></attvalues>
+            <viz:position x="0" y="0" z="0"/>
+            <viz:color r="255" g="0" b="0" a="0.5"/>
+            <viz:size value="10"/>
+          </node>
+          <node id="y" label="Y">
+            <viz:position x="1" y="1" z="0"/>
+            <viz:color r="10" g="20" b="30"/>
+            <viz:size value="10"/>
+          </node>
+        </nodes>
+        <edges><edge id="0" source="x" target="y"/></edges>
+      </graph>
+    </gexf>"""
+    p = tmp_path / "defaults.gexf"
+    p.write_text(gexf, encoding="utf-8")
+    g = parse_gexf(str(p))
+    x = next(n for n in g["nodes"] if n["key"] == "x")
+    y = next(n for n in g["nodes"] if n["key"] == "y")
+    assert x["attributes"]["team"] == "A"
+    assert y["attributes"]["team"] == "Unassigned"   # spec: default applies
+    assert x["color"] == "rgba(255,0,0,0.5)"           # alpha preserved
+    assert y["color"] == "rgb(10,20,30)"               # no alpha -> rgb
+
+
+def test_analyze_flags_overspread_layout():
+    from gephi_mcp_viewer import analyze_graph
+    # nodes sized 10-20 scattered over a 10,000-unit extent: specks in whitespace
+    graph = {
+        "nodes": [
+            {"key": f"n{i}", "label": "", "x": float(i * 1000), "y": 0.0,
+             "size": 15.0, "color": "#333333", "attributes": {}}
+            for i in range(11)
+        ],
+        "edges": [], "directed": False,
+        "node_count_total": 11, "edge_count_total": 0, "truncated": False,
+    }
+    d = analyze_graph(graph)
+    assert any("over-spread" in w for w in d["warnings"])
+    # a proportionate layout must NOT warn
+    for n in graph["nodes"]:
+        n["x"] /= 10.0
+    d2 = analyze_graph(graph)
+    assert not any("over-spread" in w for w in d2["warnings"])

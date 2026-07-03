@@ -1,4 +1,11 @@
-"""Parse Gephi GEXF exports and serve the sigma.js MCP App viewer."""
+"""Parse Gephi GEXF exports and serve the sigma.js MCP App viewer.
+
+GEXF spec coverage (gephi/gexf): namespace-agnostic, viz position/size/color
+(with alpha), node attributes including attribute-level <default> values.
+Consciously unsupported for now: per-edge type overrides in mixed graphs,
+viz:shape, hierarchical (nested) nodes, and dynamic graphs (spells/timestamps
+— a time-aware viewer is a candidate future feature).
+"""
 from importlib import resources
 
 import defusedxml.ElementTree as ET  # noqa: N817 — stdlib-conventional alias
@@ -18,12 +25,16 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
     graph_el = _children(root, "graph")[0]
     directed = graph_el.get("defaultedgetype", "undirected") == "directed"
 
-    # Attribute id -> title map (node attributes only).
-    titles = {}
+    # Attribute id -> title map plus spec-mandated defaults (node attributes only).
+    titles, defaults = {}, {}
     for attrs_el in _children(graph_el, "attributes"):
         if attrs_el.get("class") == "node":
             for a in _children(attrs_el, "attribute"):
-                titles[a.get("id")] = a.get("title", a.get("id"))
+                title = a.get("title", a.get("id"))
+                titles[a.get("id")] = title
+                for child in a:
+                    if _local(child.tag) == "default" and child.text is not None:
+                        defaults[title] = child.text
 
     nodes = []
     for n in _children(graph_el, "node"):
@@ -41,13 +52,18 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
                 # unchanged (verified against Gephi's own renders).
                 node["y"] = float(c.get("y", 0))
             elif name == "color":
-                node["color"] = f'rgb({c.get("r", 153)},{c.get("g", 153)},{c.get("b", 153)})'
+                r, g, b = c.get("r", 153), c.get("g", 153), c.get("b", 153)
+                a = c.get("a")
+                node["color"] = (f'rgba({r},{g},{b},{a})' if a is not None
+                                 else f'rgb({r},{g},{b})')
             elif name == "size":
                 node["size"] = float(c.get("value", 5))
             elif name == "attvalues":
                 for av in c:
                     key = titles.get(av.get("for"), av.get("for"))
                     node["attributes"][key] = av.get("value")
+        for title, value in defaults.items():
+            node["attributes"].setdefault(title, value)
         nodes.append(node)
 
     edges = []
@@ -157,6 +173,15 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
         sug = {"width": max(800, int(long_side * aspect / 10) * 10), "height": long_side}
     extent = {"width": round(w, 1), "height": round(h, 1), "aspect": round(aspect, 2),
               "suggested_export": sug}
+    # Node presence: when the biggest node is under ~1% of the extent's long
+    # side, exports show specks in whitespace (found live: LinLog with a high
+    # scalingRatio exploded a 500-node layout to 17k units against size-60 nodes).
+    long_side = max(w, h, 1.0)
+    if len(nodes) > 1 and sizes[-1] / long_side < 0.01:
+        warnings.append(
+            f"layout is over-spread: largest node ({sizes[-1]:g}) is under 1% of the "
+            f"layout extent ({long_side:g}) — nodes will render as specks; lower "
+            "scalingRatio and rerun the layout, or raise node sizes")
 
     result = {
         "nodes": len(nodes), "edges": len(edges),

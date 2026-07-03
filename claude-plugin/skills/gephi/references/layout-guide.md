@@ -73,6 +73,7 @@ Never trust settings blind; look at the result and iterate. After each layout ru
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | Dense ball in the center, empty margins | Gravity too strong | Set gravity to 0, rerun |
+| Tight little clusters lost in vast whitespace | scalingRatio too high for the graph size (LinLog amplifies this) | Lower scalingRatio (halve it), rerun; `gephi_visual_qa` flags this as "over-spread" |
 | Uniform circle/disc, no lumps or hollows | Structure not yet expressed | LinLog on, more iterations; if it persists, the graph may genuinely lack clustering |
 | "Hairball" tangle | Settings, not necessarily the data | LinLog on, gravity 0, raise scalingRatio; consider filtering weak edges first |
 | Clusters overlap and smear together | Repulsion too weak | Raise scalingRatio; check LinLog is on |
@@ -82,6 +83,10 @@ Never trust settings blind; look at the result and iterate. After each layout ru
 
 3. Change ONE parameter, rerun (a few hundred iterations suffice for adjustment), and
    look again. Two or three loops usually converge. Report what you saw and changed.
+
+Composition tip: once structure is right, a short final pass (200-300 iterations) with
+slightly higher gravity (1-2) rounds a straggly composition into the frame without
+destroying cluster separation — apply gently and re-inspect.
 
 Shape-reading notes: a non-circular overall silhouette usually indicates polarization
 (a meaningful axis); density differences indicate clustering; do not over-read exact
