@@ -8,23 +8,24 @@ Built for researchers working across network science and AI.
 
 ## What you get
 
-**86 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**Your AI assistant drives Gephi.** Say what you want in plain language and the assistant builds, analyzes, styles, and exports publication-ready network maps.
 
-**Interactive in-chat visualization** — `gephi_view_graph` renders your network as a pannable, zoomable [MCP App](https://modelcontextprotocol.io/extensions/apps/overview) directly inside Claude and Claude Desktop: hover for labels, click a node to highlight its connections or ask Claude about it, float cluster captions over communities, refresh from Gephi in place, and scrub a time slider on dynamic networks.
+**It's a conversation, not a command line.** The assistant explains what it's doing, checks its own maps before showing them, and teaches you to read what you're seeing. You can point back: select nodes in the Gephi window and ask "what did I select?"
 
-**Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`), a specialized network analyst agent, and workflow skills that teach network science best practices.
+**Any data, any MCP client.** Network files import directly; spreadsheets and other data become networks conversationally. Works with Claude Code, Claude Desktop, or any MCP-compatible assistant.
 
-**A layout no Gephi plugin offers** — `gephi_similarity_layout` positions people and things by the *role* they play in the network (embedding-based), revealing similarity structure that force-directed layouts can't. Works out of the box; explains its own reading rules.
+<details>
+<summary>Full feature list</summary>
 
-**Maps for networks that defeat force layouts** — reply, retweet, and citation networks are tree-shaped, and their communities stay visually tangled no matter how long a force layout runs. `gephi_community_layout` draws each detected community as its own radial disc and proves the improvement with a before-and-after separation score.
+- 86 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
+- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`
+- Two extra layouts beyond Gephi's own: by role played in the network, and by community (best for reply and retweet networks)
+- Reads your selection in the Gephi window, so "what did I select?" just works
+- Drives any layout or metric plugin installed from the Gephi plugin portal
+- Imports GEXF, GraphML, GML, CSV, DOT, and Pajek; turns spreadsheets and other files into networks conversationally
 
-**Point at the map** — drag a selection box around nodes in Gephi, come back to the conversation, and ask "what did I select?" The answer names the exact nodes. No typing node names, ever.
-
-**Drives the whole Gephi plugin ecosystem** — install any layout or metric plugin from the [Gephi plugin portal](https://gephi.org/desktop/plugins/) and it becomes immediately usable in conversation, by name (verified with Force Atlas 3D and the CWTS Leiden Algorithm plugin).
-
-**Turns files into networks** — GEXF, GraphML, GML, CSV, DOT, and Pajek import directly; spreadsheets, JSON, RDF, or anything else your AI assistant can read become graphs conversationally (edge lists, adjacency matrices, bipartite data, attribute-similarity networks).
-
-**Works with any MCP client** — Claude Code, Claude Desktop, or any MCP-compatible assistant.
+</details>
 
 ## Architecture
 
