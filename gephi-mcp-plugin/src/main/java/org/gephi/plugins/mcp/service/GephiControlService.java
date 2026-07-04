@@ -1569,6 +1569,48 @@ public class GephiControlService {
 
     // ─── Statistics ──────────────────────────────────────────────────
 
+    /**
+     * Every statistic available in this Gephi instance — built-ins plus any
+     * installed plugin that registers a StatisticsBuilder (verified with the
+     * CWTS Leiden plugin). Names here are what /statistics/run accepts.
+     */
+    public JsonObject listStatistics() {
+        JsonArray arr = new JsonArray();
+        for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
+            JsonObject o = new JsonObject();
+            o.addProperty("name", sb.getName());
+            try {
+                o.addProperty("id", sb.getStatistics().getClass().getSimpleName());
+            } catch (Throwable t) { /* name alone is enough */ }
+            arr.add(o);
+        }
+        JsonObject r = new JsonObject();
+        r.addProperty("success", true);
+        r.add("statistics", arr);
+        return r;
+    }
+
+    /** Run any available statistic by name — the plugin-ecosystem passthrough. */
+    public JsonObject runStatisticByName(String name, Map<String, Object> params) {
+        return runStatistic(name, params);
+    }
+
+    private static final org.gephi.utils.progress.ProgressTicket NOOP_TICKET =
+        new org.gephi.utils.progress.ProgressTicket() {
+            public void finish() {}
+            public void finish(String s) {}
+            public void progress() {}
+            public void progress(int i) {}
+            public void progress(String s) {}
+            public void progress(String s, int i) {}
+            public String getDisplayName() { return "MCP statistic"; }
+            public void setDisplayName(String s) {}
+            public void start() {}
+            public void start(int i) {}
+            public void switchToDeterminate(int i) {}
+            public void switchToIndeterminate() {}
+        };
+
     private JsonObject runStatistic(String builderName, Map<String, Object> params) {
         try {
             Workspace ws = currentWorkspace();
@@ -1606,6 +1648,13 @@ public class GephiControlService {
                 for (Map.Entry<String, Object> e : params.entrySet()) {
                     setViaReflection(stat, e.getKey(), e.getValue());
                 }
+            }
+
+            // Plugin statistics are often LongTasks that assume the UI gave them a
+            // progress ticket and call it without null checks (e.g. CWTS Leiden).
+            // Provide a no-op ticket so they run outside the statistics dialog.
+            if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
+                ((org.gephi.utils.longtask.spi.LongTask) stat).setProgressTicket(NOOP_TICKET);
             }
 
             // Execute
@@ -1647,14 +1696,40 @@ public class GephiControlService {
             for (java.lang.reflect.Method m : obj.getClass().getMethods()) {
                 if (m.getName().equals(methodName) && m.getParameterCount() == 1) {
                     Class<?> paramType = m.getParameterTypes()[0];
-                    Object converted = convertLayoutProperty(value, paramType);
+                    Object converted = convertStatValue(value, paramType);
                     if (converted != null) m.invoke(obj, converted);
                     return;
+                }
+            }
+            // No setter: plugin statistics (e.g. the CWTS Leiden plugin) often use
+            // bare fields configured by their UI panel — set the field directly.
+            for (Class<?> c = obj.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    if (f.getName().equalsIgnoreCase(setter)) {
+                        Object converted = convertStatValue(value, f.getType());
+                        if (converted != null) {
+                            f.setAccessible(true);
+                            f.set(obj, converted);
+                        }
+                        return;
+                    }
                 }
             }
         } catch (Exception e) {
             LOGGER.fine("Could not set " + methodName + ": " + e.getMessage());
         }
+    }
+
+    /** Value conversion for statistic parameters: layout-style primitives plus enums by name. */
+    static Object convertStatValue(Object val, Class<?> type) {
+        if (val != null && type.isEnum()) {
+            String want = val.toString();
+            for (Object ec : type.getEnumConstants()) {
+                if (ec.toString().equalsIgnoreCase(want)) return ec;
+            }
+            return null;
+        }
+        return convertLayoutProperty(val, type);
     }
 
     private void tryAddResult(JsonObject r, Object obj, String getter, String jsonKey) {

@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.1");
+            result.addProperty("version", "1.2.2");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -466,6 +466,19 @@ public class GephiAPIServer extends NanoHTTPD {
         if ("/statistics/modularity".equals(uri) && Method.POST.equals(method)) {
             double res = body != null && body.has("resolution") ? body.get("resolution").getAsDouble() : 1.0;
             return service.computeModularity(res);
+        }
+
+        if ("/statistics/available".equals(uri) && Method.GET.equals(method)) {
+            return service.listStatistics();
+        }
+
+        if ("/statistics/run".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("name")) return errorResult("Missing 'name'");
+            Map<String, Object> statParams = null;
+            if (body.has("params") && body.get("params").isJsonObject()) {
+                statParams = GSON.fromJson(body.get("params"), Map.class);
+            }
+            return service.runStatisticByName(body.get("name").getAsString(), statParams);
         }
 
         if ("/statistics/degree".equals(uri) && Method.POST.equals(method)) {

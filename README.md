@@ -8,11 +8,15 @@ Built for researchers working across network science and AI.
 
 ## What you get
 
-**80 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**82 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
 **Interactive in-chat visualization** — `gephi_view_graph` renders your network as a pannable, zoomable [MCP App](https://modelcontextprotocol.io/extensions/apps/overview) directly inside Claude and Claude Desktop: hover for labels, click a node to highlight its connections or ask Claude about it, float cluster captions over communities, refresh from Gephi in place, and scrub a time slider on dynamic networks.
 
 **Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`), a specialized network analyst agent, and workflow skills that teach network science best practices.
+
+**Drives the whole Gephi plugin ecosystem** — install any layout or metric plugin from the [Gephi plugin portal](https://gephi.org/desktop/plugins/) and it becomes immediately usable in conversation, by name (verified with Force Atlas 3D and the CWTS Leiden Algorithm plugin).
+
+**Turns files into networks** — GEXF, GraphML, GML, CSV, DOT, and Pajek import directly; spreadsheets, JSON, RDF, or anything else your AI assistant can read become graphs conversationally (edge lists, adjacency matrices, bipartite data, attribute-similarity networks).
 
 **Works with any MCP client** — Claude Code, Claude Desktop, or any MCP-compatible assistant.
 
@@ -37,7 +41,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 80 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 82 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -55,7 +59,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 > an immediate "fully quit and reopen Gephi" error instead of hanging, and
 > `gephi_health_check` exposes lock probes (`graph_lock`, `graph_lock_stats`) that
 > detect the condition. If you ever see persistent "Graph is busy" errors, restart
-> Gephi — and make sure you are on plugin 1.2.1 or newer.
+> Gephi — and make sure you are on plugin 1.2.2 or newer.
 
 ## Setup
 
@@ -70,7 +74,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-mcp-1.2.1.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-mcp-1.2.2.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
@@ -86,7 +90,7 @@ cd gephi-mcp-plugin
 mvn clean package
 ```
 
-The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.2.1.nbm`. Install it in Gephi as described above.
+The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.2.2.nbm`. Install it in Gephi as described above.
 
 </details>
 
@@ -105,7 +109,7 @@ That's it — the plugin bundles and runs the MCP server itself (via uv), and ad
 
 #### Claude Code (MCP tools only)
 
-If you just want the 80 tools without skills and commands:
+If you just want the 82 tools without skills and commands:
 
 ```bash
 claude mcp add gephi-mcp -- uvx gephi-mcp

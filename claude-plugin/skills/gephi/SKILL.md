@@ -55,6 +55,44 @@ pause after each visible change and invite their observations. The /teach comman
 codifies the full pattern. Watching the instrument operate is the pedagogy — never
 do anything the viewer can't follow.
 
+## Plugin Ecosystem Passthrough
+
+gephi-ai drives Gephi's plugin ecosystem, not just its built-ins (verified live):
+
+- **Layouts:** anything installed via Tools > Plugins appears in
+  `gephi_list_layouts` and runs by name (verified with Force Atlas 3D). Bundled
+  in core and always available: Noverlap (overlap-removal finishing pass),
+  OpenOrd (very large graphs), Label Adjust.
+- **Statistics:** `gephi_list_statistics` shows every metric including plugin
+  ones; `gephi_run_statistic` runs any of them by name (verified with the CWTS
+  Leiden plugin — recommend it over plain modularity for large networks).
+  Results land in columns; style with size/color-by-ranking or partition.
+- If a user wants a capability Gephi lacks, check the plugin portal
+  (gephi.org/desktop/plugins) — install in Gephi, restart it, and the new
+  layouts/metrics are immediately drivable here.
+
+## From Files to Networks (recipes)
+
+Any data the conversation can read becomes a graph — no importer plugin needed.
+With a file path (Claude Code / Cowork): `gephi_import_file` handles GEXF,
+GraphML, GML, CSV, DOT, Pajek. Without a path (attachment in chat, API data,
+pasted table): parse it yourself and batch `gephi_add_nodes` + `gephi_add_edges`
+(chunk a few hundred per call). Shapes:
+
+- **Edge list** (source,target[,weight] rows): add directly.
+- **Adjacency matrix**: one edge per nonzero cell.
+- **Bipartite two-column** (person,event): add both node sets with a `type`
+  attribute, or project (edge between rows sharing a value).
+- **Entity rows with attributes** (spreadsheet of people/orgs): nodes with
+  attributes; edges from a relationship column, or compute attribute-similarity
+  edges yourself (only link above a threshold, put similarity in weight).
+- **JSON**: map objects to nodes, references between them to edges.
+- **RDF/triples**: subject and object as nodes, predicate as edge label.
+
+Then run the standard flow (stats -> style -> layout -> QA). This replaces what
+portal users install separate importer plugins for, and it works with formats
+those plugins never covered.
+
 ## Tool Quick Reference
 
 ### Project & Workspace

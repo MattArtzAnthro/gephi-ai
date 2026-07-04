@@ -4,6 +4,22 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.5.2]
+
+### Added
+- **Plugin-ecosystem passthrough completed.** Gephi plugin 1.2.2 adds
+  `/statistics/available` and `/statistics/run` (run any statistic by name);
+  new tools `gephi_list_statistics` and `gephi_run_statistic` (82 tools total).
+  Layout passthrough already worked and is now verified and documented: install
+  any portal plugin and drive it by name (verified live with Force Atlas 3D and
+  the CWTS Leiden Algorithm plugin).
+- **From Files to Networks recipes** in the skill and `gephi_import_file`
+  docstring: spreadsheets, CSV, JSON, RDF, adjacency matrices, bipartite and
+  similarity data all become graphs conversationally via batched
+  add-nodes/add-edges — no importer plugin required.
+- Skill section on the plugin ecosystem (Noverlap/OpenOrd/Label Adjust are
+  bundled in core; Leiden recommended for large networks).
+
 ## [1.5.1]
 
 ### Added

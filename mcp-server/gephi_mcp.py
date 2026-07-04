@@ -457,6 +457,38 @@ async def gephi_compute_modularity(resolution: float = 1.0) -> str:
     """
     return fmt(await gephi.request("POST", "/statistics/modularity", json_data={"resolution": resolution}))
 
+@mcp.tool(name="gephi_list_statistics")
+async def gephi_list_statistics() -> str:
+    """List every statistic available in this Gephi instance, by name.
+
+    Includes Gephi's built-ins AND any installed plugin that provides a metric
+    (e.g. the Leiden Algorithm plugin from the Gephi plugin portal). Run any of
+    them with gephi_run_statistic.
+    """
+    return fmt(await gephi.request("GET", "/statistics/available"))
+
+@mcp.tool(name="gephi_run_statistic")
+async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -> str:
+    """Run any available statistic by name — including installed plugin metrics.
+
+    `name` matches an entry from gephi_list_statistics (case-insensitive).
+    `params`: optional {property: value} map set on the statistic before it runs
+    (setters, bare fields, and enums-by-name all work). Results land in
+    node/edge columns as usual (check gephi_list_columns, then size or color by
+    the new column). This is the plugin-ecosystem passthrough: install a metric
+    plugin in Gephi (Tools > Plugins) and it is immediately runnable here.
+
+    Plugin statistics configured by a UI dialog usually NEED params (their
+    fields start null/zero). Verified example, the CWTS Leiden plugin:
+    name="Leiden algorithm", params={"algorithm": "Leiden", "qualityFunction":
+    "Modularity", "resolution": 1.0, "nIterations": 10, "nRestarts": 5}.
+    If a run errors mid-execution, check gephi_health_check: a statistic that
+    crashes while holding the graph lock can freeze Gephi's own UI (restart
+    Gephi if graph_lock_stats shows readers stuck above zero).
+    """
+    return fmt(await gephi.request("POST", "/statistics/run",
+                                   json_data=_body(name=name, params=params)))
+
 @mcp.tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
     """Compute degree, in-degree, and out-degree for all nodes."""
@@ -837,6 +869,16 @@ async def gephi_import_file(file: str) -> str:
 
     Auto-detected by extension. Imported node sizes are capped at 30 so a viz:size
     from the source can't render nodes enormous; re-size with gephi_size_by_ranking.
+
+    No file path? (e.g. the user attached a spreadsheet/CSV/JSON/RDF in chat):
+    parse the content yourself and build the graph with gephi_add_nodes +
+    gephi_add_edges in batches — that path handles ANY format you can read.
+    Common shapes: edge list (source,target[,weight] rows) -> add directly;
+    adjacency matrix -> one edge per nonzero cell; two-column co-occurrence
+    (person,event) -> bipartite, or project it (edge when two rows share a
+    value); rows-as-entities with attributes -> nodes with attributes, then
+    edges from a relationship column or attribute similarity; RDF triples ->
+    subject/object as nodes, predicate as edge label.
     """
     return fmt(await gephi.request("POST", "/import/file", json_data={"file": file}))
 

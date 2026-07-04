@@ -156,10 +156,10 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_80_tools_registered():
+def test_all_82_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 80, f"expected 80 tools, found {len(names)}"
+    assert len(names) == 82, f"expected 80 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -186,6 +186,16 @@ async def test_filter_by_degree_body(rec):
     await out_of(gephi_mcp.gephi_filter_by_degree, min=2, max=10, dry_run=True)
     assert rec.last["endpoint"] == "/filter/degree"
     assert rec.last["json"] == {"min": 2, "max": 10, "dry_run": True}
+
+
+async def test_statistics_passthrough(rec):
+    await out_of(gephi_mcp.gephi_list_statistics)
+    assert rec.last["endpoint"] == "/statistics/available"
+    await out_of(gephi_mcp.gephi_run_statistic, name="Leiden")
+    assert rec.last["endpoint"] == "/statistics/run"
+    assert rec.last["json"] == {"name": "Leiden"}
+    await out_of(gephi_mcp.gephi_run_statistic, name="PageRank", params={"epsilon": 0.001})
+    assert rec.last["json"] == {"name": "PageRank", "params": {"epsilon": 0.001}}
 
 
 async def test_export_gexf_inline_and_file(rec):

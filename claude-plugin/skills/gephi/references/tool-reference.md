@@ -284,7 +284,8 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, modularity}`
 - **Notes**: Higher resolution = more communities. Use `gephi_color_by_partition` with `modularity_class` afterwards.
 
-### gephi_compute_degree
+### gephi_list_statistics` / `gephi_run_statistic` — enumerate and run ANY statistic incl. installed plugin metrics (Leiden etc.)
+- `gephi_compute_degree
 - **Method**: POST `/statistics/degree`
 - **Creates**: `degree`, `indegree`, `outdegree` on nodes
 - **Returns**: `{success, average_degree}`
