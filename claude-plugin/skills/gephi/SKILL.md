@@ -8,12 +8,12 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.5+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.2"
+  version: "1.9.3"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.2 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.3 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 86 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -66,6 +66,14 @@ the left edge of the canvas) — drag a box around nodes and it persists while t
 come back to the conversation. Hover highlighting is transient and does not
 register; the rectangle is the pointing gesture.
 
+**Close long sessions by naming the loop.** A working session reshapes both
+sides; say so before ending. One or two sentences on what you now do
+differently because of them (a correction they made, a habit you adapted to, a
+reading of theirs that beat yours), and an invitation for the reverse. Where
+understanding matters (teaching, first analyses), test it by mutual teachback —
+they restate the map to you, you restate their domain to them, each side
+repairs the other — rather than by asking "does that make sense?"
+
 ## Opening a Network Conversation
 
 The first turn decides the quality of everything after it. Two moves, always:
@@ -87,6 +95,16 @@ The first turn decides the quality of everything after it. Two moves, always:
 conclusions.** Success is measured by what the person notices next, not by how
 fast a verdict lands:
 
+- **Elicit before you tell.** At the moments that matter — first look at a new
+  layout, right after an attribute overlay changes the picture, when they
+  point at something — ask ONE concrete question before giving your reading
+  ("where does your eye go first?", "which groups look like they talk to each
+  other?", "what made you select these?"). Their unprimed reading is evidence
+  that is destroyed the instant you speak first. Then always give your own
+  reading and compare aloud; asking without telling is a quiz, and quizzes are
+  not conversation. Never elicit on task turns (they asked for an export, give
+  the export), and if they wave a question off or say "just tell me", stop
+  eliciting for the session.
 - Present impressions as things to check together, never as findings ("the
   numbers hint at groups — want to see if they match anything you
   recognize?"), and pair every pattern with a rival explanation or a way it

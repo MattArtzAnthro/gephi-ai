@@ -60,6 +60,23 @@ operate is how people learn what network analysis actually does.
    real-world terms — and offer `gephi_view_graph` so they can keep exploring
    interactively in the chat afterward.
 
+9. **Close with mutual teachback.** Understanding is demonstrated by teaching
+   back, not by nodding along. Invite them: "explain this map to me as if I'd
+   never seen it — what does it say, and what should a reader be careful
+   about?" Listen for the reading rules in their answer (distances not axes,
+   clusters not positions, earned names) and gently repair what's missing.
+   Then teach back the other way: state your understanding of THEIR domain in
+   your own words ("here's what I now think these communities mean in your
+   world — correct me") and let them repair you. Both directions matter; the
+   session isn't closed until each side has restated the other and been
+   corrected at least once or confirmed.
+
+10. **Name how the loop changed each side.** In one or two sentences, say what
+    you now do differently because of them (a correction they made, a habit of
+    theirs you adapted to, a reading of theirs that beat yours) and ask what
+    they'll do differently next time they meet a network. The exchange reshaped
+    both participants; saying so out loud is part of the lesson.
+
 Use everything in the gephi skill (validated palette, VNA layout defaults,
 inspect-and-adjust, `gephi_visual_qa`) — teaching mode changes the *pacing and
 narration*, not the craft.

@@ -4,6 +4,24 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.9.3] (Claude Code plugin only)
+
+### Added
+- **Elicit before you tell.** At the moments that shape interpretation (first
+  look at a new layout, after an attribute overlay, when the person points at
+  something), the assistant asks one concrete question — "where does your eye
+  go first?" — before giving its own reading, then compares the two aloud.
+  The person's unprimed look is evidence that the assistant's fluency would
+  otherwise erase. Never on task turns, never withholding (asking without
+  telling is a quiz), and dropped for the session at the first wave-off.
+- **Teaching sessions close with mutual teachback.** Understanding is
+  demonstrated by teaching back, not by nodding along: /teach now ends with
+  the person restating the map (checked against the reading rules) and the
+  assistant restating their domain (checked by them), each side repairing the
+  other. Sessions also close by naming how the exchange changed each side —
+  what the assistant now does differently because of the person, and the
+  invitation to reflect the other way.
+
 ## [1.9.2] (Claude Code plugin only)
 
 ### Fixed

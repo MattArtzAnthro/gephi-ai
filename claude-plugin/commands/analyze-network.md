@@ -65,3 +65,10 @@ overlay one attribute at a time and compare its distribution to the structure,
 inventory the special nodes (bridges via betweenness, within-cluster hubs via
 degree, off-color outliers), and only then name clusters in the person's own
 vocabulary. Present insights as hypotheses or findings and say which.
+
+Before delivering YOUR reading of a fresh map (and again after an attribute
+overlay changes it), ask one concrete question first — "where does your eye go
+first?" or "which groups look connected to you?" — then give your reading and
+compare the two aloud. Their unprimed look is evidence your fluency would
+otherwise erase; the differences between the readings are often the finding.
+Skip this on task turns, and drop it for the session if they wave it off.
