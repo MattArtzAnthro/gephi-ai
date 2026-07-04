@@ -106,16 +106,12 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 ## [1.3.6]
 
 ### Added
-- **`gephi_visual_qa` detects over-spread layouts** — the gap found during the live
-  500-node session, where QA passed a render whose nodes were specks in whitespace.
+- **`gephi_visual_qa` detects over-spread layouts** — previously QA could pass a
+  render whose nodes were specks in whitespace.
   When the largest node is under 1% of the layout extent's long side it now warns,
   with the fix spelled out (lower scalingRatio or raise sizes). The layout guide's
   symptom table gained the matching row, plus a composition tip (short final
   higher-gravity pass to round a straggly layout into the frame).
-- **`docs/RELEASING.md`** — the full release playbook: PyPI steps (with the
-  pytest-pipe exit-code hazard called out), marketplace sync incl. the local-fetch
-  fallback, GitHub release ghost-asset recovery, and the portal update procedure
-  with the valid category vocabulary from gephi-maven-plugin's source.
 
 ### Changed
 - **Skill gotchas now cover the two label traps**: preview settings never affect
@@ -182,7 +178,7 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
   export dimensions matched to the graph's shape, and, given a partition column, the
   within-group edge share versus the random baseline with a strong/weak/none verdict.
   The "none" verdict catches decorative groupings whose edges are actually wired at
-  random — coloring by those misleads, and a live test session showed exactly that
+  random — coloring by those misleads, and testing showed exactly that
   failure. Warnings are actionable instructions, so any host (including skill-less
   ones like Claude Desktop and Cowork) can inspect and fix its own renders.
 - **`/beautify` command** — runs the full inspect-and-adjust loop on the open graph:
