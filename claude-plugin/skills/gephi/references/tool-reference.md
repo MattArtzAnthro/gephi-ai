@@ -30,6 +30,15 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
   zoom. Desktop only — errors politely when headless. Use in teaching mode so the
   viewer always sees what you're describing.
 
+### gephi_get_selection
+- **Method**: GET `/selection?clear=true|false`
+- **Returns**: `{success, clicks: [{time_ms, nodes: [{id, label?}]}], count, listener_active}`
+- **Usage**: The human's recent node clicks in the Gephi window, oldest first.
+  Read it whenever they use deictic words ("this one", "these", "the ones I
+  clicked") and answer about those exact nodes. clear=true (default) consumes
+  the journal. Real mouse clicks on nodes only; recording starts at the
+  session's first health check. Desktop only.
+
 ## Project Management
 
 ### gephi_create_project

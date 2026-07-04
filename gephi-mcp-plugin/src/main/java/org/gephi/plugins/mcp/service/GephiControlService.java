@@ -64,6 +64,14 @@ public class GephiControlService {
     // Stored when setPreviewSettings receives background.color — used by exportPng to composite background
     private volatile Color exportBackgroundColor = null;
 
+    // Human click journal: the person's node clicks in the Gephi window,
+    // recorded by a passive viz-event listener so the model can resolve
+    // "this one" / "these" to actual nodes. Bounded; strings only (never
+    // hold Node references — they outlive workspaces).
+    private static final int CLICK_JOURNAL_MAX = 50;
+    private final java.util.ArrayDeque<JsonObject> clickJournal = new java.util.ArrayDeque<>();
+    private volatile boolean clickListenerInstalled = false;
+
     private GephiControlService() {}
 
     public static synchronized GephiControlService getInstance() {
@@ -2677,6 +2685,81 @@ public class GephiControlService {
             // leave the -1 defaults
         }
         return o;
+    }
+
+    // ─── Human selection journal ─────────────────────────────────────────
+
+    /**
+     * Install the passive NODE_LEFT_CLICK listener once. Safe to call often;
+     * no-ops until the visualization is available. The listener returns false
+     * (observe, never consume) so Gephi's own tools keep working.
+     */
+    public synchronized void ensureClickListener() {
+        if (clickListenerInstalled) return;
+        org.gephi.visualization.api.VisualizationController vc =
+            Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
+        if (vc == null) return;
+        vc.addListener(new org.gephi.visualization.api.VisualizationEventListener() {
+            @Override
+            public boolean handleEvent(org.gephi.visualization.api.VisualizationEvent event) {
+                try {
+                    Object data = event.getData();
+                    if (data instanceof Node[]) {
+                        Node[] nodes = (Node[]) data;
+                        if (nodes.length > 0) recordClick(nodes);
+                    }
+                } catch (Throwable t) {
+                    // Never disturb the viz event thread.
+                }
+                return false;
+            }
+
+            @Override
+            public org.gephi.visualization.api.VisualizationEvent.Type getType() {
+                return org.gephi.visualization.api.VisualizationEvent.Type.NODE_LEFT_CLICK;
+            }
+        });
+        clickListenerInstalled = true;
+    }
+
+    private void recordClick(Node[] nodes) {
+        JsonObject entry = new JsonObject();
+        entry.addProperty("time_ms", System.currentTimeMillis());
+        JsonArray arr = new JsonArray();
+        for (Node n : nodes) {
+            JsonObject jn = new JsonObject();
+            jn.addProperty("id", String.valueOf(n.getId()));
+            String label = n.getLabel();
+            if (label != null && !label.isEmpty() && !label.equals(String.valueOf(n.getId()))) {
+                jn.addProperty("label", label);
+            }
+            arr.add(jn);
+        }
+        entry.add("nodes", arr);
+        synchronized (clickJournal) {
+            clickJournal.addLast(entry);
+            while (clickJournal.size() > CLICK_JOURNAL_MAX) clickJournal.removeFirst();
+        }
+    }
+
+    /**
+     * Recent node clicks the human made in the Gephi window (oldest first).
+     * clear=true consumes the journal so the same clicks are not re-reported.
+     * listener_active=false means the visualization was not up yet; the
+     * listener installs on this call and clicks are captured from now on.
+     */
+    public JsonObject getSelection(boolean clear) {
+        ensureClickListener();
+        JsonObject r = success("Recent human node clicks");
+        JsonArray clicks = new JsonArray();
+        synchronized (clickJournal) {
+            for (JsonObject e : clickJournal) clicks.add(e.deepCopy());
+            if (clear) clickJournal.clear();
+        }
+        r.add("clicks", clicks);
+        r.addProperty("count", clicks.size());
+        r.addProperty("listener_active", clickListenerInstalled);
+        return r;
     }
 
     // ─── View / camera control (teaching mode) ──────────────────────────

@@ -104,12 +104,21 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.4");
+            result.addProperty("version", "1.2.5");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
             result.add("graph_lock_stats", service.graphLockStats());
+            // Start capturing the human's node clicks from the session's first call.
+            service.ensureClickListener();
             return result;
+        }
+
+        // ─── Human selection journal ─────────────────────────────────
+
+        if ("/selection".equals(uri) && Method.GET.equals(method)) {
+            boolean clear = !"false".equalsIgnoreCase(params.get("clear"));
+            return service.getSelection(clear);
         }
 
         // ─── View / camera (teaching mode) ───────────────────────────

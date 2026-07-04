@@ -853,6 +853,29 @@ async def gephi_focus_view(mode: str = "graph", id: str | None = None,
                                                    zoom=zoom, select=select)))
 
 
+@mcp.tool(name="gephi_get_selection")
+async def gephi_get_selection(clear: bool = True) -> str:
+    """Read the nodes the human recently CLICKED in the Gephi window — pointing,
+    made legible.
+
+    Call this whenever the person uses deictic words about the canvas: "this
+    one", "these", "that node", "the ones I selected", "what about this
+    cluster". Their click is the answer; do not ask them to type node names.
+    Also worth a check when they say they were exploring while you worked.
+
+    Returns recent clicks oldest-first, each with a timestamp and the clicked
+    node ids/labels. clear=True (default) consumes the journal so the same
+    clicks are not re-reported; pass clear=False to peek without consuming.
+
+    Notes: captures real mouse clicks on nodes only (not empty-canvas clicks,
+    not programmatic selection). The journal starts recording at the first
+    health check of a session; listener_active=false means the visualization
+    was not up yet — clicks are captured from this call on. Desktop only.
+    """
+    return fmt(await gephi.request(
+        "GET", f"/selection?clear={'true' if clear else 'false'}"))
+
+
 @mcp.tool(name="gephi_visual_qa")
 async def gephi_visual_qa(partition_column: str | None = None) -> str:
     """Run visual-design diagnostics on the current graph. Cheap; use it often.
