@@ -156,6 +156,13 @@ It should call `gephi_health_check` and confirm the connection. In Claude Code, 
 /gephi-network-analysis:import-and-explore path/to/your/graph.gexf
 ```
 
+## Updating
+
+- **Claude Code:** `claude plugin update gephi-network-analysis@gephi-ai`, then start a new session.
+- **Claude Desktop (one-click bundle):** download the newest `.mcpb` from Releases and double-click it again.
+- **Cowork:** Cowork keeps its own copy of plugins, separate from Claude Code — updating one does not update the other. If Cowork's commands look older than this README (for example, no `/teach`), ask Cowork itself to update the gephi-network-analysis plugin, then fully quit and reopen the app.
+- **Gephi plugin:** install the newest `.nbm` from Releases via Tools > Plugins > Downloaded and restart Gephi. `gephi_health_check` reports the installed version.
+
 ## What the Claude Code plugin adds
 
 The plugin (`claude-plugin/`) goes beyond raw MCP tools:
