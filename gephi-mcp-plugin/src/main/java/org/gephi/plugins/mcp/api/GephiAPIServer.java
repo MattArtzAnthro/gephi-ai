@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.3");
+            result.addProperty("version", "1.2.4");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -570,7 +570,14 @@ public class GephiAPIServer extends NanoHTTPD {
 
         if ("/preview/settings".equals(uri) && Method.POST.equals(method)) {
             if (body == null) return errorResult("Missing request body");
-            Map<String, Object> settings = GSON.fromJson(body, Map.class);
+            // Body shape is flat {property: value}; unwrap the common client
+            // mistake of nesting everything under a "settings" key so it does
+            // not get stored as a junk preview property named "settings".
+            JsonObject effective = body;
+            if (body.size() == 1 && body.has("settings") && body.get("settings").isJsonObject()) {
+                effective = body.getAsJsonObject("settings");
+            }
+            Map<String, Object> settings = GSON.fromJson(effective, Map.class);
             return service.setPreviewSettings(settings);
         }
 

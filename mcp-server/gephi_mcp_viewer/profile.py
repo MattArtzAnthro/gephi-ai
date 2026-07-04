@@ -87,5 +87,12 @@ def structural_profile(graph: dict) -> dict:
             "like a dandelion — for a readable map, filter to degree >= 2 (the "
             "conversational skeleton) and keep the full graph for statistics"
         )
+    if n >= 100 and 0 < seen_pairs <= 2.0 * n:
+        flags.append(
+            "tree-like: barely more ties than nodes, so communities are star/branch "
+            "structures with no ties pulling them together — force layouts will NOT "
+            "separate them no matter how long they run; after community detection "
+            "use gephi_community_layout instead"
+        )
     profile["flags"] = flags
     return profile

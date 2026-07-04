@@ -472,6 +472,74 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
                 "nodes_positioned": len(positions),
                 "reading_note": "proximity = similar structural role, not direct connection"})
 
+@mcp.tool(name="gephi_community_layout")
+async def gephi_community_layout(partition_column: str = "Modularity Class",
+                                 min_community_size: int = 6,
+                                 finish_noverlap: bool = True) -> str:
+    """Lay the graph out as one radial fan per community, packed as discs —
+    the layout for networks where force layouts stay mixed no matter how long
+    they run.
+
+    Use on tree-like networks (replies, retweets, mentions, citations from a
+    seed — anything the profile flags as leaf-majority or tree-like): their
+    communities are stars fanning out from hubs, interleaved star-arms have no
+    ties pulling them together, so ForceAtlas 2 leaves real communities
+    visually interpenetrating. This layout takes the DETECTED partition and
+    draws each community as its own disc: hub at center, members ringed by
+    graph distance from the hub, branch angles sized by subtree.
+
+    IMPORTANT when presenting the result — the reading rules change: grouping
+    and within-disc distances come from the data; disc placement relative to
+    other discs is arranged for legibility and means NOTHING. Say so plainly
+    (a caption like "disc placement arranged for legibility; grouping comes
+    from the data" is the honest minimum).
+
+    The result includes separation_before/after: mean intra-community pair
+    distance over mean random pair distance (1.0 = fully mixed, near 0 = tight
+    discs). Quote it when explaining why the layout was switched.
+
+    partition_column: node attribute holding the community (default the
+    modularity result; run gephi_run_modularity first if absent).
+    min_community_size: smaller communities scatter on the outer rim instead
+    of getting a disc.
+    """
+    from gephi_mcp_viewer import parse_gexf
+    from gephi_mcp_viewer.community_layout import (compute_community_positions,
+                                                   separation_score)
+
+    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    if not exported.get("success"):
+        return fmt(exported)
+    graph = parse_gexf(exported["content"], max_nodes=10**9)
+    before = separation_score(
+        graph, {n["key"]: (n["x"], n["y"]) for n in graph["nodes"]},
+        partition_column)
+    try:
+        positions, info = compute_community_positions(
+            graph, partition=partition_column, min_disc=min_community_size)
+    except ValueError as e:
+        return fmt({"success": False, "error": str(e)})
+    pushed = await gephi.request("POST", "/graph/nodes/positions",
+                                 json_data={"positions": positions})
+    if not pushed.get("success"):
+        return fmt(pushed)
+    if finish_noverlap:
+        await gephi.request("POST", "/layout/run",
+                            json_data={"algorithm": "noverlap", "iterations": 60})
+        for _ in range(120):
+            status = await gephi.request("GET", "/layout/status")
+            if not status.get("running"):
+                break
+            await asyncio.sleep(0.5)
+    await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
+    after = separation_score(graph, positions, partition_column)
+    return fmt({"success": True, "layout": "community-discs", **info,
+                "nodes_positioned": len(positions),
+                "separation_before": before, "separation_after": after,
+                "reading_note": ("grouping and within-disc distances come from "
+                                 "the data; disc placement is arranged for "
+                                 "legibility and means nothing")})
+
 @mcp.tool(name="gephi_stop_layout")
 async def gephi_stop_layout() -> str:
     """Stop a currently running layout algorithm."""

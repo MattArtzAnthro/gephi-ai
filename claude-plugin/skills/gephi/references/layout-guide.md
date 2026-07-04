@@ -8,6 +8,7 @@ explaining a choice, use the plain-language purpose, then name the layout.
 | What the person wants | Use | Notes |
 |---|---|---|
 | "Show me the groups/communities" | ForceAtlas 2 (linLogMode true, gravity 0) | The default for almost everything; see the reference config below |
+| Groups in a TREE-LIKE network (replies, retweets, seeded citations) | Community layout (`gephi_community_layout`) | Force layouts cannot separate star-shaped communities — run modularity first, then this; see the tree-like section below |
 | "Who plays similar roles?" (even if not directly connected) | Similarity layout (`gephi_similarity_layout`) | Embedding-based; proximity = similar structural role, NOT connection — always say so when presenting. Compare against FA2; disagreements mark bridge/boundary actors |
 | A huge network (50k+ nodes) | OpenOrd first, then a short ForceAtlas 2 pass | OpenOrd is built for scale; FA2 refines the detail |
 | A quick, decent picture of a medium network | Yifan Hu | Fast spring layout, less community emphasis than FA2 |
@@ -250,3 +251,29 @@ of interactions) have a characteristic shape the demo networks never show:
   captions are the map telling you the groups share space.
 - **External matplotlib re-render note:** GEXF colors parse as strings like
   `rgb(27,175,122)` — handle that format, not only hex.
+
+## Tree-like networks: when force layouts cannot separate communities
+
+Reply, retweet, mention, and seeded-citation networks are tree-like (barely
+more ties than nodes — the profile flags it). Their communities are stars
+fanning out from hub accounts, and interleaved star-arms have no ties pulling
+them together, so **ForceAtlas 2 leaves real communities fully mixed no matter
+how many iterations you run**. This is structural, not a tuning problem;
+measured on a real reply network, 4,000 LinLog iterations moved the
+separation score only from 0.88 to 0.84.
+
+The fix is `gephi_community_layout`: detect communities first (modularity),
+then draw each as its own radial disc — hub at center, members ringed by
+reply-distance, discs packed side by side. Same network: separation 0.10.
+
+- **Judge separation by number, not by eye.** The tool reports
+  separation_before/after (mean intra-community pair distance over mean random
+  pair distance; 1.0 = fully mixed). Quote it when explaining the layout
+  switch. Below ~0.5 captions work; above it, use a legend.
+- **The reading rules change and you must say so.** Grouping and within-disc
+  distances come from the data; disc placement relative to other discs is
+  arranged for legibility and means nothing. Put that in the caption.
+- **Labels are a budget.** Thousands of labels is zero labels. Label only the
+  hubs (gephi_label_clusters, or per-community top accounts plus the global
+  top), and for exports thin further with collision-avoidance. Community
+  names go on as the top typographic layer once they are earned.

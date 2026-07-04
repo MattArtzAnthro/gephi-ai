@@ -2,7 +2,7 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 80 Gephi MCP tools.
+  this skill provides workflows and best practices for the 85 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin v1.0.0-beta installed, and the gephi-mcp MCP server connected.
@@ -13,9 +13,9 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.7.3 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.8.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
-You have access to 80 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 85 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -97,7 +97,9 @@ fast a verdict lands:
   similarity layout; importance-by-association -> eigenvector.
 - Size + density pick the layout (purpose table in the layout guide); the
   profile's hairball flag means filter weak ties or raise scalingRatio before
-  wasting a render.
+  wasting a render; the tree-like flag means force layouts will NOT separate
+  communities — run modularity, then gephi_community_layout (and state its
+  changed reading rule: disc placement is legibility, not structure).
 - If they expect an attribute to organize the network, TEST it (partition
   share vs baseline) before coloring by it; when it fails, say so plainly and
   offer detected communities — the gap between their expectation and the

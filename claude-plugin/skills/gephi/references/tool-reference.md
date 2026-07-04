@@ -275,6 +275,17 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{algorithm: str, properties: {name: value}, iterations?: int (1000)}`
 - **Notes**: Sets properties then runs layout. Use for fine-tuning.
 
+### gephi_similarity_layout
+- **Method**: computed server-side (Python), positions pushed via POST `/graph/nodes/positions`
+- **Params**: `{projection?: "auto"|"umap"|"tsne"|"spectral", dimensions?: int (8), finish_noverlap?: bool (true)}`
+- **Notes**: Positions nodes by structural role (embedding), not springs. Proximity = similar role, NOT connection — state this when presenting.
+
+### gephi_community_layout
+- **Method**: computed server-side (Python), positions pushed via POST `/graph/nodes/positions`
+- **Params**: `{partition_column?: str ("Modularity Class"), min_community_size?: int (6), finish_noverlap?: bool (true)}`
+- **Returns**: includes `separation_before`/`separation_after` (1.0 = fully mixed, near 0 = tight discs)
+- **Notes**: One radial fan per community, packed as discs. For tree-like networks (replies, retweets) where force layouts cannot separate communities. Reading rule: disc placement is legibility, not structure — say so.
+
 ## Statistics
 
 ### gephi_compute_modularity

@@ -1970,7 +1970,13 @@ public class GephiControlService {
                     if (prop == null) {
                         // Property registry may not be initialized in this workspace
                         // (e.g. Preview never opened). putValue works regardless and
-                        // renderers read it at export time.
+                        // renderers read it at export time. Non-scalar values are
+                        // never valid preview properties — storing one corrupts the
+                        // model, so skip them.
+                        if (val instanceof Map || val instanceof List) {
+                            LOGGER.warning("MCP: Skipping non-scalar preview value for " + key);
+                            continue;
+                        }
                         Object coerced = val;
                         if (val instanceof String) {
                             String sv = ((String) val).trim();

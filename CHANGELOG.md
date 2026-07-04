@@ -4,6 +4,37 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.8.0]
+
+Continued lessons from real reply-network data: force layouts cannot separate
+communities in tree-like networks, so the fix ships as a layout of its own.
+
+### Added
+- **`gephi_community_layout`** (85 tools now): one radial fan per detected
+  community, packed as discs — hub at center, members ringed by graph distance,
+  branch angles sized by subtree. For tree-like networks (replies, retweets,
+  mentions, seeded citations) whose star-shaped communities interleave under
+  ForceAtlas 2 no matter how long it runs. Reports a separation score
+  (mean intra-community pair distance over mean random pair distance; 1.0 =
+  fully mixed) before and after, and carries its changed reading rule in the
+  result: disc placement is arranged for legibility and means nothing.
+- **Profile detects tree-like networks.** `gephi_profile_graph` flags graphs
+  with barely more ties than nodes and points to `gephi_community_layout`
+  before force-layout iterations get wasted (measured on a real reply
+  network: 4,000 LinLog iterations improved separation only 0.88 to 0.84;
+  the community layout reached 0.10).
+- **Layout guide: tree-like section** — why force layouts fail structurally,
+  the separation score as the judge (below ~0.5 captions work, above it use a
+  legend), the changed reading rules, and labels-are-a-budget (hub-only
+  labels, collision-thinned for exports).
+
+### Fixed
+- **Java plugin 1.2.4:** `/preview/settings` now unwraps a body mistakenly
+  nested under a `"settings"` key instead of silently storing the nested map
+  as a junk preview property named `settings`, and the property fallback
+  skips non-scalar values. The documented body shape (flat
+  `{property: value}`) is unchanged.
+
 ## [1.7.3]
 
 Lessons from the first large real-world dataset (a 40k-tweet, 12k-user
