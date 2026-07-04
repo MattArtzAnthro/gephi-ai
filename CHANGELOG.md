@@ -4,6 +4,24 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.7.2]
+
+### Added
+- Claude plugin only. New skill reference **"Reading a Network Map"** — a
+  guided interpretation process adapted from Mathieu Jacomy's visual network
+  analysis teaching (MDO lecture 2026; Jacomy & Grandjean, "Translating
+  Networks", DH 2019): reading rules stated up front (axes mean nothing, only
+  distances; reruns keep clusters, not positions; boundaries are debatable,
+  clusters are not), temporary letter-naming before earned names, structural
+  holes treated as findings, attribute colors overlaid only AFTER structure is
+  identified so agreement and disagreement both become discoveries, and a
+  special-nodes inventory mapping visual situations to the metrics that find
+  them (bridges -> betweenness, within-cluster hubs -> degree, off-color
+  outliers -> attribute vs. position). Wired into /analyze-network (a reading
+  pass after the numbers) and /teach (the rules taught explicitly, with the
+  randomize-and-relayout demonstration). Honest limitation noted: very dense
+  networks are better served by matrices, which gephi-ai does not render.
+
 ## [1.7.1]
 
 ### Changed

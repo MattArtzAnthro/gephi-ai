@@ -13,7 +13,7 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.7.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.7.2 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 80 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -105,7 +105,14 @@ fast a verdict lands:
 - Isolates and fragments: ask before removing (one person's noise is another
   person's result).
 - Caption clusters in their vocabulary, derived from their data, never
-  "cluster 0/1/2".
+  "cluster 0/1/2" — but only AFTER the reading process has earned the names
+  (letters first, real names last; see references/reading-network-maps.md).
+- When interpreting a laid-out map, follow the guided reading process in
+  references/reading-network-maps.md: layout -> clusters (letter names) ->
+  structural holes (the gaps are findings too) -> THEN attribute colors
+  compared against the structure -> special nodes (bridges, within-cluster
+  hubs, off-color outliers) -> earned names. State the reading rules (axes
+  mean nothing, only distances; reruns keep clusters, not positions).
 
 ## Plugin Ecosystem Passthrough
 

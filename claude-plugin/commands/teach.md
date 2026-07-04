@@ -40,7 +40,15 @@ operate is how people learn what network analysis actually does.
 6. **Check the instrument.** `gephi_health_check` at the start; if graph_lock says
    "busy" persistently, tell them Gephi needs a full restart before class continues.
 
-7. **End with the reading, not the mechanics.** Close by interpreting the final
+7. **Teach the reading rules explicitly** (from
+   references/reading-network-maps.md): the axes mean nothing and only
+   distances do; rerunning the layout moves the clusters but never destroys
+   them (demonstrate it — randomize and re-run while they watch); cluster
+   boundaries are debatable while clusters are not; the empty spaces between
+   clusters are findings too. Name clusters with letters first and earn their
+   real names from the attributes, together.
+
+8. **End with the reading, not the mechanics.** Close by interpreting the final
    picture together — clusters, bridges, hubs, and what they'd mean in the data's
    real-world terms — and offer `gephi_view_graph` so they can keep exploring
    interactively in the chat afterward.

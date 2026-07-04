@@ -54,3 +54,14 @@ Run a full structural analysis of the current graph and present a detailed repor
 
    ### Network Classification
    - Classify the network type (scale-free, small-world, random, regular) based on the metrics
+
+## Reading pass (after the numbers)
+
+Once statistics are computed and a layout exists, walk the guided reading
+process from `references/reading-network-maps.md`: state the reading rules
+(axes are arbitrary, only distances matter), identify main clusters with
+temporary letter names, point out the structural holes and what they imply,
+overlay one attribute at a time and compare its distribution to the structure,
+inventory the special nodes (bridges via betweenness, within-cluster hubs via
+degree, off-color outliers), and only then name clusters in the person's own
+vocabulary. Present insights as hypotheses or findings and say which.
