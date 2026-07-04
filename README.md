@@ -68,7 +68,6 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 - [Gephi Desktop](https://gephi.org/users/download/) 0.11.1+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (runs the MCP server; one-line install, manages Python for you)
 - [Claude Code](https://claude.ai/code) or [Claude Desktop](https://claude.ai/download) (for AI interaction)
-- [Java JDK 11+](https://adoptium.net/) and [Maven](https://maven.apache.org/) — only if you want to build the Gephi plugin from source
 
 ### Step 1: Install the Gephi plugin
 
@@ -80,42 +79,9 @@ This adds the HTTP API server inside Gephi Desktop. No build tools needed — do
 
 **Verify:** Open a browser to `http://127.0.0.1:8080/health` — you should see `{"success": true}`.
 
-<details>
-<summary>Alternative: build the plugin from source</summary>
-
-Requires JDK 11+ and Maven:
-
-```bash
-cd gephi-mcp-plugin
-mvn clean package
-```
-
-The built plugin is at `gephi-mcp-plugin/target/gephi-mcp-1.2.2.nbm`. Install it in Gephi as described above.
-
-</details>
-
 ### Step 2: Connect your AI assistant
 
-#### Claude Code (full plugin — recommended)
-
-```bash
-claude plugin marketplace add MattArtzAnthro/gephi-ai
-claude plugin install gephi-network-analysis@gephi-ai
-```
-
-(Or run the same two commands as `/plugin marketplace add …` and `/plugin install …` inside a Claude Code session.)
-
-That's it — the plugin bundles and runs the MCP server itself (via uv), and adds slash commands, the network analyst agent, skills, and a health-check hook. No separate server install.
-
-#### Claude Code (MCP tools only)
-
-If you just want the 82 tools without skills and commands:
-
-```bash
-claude mcp add gephi-mcp -- uvx gephi-mcp
-```
-
-#### Claude Desktop (one-click bundle — easiest)
+#### Claude Desktop (fastest start)
 
 Download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it — Claude Desktop installs the server with all dependencies bundled. No terminal, no config file. (Requires Python 3.10+ on your system, which modern macOS provides.)
 
@@ -137,18 +103,42 @@ Add to your MCP configuration (`claude_desktop_config.json`):
 
 </details>
 
+#### Claude Code (most capable)
+
+```bash
+claude plugin marketplace add MattArtzAnthro/gephi-ai
+claude plugin install gephi-network-analysis@gephi-ai
+```
+
+(Or run the same two commands as `/plugin marketplace add …` and `/plugin install …` inside a Claude Code session.)
+
+The plugin bundles and runs the MCP server itself (via uv), and adds the slash commands, the network analyst agent, and the skills that teach Claude network science best practices. If you use Claude Code, this is the recommended setup.
+
+<details>
+<summary>Claude Code with MCP tools only (no skills or commands)</summary>
+
+```bash
+claude mcp add gephi-mcp -- uvx gephi-mcp
+```
+
+</details>
+
 #### Other MCP clients
 
 Point your client at `uvx gephi-mcp` using stdio transport. `uvx` fetches the
 [`gephi-mcp` package from PyPI](https://pypi.org/project/gephi-mcp/) on first run and
-caches it. If you prefer a persistent named command on your `PATH` instead, install it
-with `pipx install gephi-mcp` and use `gephi-mcp` as the command.
+caches it. For a persistent named command, `pipx install gephi-mcp` also works.
 
-> **If you install with pip instead:** avoid a project virtual environment. Inside an
-> activated `.venv` the `gephi-mcp` command only exists on that venv's `PATH`, and MCP
-> clients launch servers outside your shell — the server fails with "Executable not
-> found in $PATH" even though `which gephi-mcp` succeeds. Use `uvx`/`pipx`, or point
-> your MCP config at the venv executable's absolute path.
+<details>
+<summary>Troubleshooting: "Executable not found in $PATH"</summary>
+
+Avoid installing with pip inside a project virtual environment. Inside an
+activated `.venv` the `gephi-mcp` command only exists on that venv's `PATH`, and MCP
+clients launch servers outside your shell — the server fails with "Executable not
+found in $PATH" even though `which gephi-mcp` succeeds. Use `uvx`/`pipx`, or point
+your MCP config at the venv executable's absolute path.
+
+</details>
 
 ### Step 3: Verify
 
@@ -176,13 +166,13 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (80)
+## Tools (82)
 
 | Category | Count | Examples |
 |----------|-------|---------|
 | Project & Workspace | 10 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_rename_workspace` |
 | Graph Construction | 18 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node` |
-| Statistics | 9 | `gephi_compute_modularity`, `gephi_compute_pagerank` |
+| Statistics | 11 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric, by name) |
 | Layout | 6 | `gephi_run_layout`, `gephi_get_layout_properties` |
 | Appearance | 10 | `gephi_color_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
 | Filtering | 6 | `gephi_filter_by_degree`, `gephi_extract_giant_component` |
@@ -224,7 +214,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 80 tools
+- **references/tool-reference.md** — Complete API reference for all 82 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 
@@ -239,6 +229,19 @@ Reference guides are in `claude-plugin/skills/gephi/`:
 If you use or adapt this project in your work, please credit:
 
 > Built with gephi-ai (Matt Artz, 2025–2026) — https://github.com/MattArtzAnthro/gephi-ai
+
+
+## Development
+
+Building the Gephi plugin from source requires JDK 11+ and Maven:
+
+```bash
+cd gephi-mcp-plugin
+mvn clean package    # output: target/gephi-mcp-<version>.nbm
+```
+
+The MCP server is a standard Python package under `mcp-server/` (`pytest` for tests,
+`ruff` for linting).
 
 ## License
 

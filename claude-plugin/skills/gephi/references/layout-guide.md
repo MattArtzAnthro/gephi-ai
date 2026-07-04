@@ -1,5 +1,40 @@
 # Layout Algorithm Guide
 
+## Choosing a layout (by purpose)
+
+Lead with what the person wants to see, not with algorithm names. When
+explaining a choice, use the plain-language purpose, then name the layout.
+
+| What the person wants | Use | Notes |
+|---|---|---|
+| "Show me the groups/communities" | ForceAtlas 2 (linLogMode true, gravity 0) | The default for almost everything; see the reference config below |
+| A huge network (50k+ nodes) | OpenOrd first, then a short ForceAtlas 2 pass | OpenOrd is built for scale; FA2 refines the detail |
+| A quick, decent picture of a medium network | Yifan Hu | Fast spring layout, less community emphasis than FA2 |
+| A small network with classic, even spacing | Fruchterman Reingold | Best under ~1k nodes; the "textbook" look |
+| Nodes are overlapping | Noverlap (finishing pass) | Run after the main layout; also FA2's adjustSizes |
+| Labels are overlapping before export | Label Adjust (finishing pass) | Run last, after sizing and labels are final |
+| The layout is too spread out or too cramped | Contraction / Expansion | One-shot fix; or rerun FA2 with lower/higher scalingRatio |
+| Rotate or flip the picture for presentation | Rotate / Mirror | Orientation only, structure unchanged |
+| Start over from scratch | Random Layout | Scramble, then run the real layout |
+
+All of the above ship with Gephi. The plugin portal
+(gephi.org/desktop/plugins) adds more, and anything installed there is
+immediately runnable here by name (gephi_list_layouts shows what is present).
+Worth suggesting when the purpose fits:
+
+| Purpose | Portal plugin |
+|---|---|
+| Points on a real map (lat/long data) | GeoLayout, Map of Countries |
+| Arrange nodes in a circle by an attribute or ranking | Circular Layout |
+| Two-type (bipartite) data in layers | Multipartite Layout |
+| 3D exploration | Force Atlas 3D, Network Splitter 3D |
+| Untangle a hairball for triage | Hairball Buster |
+
+If someone asks for an effect no available layout gives, check the portal
+before improvising: install in Gephi (Tools > Plugins), restart Gephi, and
+the new layout appears in gephi_list_layouts.
+
+
 Grounded in visual network analysis (VNA) research: Venturini, Jacomy, and Jensen,
 "What do we see when we look at networks" (Big Data & Society, 2021) and Jacomy et al.,
 "ForceAtlas2, a continuous graph layout algorithm" (PLoS ONE, 2014). The goal of a

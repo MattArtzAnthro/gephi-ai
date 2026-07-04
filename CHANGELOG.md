@@ -4,6 +4,17 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.5.3]
+
+### Changed
+- Claude plugin only (server and Gephi plugin unchanged). The layout guide now
+  opens with a purpose-first selection table ("show me the groups" -> ForceAtlas
+  2; huge networks -> OpenOrd then FA2; overlapping nodes -> Noverlap; maps,
+  circles, bipartite layers -> the matching portal plugins), written in plain
+  language so explanations work for non-technical users. README install flow
+  reorganized around the same goal: one-click Claude Desktop bundle first,
+  build-from-source moved to a Development section.
+
 ## [1.5.2]
 
 ### Added

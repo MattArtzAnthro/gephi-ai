@@ -162,6 +162,7 @@ Labeled:
 New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"node.label.overlapGridSize": 50` controls grid granularity. Both can be combined with existing label settings.
 
 ### Layout
+- Choosing by purpose (groups, scale, maps, circles, finishing passes): see the layout guide's "Choosing a layout" table — lead with what the person wants to see, then name the algorithm.
 - ForceAtlas 2 for most graphs: `{"scalingRatio": 15, "linLogMode": true, "gravity": 0, "sync": true}`, 1000-1500 iterations — scale `scalingRatio` up with node count (see Beautiful Graph Recipe table). Gravity stays 0 on connected graphs (use 0.5-1.0 only to keep disconnected components in frame); excessive gravity packs nodes into a central blob and is the most common layout mistake. LinLog mode + gravity 0 is the reference config for making communities visible (Venturini, Jacomy, and Jensen 2021).
 - **Inspect and adjust, always:** after the layout, export a small PNG, look at it, diagnose with the symptom table in references/layout-guide.md (blob = gravity too high; hairball = LinLog off or scaling too low; unreadable cluster interiors = raise scalingRatio), change ONE parameter, rerun ~300 iterations. Two or three loops usually converge — say what you saw and changed.
 - Follow with Noverlap: `{"algorithm": "Noverlap", "iterations": 500, "properties": {"margin": 5.0}, "sync": true}`
