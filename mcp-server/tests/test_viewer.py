@@ -486,3 +486,28 @@ def test_similarity_ring_geometry_is_meaningful():
     pos = {p["id"]: (p["x"], p["y"]) for p in positions}
     d = lambda a, b: math.dist(pos[a], pos[b])
     assert d("n0", "n1") < d("n0", "n6")
+
+
+# ─── structural profile ───────────────────────────────────────
+
+def test_structural_profile_facts():
+    from gephi_mcp_viewer.profile import structural_profile
+    g = _ring_graph(10)
+    g["nodes"].append({"key": "lonely", "attributes": {}})  # isolate
+    p = structural_profile(g)
+    assert p["nodes"] == 11 and p["edges"] == 10
+    assert p["isolates"] == 1
+    assert p["components"]["count"] == 2
+    assert p["degree"]["max"] == 2 and p["degree"]["min"] == 0
+    assert any("isolated" in f for f in p["flags"])
+
+
+def test_structural_profile_hub_flag():
+    from gephi_mcp_viewer.profile import structural_profile
+    # star graph: one hub touching everyone
+    n = 40
+    g = {"nodes": [{"key": f"n{i}"} for i in range(n)],
+         "edges": [{"source": "n0", "target": f"n{i}"} for i in range(1, n)]}
+    p = structural_profile(g)
+    assert p["degree"]["max"] == n - 1
+    assert any("hub-dominated" in f for f in p["flags"])

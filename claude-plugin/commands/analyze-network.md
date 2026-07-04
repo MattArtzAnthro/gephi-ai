@@ -13,9 +13,17 @@ Run a full structural analysis of the current graph and present a detailed repor
 
 1. **Health check**: Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop.
 
-2. **Basic stats**: Call `gephi_get_graph_stats` and `gephi_get_graph_type` to get node count, edge count, density, average degree, and directionality.
+2. **The intake question** (skip if already answered in this conversation):
+   ask in one sentence what the nodes and ties are and what they want to
+   learn. Use their vocabulary in the whole report, and treat their
+   expectations as hypotheses the analysis will confirm or contradict.
 
-3. **Connectivity**: Call `gephi_compute_connected_components` to identify how many connected components exist. If more than one, note the fragmentation.
+3. **Profile first**: Call `gephi_profile_graph` (one call — size, density,
+   degree distribution, components, isolates, weights, modularity,
+   clustering, flags). Open the report with a plain-language first reading
+   that combines their description with these numbers, and let the profile
+   decide which deeper analyses are worth running rather than running
+   everything.
 
 4. **Degree distribution**: Call `gephi_compute_degree`. Query nodes to understand the degree distribution — report min, max, average, and whether it follows a power-law (scale-free) or normal distribution.
 

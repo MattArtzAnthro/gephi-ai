@@ -511,6 +511,54 @@ async def gephi_compute_modularity(resolution: float = 1.0) -> str:
     """
     return fmt(await gephi.request("POST", "/statistics/modularity", json_data={"resolution": resolution}))
 
+@mcp.tool(name="gephi_profile_graph")
+async def gephi_profile_graph(include_slow: bool = False) -> str:
+    """Profile the whole graph in ONE call — run this first, before analyzing.
+
+    Returns a compact quantitative picture: size, density, degree distribution,
+    connectivity (components, isolates), whether weights carry signal, plus
+    Gephi-computed modularity (community count and strength) and clustering
+    coefficient, with auto-raised flags (fragmentation, hub dominance, likely
+    hairball). One call = one approval prompt instead of six.
+
+    USE IT TO GUIDE EVERYTHING DOWNSTREAM, together with the person's own
+    description of their data: their description supplies meaning (what nodes
+    and ties are, what they want to learn); this profile supplies measurement.
+    Read both before choosing a layout (purpose table), a sizing metric, or a
+    coloring — and turn the person's expectations into hypothesis tests (if
+    they expect X to organize the network, check it against the partition
+    baseline instead of assuming). Present a short plain-language first
+    reading, then ask the two or three questions the numbers raise (the flags
+    are candidates).
+
+    include_slow: also compute average path length / diameter (skipped by
+    default; expensive on large graphs — only sensible under ~3k nodes).
+    """
+    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    if not exported.get("success"):
+        return fmt(exported)
+    from gephi_mcp_viewer import parse_gexf
+    from gephi_mcp_viewer.profile import structural_profile
+
+    graph = parse_gexf(exported["content"], max_nodes=10**9)
+    profile = structural_profile(graph)
+
+    mod = await gephi.request("POST", "/statistics/modularity", json_data={})
+    if mod.get("success"):
+        profile["modularity"] = {k: mod[k] for k in ("modularity", "communities") if k in mod}
+    cc = await gephi.request("POST", "/statistics/clustering-coefficient", json_data={})
+    if cc.get("success"):
+        for k in ("average_clustering_coefficient", "clustering_coefficient", "average"):
+            if k in cc:
+                profile["clustering_coefficient"] = cc[k]
+                break
+    if include_slow and profile["nodes"] <= 3000:
+        dist = await gephi.request("POST", "/statistics/avg-path-length", json_data={})
+        if dist.get("success"):
+            profile["distance"] = {k: dist[k] for k in ("avg_path_length", "diameter", "radius") if k in dist}
+    profile["success"] = True
+    return fmt(profile)
+
 @mcp.tool(name="gephi_list_statistics")
 async def gephi_list_statistics() -> str:
     """List every statistic available in this Gephi instance, by name.

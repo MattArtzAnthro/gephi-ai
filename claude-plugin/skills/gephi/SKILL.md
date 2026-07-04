@@ -13,6 +13,8 @@ metadata:
 
 # Gephi Network Analysis Skill
 
+*Skill version 1.7.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+
 You have access to 80 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
@@ -54,6 +56,40 @@ import/layout, center+select a cluster before discussing it); run layouts in
 pause after each visible change and invite their observations. The /teach command
 codifies the full pattern. Watching the instrument operate is the pedagogy — never
 do anything the viewer can't follow.
+
+## Opening a Network Conversation
+
+The first turn decides the quality of everything after it. Two moves, always:
+
+1. **Ask the intake question** (skip if they already told you): one friendly
+   sentence — "what are the nodes and connections here, and what are you
+   hoping to learn?" Their answer supplies what no file carries: meaning and
+   the question at stake. Use their vocabulary everywhere (reports, captions,
+   labels), and treat their expectations as hypotheses to test, not truths to
+   assume.
+2. **Run `gephi_profile_graph`** — one call, the full quantitative picture
+   (size, density, degree distribution, components, isolates, weights,
+   modularity, clustering, auto-raised flags). You can absorb a dozen
+   simultaneous measurements better than most humans can; do it, then give a
+   short plain-language first reading that marries their description with the
+   numbers, and ask the 2-3 questions the profile raises.
+
+**Then let both guide every downstream decision:**
+
+- Their goal picks the metric: brokers/gatekeepers -> betweenness;
+  reach/influence -> degree or PageRank; "who plays similar roles" -> the
+  similarity layout; importance-by-association -> eigenvector.
+- Size + density pick the layout (purpose table in the layout guide); the
+  profile's hairball flag means filter weak ties or raise scalingRatio before
+  wasting a render.
+- If they expect an attribute to organize the network, TEST it (partition
+  share vs baseline) before coloring by it; when it fails, say so plainly and
+  offer detected communities — the gap between their expectation and the
+  structure is usually the finding.
+- Isolates and fragments: ask before removing (one person's noise is another
+  person's result).
+- Caption clusters in their vocabulary, derived from their data, never
+  "cluster 0/1/2".
 
 ## Plugin Ecosystem Passthrough
 

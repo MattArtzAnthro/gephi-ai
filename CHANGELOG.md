@@ -4,6 +4,25 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.7.0]
+
+### Added
+- **The opening move: `gephi_profile_graph` (tool #84) + intake-first guidance.**
+  One call profiles the whole graph (size, density, degree distribution,
+  components, isolates, weight signal, modularity, clustering coefficient,
+  auto-raised flags for fragmentation, hub dominance, and likely hairballs) —
+  one approval prompt instead of six, and a quantitative picture a language
+  model reads at a glance. The skill and the /import-and-explore and
+  /analyze-network commands now open every network conversation the same way:
+  ask what the nodes and ties are and what the person wants to learn, run the
+  profile, give a plain-language first reading, and let BOTH guide every
+  downstream decision — their goal picks the metrics, size and density pick
+  the layout, their expected groupings get tested against the partition
+  baseline before being used for color, isolates are asked about rather than
+  silently removed, and clusters are captioned in their vocabulary.
+- The skill now carries a version stamp, so an outdated installed plugin is
+  visible in conversation (see the README's new Updating section).
+
 ## [1.6.0]
 
 ### Added
