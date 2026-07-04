@@ -4,6 +4,21 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.6.0]
+
+### Added
+- **`gephi_similarity_layout` (tool #83) — an embedding-based layout, a category
+  nothing in the Gephi ecosystem offers.** Nodes are placed by structural role
+  (spectral eigenmaps of the normalized Laplacian, projected to 2D), so people
+  who occupy similar positions in the network sit together even when not
+  directly connected. Computed entirely in the Python layer and delivered
+  through the existing positions endpoint, so it works in desktop Gephi today
+  and will work headless unchanged. Base install covers it with numpy + scipy
+  (new dependencies); UMAP or t-SNE projections are used automatically when
+  those packages happen to be present, never required. The tool states its own
+  reading rule (proximity = similar role, not connection) and the layout guide
+  gains the matching purpose row.
+
 ## [1.5.3]
 
 ### Changed

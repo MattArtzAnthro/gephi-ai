@@ -156,10 +156,10 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_82_tools_registered():
+def test_all_83_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 82, f"expected 80 tools, found {len(names)}"
+    assert len(names) == 83, f"expected 80 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -186,6 +186,27 @@ async def test_filter_by_degree_body(rec):
     await out_of(gephi_mcp.gephi_filter_by_degree, min=2, max=10, dry_run=True)
     assert rec.last["endpoint"] == "/filter/degree"
     assert rec.last["json"] == {"min": 2, "max": 10, "dry_run": True}
+
+
+async def test_similarity_layout_flow(rec, monkeypatch):
+    ring = """<?xml version='1.0'?><gexf xmlns="http://gexf.net/1.3"><graph defaultedgetype="undirected">
+    <nodes>""" + "".join(f'<node id="n{i}" label="n{i}"/>' for i in range(8)) + "</nodes><edges>" + \
+        "".join(f'<edge id="e{i}" source="n{i}" target="n{(i+1) % 8}"/>' for i in range(8)) + \
+        "</edges></graph></gexf>"
+    calls = []
+    async def fake(method, endpoint, params=None, json_data=None):
+        calls.append((endpoint, json_data))
+        if endpoint == "/export/gexf":
+            return {"success": True, "content": ring}
+        if endpoint == "/layout/status":
+            return {"success": True, "running": False}
+        return {"success": True}
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake)
+    out = await gephi_mcp.gephi_similarity_layout(projection="spectral")
+    assert '"success": true' in out and '"projection_used": "spectral"' in out
+    pushed = next(j for e, j in calls if e == "/graph/nodes/positions")
+    assert len(pushed["positions"]) == 8
+    assert any(e == "/view/focus" for e, _ in calls)
 
 
 async def test_statistics_passthrough(rec):

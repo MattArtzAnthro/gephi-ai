@@ -418,6 +418,60 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result["message"] = "Layout still running after 5 minutes"
     return fmt(result)
 
+@mcp.tool(name="gephi_similarity_layout")
+async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
+                                  finish_noverlap: bool = True) -> str:
+    """Position nodes by structural similarity instead of springs — a layout no
+    Gephi plugin offers.
+
+    Nodes end up near each other when they play a similar ROLE in the network,
+    even if they are not directly connected. Use when someone asks "who is
+    similar / who plays the same role / are there groups beyond the obvious
+    clusters". Complements (does not replace) ForceAtlas 2: run both and compare.
+
+    IMPORTANT when presenting the result: proximity here means similar role,
+    NOT "connected" — say so plainly, because readers of force layouts assume
+    the opposite. Nodes a community metric groups together but this layout
+    separates (or vice versa) are the interesting finding: they are boundary
+    or bridge actors. For cluster captions on this layout prefer the
+    interactive graph view (centroid captions); hub-anchored labels
+    (gephi_label_clusters) assume force-layout geometry.
+
+    projection: "auto" (best available), "umap", "tsne", or "spectral"
+    (the always-available base). dimensions: embedding depth (default 8).
+    finish_noverlap: run a Noverlap pass afterward so nodes stay readable.
+    Needs numpy+scipy; "umap"/"tsne" use umap-learn/scikit-learn when installed.
+    """
+
+    from gephi_mcp_viewer import parse_gexf
+    from gephi_mcp_viewer.similarity import compute_similarity_positions
+
+    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    if not exported.get("success"):
+        return fmt(exported)
+    try:
+        graph = parse_gexf(exported["content"])
+        positions, method = compute_similarity_positions(
+            graph, dims=dimensions, projection=projection)
+    except ImportError as e:
+        return fmt({"success": False, "error": f"projection '{projection}' needs an optional package ({e.name}); use projection='spectral' which always works, or install the package"})
+    except ValueError as e:
+        return fmt({"success": False, "error": str(e)})
+    pushed = await gephi.request("POST", "/graph/nodes/positions", json_data={"positions": positions})
+    if not pushed.get("success"):
+        return fmt(pushed)
+    if finish_noverlap:
+        await gephi.request("POST", "/layout/run", json_data={"algorithm": "noverlap", "iterations": 60})
+        for _ in range(120):
+            status = await gephi.request("GET", "/layout/status")
+            if not status.get("running"):
+                break
+            await asyncio.sleep(0.5)
+    await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
+    return fmt({"success": True, "layout": "similarity", "projection_used": method,
+                "nodes_positioned": len(positions),
+                "reading_note": "proximity = similar structural role, not direct connection"})
+
 @mcp.tool(name="gephi_stop_layout")
 async def gephi_stop_layout() -> str:
     """Stop a currently running layout algorithm."""

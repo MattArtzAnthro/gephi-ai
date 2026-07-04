@@ -446,3 +446,43 @@ def test_app_html_has_interactive_features():
                    "captions", "timeslider", "inSpells", "graphToViewport"):
         assert marker in html, f"missing {marker}"
     assert "__GRAPH_DATA__" not in html and len(html) > 100_000
+
+
+# ─── similarity layout ────────────────────────────────────────
+
+def _ring_graph(n=12):
+    nodes = [{"key": f"n{i}", "attributes": {}} for i in range(n)]
+    edges = [{"source": f"n{i}", "target": f"n{(i+1) % n}", "weight": 1.0} for i in range(n)]
+    return {"nodes": nodes, "edges": edges}
+
+
+def test_similarity_positions_spectral():
+    from gephi_mcp_viewer.similarity import compute_similarity_positions
+    positions, method = compute_similarity_positions(_ring_graph(), projection="spectral")
+    assert method == "spectral"
+    assert len(positions) == 12
+    xs = [p["x"] for p in positions]
+    assert max(xs) > min(xs)  # actually spread out
+    assert all(set(p) == {"id", "x", "y"} for p in positions)
+
+
+def test_similarity_positions_rejects_tiny_and_edgeless():
+    import pytest
+
+    from gephi_mcp_viewer.similarity import compute_similarity_positions
+    with pytest.raises(ValueError):
+        compute_similarity_positions({"nodes": [{"key": "a"}], "edges": []})
+    with pytest.raises(ValueError):
+        compute_similarity_positions(
+            {"nodes": [{"key": f"n{i}"} for i in range(6)], "edges": []})
+
+
+def test_similarity_ring_geometry_is_meaningful():
+    # in a ring, immediate neighbors should sit closer than antipodes
+    import math
+
+    from gephi_mcp_viewer.similarity import compute_similarity_positions
+    positions, _ = compute_similarity_positions(_ring_graph(12), projection="spectral")
+    pos = {p["id"]: (p["x"], p["y"]) for p in positions}
+    d = lambda a, b: math.dist(pos[a], pos[b])
+    assert d("n0", "n1") < d("n0", "n6")

@@ -8,11 +8,13 @@ Built for researchers working across network science and AI.
 
 ## What you get
 
-**82 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**83 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
 **Interactive in-chat visualization** — `gephi_view_graph` renders your network as a pannable, zoomable [MCP App](https://modelcontextprotocol.io/extensions/apps/overview) directly inside Claude and Claude Desktop: hover for labels, click a node to highlight its connections or ask Claude about it, float cluster captions over communities, refresh from Gephi in place, and scrub a time slider on dynamic networks.
 
 **Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`), a specialized network analyst agent, and workflow skills that teach network science best practices.
+
+**A layout no Gephi plugin offers** — `gephi_similarity_layout` positions people and things by the *role* they play in the network (embedding-based), revealing similarity structure that force-directed layouts can't. Works out of the box; explains its own reading rules.
 
 **Drives the whole Gephi plugin ecosystem** — install any layout or metric plugin from the [Gephi plugin portal](https://gephi.org/desktop/plugins/) and it becomes immediately usable in conversation, by name (verified with Force Atlas 3D and the CWTS Leiden Algorithm plugin).
 
@@ -41,7 +43,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 82 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 83 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -166,14 +168,14 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (82)
+## Tools (83)
 
 | Category | Count | Examples |
 |----------|-------|---------|
 | Project & Workspace | 10 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_rename_workspace` |
 | Graph Construction | 18 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node` |
 | Statistics | 11 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric, by name) |
-| Layout | 6 | `gephi_run_layout`, `gephi_get_layout_properties` |
+| Layout | 7 | `gephi_run_layout`, `gephi_get_layout_properties` |
 | Appearance | 10 | `gephi_color_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
 | Filtering | 6 | `gephi_filter_by_degree`, `gephi_extract_giant_component` |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
@@ -214,7 +216,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 82 tools
+- **references/tool-reference.md** — Complete API reference for all 83 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 
@@ -223,13 +225,6 @@ Reference guides are in `claude-plugin/skills/gephi/`:
 - **Gephi Plugin**: Java 11, NetBeans Platform, NanoHTTPD, Gson
 - **MCP Server**: Python 3.10+, MCP SDK (FastMCP), httpx, Pydantic, defusedxml; vendored sigma.js + graphology for the in-chat viewer
 - **Target**: Gephi 0.11.1, NetBeans RELEASE290
-
-## Attribution
-
-If you use or adapt this project in your work, please credit:
-
-> Built with gephi-ai (Matt Artz, 2025–2026) — https://github.com/MattArtzAnthro/gephi-ai
-
 
 ## Development
 
@@ -242,6 +237,13 @@ mvn clean package    # output: target/gephi-mcp-<version>.nbm
 
 The MCP server is a standard Python package under `mcp-server/` (`pytest` for tests,
 `ruff` for linting).
+
+## Attribution
+
+If you use or adapt this project in your work, please credit:
+
+> Built with gephi-ai (Matt Artz, 2025–2026) — https://github.com/MattArtzAnthro/gephi-ai
+
 
 ## License
 

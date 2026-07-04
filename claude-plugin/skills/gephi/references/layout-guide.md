@@ -8,6 +8,7 @@ explaining a choice, use the plain-language purpose, then name the layout.
 | What the person wants | Use | Notes |
 |---|---|---|
 | "Show me the groups/communities" | ForceAtlas 2 (linLogMode true, gravity 0) | The default for almost everything; see the reference config below |
+| "Who plays similar roles?" (even if not directly connected) | Similarity layout (`gephi_similarity_layout`) | Embedding-based; proximity = similar structural role, NOT connection — always say so when presenting. Compare against FA2; disagreements mark bridge/boundary actors |
 | A huge network (50k+ nodes) | OpenOrd first, then a short ForceAtlas 2 pass | OpenOrd is built for scale; FA2 refines the detail |
 | A quick, decent picture of a medium network | Yifan Hu | Fast spring layout, less community emphasis than FA2 |
 | A small network with classic, even spacing | Fruchterman Reingold | Best under ~1k nodes; the "textbook" look |

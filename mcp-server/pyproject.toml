@@ -1,6 +1,6 @@
 [project]
 name = "gephi-mcp"
-version = "1.5.2"
+version = "1.6.0"
 description = "MCP Server for controlling Gephi Desktop via remote API"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -25,6 +25,8 @@ dependencies = [
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
     "defusedxml>=0.7.1",
+    "numpy>=1.24",
+    "scipy>=1.10",
 ]
 
 [project.urls]
