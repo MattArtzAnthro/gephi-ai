@@ -227,3 +227,26 @@ gephi_run_layout({algorithm: "forceatlas2", iterations: 150, properties: {preven
 gephi_run_layout({algorithm: "yifanhu", iterations: 300})
 gephi_run_layout({algorithm: "forceatlas2", iterations: 1500, properties: {linLogMode: true, gravity: 0, scalingRatio: 10.0, barnesHutOptimization: true}})
 ```
+
+## Real-world harvest networks (single-window mention/interaction data)
+
+Networks harvested from a short collection window (a day of tweets, one export
+of interactions) have a characteristic shape the demo networks never show:
+
+- **Expect heavy fragmentation** (hundreds of tiny components) and a
+  leaf-majority degree distribution (most nodes have exactly one tie). The
+  profile flags both. Neither is a data error — they describe the harvest.
+- **Map the skeleton, keep the whole.** For a readable map, filter to
+  degree >= 2 (then giant component); keep the full graph for statistics and
+  say what was set aside — the excluded share is itself a finding.
+- **Fit the extent mechanically when over-spread persists:** run Contraction
+  (~20% shrink per pass) repeatedly until gephi_visual_qa stops warning, then
+  Noverlap. Raising node sizes also closes the ratio from the other side.
+- **Directed hub maps: kill the arrowheads before export** (preview setting
+  `arrow.size` 0) — at hub scale they render as giant wedges that bury the map.
+- **Captions vs legend:** in-place captions (and centroid captions) assume
+  communities occupy separate regions. When communities interpenetrate — one
+  dense core, colors mixed through it — use a legend instead; colliding
+  captions are the map telling you the groups share space.
+- **External matplotlib re-render note:** GEXF colors parse as strings like
+  `rgb(27,175,122)` — handle that format, not only hex.

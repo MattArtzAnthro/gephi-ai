@@ -511,3 +511,12 @@ def test_structural_profile_hub_flag():
     p = structural_profile(g)
     assert p["degree"]["max"] == n - 1
     assert any("hub-dominated" in f for f in p["flags"])
+
+
+def test_structural_profile_leaf_majority_flag():
+    from gephi_mcp_viewer.profile import structural_profile
+    n = 300
+    g = {"nodes": [{"key": f"n{i}"} for i in range(n)],
+         "edges": [{"source": "n0", "target": f"n{i}"} for i in range(1, n)]}
+    p = structural_profile(g)
+    assert any("leaf-majority" in f for f in p["flags"])

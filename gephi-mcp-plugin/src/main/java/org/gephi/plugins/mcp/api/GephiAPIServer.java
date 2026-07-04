@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.2");
+            result.addProperty("version", "1.2.3");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());

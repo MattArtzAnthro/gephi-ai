@@ -4,6 +4,28 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.7.3]
+
+Lessons from the first large real-world dataset (a 40k-tweet, 12k-user
+mention network), each failure converted to a fix:
+
+### Added
+- **Profile detects dandelions.** `gephi_profile_graph` flags leaf-majority
+  networks (most nodes with a single tie) and prescribes the readable-map
+  recipe: filter to the degree >= 2 skeleton, keep the full graph for
+  statistics.
+- **Layout guide: real-world harvest section** — fragmentation and
+  leaf-majority as expected shapes (not errors), skeleton mapping, the
+  Contraction-until-QA-clean extent fix, arrowhead removal for directed hub
+  maps, legend-instead-of-captions when communities interpenetrate, and the
+  rgb() color-string note for external re-renders.
+
+### Fixed
+- **Gephi plugin 1.2.3:** preview settings now apply even when the workspace's
+  preview property registry was never initialized (putValue fallback) — this
+  made `arrow.size`, `edge.thickness`, and friends silently no-op on fresh
+  workspaces (the "Set 0 preview properties" warning caught it live).
+
 ## [1.7.2]
 
 ### Added

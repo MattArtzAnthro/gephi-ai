@@ -81,5 +81,11 @@ def structural_profile(graph: dict) -> dict:
         )
     if profile["density"] > 0.3 and n >= 20:
         flags.append("very dense — force layouts will hairball; consider filtering weak ties")
+    if n >= 200 and degrees and degrees[n // 2] <= 1:
+        flags.append(
+            "leaf-majority: most nodes have a single tie, so full renders will look "
+            "like a dandelion — for a readable map, filter to degree >= 2 (the "
+            "conversational skeleton) and keep the full graph for statistics"
+        )
     profile["flags"] = flags
     return profile

@@ -1967,6 +1967,26 @@ public class GephiControlService {
                     }
 
                     PreviewProperty prop = pm.getProperties().getProperty(key);
+                    if (prop == null) {
+                        // Property registry may not be initialized in this workspace
+                        // (e.g. Preview never opened). putValue works regardless and
+                        // renderers read it at export time.
+                        Object coerced = val;
+                        if (val instanceof String) {
+                            String sv = ((String) val).trim();
+                            if (sv.equalsIgnoreCase("true") || sv.equalsIgnoreCase("false")) coerced = Boolean.parseBoolean(sv);
+                            else {
+                                try { coerced = Float.parseFloat(sv); } catch (NumberFormatException ignore) { }
+                            }
+                        } else if (val instanceof Number) {
+                            coerced = ((Number) val).floatValue();
+                        } else if (val instanceof Boolean) {
+                            coerced = val;
+                        }
+                        pm.getProperties().putValue(key, coerced);
+                        set++;
+                        continue;
+                    }
                     if (prop != null) {
                         // Convert value based on property type
                         Class<?> type = prop.getType();
