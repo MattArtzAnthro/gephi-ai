@@ -8,13 +8,17 @@ Built for researchers working across network science and AI.
 
 ## What you get
 
-**84 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
+**86 MCP tools** for controlling Gephi Desktop — graph construction, community detection, centrality analysis, layout algorithms, filtering, styling, and publication-ready export.
 
 **Interactive in-chat visualization** — `gephi_view_graph` renders your network as a pannable, zoomable [MCP App](https://modelcontextprotocol.io/extensions/apps/overview) directly inside Claude and Claude Desktop: hover for labels, click a node to highlight its connections or ask Claude about it, float cluster captions over communities, refresh from Gephi in place, and scrub a time slider on dynamic networks.
 
 **Claude Code plugin** with slash commands (`/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`), a specialized network analyst agent, and workflow skills that teach network science best practices.
 
 **A layout no Gephi plugin offers** — `gephi_similarity_layout` positions people and things by the *role* they play in the network (embedding-based), revealing similarity structure that force-directed layouts can't. Works out of the box; explains its own reading rules.
+
+**Maps for networks that defeat force layouts** — reply, retweet, and citation networks are tree-shaped, and their communities stay visually tangled no matter how long a force layout runs. `gephi_community_layout` draws each detected community as its own radial disc and proves the improvement with a before-and-after separation score.
+
+**Point at the map** — drag a selection box around nodes in Gephi, come back to the conversation, and ask "what did I select?" The answer names the exact nodes. No typing node names, ever.
 
 **Drives the whole Gephi plugin ecosystem** — install any layout or metric plugin from the [Gephi plugin portal](https://gephi.org/desktop/plugins/) and it becomes immediately usable in conversation, by name (verified with Force Atlas 3D and the CWTS Leiden Algorithm plugin).
 
@@ -43,7 +47,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 84 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 86 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -75,7 +79,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-mcp-1.2.2.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-mcp-1.2.5.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 

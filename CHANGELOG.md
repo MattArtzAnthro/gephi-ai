@@ -4,6 +4,17 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.9.2] (Claude Code plugin only)
+
+### Fixed
+- **Fresh `claude plugin install` now connects.** The plugin's MCP config
+  launched the server from a path relative to the plugin directory, which only
+  exists on development installs; normal installs copy just the plugin subtree
+  into a cache, the path resolved to nothing, and the server silently failed
+  to connect. The config now runs the published server from PyPI
+  (`uvx --from gephi-mcp==1.9.1 gephi-mcp`), which works from any install
+  location. Requires [uv](https://docs.astral.sh/uv/), same as before.
+
 ## [1.9.1]
 
 Pointing, made legible: what the person selects in the Gephi window becomes

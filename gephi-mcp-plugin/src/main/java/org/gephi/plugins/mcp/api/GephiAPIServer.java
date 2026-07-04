@@ -117,7 +117,8 @@ public class GephiAPIServer extends NanoHTTPD {
         // ─── Human selection journal ─────────────────────────────────
 
         if ("/selection".equals(uri) && Method.GET.equals(method)) {
-            boolean clear = !"false".equalsIgnoreCase(params.get("clear"));
+            // Default false, matching the Python tool: peeking must not consume.
+            boolean clear = "true".equalsIgnoreCase(params.get("clear"));
             return service.getSelection(clear);
         }
 
