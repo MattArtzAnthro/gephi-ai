@@ -529,7 +529,11 @@ async def gephi_profile_graph(include_slow: bool = False) -> str:
     they expect X to organize the network, check it against the partition
     baseline instead of assuming). Present a short plain-language first
     reading, then ask the two or three questions the numbers raise (the flags
-    are candidates).
+    are candidates). THE FIRST READING IS PROVISIONAL: present impressions as
+    things to check together, never findings; pair each pattern with a rival
+    explanation; close with 2-3 places to look and let the person choose; no
+    verdict language before a check has run with them. The goal is to help
+    people explore their data, not to hand them conclusions.
 
     include_slow: also compute average path length / diameter (skipped by
     default; expensive on large graphs — only sensible under ~3k nodes).

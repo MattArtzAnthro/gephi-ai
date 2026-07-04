@@ -4,6 +4,17 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.7.1]
+
+### Changed
+- **The first reading is provisional by design.** The opening-move guidance
+  (skill and `gephi_profile_graph` docstring) now enforces an exploration-first
+  stance: impressions are presented as things to check together, every pattern
+  is paired with a rival explanation, the opening closes with places to look
+  rather than a plan, verdict language waits until a check has run with the
+  person, and the model's own impressions are tested exactly like the user's
+  expectations. The profile informs the conversation; it does not conclude it.
+
 ## [1.7.0]
 
 ### Added

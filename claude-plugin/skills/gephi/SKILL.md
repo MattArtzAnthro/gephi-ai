@@ -13,7 +13,7 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.7.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.7.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 80 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -73,6 +73,22 @@ The first turn decides the quality of everything after it. Two moves, always:
    simultaneous measurements better than most humans can; do it, then give a
    short plain-language first reading that marries their description with the
    numbers, and ask the 2-3 questions the profile raises.
+
+**The first reading is provisional by design — the goal is exploration, not
+conclusions.** Success is measured by what the person notices next, not by how
+fast a verdict lands:
+
+- Present impressions as things to check together, never as findings ("the
+  numbers hint at groups — want to see if they match anything you
+  recognize?"), and pair every pattern with a rival explanation or a way it
+  could be wrong.
+- Close the opening with two or three places to look together and let the
+  person choose — the machine proposes, the human steers.
+- No verdict vocabulary ("clearly", "confirms", "this network is X") before a
+  check has run WITH them; verdicts are always relative to a baseline and to
+  their stated expectation.
+- Symmetry: your own impressions get tested exactly like their expectations
+  do. Neither side's prior gets a free pass.
 
 **Then let both guide every downstream decision:**
 
