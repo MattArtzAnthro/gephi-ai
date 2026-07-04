@@ -235,6 +235,13 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **Label fonts render in graph-coordinate space and clamp weirdly.** A fixed point size vanishes on large layouts, and with `node.label.proportinalSize: false` Gephi clamps every label to its node's bounds (bigger fonts silently do nothing). For readable hub captions use `gephi_label_clusters` (proportional sizing + extent-scaled font handled for you); when hand-tuning, set proportional TRUE and scale the base font to the layout extent.
 - **Filters are destructive** — they permanently remove nodes/edges. Save project first.
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
+- **Opening the Overview tab can freeze Gephi on macOS (rare race, full
+  force-quit to recover).** Root cause captured by thread dump: the UI thread
+  blocks creating the OpenGL canvas while the macOS main thread blocks on an
+  accessibility query back to the UI thread — a mutual wait outside the graph
+  lock entirely (health reports graph_lock ok during it). Prevention: open the
+  Overview tab right after Gephi launches, while the workspace is still empty,
+  and avoid first-clicking it while a large build or filter is running.
 - **Workspace switching can deadlock** — same render-deadlock cause as above; if the API hangs after a workspace switch, restart Gephi.
 - **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer high FA2 gravity (5–8) over destructive filters — as a temporary containment tactic only; revert gravity to 0 for the final layout.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
