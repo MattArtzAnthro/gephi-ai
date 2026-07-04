@@ -32,12 +32,14 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 
 ### gephi_get_selection
 - **Method**: GET `/selection?clear=true|false`
-- **Returns**: `{success, clicks: [{time_ms, nodes: [{id, label?}]}], count, listener_active}`
-- **Usage**: The human's recent node clicks in the Gephi window, oldest first.
-  Read it whenever they use deictic words ("this one", "these", "the ones I
-  clicked") and answer about those exact nodes. clear=true (default) consumes
-  the journal. Real mouse clicks on nodes only; recording starts at the
-  session's first health check. Desktop only.
+- **Returns**: `{success, selected_now: [{id, label?}], selected_count, selected_truncated?, clicks: [{time_ms, nodes}], click_count, listener_active}`
+- **Usage**: What the human has selected in the Gephi window. selected_now is
+  the persistent selection (made with the rectangle-selection tool — the
+  pointing gesture; capped at 200, selected_count is the true total). Read it
+  whenever they use deictic words ("these", "the ones I selected") and answer
+  about those exact nodes. clicks is a secondary click journal, usually empty
+  (hover highlighting is transient and does not register). clear=true empties
+  the click journal only. Desktop only.
 
 ## Project Management
 

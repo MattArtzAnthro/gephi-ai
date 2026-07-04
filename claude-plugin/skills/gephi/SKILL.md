@@ -13,7 +13,7 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 86 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -57,11 +57,14 @@ pause after each visible change and invite their observations. The /teach comman
 codifies the full pattern. Watching the instrument operate is the pedagogy — never
 do anything the viewer can't follow.
 
-**The person can point back.** Their node clicks in the Gephi window are recorded;
-`gephi_get_selection` reads them. Whenever they use deictic words about the canvas
-— "this one", "these", "that node", "the ones I clicked" — read the selection
-FIRST and answer about those exact nodes; never ask them to type node names. Tell
-them early in a session that clicking a node is a way of asking about it.
+**The person can point back.** `gephi_get_selection` reads what they have selected
+in the Gephi window. Whenever they use deictic words about the canvas — "these",
+"this group", "the ones I selected" — read the selection FIRST and answer about
+those exact nodes; never ask them to type node names. Tell them early in a session
+HOW to point: the rectangle-selection tool (dashed-square icon, thin toolbar on
+the left edge of the canvas) — drag a box around nodes and it persists while they
+come back to the conversation. Hover highlighting is transient and does not
+register; the rectangle is the pointing gesture.
 
 ## Opening a Network Conversation
 

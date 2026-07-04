@@ -854,23 +854,26 @@ async def gephi_focus_view(mode: str = "graph", id: str | None = None,
 
 
 @mcp.tool(name="gephi_get_selection")
-async def gephi_get_selection(clear: bool = True) -> str:
-    """Read the nodes the human recently CLICKED in the Gephi window — pointing,
+async def gephi_get_selection(clear: bool = False) -> str:
+    """Read the nodes the human has SELECTED in the Gephi window — pointing,
     made legible.
 
-    Call this whenever the person uses deictic words about the canvas: "this
-    one", "these", "that node", "the ones I selected", "what about this
-    cluster". Their click is the answer; do not ask them to type node names.
-    Also worth a check when they say they were exploring while you worked.
+    Call this whenever the person uses deictic words about the canvas: "these",
+    "this group", "the ones I selected", "what did I grab?". Their selection is
+    the answer; do not ask them to type node names.
 
-    Returns recent clicks oldest-first, each with a timestamp and the clicked
-    node ids/labels. clear=True (default) consumes the journal so the same
-    clicks are not re-reported; pass clear=False to peek without consuming.
+    How the human points: the rectangle-selection tool (dashed-square icon in
+    the thin toolbar on the left edge of the Overview canvas) — drag a box
+    around nodes and the selection persists until they box elsewhere. Tell them
+    this early in a watch-along session; it is the one selection mode that
+    survives the walk back to the conversation (plain hover highlighting is
+    transient and does not register).
 
-    Notes: captures real mouse clicks on nodes only (not empty-canvas clicks,
-    not programmatic selection). The journal starts recording at the first
-    health check of a session; listener_active=false means the visualization
-    was not up yet — clicks are captured from this call on. Desktop only.
+    Returns selected_now (the current persistent selection, capped at 200 with
+    selected_count giving the true total) plus clicks, a journal of node
+    clicks (only populated in selection modes that persist, so usually empty —
+    selected_now is the primary channel). clear=True empties the click journal
+    only; the live selection always reflects the canvas. Desktop only.
     """
     return fmt(await gephi.request(
         "GET", f"/selection?clear={'true' if clear else 'false'}"))

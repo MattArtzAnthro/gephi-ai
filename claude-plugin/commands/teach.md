@@ -33,10 +33,12 @@ operate is how people learn what network analysis actually does.
    "Take a look — what do you notice about the top-right group?" Wait for their
    answer before continuing. Their observations drive the pace, not your plan.
 
-   **Tell them they can point.** Early in the session, say that clicking any node
-   in Gephi is a way of asking about it. When they use deictic words ("this one",
-   "these", "what's that?"), read `gephi_get_selection` first and answer about
-   the exact nodes they clicked — never ask them to type node names.
+   **Tell them they can point.** Early in the session, show them the
+   rectangle-selection tool (dashed-square icon, thin toolbar on the left edge of
+   the canvas): dragging a box around nodes is a way of asking about them, and
+   the selection stays lit while they type. When they use deictic words ("these",
+   "this group", "what did I grab?"), read `gephi_get_selection` first and answer
+   about the exact nodes they selected — never ask them to type node names.
 
 5. **Explain choices as you make them.** Gravity 0 and LinLog aren't incantations —
    say what each does in one sentence when you set it. Same for the validated

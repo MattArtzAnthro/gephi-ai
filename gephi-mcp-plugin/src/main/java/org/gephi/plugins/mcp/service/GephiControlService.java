@@ -2742,22 +2742,72 @@ public class GephiControlService {
         }
     }
 
+    private static final int SELECTION_MAX_NODES = 200;
+
+    private JsonObject nodeRef(Node n) {
+        JsonObject jn = new JsonObject();
+        jn.addProperty("id", String.valueOf(n.getId()));
+        String label = n.getLabel();
+        if (label != null && !label.isEmpty() && !label.equals(String.valueOf(n.getId()))) {
+            jn.addProperty("label", label);
+        }
+        return jn;
+    }
+
     /**
-     * Recent node clicks the human made in the Gephi window (oldest first).
-     * clear=true consumes the journal so the same clicks are not re-reported.
-     * listener_active=false means the visualization was not up yet; the
-     * listener installs on this call and clicks are captured from now on.
+     * What the human has selected in the Gephi window. Two sources:
+     * selected_now — the engine's persistent selection (rectangle selection
+     * keeps it after the mouse moves away; the primary channel), read via
+     * reflection (VizController.getEngine() -> VizEngine.getGraphSelection()
+     * -> getSelectedNodes(), all public, reflection only to avoid a
+     * compile-time dependency on the engine module); clicks — the
+     * NODE_LEFT_CLICK journal (fires only in modes that populate the engine
+     * selection at click time). clear=true consumes the journal only; the
+     * live selection always reflects the canvas.
      */
     public JsonObject getSelection(boolean clear) {
         ensureClickListener();
-        JsonObject r = success("Recent human node clicks");
+        JsonObject r = success("Human selection");
+        JsonArray selected = new JsonArray();
+        int totalSelected = 0;
+        try {
+            Object vc = Lookup.getDefault().lookup(
+                org.gephi.visualization.api.VisualizationController.class);
+            if (vc != null) {
+                Object opt = vc.getClass().getMethod("getEngine").invoke(vc);
+                if (opt instanceof java.util.Optional && ((java.util.Optional<?>) opt).isPresent()) {
+                    Object engine = ((java.util.Optional<?>) opt).get();
+                    Object gsel = engine.getClass().getMethod("getGraphSelection").invoke(engine);
+                    if (gsel != null) {
+                        java.lang.reflect.Method m = gsel.getClass().getMethod("getSelectedNodes");
+                        m.setAccessible(true);
+                        Object coll = m.invoke(gsel);
+                        if (coll instanceof java.util.Collection) {
+                            for (Object o : (java.util.Collection<?>) coll) {
+                                totalSelected++;
+                                if (o instanceof Node && selected.size() < SELECTION_MAX_NODES) {
+                                    selected.add(nodeRef((Node) o));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            r.addProperty("selection_error", t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
+        r.add("selected_now", selected);
+        r.addProperty("selected_count", totalSelected);
+        if (totalSelected > SELECTION_MAX_NODES) {
+            r.addProperty("selected_truncated", true);
+        }
         JsonArray clicks = new JsonArray();
         synchronized (clickJournal) {
             for (JsonObject e : clickJournal) clicks.add(e.deepCopy());
             if (clear) clickJournal.clear();
         }
         r.add("clicks", clicks);
-        r.addProperty("count", clicks.size());
+        r.addProperty("click_count", clicks.size());
         r.addProperty("listener_active", clickListenerInstalled);
         return r;
     }

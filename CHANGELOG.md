@@ -4,24 +4,27 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [1.9.0]
+## [1.9.1]
 
-Pointing, made legible: the person's node clicks in the Gephi window become
+Pointing, made legible: what the person selects in the Gephi window becomes
 something the conversation can read.
 
 ### Added
-- **`gephi_get_selection`** (86 tools now, Java plugin 1.2.5): the plugin
-  records the human's node clicks in the Gephi window (a passive listener on
-  the visualization's click events; it never interferes with Gephi's own
-  tools) and the tool reads them back — timestamps plus the clicked nodes.
-  This makes deixis work: "what's this one?", "compare these three", "the
-  ones I clicked" now resolve to exact nodes without anyone typing node
-  names. The journal is bounded (last 50 clicks), starts recording at the
-  session's first health check, holds only node ids and labels (never live
-  node references), and is consumed on read by default.
+- **`gephi_get_selection`** (86 tools now, Java plugin 1.2.5): reads the
+  human's current selection in the Gephi window — drag a rectangle selection
+  around nodes, walk back to the conversation, and "what did I select?"
+  resolves to the exact nodes without anyone typing node names. Returns the
+  persistent selection (capped at 200, with the true count) plus a secondary
+  journal of node clicks (a passive listener that never interferes with
+  Gephi's own tools; only populated in selection modes that persist).
 - **Skill: teaching mode teaches pointing back.** When the person uses
-  deictic words about the canvas, the selection is read first; sessions open
-  by telling them that clicking a node is a way of asking about it.
+  deictic words about the canvas ("these", "this group"), the selection is
+  read first; sessions open by showing the rectangle-selection tool as the
+  way to ask about nodes.
+
+*(1.9.0 was published to PyPI with click-journal-only wording before the live
+test showed hover highlighting never persists; 1.9.1 is the corrected,
+verified release.)*
 
 ## [1.8.0]
 
