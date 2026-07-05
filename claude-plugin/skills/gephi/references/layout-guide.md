@@ -5,6 +5,16 @@
 Lead with what the person wants to see, not with algorithm names. When
 explaining a choice, use the plain-language purpose, then name the layout.
 
+Know which interpretation regime the network is in before judging any layout
+(Jacomy 2021): SMALL networks (up to a few dozen nodes) are read
+diagrammatically — follow the individual paths, so judge layouts by
+legibility, minimal edge crossings, even spacing. LARGE networks are read
+topologically — nobody follows individual edges; density patterns ARE the
+message, so judge layouts by whether clusters, holes, and bridges show.
+Applying small-network standards to a big map (or vice versa) is a category
+error: a 30-node org chart does not need LinLog, and a 3,000-node map should
+not be criticized for crossing edges.
+
 | What the person wants | Use | Notes |
 |---|---|---|
 | "Show me the groups/communities" | ForceAtlas 2 (linLogMode true, gravity 0) | The default for almost everything; see the reference config below |

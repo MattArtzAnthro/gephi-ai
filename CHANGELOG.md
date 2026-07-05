@@ -4,6 +4,38 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [1.9.4] (Claude Code plugin only)
+
+The reading craft deepened from Jacomy's wider corpus (the 2021 dissertation,
+the 2015 visual network analysis working paper, Unblackboxing Gephi, and the
+epistemic clashes article).
+
+### Added
+- **New reading rules:** what distance means in one sentence (nodes are close
+  when they are close to the other close nodes in common); proximity works
+  one way only (connected pairs tend to be close, close pairs are rarely
+  connected); stars are not clusters (a hub's audience is not a community);
+  structural holes are density gradients, not absences.
+- **New reading-process steps:** watch for stretchings (extended structures
+  the layout shows but modularity misses — never let a modularity score be
+  the last word), and offer complementary views rather than one exhaustive
+  image.
+- **Anti-storyletting rule:** every final export ships with copy-ready
+  caption text (data, layout and settings, encodings, what the map does and
+  does not license) so no image circulates without its story.
+- **Heavy-tail honesty:** never claim "scale-free" from a heavy-tailed degree
+  distribution; describe hub dominance as a property of this network, not a
+  law.
+- **Layout guide: interpretation regimes** — small networks are read
+  diagrammatically, large ones topologically; judge layouts by the right
+  regime's standards.
+- **The craft's sources, cited and recommended.** A matched-source table
+  (mostly open access) for when a question goes deeper than the conversation
+  can carry; /teach closes by offering one thread to pull; and
+  publication-bound maps get proper software citations in their caption
+  (Gephi, ForceAtlas 2, modularity, and plugins per their own papers) — the
+  tools people use are citable scholarship, and the assistant now says so.
+
 ## [1.9.3] (Claude Code plugin only)
 
 ### Added

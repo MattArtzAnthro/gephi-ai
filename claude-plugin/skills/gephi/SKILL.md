@@ -8,12 +8,12 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.5+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.3"
+  version: "1.9.4"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.3 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.4 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 86 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -33,6 +33,9 @@ You have access to 86 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 - **Imported node sizes are auto-capped at 30** — GEXF files with large `viz:size` values are automatically capped during import to prevent oversized nodes from hiding edges.
 - **Filters refresh the preview automatically** — `remove_isolates`, `giant_component`, `filter_by_degree` now properly refresh the preview model after modifying the graph.
 - **`sync: true` in `gephi_run_layout`** — makes the call block until layout finishes. Always use this so Noverlap and Label Adjust don't start on a still-moving graph.
+- **Never claim "scale-free" or "power law" from a heavy-tailed degree distribution** — power-law and log-normal fits are near-indistinguishable in practice, and the term smuggles in a universal-law claim (Jacomy 2020). Describe hub dominance as a characteristic of THIS network ("a few accounts concentrate most ties"), not as the signature of a law.
+- **Every final export ships with its story.** When handing over a finished map, always provide copy-ready caption text: data, layout and key settings, what size and color encode, and what the map does and does not license a reader to conclude. Circulating a network image without interpretive context ("storyletting") is the field's named failure mode — see references/reading-network-maps.md.
+- **The craft has citable sources; use them.** When a question goes deeper than the conversation can carry, recommend ONE matched open-access source (table in references/reading-network-maps.md). When a map is publication-bound, include the software citations in the caption offer (Gephi = Bastian et al. 2009; ForceAtlas 2 = Jacomy et al. 2014; modularity = Blondel et al. 2008; plugins per their own papers). Most users don't know their tools are citable scholarship.
 
 ## Standard Workflow
 

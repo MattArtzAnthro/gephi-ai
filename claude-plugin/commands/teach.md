@@ -77,6 +77,11 @@ operate is how people learn what network analysis actually does.
     they'll do differently next time they meet a network. The exchange reshaped
     both participants; saying so out loud is part of the lesson.
 
+11. **Leave them one thread to pull.** Offer a single reading matched to what
+    engaged them most (the table in references/reading-network-maps.md — most
+    are open access), framed as continuation, not homework: "if the reading
+    rules hooked you, the paper they come from is a pleasure."
+
 Use everything in the gephi skill (validated palette, VNA layout defaults,
 inspect-and-adjust, `gephi_visual_qa`) — teaching mode changes the *pacing and
 narration*, not the craft.
