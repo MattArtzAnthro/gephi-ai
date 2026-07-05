@@ -260,6 +260,11 @@ If you use or adapt this project in your work, please credit:
 
 > Built with gephi-ai (Matt Artz, 2025–2026) — https://github.com/MattArtzAnthro/gephi-ai
 
+## Citation
+
+If you use this toolkit in your academic research, please cite:
+
+> Artz, Matt. 2025. Gephi AI. Software. Zenodo. https://doi.org/10.5281/zenodo.18673386
 
 ## License
 
