@@ -1,4 +1,4 @@
-# gephi-ai
+# Gephi AI
 
 AI-powered network analysis through [Gephi](https://gephi.org) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Build, analyze, style, and export publication-ready network visualizations by talking to your AI assistant.
 
