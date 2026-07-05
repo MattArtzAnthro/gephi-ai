@@ -92,6 +92,8 @@ This adds the HTTP API server inside Gephi Desktop. No build tools needed — do
 
 Download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it — Claude Desktop installs the server with all dependencies bundled. No terminal, no config file. (Requires Python 3.10+ on your system, which modern macOS provides.)
 
+> Use ONE connection method per app. If you previously added `gephi-mcp` to `claude_desktop_config.json` by hand, remove that entry before installing the bundle — otherwise Claude Desktop runs two copies of the server and every tool appears twice.
+
 <details>
 <summary>Alternative: Claude Desktop via config file</summary>
 
@@ -165,6 +167,8 @@ It should call `gephi_health_check` and confirm the connection. In Claude Code, 
 
 - **Claude Code:** `claude plugin update gephi-network-analysis@gephi-ai`, then start a new session.
 - **Claude Desktop (one-click bundle):** download the newest `.mcpb` from Releases and double-click it again.
+- **Claude Desktop (config file):** nothing to do — the `uvx` entry fetches the latest release each time you fully quit and reopen Claude Desktop.
+- **Switching connection methods:** remove the old one first (bundle: uninstall in Settings > Extensions; config file: delete the `gephi-mcp` block). Two methods at once means two servers and duplicated tools.
 - **Cowork:** Cowork keeps its own copy of plugins, separate from Claude Code — updating one does not update the other. If Cowork's commands look older than this README (for example, no `/teach`), ask Cowork itself to update the gephi-network-analysis plugin, then fully quit and reopen the app.
 - **Gephi plugin:** install the newest `.nbm` from Releases via Tools > Plugins > Downloaded and restart Gephi. `gephi_health_check` reports the installed version.
 
