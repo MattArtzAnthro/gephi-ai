@@ -156,16 +156,21 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_88_tools_registered():
+def test_all_102_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 88, f"expected 88 tools, found {len(names)}"
+    assert len(names) == 102, f"expected 102 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
         "gephi_color_by_ranking", "gephi_filter_by_degree", "gephi_view_graph",
         "gephi_visual_qa", "gephi_label_clusters", "gephi_focus_view",
-        "gephi_extract_backbone",
+        "gephi_extract_backbone", "gephi_whatif", "gephi_compare_nodes",
+        "gephi_set_selection_mode", "gephi_get_perspective", "gephi_switch_perspective",
+        "gephi_list_filters", "gephi_apply_filter", "gephi_column_value_frequencies",
+        "gephi_detect_duplicates", "gephi_merge_nodes", "gephi_create_regex_column",
+        "gephi_color_edges_by_partition", "gephi_export",
+        "gephi_get_timeline",
     ):
         assert expected in names, f"{expected} not registered"
 
@@ -330,3 +335,275 @@ async def test_extract_backbone_reports_failure_with_no_edges(rec):
     rec.responses.append({"success": True, "edges": []})
     out = await out_of(gephi_mcp.gephi_extract_backbone)
     assert out["success"] is False
+
+
+# ─── gephi_whatif + gephi_compare_nodes ───────────────────────────────
+
+class RoutingClient:
+    """Stateful fake for the workspace lifecycle whatif drives.
+
+    Simulates the project's workspace list: duplicate appends a new current
+    workspace, switch moves the current flag by index, delete removes by index.
+    Records every call so tests can assert edit dispatch. Everything else
+    (edit endpoints) returns success. This models real index-shifting so the
+    id-correlated cleanup is exercised for real, not stubbed."""
+
+    def __init__(self, workspaces):
+        self.workspaces = workspaces  # list of {id, current}
+        self.calls = []
+        self.next_id = max((w["id"] for w in workspaces), default=0) + 1
+
+    async def __call__(self, method, endpoint, params=None, json_data=None):
+        self.calls.append({"method": method, "endpoint": endpoint, "params": params, "json": json_data})
+        if endpoint == "/workspace/list":
+            return {"success": True, "workspaces": [dict(w) for w in self.workspaces]}
+        if endpoint == "/workspace/duplicate":
+            for w in self.workspaces:
+                w["current"] = False
+            wid = self.next_id
+            self.next_id += 1
+            self.workspaces.append({"id": wid, "name": f"ws{wid}", "current": True})
+            return {"success": True, "workspace_id": wid}
+        if endpoint == "/workspace/switch":
+            idx = json_data["index"]
+            for i, w in enumerate(self.workspaces):
+                w["current"] = (i == idx)
+            return {"success": True}
+        if endpoint == "/workspace/delete":
+            del self.workspaces[int(params["index"])]
+            return {"success": True}
+        return {"success": True}
+
+
+def _fake_profiles(monkeypatch, *profiles):
+    """Make _compute_profile return the given dicts in order (no real GEXF)."""
+    queue = list(profiles)
+
+    async def fake(include_slow=False):
+        return queue.pop(0)
+
+    monkeypatch.setattr(gephi_mcp, "_compute_profile", fake)
+
+
+async def test_whatif_happy_path_diffs_and_cleans_up(monkeypatch):
+    client = RoutingClient([{"id": 1, "name": "Workspace 1", "current": True}])
+    monkeypatch.setattr(gephi_mcp.gephi, "request", client)
+    _fake_profiles(
+        monkeypatch,
+        {"nodes": 10, "edges": 20, "components": {"count": 1}},
+        {"nodes": 9, "edges": 18, "components": {"count": 2}},
+    )
+    out = await out_of(gephi_mcp.gephi_whatif, edits=[{"op": "remove_node", "id": "X"}])
+    assert out["success"] is True
+    diff = {d["metric"]: d for d in out["diff"]}
+    assert diff["nodes"] == {"metric": "nodes", "before": 10, "after": 9, "delta": -1}
+    assert diff["edges"]["delta"] == -2
+    assert diff["components"]["before"] == 1 and diff["components"]["after"] == 2
+    # scratch removed, original restored as current
+    assert client.workspaces == [{"id": 1, "name": "Workspace 1", "current": True}]
+    assert out["cleanup"]["scratch_deleted"] is True
+    assert out["cleanup"]["returned_to_workspace_id"] == 1
+    # the edit was dispatched to the scratch copy
+    assert any(c["method"] == "DELETE" and c["endpoint"] == "/graph/node/X" for c in client.calls)
+
+
+async def test_whatif_dispatches_each_edit_op(monkeypatch):
+    client = RoutingClient([{"id": 1, "current": True}])
+    monkeypatch.setattr(gephi_mcp.gephi, "request", client)
+    _fake_profiles(monkeypatch, {"nodes": 5}, {"nodes": 5})
+    await out_of(gephi_mcp.gephi_whatif, edits=[
+        {"op": "remove_node", "id": "n1"},
+        {"op": "remove_nodes", "ids": ["n2", "n3"]},
+        {"op": "add_edge", "source": "a", "target": "b", "weight": 2.0, "directed": True},
+        {"op": "remove_edge", "source": "c", "target": "d"},
+    ])
+    eps = [(c["method"], c["endpoint"], c["json"]) for c in client.calls]
+    assert ("DELETE", "/graph/node/n1", None) in eps
+    assert ("POST", "/graph/nodes/remove", {"ids": ["n2", "n3"]}) in eps
+    assert ("POST", "/graph/edges/add", {"edges": [{"source": "a", "target": "b", "weight": 2.0, "directed": True}]}) in eps
+    assert ("POST", "/graph/edge/remove", {"source": "c", "target": "d"}) in eps
+
+
+async def test_whatif_cleans_up_when_edit_fails(monkeypatch):
+    client = RoutingClient([{"id": 1, "current": True}])
+    monkeypatch.setattr(gephi_mcp.gephi, "request", client)
+    _fake_profiles(monkeypatch, {"nodes": 5}, {"nodes": 5})
+    out = await out_of(gephi_mcp.gephi_whatif, edits=[{"op": "teleport", "id": "z"}])
+    assert out["success"] is False
+    assert out["stage"] == "edit"
+    # even on failure, scratch is gone and original is current again
+    assert client.workspaces == [{"id": 1, "current": True}]
+    assert out["cleanup"]["scratch_deleted"] is True
+
+
+async def test_whatif_errors_when_no_current_workspace(monkeypatch):
+    client = RoutingClient([{"id": 1, "current": False}])
+    monkeypatch.setattr(gephi_mcp.gephi, "request", client)
+    out = await out_of(gephi_mcp.gephi_whatif, edits=[{"op": "remove_node", "id": "X"}])
+    assert out["success"] is False
+    # never duplicated anything
+    assert not any(c["endpoint"] == "/workspace/duplicate" for c in client.calls)
+
+
+async def test_compare_nodes_reads_attribute_metric(rec):
+    rec.responses.append({"success": True, "node": {"id": "a", "attributes": {"Betweenness Centrality": 22012.7}}})
+    rec.responses.append({"success": True, "node": {"id": "b", "attributes": {"Betweenness Centrality": 15.0}}})
+    out = await out_of(gephi_mcp.gephi_compare_nodes, id_a="a", id_b="b", metric="Betweenness Centrality")
+    assert out["a"] == 22012.7
+    assert out["b"] == 15.0
+    assert out["higher"] == "a"
+    assert out["difference"] == 22012.7 - 15.0
+
+
+async def test_compare_nodes_falls_back_to_top_level_field(rec):
+    rec.responses.append({"success": True, "node": {"id": "a", "size": 45.0, "attributes": {}}})
+    rec.responses.append({"success": True, "node": {"id": "b", "size": 12.0, "attributes": {}}})
+    out = await out_of(gephi_mcp.gephi_compare_nodes, id_a="a", id_b="b", metric="size")
+    assert out["higher"] == "a"
+
+
+async def test_compare_nodes_handles_tie(rec):
+    rec.responses.append({"success": True, "node": {"id": "a", "attributes": {"degree": 5}}})
+    rec.responses.append({"success": True, "node": {"id": "b", "attributes": {"degree": 5}}})
+    out = await out_of(gephi_mcp.gephi_compare_nodes, id_a="a", id_b="b", metric="degree")
+    assert out["higher"] is None
+    assert out["difference"] == 0
+
+
+async def test_compare_nodes_errors_when_metric_absent(rec):
+    rec.responses.append({"success": True, "node": {"id": "a", "attributes": {"degree": 5}}})
+    rec.responses.append({"success": True, "node": {"id": "b", "attributes": {"degree": 3}}})
+    out = await out_of(gephi_mcp.gephi_compare_nodes, id_a="a", id_b="b", metric="pageranks")
+    assert out["success"] is False
+    assert "pageranks" in out["error"]
+
+
+# ─── Group B: selection mode + perspective ────────────────────────────
+
+async def test_set_selection_mode_defaults_to_rectangle(rec):
+    await out_of(gephi_mcp.gephi_set_selection_mode)
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/view/selection"
+    assert rec.last["json"] == {"mode": "rectangle"}
+
+
+async def test_set_selection_mode_forwards_mode(rec):
+    await out_of(gephi_mcp.gephi_set_selection_mode, mode="direct")
+    assert rec.last["json"] == {"mode": "direct"}
+
+
+async def test_get_perspective_is_a_get(rec):
+    await out_of(gephi_mcp.gephi_get_perspective)
+    assert rec.last["method"] == "GET"
+    assert rec.last["endpoint"] == "/perspective"
+
+
+async def test_switch_perspective_sends_name(rec):
+    await out_of(gephi_mcp.gephi_switch_perspective, name="Data Laboratory")
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/perspective/switch"
+    assert rec.last["json"] == {"name": "Data Laboratory"}
+
+
+# ─── Group C: filters ─────────────────────────────────────────────────
+
+async def test_list_filters_is_a_get(rec):
+    await out_of(gephi_mcp.gephi_list_filters)
+    assert rec.last["method"] == "GET"
+    assert rec.last["endpoint"] == "/filter/list"
+
+
+async def test_apply_filter_defaults_action_select(rec):
+    await out_of(gephi_mcp.gephi_apply_filter, name="Degree Range", params={"Degree Range": [2, 10]})
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/filter/apply"
+    assert rec.last["json"] == {"name": "Degree Range", "params": {"Degree Range": [2, 10]}, "action": "select"}
+
+
+async def test_apply_filter_new_workspace_action(rec):
+    await out_of(gephi_mcp.gephi_apply_filter, name="K-core", params={"k": 3}, action="new_workspace")
+    assert rec.last["json"]["action"] == "new_workspace"
+
+
+async def test_apply_filter_column_action_includes_column(rec):
+    await out_of(gephi_mcp.gephi_apply_filter, name="Giant Component", action="column", column="in_giant")
+    assert rec.last["json"] == {"name": "Giant Component", "action": "column", "column": "in_giant"}
+
+
+# ─── Group D: data laboratory ─────────────────────────────────────────
+
+async def test_column_value_frequencies_body(rec):
+    await out_of(gephi_mcp.gephi_column_value_frequencies, column="team")
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/datalab/frequencies"
+    assert rec.last["json"] == {"target": "node", "column": "team"}
+
+
+async def test_detect_duplicates_forwards_case_flag(rec):
+    await out_of(gephi_mcp.gephi_detect_duplicates, column="email", case_sensitive=True)
+    assert rec.last["endpoint"] == "/datalab/duplicates"
+    assert rec.last["json"] == {"target": "node", "column": "email", "case_sensitive": True}
+
+
+async def test_merge_nodes_sends_ids_and_into(rec):
+    await out_of(gephi_mcp.gephi_merge_nodes, ids=["a", "b", "c"], into="a")
+    assert rec.last["endpoint"] == "/datalab/merge-nodes"
+    assert rec.last["json"] == {"ids": ["a", "b", "c"], "into": "a"}
+
+
+async def test_create_regex_column_body(rec):
+    await out_of(gephi_mcp.gephi_create_regex_column,
+                 column="label", new_column="is_dept", regex="^Dept-")
+    assert rec.last["endpoint"] == "/datalab/regex-column"
+    assert rec.last["json"] == {"target": "node", "column": "label",
+                                "new_column": "is_dept", "regex": "^Dept-"}
+
+
+# ─── Group E: edge appearance + export formats ────────────────────────
+
+async def test_color_edges_by_partition_default(rec):
+    await out_of(gephi_mcp.gephi_color_edges_by_partition, column="rel_type")
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/appearance/edge/partition-color"
+    assert rec.last["json"] == {"column": "rel_type"}
+
+
+async def test_color_edges_by_partition_with_colors(rec):
+    await out_of(gephi_mcp.gephi_color_edges_by_partition, column="rel_type",
+                 colors={"cites": [255, 0, 0], "coauthor": [0, 0, 255]})
+    assert rec.last["json"]["colors"] == {"cites": [255, 0, 0], "coauthor": [0, 0, 255]}
+
+
+async def test_export_format_body(rec):
+    await out_of(gephi_mcp.gephi_export, file="/tmp/g.vna", format="vna")
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/export/format"
+    assert rec.last["json"] == {"file": "/tmp/g.vna", "format": "vna"}
+
+
+# ─── Group F: typed parallel edges ────────────────────────────────────
+
+async def test_add_edge_without_type_omits_edge_type(rec):
+    await out_of(gephi_mcp.gephi_add_edge, source="a", target="b")
+    assert rec.last["endpoint"] == "/graph/edge/add"
+    assert "edge_type" not in rec.last["json"]
+    assert rec.last["json"] == {"source": "a", "target": "b", "weight": 1.0, "directed": True}
+
+
+async def test_add_edge_forwards_edge_type(rec):
+    await out_of(gephi_mcp.gephi_add_edge, source="a", target="b", edge_type="cites")
+    assert rec.last["json"]["edge_type"] == "cites"
+
+
+async def test_add_edges_forwards_edge_type_in_dicts(rec):
+    edges = [{"source": "a", "target": "b", "edge_type": "coauthor"}]
+    await out_of(gephi_mcp.gephi_add_edges, edges=edges)
+    assert rec.last["json"]["edges"][0]["edge_type"] == "coauthor"
+
+
+# ─── Group G: timeline ────────────────────────────────────────────────
+
+async def test_get_timeline_is_a_get(rec):
+    await out_of(gephi_mcp.gephi_get_timeline)
+    assert rec.last["method"] == "GET"
+    assert rec.last["endpoint"] == "/timeline"

@@ -34,6 +34,12 @@ import org.gephi.io.exporter.api.ExportController;
 import org.gephi.io.exporter.spi.CharacterExporter;
 import org.gephi.io.exporter.spi.Exporter;
 import org.gephi.io.exporter.spi.GraphExporter;
+import org.gephi.filters.api.FilterController;
+import org.gephi.filters.api.Query;
+import org.gephi.filters.spi.CategoryBuilder;
+import org.gephi.filters.spi.Filter;
+import org.gephi.filters.spi.FilterBuilder;
+import org.gephi.filters.spi.FilterProperty;
 import org.gephi.io.importer.api.Container;
 import org.gephi.io.importer.api.ImportController;
 import org.gephi.io.processor.spi.Processor;
@@ -744,13 +750,30 @@ public class GephiControlService {
     // ─── Edge Operations ─────────────────────────────────────────────
 
     public JsonObject addEdge(String src, String tgt, Double weight, boolean directed) {
+        return addEdge(src, tgt, weight, directed, null);
+    }
+
+    public JsonObject addEdge(String src, String tgt, Double weight, boolean directed, String edgeType) {
         Workspace ws = currentWorkspace();
         if (ws == null) return error("No project open");
-        return addEdgeToModel(getGraphController().getGraphModel(ws), src, tgt, weight, directed);
+        return addEdgeToModel(getGraphController().getGraphModel(ws), src, tgt, weight, directed, edgeType);
     }
 
     /** Core edge-add against an explicit model. Type and directedness are kept consistent. */
     static JsonObject addEdgeToModel(GraphModel gm, String src, String tgt, Double weight, boolean directed) {
+        return addEdgeToModel(gm, src, tgt, weight, directed, null);
+    }
+
+    /**
+     * Core edge-add, with an optional relationship type. When edgeType is null
+     * or blank the behavior is exactly as before: one edge per (source, target),
+     * type 0/1 by directedness. When edgeType is given, the edge is created under
+     * that named type (GraphStore's native typed parallel edges) and the
+     * duplicate check is scoped to that type — so A→B can carry a "cites" edge
+     * AND a "coauthor" edge at once, while a second "cites" A→B is still blocked.
+     */
+    static JsonObject addEdgeToModel(GraphModel gm, String src, String tgt, Double weight,
+                                     boolean directed, String edgeType) {
         try {
             Graph g = gm.getGraph();
             lockWrite(g);
@@ -758,9 +781,15 @@ public class GephiControlService {
                 Node s = g.getNode(src), t = g.getNode(tgt);
                 if (s == null) return error("Source not found: " + src);
                 if (t == null) return error("Target not found: " + tgt);
-                if (findEdge(g, s, t) != null) return error("Edge exists");
-                Edge e = gm.factory().newEdge(s, t, directed ? 1 : 0, weight != null ? weight : 1.0, directed);
-                g.addEdge(e);
+                double w = weight != null ? weight : 1.0;
+                if (edgeType != null && !edgeType.isEmpty()) {
+                    int typeId = gm.addEdgeType(edgeType);
+                    if (g.getEdge(s, t, typeId) != null) return error("Edge of type '" + edgeType + "' exists");
+                    g.addEdge(gm.factory().newEdge(s, t, typeId, w, directed));
+                } else {
+                    if (findEdge(g, s, t) != null) return error("Edge exists");
+                    g.addEdge(gm.factory().newEdge(s, t, directed ? 1 : 0, w, directed));
+                }
                 return success("Edge added");
             } finally { unlockWrite(g); }
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
@@ -784,10 +813,20 @@ public class GephiControlService {
                     String tgt = (String) ed.get("target");
                     if (src == null || tgt == null) { skipped++; continue; }
                     Node s = g.getNode(src), t = g.getNode(tgt);
-                    if (s == null || t == null || findEdge(g, s, t) != null) { skipped++; continue; }
+                    if (s == null || t == null) { skipped++; continue; }
                     Double w = ed.containsKey("weight") ? ((Number) ed.get("weight")).doubleValue() : 1.0;
                     boolean directed = !ed.containsKey("directed") || Boolean.TRUE.equals(ed.get("directed"));
-                    Edge e = gm.factory().newEdge(s, t, directed ? 1 : 0, w, directed);
+                    Object edgeTypeObj = ed.get("edge_type");
+                    String edgeType = edgeTypeObj != null ? edgeTypeObj.toString() : null;
+                    int type;
+                    if (edgeType != null && !edgeType.isEmpty()) {
+                        type = gm.addEdgeType(edgeType);
+                        if (g.getEdge(s, t, type) != null) { skipped++; continue; }
+                    } else {
+                        if (findEdge(g, s, t) != null) { skipped++; continue; }
+                        type = directed ? 1 : 0;
+                    }
+                    Edge e = gm.factory().newEdge(s, t, type, w, directed);
                     Object label = ed.get("label");
                     if (label != null) e.setLabel(label.toString());
                     g.addEdge(e);
@@ -2886,6 +2925,530 @@ public class GephiControlService {
             return r;
         } catch (Exception e) {
             return error("Focus failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Set the mouse selection mode on the graph canvas. "rectangle" enables the
+     * box-drag selection the pointing feature (readSelection) reads, so a
+     * teaching session can turn it on up front instead of asking the human to
+     * click the toolbar icon. Uses the same VisualizationController focusView
+     * already drives.
+     */
+    public JsonObject setSelectionMode(String mode) {
+        org.gephi.visualization.api.VisualizationController vc =
+            Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
+        if (vc == null) return error("No visualization available (headless or view not started)");
+        String m = mode == null ? "rectangle" : mode.toLowerCase();
+        try {
+            switch (m) {
+                case "rectangle":
+                    vc.setRectangleSelection();
+                    break;
+                case "direct":
+                    vc.setDirectMouseSelection();
+                    break;
+                case "disable":
+                case "off":
+                    vc.disableSelection();
+                    break;
+                default:
+                    return error("Unknown selection mode: " + mode + " (use rectangle|direct|disable)");
+            }
+            JsonObject r = success("Selection mode set to " + m);
+            r.addProperty("mode", m);
+            return r;
+        } catch (Exception e) {
+            return error("Set selection mode failed: " + e.getMessage());
+        }
+    }
+
+    /** List the perspectives (Overview / Data Laboratory / Preview) and the active one. */
+    public JsonObject getPerspective() {
+        org.gephi.perspective.api.PerspectiveController pc =
+            Lookup.getDefault().lookup(org.gephi.perspective.api.PerspectiveController.class);
+        if (pc == null) return error("No perspective controller (headless?)");
+        try {
+            org.gephi.perspective.spi.Perspective selected = pc.getSelectedPerspective();
+            JsonObject r = success("Perspectives listed");
+            r.addProperty("selected", selected == null ? null : selected.getName());
+            com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+            for (org.gephi.perspective.spi.Perspective p : pc.getPerspectives()) {
+                JsonObject o = new JsonObject();
+                o.addProperty("name", p.getName());
+                o.addProperty("display_name", p.getDisplayName());
+                o.addProperty("selected", p == selected);
+                arr.add(o);
+            }
+            r.add("perspectives", arr);
+            return r;
+        } catch (Exception e) {
+            return error("List perspectives failed: " + e.getMessage());
+        }
+    }
+
+    /** Switch the active perspective (tab) by name or display name (case-insensitive). */
+    public JsonObject switchPerspective(String name) {
+        org.gephi.perspective.api.PerspectiveController pc =
+            Lookup.getDefault().lookup(org.gephi.perspective.api.PerspectiveController.class);
+        if (pc == null) return error("No perspective controller (headless?)");
+        if (name == null) return error("Missing 'name'");
+        org.gephi.perspective.spi.Perspective match = null;
+        for (org.gephi.perspective.spi.Perspective p : pc.getPerspectives()) {
+            if (name.equalsIgnoreCase(p.getName()) || name.equalsIgnoreCase(p.getDisplayName())) {
+                match = p;
+                break;
+            }
+        }
+        if (match == null) return error("Perspective not found: " + name);
+        final org.gephi.perspective.spi.Perspective target = match;
+        // Switching the perspective mutates the NetBeans window system — do it on the EDT.
+        return runOnEDT(() -> {
+            pc.selectPerspective(target);
+            JsonObject r = success("Switched to perspective: " + target.getDisplayName());
+            r.addProperty("selected", target.getName());
+            return r;
+        });
+    }
+
+    // ─── Filters (Group C) ───────────────────────────────────────────
+
+    /**
+     * Every filter builder available, static and dynamic. Static builders
+     * (DegreeRange, KCore, GiantComponent, Ego, …) come straight from Lookup;
+     * per-column attribute builders (AttributeEqual/Range/NonNull on each
+     * column) come from CategoryBuilder.getBuilders(workspace) and only exist
+     * once a graph with columns is loaded.
+     */
+    private java.util.List<FilterBuilder> allFilterBuilders(Workspace ws) {
+        java.util.List<FilterBuilder> out = new java.util.ArrayList<>();
+        for (FilterBuilder b : Lookup.getDefault().lookupAll(FilterBuilder.class)) {
+            out.add(b);
+        }
+        for (CategoryBuilder cb : Lookup.getDefault().lookupAll(CategoryBuilder.class)) {
+            try {
+                FilterBuilder[] bs = cb.getBuilders(ws);
+                if (bs != null) java.util.Collections.addAll(out, bs);
+            } catch (Exception ignore) { /* some category builders need a specific state */ }
+        }
+        return out;
+    }
+
+    /** Coerce a JSON value to a filter property's type; handles Range from a [lo, hi] pair. */
+    static Object convertFilterProperty(Object val, Class<?> type) {
+        if (val == null) return null;
+        if (type == org.gephi.filters.api.Range.class) {
+            java.util.List<?> pair = null;
+            if (val instanceof java.util.List) pair = (java.util.List<?>) val;
+            else if (val instanceof com.google.gson.JsonArray) {
+                java.util.List<Object> l = new java.util.ArrayList<>();
+                for (com.google.gson.JsonElement e : (com.google.gson.JsonArray) val) l.add(e.getAsDouble());
+                pair = l;
+            }
+            if (pair == null || pair.size() != 2) return null;
+            double loD = pair.get(0) instanceof Number ? ((Number) pair.get(0)).doubleValue() : Double.parseDouble(pair.get(0).toString());
+            double hiD = pair.get(1) instanceof Number ? ((Number) pair.get(1)).doubleValue() : Double.parseDouble(pair.get(1).toString());
+            // Range requires both bounds to be the SAME Number class. Use Integer when
+            // both are whole (degree/count filters), Double otherwise (continuous columns).
+            boolean whole = loD == Math.floor(loD) && hiD == Math.floor(hiD)
+                && !Double.isInfinite(loD) && !Double.isInfinite(hiD);
+            if (whole) return new org.gephi.filters.api.Range((int) loD, (int) hiD);
+            return new org.gephi.filters.api.Range(loD, hiD);
+        }
+        return convertLayoutProperty(val, type);
+    }
+
+    public JsonObject listFilters() {
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No workspace open");
+        JsonArray arr = new JsonArray();
+        for (FilterBuilder b : allFilterBuilders(ws)) {
+            JsonObject o = new JsonObject();
+            try { o.addProperty("name", b.getName()); } catch (Exception ignore) {}
+            try { o.addProperty("category", b.getCategory() == null ? null : b.getCategory().getName()); } catch (Exception ignore) {}
+            try { o.addProperty("description", b.getDescription()); } catch (Exception ignore) {}
+            // Introspect the filter's settable properties so callers know what params to pass.
+            try {
+                Filter f = b.getFilter(ws);
+                if (f != null && f.getProperties() != null) {
+                    JsonArray props = new JsonArray();
+                    for (FilterProperty p : f.getProperties()) {
+                        JsonObject po = new JsonObject();
+                        po.addProperty("name", p.getName());
+                        po.addProperty("type", p.getValueType() == null ? null : p.getValueType().getSimpleName());
+                        props.add(po);
+                    }
+                    o.add("properties", props);
+                }
+            } catch (Exception ignore) { /* introspection best-effort */ }
+            arr.add(o);
+        }
+        JsonObject r = success("Filters listed");
+        r.add("filters", arr);
+        return r;
+    }
+
+    public JsonObject applyFilter(String name, Map<String, Object> params, String action, String column) {
+        FilterController fc = Lookup.getDefault().lookup(FilterController.class);
+        if (fc == null) return error("No filter controller available");
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No workspace open");
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        if (name == null) return error("Missing 'name'");
+
+        FilterBuilder builder = null;
+        for (FilterBuilder b : allFilterBuilders(ws)) {
+            try { if (name.equalsIgnoreCase(b.getName())) { builder = b; break; } } catch (Exception ignore) {}
+        }
+        if (builder == null) return error("Filter not found: " + name + " (call /filter/list to see available filters)");
+
+        Filter filter = builder.getFilter(ws);
+        if (filter == null) return error("Filter builder produced no filter: " + name);
+
+        // Set each named property; report the valid names if a param doesn't match.
+        FilterProperty[] props = filter.getProperties();
+        if (params != null && !params.isEmpty()) {
+            java.util.List<String> propNames = new java.util.ArrayList<>();
+            if (props != null) for (FilterProperty p : props) propNames.add(p.getName());
+            for (Map.Entry<String, Object> e : params.entrySet()) {
+                FilterProperty match = null;
+                if (props != null) {
+                    for (FilterProperty p : props) {
+                        if (e.getKey().equalsIgnoreCase(p.getName())) { match = p; break; }
+                    }
+                }
+                if (match == null) {
+                    return error("Unknown filter property '" + e.getKey() + "' for " + name
+                        + " — valid properties: " + propNames);
+                }
+                Object converted = convertFilterProperty(e.getValue(), match.getValueType());
+                if (converted == null) {
+                    return error("Could not coerce '" + e.getKey() + "' to " + match.getValueType().getSimpleName()
+                        + " (Range wants a [lo, hi] pair)");
+                }
+                try { match.setValue(converted); }
+                catch (Exception ex) { return error("Failed to set '" + e.getKey() + "': " + ex.getMessage()); }
+            }
+        }
+
+        int nodesBefore = gm.getGraphVisible().getNodeCount();
+        int edgesBefore = gm.getGraphVisible().getEdgeCount();
+
+        Query query = fc.createQuery(filter);
+        fc.add(query);
+
+        String act = action == null ? "select" : action.toLowerCase();
+        JsonObject r;
+        switch (act) {
+            case "select":
+            case "visible":
+                fc.filterVisible(query);
+                r = success("Filter applied to the visible graph");
+                r.addProperty("nodes_before", nodesBefore);
+                r.addProperty("edges_before", edgesBefore);
+                r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
+                r.addProperty("edges_after", gm.getGraphVisible().getEdgeCount());
+                break;
+            case "new_workspace":
+                // Materializes the filtered subgraph into a fresh workspace — the
+                // memory-safe way to filter repeatedly (hidden GraphView elements
+                // otherwise stay resident).
+                fc.exportToNewWorkspace(query);
+                r = success("Filtered subgraph exported to a new workspace");
+                break;
+            case "column":
+                if (column == null) return error("action=column requires a 'column' name");
+                fc.exportToColumn(column, query);
+                r = success("Filter membership written to boolean column: " + column);
+                r.addProperty("column", column);
+                break;
+            default:
+                return error("Unknown action: " + action + " (use select|new_workspace|column)");
+        }
+        try { r.addProperty("filter", builder.getName()); } catch (Exception ignore) {}
+        return r;
+    }
+
+    // ─── Data Laboratory (Group D) ───────────────────────────────────
+
+    private static Table tableFor(GraphModel gm, String target) {
+        return "edge".equalsIgnoreCase(target) ? gm.getEdgeTable() : gm.getNodeTable();
+    }
+
+    private static org.gephi.graph.api.Element[] elementsFor(GraphModel gm, String target) {
+        Graph g = gm.getGraph();
+        return "edge".equalsIgnoreCase(target) ? g.getEdges().toArray() : g.getNodes().toArray();
+    }
+
+    /**
+     * Value -> count over one column. Pure GraphModel logic (no datalab
+     * controller / running Gephi needed), so it is unit-testable against an
+     * in-memory model.
+     */
+    static JsonObject columnValueFrequenciesCore(GraphModel gm, String target, String columnId) {
+        Table table = tableFor(gm, target);
+        Column col = table.getColumn(columnId);
+        if (col == null) return error("Column not found: " + columnId);
+        java.util.LinkedHashMap<String, Integer> freq = new java.util.LinkedHashMap<>();
+        int total = 0;
+        for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
+            Object v = el.getAttribute(col);
+            String key = v == null ? "" : v.toString();
+            freq.merge(key, 1, Integer::sum);
+            total++;
+        }
+        JsonObject r = success("Column value frequencies computed");
+        r.addProperty("column", columnId);
+        r.addProperty("target", "edge".equalsIgnoreCase(target) ? "edge" : "node");
+        r.addProperty("total", total);
+        r.addProperty("distinct_values", freq.size());
+        JsonObject f = new JsonObject();
+        for (Map.Entry<String, Integer> e : freq.entrySet()) f.addProperty(e.getKey(), e.getValue());
+        r.add("frequencies", f);
+        return r;
+    }
+
+    /**
+     * Groups of elements that share a value in one column (size >= 2). Pure
+     * GraphModel logic, unit-testable. caseSensitive controls string matching.
+     */
+    static JsonObject detectDuplicatesCore(GraphModel gm, String target, String columnId, boolean caseSensitive) {
+        Table table = tableFor(gm, target);
+        Column col = table.getColumn(columnId);
+        if (col == null) return error("Column not found: " + columnId);
+        java.util.LinkedHashMap<String, java.util.List<String>> groups = new java.util.LinkedHashMap<>();
+        for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
+            Object v = el.getAttribute(col);
+            if (v == null) continue;
+            String key = v.toString();
+            if (!caseSensitive) key = key.toLowerCase();
+            groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(String.valueOf(el.getId()));
+        }
+        JsonArray dupes = new JsonArray();
+        int groupCount = 0;
+        for (java.util.List<String> ids : groups.values()) {
+            if (ids.size() >= 2) {
+                groupCount++;
+                JsonArray a = new JsonArray();
+                for (String id : ids) a.add(id);
+                dupes.add(a);
+            }
+        }
+        JsonObject r = success("Duplicate detection complete");
+        r.addProperty("column", columnId);
+        r.addProperty("group_count", groupCount);
+        r.add("duplicate_groups", dupes);
+        return r;
+    }
+
+    public JsonObject columnValueFrequencies(String target, String columnId) {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        if (columnId == null) return error("Missing 'column'");
+        return columnValueFrequenciesCore(gm, target, columnId);
+    }
+
+    public JsonObject detectDuplicates(String target, String columnId, boolean caseSensitive) {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        if (columnId == null) return error("Missing 'column'");
+        return detectDuplicatesCore(gm, target, columnId, caseSensitive);
+    }
+
+    /** Merge several nodes into one, reassigning edges; deletes the merged-away nodes. */
+    public JsonObject mergeNodes(java.util.List<String> ids, String intoId) {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        if (ids == null || ids.isEmpty()) return error("Missing 'ids'");
+        org.gephi.datalab.api.GraphElementsController gec =
+            Lookup.getDefault().lookup(org.gephi.datalab.api.GraphElementsController.class);
+        if (gec == null) return error("No datalab controller available");
+        Graph g = gm.getGraph();
+        java.util.List<Node> nodes = new java.util.ArrayList<>();
+        for (String id : ids) {
+            Node n = g.getNode(id);
+            if (n == null) return error("Node not found: " + id);
+            nodes.add(n);
+        }
+        Node into = intoId != null ? g.getNode(intoId) : nodes.get(0);
+        if (into == null) return error("Merge target node not found: " + intoId);
+        try {
+            // Empty column/strategy arrays: reassign edges and keep the `into` node's
+            // own attribute values (no per-column value merge). Passing null throws
+            // an NPE inside the controller (it reads columns.length).
+            Node result = gec.mergeNodes(g, nodes.toArray(new Node[0]), into,
+                new Column[0], new org.gephi.datalab.spi.rows.merge.AttributeRowsMergeStrategy[0], true);
+            JsonObject r = success("Merged " + nodes.size() + " nodes");
+            r.addProperty("into", result != null ? String.valueOf(result.getId()) : String.valueOf(into.getId()));
+            r.addProperty("merged_count", nodes.size());
+            return r;
+        } catch (Exception e) {
+            return error("Merge failed: " + e.getMessage());
+        }
+    }
+
+    // ─── Edge appearance + generic export (Group E) ──────────────────
+
+    /**
+     * Color edges by an edge-column partition (relationship type, time period,
+     * weight tier, …) — the edge twin of colorByPartition. Mirrors it exactly:
+     * per-value palette (supplied or auto), then edge.setColor per row.
+     */
+    public JsonObject colorEdgesByPartition(String columnName, Map<String, int[]> colorMap) {
+        return runOnEDT(() -> {
+            Workspace ws = currentWorkspace();
+            if (ws == null) return error("No project open");
+            try {
+                GraphModel gm = currentGraphModel();
+                Graph graph = gm.getGraph();
+                Column col = gm.getEdgeTable().getColumn(columnName);
+                if (col == null) return error("Edge column not found: " + columnName);
+
+                java.util.Map<String, Color> palette = new java.util.LinkedHashMap<>();
+                if (colorMap != null && !colorMap.isEmpty()) {
+                    for (Map.Entry<String, int[]> e : colorMap.entrySet()) {
+                        int[] c = e.getValue();
+                        palette.put(e.getKey(), new Color(c[0], c[1], c[2]));
+                    }
+                } else {
+                    java.util.Set<String> values = new java.util.LinkedHashSet<>();
+                    for (Edge ed : graph.getEdges().toArray()) {
+                        Object v = ed.getAttribute(col);
+                        if (v != null) values.add(v.toString());
+                    }
+                    Color[] defaultPalette = {
+                        new Color(31, 119, 180), new Color(255, 127, 14), new Color(44, 160, 44),
+                        new Color(214, 39, 40), new Color(148, 103, 189), new Color(140, 86, 75),
+                        new Color(227, 119, 194), new Color(127, 127, 127), new Color(188, 189, 34),
+                        new Color(23, 190, 207), new Color(174, 199, 232), new Color(255, 187, 120)
+                    };
+                    int idx = 0;
+                    for (String v : values) { palette.put(v, defaultPalette[idx % defaultPalette.length]); idx++; }
+                }
+
+                int colored = 0;
+                lockWrite(graph);
+                try {
+                    for (Edge ed : graph.getEdges().toArray()) {
+                        Object v = ed.getAttribute(col);
+                        if (v != null) {
+                            Color c = palette.get(v.toString());
+                            if (c != null) { ed.setColor(c); colored++; }
+                        }
+                    }
+                } finally { unlockWrite(graph); }
+                JsonObject r = success("Colored " + colored + " edges by " + columnName);
+                r.addProperty("partitions", palette.size());
+                return r;
+            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        });
+    }
+
+    /**
+     * Export the graph in any format the ExportController knows by name — vna,
+     * pajek, dl, spreadsheet, gdf, gml, json, gexf, graphml, csv — for
+     * interchange with UCINET and other SNA tools, or a spreadsheet for
+     * non-technical readers. The wrapped-today formats (gexf/graphml/csv) keep
+     * their dedicated tools; this is the passthrough for the rest.
+     */
+    public JsonObject exportByFormat(String filePath, String format) {
+        return runOnEDT(() -> {
+            Workspace ws = currentWorkspace();
+            if (ws == null) return error("No project open");
+            if (filePath == null || format == null) return error("Missing 'file' or 'format'");
+            try {
+                ExportController ec = Lookup.getDefault().lookup(ExportController.class);
+                Exporter exporter = ec.getExporter(format);
+                if (exporter == null) return error("No exporter for format: " + format
+                    + " (try vna, pajek, dl, spreadsheet, gdf, gml, json, gexf, graphml, csv)");
+                if (exporter instanceof GraphExporter) {
+                    ((GraphExporter) exporter).setExportVisible(true);
+                    ((GraphExporter) exporter).setWorkspace(ws);
+                }
+                ec.exportFile(new File(filePath), exporter);
+                JsonObject r = success("Exported to " + filePath);
+                r.addProperty("format", format);
+                return r;
+            } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        });
+    }
+
+    // ─── Timeline / dynamic (Group G) ────────────────────────────────
+
+    /**
+     * Report the graph's dynamic/timeline state. Doubles as the spike for the
+     * reported "Timeline doesn't recognize dynamic attributes after a
+     * programmatic import" bug: if graph_is_dynamic is true but
+     * dynamic_columns is empty, the bug reproduces on this Gephi.
+     */
+    public JsonObject getTimeline() {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        JsonObject r = success("Timeline state");
+        try {
+            r.addProperty("graph_is_dynamic", gm.isDynamic());
+            org.gephi.graph.api.Interval b = gm.getTimeBounds();
+            if (b != null) {
+                r.addProperty("time_min", b.getLow());
+                r.addProperty("time_max", b.getHigh());
+            }
+            r.addProperty("time_format", String.valueOf(gm.getTimeFormat()));
+        } catch (Exception e) { r.addProperty("bounds_error", e.getMessage()); }
+        org.gephi.timeline.api.TimelineController tc =
+            Lookup.getDefault().lookup(org.gephi.timeline.api.TimelineController.class);
+        if (tc != null) {
+            try {
+                JsonArray cols = new JsonArray();
+                String[] dc = tc.getDynamicGraphColumns();
+                if (dc != null) for (String c : dc) cols.add(c);
+                r.add("dynamic_columns", cols);
+                org.gephi.timeline.api.TimelineModel tm = tc.getModel();
+                if (tm != null) {
+                    r.addProperty("timeline_enabled", tm.isEnabled());
+                    r.addProperty("has_valid_bounds", tm.hasValidBounds());
+                    if (tm.hasValidBounds()) {
+                        r.addProperty("interval_start", tm.getIntervalStart());
+                        r.addProperty("interval_end", tm.getIntervalEnd());
+                    }
+                }
+            } catch (Exception e) { r.addProperty("timeline_error", e.getMessage()); }
+        } else {
+            r.addProperty("timeline_controller", "unavailable");
+        }
+        return r;
+    }
+
+    // REMOVED: setTimeWindow. Driving Gephi's timeline from outside wedges the
+    // EDT two different ways — a time-derived setVisibleView deadlocks the
+    // renderer, and even setInterval/setEnabled saturates the EDT after one call.
+    // Because Gephi's own shutdown runs on the EDT, a wedged timeline op makes
+    // the app impossible to quit normally (Force Quit only). getTimeline
+    // (read-only, above) is safe and kept; any future write path must go through
+    // the viz-engine render-pause and off the EDT before it can be revived.
+
+    /** Create a boolean column flagging rows whose column value matches a regex. */
+    public JsonObject createRegexColumn(String target, String columnId, String newColumnTitle, String regex) {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        if (columnId == null || regex == null || newColumnTitle == null)
+            return error("Missing 'column', 'regex', or 'new_column'");
+        org.gephi.datalab.api.AttributeColumnsController acc =
+            Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsController.class);
+        if (acc == null) return error("No datalab controller available");
+        Table table = tableFor(gm, target);
+        Column col = table.getColumn(columnId);
+        if (col == null) return error("Column not found: " + columnId);
+        try {
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(regex);
+            Column created = acc.createBooleanMatchesColumn(table, col, newColumnTitle, pattern);
+            JsonObject r = success("Created boolean match column: " + newColumnTitle);
+            r.addProperty("column", created != null ? created.getId() : newColumnTitle);
+            return r;
+        } catch (java.util.regex.PatternSyntaxException e) {
+            return error("Invalid regex: " + e.getMessage());
+        } catch (Exception e) {
+            return error("Create match column failed: " + e.getMessage());
         }
     }
 

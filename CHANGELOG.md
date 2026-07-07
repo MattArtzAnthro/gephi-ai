@@ -4,6 +4,202 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Java plugin 1.2.12 / mcp-server 1.9.16 / claude-plugin 1.9.19
+
+Groups C–G of the integration-candidates build-out, in one plugin release —
+completing the roadmap. Tool count 93 → 102. Every new API verified via `javap`
+against the real Gephi module jars before building; graph-model cores TDD'd
+against an in-memory `GraphModel`, runtime paths live-validated (which caught
+several real issues unit tests couldn't — see Fixed and Known limitations).
+
+### Added — Filters (Group C)
+- **`gephi_list_filters`** / **`gephi_apply_filter`** — the general filter tools,
+  the discover-then-apply shape of `list_statistics`/`run_statistic`.
+  `list_filters` enumerates every built-in topology filter **plus a per-column
+  attribute filter** for each column in the graph (static `FilterBuilder`s +
+  `CategoryBuilder.getBuilders`), each with its settable properties.
+  `apply_filter(name, params, action)` sets properties (a Range property takes a
+  `[low, high]` pair) and applies with `action`: `select` (non-destructive
+  visible filter), `new_workspace` (materialize the subgraph — the memory-safe
+  path for repeated filtering), or `column` (write membership to a boolean
+  column). Stack `select` calls for AND. New `references/filtering.md`.
+
+### Added — Data Laboratory (Group D)
+- **`gephi_column_value_frequencies`**, **`gephi_detect_duplicates`** — value
+  distribution and duplicate-group detection over a column. Implemented as pure
+  `GraphModel` cores (no datalab controller needed), so they're unit-tested
+  against an in-memory model.
+- **`gephi_merge_nodes`** (merge duplicates into one; destructive) and
+  **`gephi_create_regex_column`** (boolean column flagging regex matches) via
+  the datalab controllers.
+
+### Added — Edge appearance + export (Group E)
+- **`gephi_color_edges_by_partition`** — the edge twin of
+  `gephi_color_by_partition` (color edges by relationship type / period / tier).
+- **`gephi_export(file, format)`** — general export-by-format via
+  `ExportController.getExporter(name)`: VNA, Pajek, DL, spreadsheet, GDF, JSON
+  (UCINET/Pajek interchange, spreadsheets for non-technical readers). (`gml` is
+  import-only in this Gephi build — no exporter — found by live validation.)
+
+### Changed — Multigraph fix (Group F)
+- **`gephi_add_edge`/`gephi_add_edges` accept an `edge_type` label.** Previously
+  a node pair could hold only one edge (`newEdge(..., directed ? 1 : 0, ...)`
+  hardcoded the type). Now a named `edge_type` creates the edge under
+  GraphStore's native typed-parallel-edge mechanism (`GraphModel.addEdgeType`),
+  with the duplicate check scoped to that type — so A→B can carry a "cites" edge
+  AND a "coauthor" edge, while a second same-type edge is still a duplicate.
+  Enables multiplex/multilayer graphs; compare layers by filtering to one edge
+  type and computing modularity per layer. **Behavior with no `edge_type` is
+  unchanged** (regression-tested).
+
+### Added — Timeline (Group G)
+- **`gephi_get_timeline`** — the graph's dynamic/timeline state: `is_dynamic`,
+  time bounds, the `dynamic_columns` the timeline recognizes, interval state.
+  Read-only; live-validated (correctly reports a dynamic import as dynamic with
+  the right bounds). Reason over node/edge start/end values to narrate change
+  over time.
+
+### Known limitations (found by live validation, documented not shipped)
+- **No programmatic time-window tool.** A `set_time_window` was built and then
+  **removed** — driving Gephi's timeline from outside destabilizes its render
+  thread in this plugin's synchronous-EDT architecture, two different ways:
+  (1) the real data-level slice (`createView` + `setTimeInterval` +
+  `setVisibleView`) *deadlocks* — `setVisibleView` forces a synchronous EDT
+  render that wedges Gephi (the render/lock hazard the 1.2.0 write hardening
+  was built for); (2) even the "safe" UI path (`TimelineController.setInterval`
+  / `setEnabled`) works once, then further timeline calls time out on a
+  saturated EDT. Normal writes are unaffected. Because Gephi's own shutdown runs on the EDT, a wedged timeline op also
+  makes the app impossible to quit normally (Force Quit only) — so the write
+  path was removed from the plugin entirely (endpoint + service method), not
+  just the Python tool. `get_timeline` (read-only) ships; time-slicing is left
+  to the Gephi timeline UI. Reviving a write path needs the ops wrapped in the
+  viz-engine render-pause and off the EDT.
+- **`gephi_apply_filter` `select`-action count is stale.** The response's
+  `nodes_after`/`edges_after` read the visible graph before the filter model
+  propagates in the same call, so they can report the pre-filter count even
+  though the graph *is* filtered (verified: a Degree Range `[5,∞]` select shows
+  `nodes_after: 339` but the exported visible graph is 64 nodes). Use
+  `action="new_workspace"` or export the visible graph for an exact post-filter
+  count.
+- **`gephi_apply_filter` `new_workspace` doesn't materialize for property-based
+  filters.** It works for parameterless topology filters (Giant Component →
+  334-node workspace) but silently no-ops for filters whose property was set
+  (Degree Range) — the `select` action filters those correctly, so use `select`
+  (+ export the visible graph) for parameterized filters until this is fixed.
+
+### Spike resolved — Timeline dynamic-import bug
+- Reproduced live on Gephi 0.11.x: a programmatically imported dynamic GEXF **is**
+  recognized at the graph-model level (`isDynamic` true, correct time bounds) —
+  the feared 0.9.2-era "not recognized until save+reopen" bug does **not** block
+  the data model. `TimelineController.getDynamicGraphColumns()` returns empty for
+  a graph whose dynamics are node/edge *existence* (start/end) rather than
+  time-varying *attribute* columns — which is correct, not the bug. (Programmatic
+  data-level slicing is separately blocked by the renderer deadlock noted above.)
+
+### Fixed
+- **Range filters** (`gephi_apply_filter` with a `[low, high]` on Degree
+  Range / Attribute Range) threw "Lower and upper must be the same class" —
+  `org.gephi.filters.api.Range` requires both bounds to be the same `Number`
+  subclass, but JSON parsing gave `Double`s that didn't match the filter's
+  integer expectation. Now both bounds are coerced to the same class (Integer
+  when whole, Double otherwise). Caught by live validation.
+- **`gephi_merge_nodes`** threw an NPE ("columns is null") — the datalab
+  controller's `mergeNodes` reads `columns.length`, so `null` fails; now passes
+  empty `Column[]`/strategy arrays (reassign edges, keep the survivor's
+  values). Caught by live validation.
+- Health endpoint reported a stale hardcoded `version` ("1.2.5"); now tracks
+  the release.
+
+### Findings
+- The candidates doc's premise that attribute filters would need bespoke wiring
+  is avoided: they're reachable generically via `CategoryBuilder`, so one
+  `apply_filter` covers the whole ecosystem including per-column attribute
+  filters — no per-filter code.
+
+### Tests
+- New Python tool→endpoint tests (filters, data lab, edge color, export,
+  get_timeline).
+- 8 new Java in-memory-`GraphModel` tests: Data Lab cores (frequencies,
+  duplicates incl. case-sensitivity) and the typed-parallel-edge fix (untyped
+  duplicate still blocked — regression; different types coexist; same type
+  blocked; batch honors per-edge type). Java suite 31 → 39, Python 137 passing.
+  Tool-count guard 93 → 102.
+
+## Java plugin 1.2.6 / mcp-server 1.9.13 / claude-plugin 1.9.16
+
+Group B of the integration-candidates build-out — two small Desktop-controller
+features. Tool count 90 → 93. Java-side (needs the rebuilt plugin + a Gephi
+restart); all three tools live-validated against a running Gephi.
+
+### Added
+- **`gephi_set_selection_mode(mode)`** — sets the canvas mouse-selection mode
+  (`rectangle` / `direct` / `disable`) via `VisualizationController`. Fixes a
+  documented friction: the pointing feature (`gephi_get_selection`) needed the
+  human to first click the toolbar's dashed-square icon; calling this with
+  `rectangle` at the start of a teaching session makes box-select work
+  immediately.
+- **`gephi_get_perspective`** / **`gephi_switch_perspective(name)`** — list the
+  top-level tabs (Overview / Data Laboratory / Preview) and switch between them
+  via `PerspectiveController` (switch runs on the EDT). Brings the human's view
+  to the right tab before discussing it.
+
+### Findings
+- The candidates doc's premise that `ToolController.select(Tool)` could
+  pre-select the rectangle-selection gesture is **refuted**: the actual `Tool`
+  SPI implementations (EdgePencil, NodePencil, Brush, Painter, Sizer,
+  ShortestPath, HeatMap, Edit, NodesDragger) contain no selection tool — the
+  gesture is the visualization engine's selection manager. The right mechanism
+  is `VisualizationController.setRectangleSelection()`, a one-line extension of
+  the controller `focusView` already uses. `ToolController` is dropped from the
+  plan (its tools are manual editors with no LLM-workflow value). Verified via
+  `javap` on the real Gephi module jars before building — caught before a
+  wasted build.
+
+### Tests
+- 4 new Python tool→endpoint tests (selection mode default + override,
+  perspective get, perspective switch). Java side is runtime-only (no
+  in-memory-model core to unit-test) so it's covered by compile-against-the-real-API
+  + live validation. Tool-count guard 90 → 93.
+
+## mcp-server 1.9.12 / claude-plugin 1.9.15
+
+First increment of the integration-candidates build-out (Group A): Python-only
+orchestration that composes already-shipped tools, no Gephi plugin change. Tool
+count 88 → 90.
+
+### Added
+- **`gephi_whatif(edits, include_slow=False)`** — counterfactual graph surgery.
+  Duplicates the current workspace, applies hypothetical edits (`remove_node`,
+  `remove_nodes`, `add_edge`, `remove_edge`) to the throwaway copy, diffs the
+  structural profile before/after, and always cleans up the scratch copy — the
+  real graph is never touched. Cleanup is id-correlated (survives the index
+  shifts a workspace delete causes) and runs even if an edit fails. Returns
+  `{diff: [{metric, before, after, delta}], cleanup}` for nodes, edges,
+  density, degree, components, isolates, modularity, communities, clustering
+  (+ path length/diameter when `include_slow`). For "what would removing this
+  node do to path length and community structure?" scenario-testing.
+- **`gephi_compare_nodes(id_a, id_b, metric)`** — deterministic two-node
+  comparison on one metric (from a node's attributes or a built-in field).
+  Returns which node is higher and by how much; errors clearly if the metric
+  column isn't computed yet. The checkable answer to "is X more central than Y".
+- **`references/claim-verification.md`** — skill reference generalizing the
+  `gephi_visual_qa` partition-truth-test into a general workflow: classify a
+  plain-language structural claim → run the matching measurement → report
+  confirmed / refuted / **can't-tell**, with the number. Covers comparison,
+  connectivity, centrality, and robustness claims, and the discipline of
+  matching the metric to the word ("bridge" = betweenness, not degree).
+
+### Changed
+- The metric-panel computation is extracted from `gephi_profile_graph` into a
+  shared internal `_compute_profile` helper, now used by both it and
+  `gephi_whatif` — no metric logic duplicated.
+
+### Tests
+- 8 new tests (`gephi_whatif` orchestration incl. id-correlated cleanup and
+  cleanup-on-edit-failure via a stateful workspace fake; `gephi_compare_nodes`
+  attribute/field/tie/missing-metric paths). Suite 110 → 118 passing; tool-count
+  guard updated 88 → 90.
+
 ## mcp-server 1.9.11 / claude-plugin 1.9.14
 
 Follow-up to the self-referential-hub work below, prompted by a fair

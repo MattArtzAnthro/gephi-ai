@@ -1,6 +1,6 @@
 [project]
 name = "gephi-mcp"
-version = "1.9.11"
+version = "1.9.16"
 description = "MCP Server for controlling Gephi Desktop via remote API"
 readme = "README.md"
 license = { text = "Apache-2.0" }

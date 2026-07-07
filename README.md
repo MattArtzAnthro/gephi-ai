@@ -17,7 +17,7 @@ Built for researchers working across network science and AI.
 <details>
 <summary>Full feature list</summary>
 
-- 88 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- 102 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
 - Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`
 - Two extra layouts beyond Gephi's own: by role played in the network, and by community (best for reply and retweet networks)
@@ -48,7 +48,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 86 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 102 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -80,7 +80,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-mcp-1.2.5.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-mcp-1.2.12.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
@@ -184,21 +184,23 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (88)
+## Tools (102)
 
 | Category | Count | Examples |
 |----------|-------|---------|
 | Project & Workspace | 10 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_rename_workspace` |
 | Graph Construction | 17 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node`, `gephi_text_to_network` |
-| Statistics | 13 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric, by name) |
+| Statistics & Analysis | 15 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric), `gephi_whatif` (counterfactual), `gephi_compare_nodes` |
 | Layout | 8 | `gephi_run_layout`, `gephi_get_layout_properties`, `gephi_community_layout`, `gephi_similarity_layout` |
-| Appearance | 10 | `gephi_color_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
-| Filtering | 8 | `gephi_filter_by_degree`, `gephi_extract_giant_component`, `gephi_extract_backbone` |
+| Appearance | 11 | `gephi_color_by_partition`, `gephi_color_edges_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
+| Filtering | 10 | `gephi_filter_by_degree`, `gephi_extract_backbone`, `gephi_list_filters`, `gephi_apply_filter` (any filter, by name) |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
-| Preview & Export | 9 | `gephi_export_png`, `gephi_export_gexf`, `gephi_view_graph` |
+| Preview & Export | 10 | `gephi_export_png`, `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph` |
+| Data Laboratory | 4 | `gephi_column_value_frequencies`, `gephi_detect_duplicates`, `gephi_merge_nodes`, `gephi_create_regex_column` |
+| Timeline | 1 | `gephi_get_timeline` (dynamic-graph state, read-only) |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
 | Health & Diagnostics | 3 | `gephi_health_check`, `gephi_visual_qa`, `gephi_profile_graph` |
-| View / Camera | 1 | `gephi_focus_view` |
+| View / Camera / Perspective | 4 | `gephi_focus_view`, `gephi_set_selection_mode`, `gephi_get_perspective`, `gephi_switch_perspective` |
 
 ## Example workflows
 
@@ -232,7 +234,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 88 tools
+- **references/tool-reference.md** — Complete API reference for all 102 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

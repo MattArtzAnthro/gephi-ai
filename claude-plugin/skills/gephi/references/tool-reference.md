@@ -30,6 +30,23 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
   zoom. Desktop only — errors politely when headless. Use in teaching mode so the
   viewer always sees what you're describing.
 
+### gephi_set_selection_mode
+- **Method**: POST `/view/selection`
+- **Params**: `{mode: "rectangle"|"direct"|"disable"}` (default `rectangle`)
+- **Returns**: `{success, mode}`
+- **Usage**: sets how the human's mouse selects on the canvas, via the same VisualizationController focusView uses. `rectangle` enables the box-drag gesture that `gephi_get_selection` reads — call it at the start of a teaching session so pointing works without the human clicking the toolbar's dashed-square icon first. Desktop only.
+
+### gephi_get_perspective
+- **Method**: GET `/perspective`
+- **Returns**: `{success, selected, perspectives: [{name, display_name, selected}]}`
+- **Usage**: lists the top-level tabs (Overview / Data Laboratory / Preview) and which is active. Desktop only.
+
+### gephi_switch_perspective
+- **Method**: POST `/perspective/switch`
+- **Params**: `{name}` — matches a perspective's `name` or `display_name` (case-insensitive), e.g. "Overview", "Data Laboratory", "Preview"
+- **Returns**: `{success, selected}`
+- **Usage**: moves the human's view to a tab before discussing it (e.g. switch to Data Laboratory before walking through the attribute table). Runs on the EDT. Desktop only.
+
 ### gephi_get_selection
 - **Method**: GET `/selection?clear=true|false`
 - **Returns**: `{success, selected_now: [{id, label?}], selected_count, selected_truncated?, clicks: [{time_ms, nodes}], click_count, listener_active}`
@@ -244,6 +261,11 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{column: str, colors?: {value: [r,g,b], ...}}`
 - **Notes**: Auto-generates palette if colors not provided. Use for modularity_class, type, category.
 
+### gephi_color_edges_by_partition
+- **Method**: POST `/appearance/edge/partition-color`
+- **Params**: `{column: str, colors?: {value: [r,g,b], ...}}`
+- **Notes**: The edge twin of `gephi_color_by_partition` — colors edges by a categorical EDGE column (relationship type, period, weight tier). Auto-palette if colors omitted. Coloring by a few relationship TYPES is when edge color earns its keep (unlike per-source coloring on dense graphs — see text-network-analysis.md).
+
 ### gephi_color_by_ranking
 - **Method**: POST `/appearance/ranking/color`
 - **Params**: `{column: str, r_min?: int (255), g_min?: int (255), b_min?: int (200), r_max?: int (255), g_max?: int (0), b_max?: int (0)}`
@@ -366,6 +388,20 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
   top-degree hub (hubs sit near their region's center), labeled preview with white
   outline. Originals saved to `label_backup`; `restore: true` reverses everything.
 
+## Analysis & Counterfactual
+
+### gephi_whatif
+- **Method**: duplicates the current workspace (auto-opens the copy), computes a baseline profile, applies the edits to the copy, recomputes the profile, diffs them, then deletes the scratch copy and switches back to the original — all in one call. The real graph is never modified.
+- **Params**: `{edits: [op...], include_slow?: bool (false)}` where each op is one of `{"op":"remove_node","id"}`, `{"op":"remove_nodes","ids":[...]}`, `{"op":"add_edge","source","target","weight"?,"directed"?}`, `{"op":"remove_edge","source","target"}`. `include_slow` also diffs avg path length/diameter.
+- **Returns**: `{success, edits_applied, diff: [{metric, before, after, delta}], cleanup: {scratch_deleted, returned_to_workspace_id}}`. `diff` covers nodes, edges, density, degree, components, isolates, modularity, communities, clustering (+ path length/diameter when `include_slow`).
+- **Notes**: for robustness / "what would happen if we removed X" claims. Cleanup is guaranteed even if an edit fails (the scratch copy is always deleted); on a failed edit the run stops and reports the failure with no diff. Returns measurements, not conclusions — narrate them, and treat a counterfactual on a small/skewed graph with the same caution as any single sample. See references/claim-verification.md.
+
+### gephi_compare_nodes
+- **Method**: reads both nodes (`GET /graph/node/get/{id}`) and compares one metric
+- **Params**: `{id_a: str, id_b: str, metric: str}` — `metric` is a node attribute (`"Betweenness Centrality"`, `"Degree"`, `"pageranks"`, `"frequency"`) or a built-in field (`"size"`); attributes are checked before top-level fields
+- **Returns**: `{success, metric, a, b, higher, difference}` — `higher` is the id of the larger value (null on a tie); `difference` is `abs(a-b)`. Errors clearly if the metric column is absent from a node (compute that statistic first).
+- **Notes**: the deterministic answer to "is X more [central/connected] than Y". See references/claim-verification.md.
+
 ## Filters
 
 ### gephi_filter_by_degree
@@ -409,6 +445,50 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, stats: {edges_kept, edges_removed, alpha}, edges_removed_from_graph}`
 - **Warning**: Destructive. Works on any weighted graph, not just text networks — a principled alternative to a flat `min_edge_weight` cutoff (edge significance is judged per-node, relative to that node's own weight distribution, not one global threshold). Recompute modularity/betweenness afterward if needed; existing values describe the pre-prune graph.
 
+### gephi_list_filters
+- **Method**: GET `/filter/list`
+- **Returns**: `{success, filters: [{name, category, description, properties: [{name, type}]}]}`
+- **Usage**: discover every filter — built-in topology filters plus a per-column attribute filter for each column in the current graph. Read each filter's `properties` (a Range-typed property takes a `[low, high]` pair) before applying. The discover step before `gephi_apply_filter`. See references/filtering.md.
+
+### gephi_apply_filter
+- **Method**: POST `/filter/apply`
+- **Params**: `{name, params?: {property: value}, action?: "select"|"new_workspace"|"column", column?}`
+- **Returns**: for `select`, `{success, filter, nodes_before, edges_before, nodes_after, edges_after}`; for `new_workspace`/`column`, a success message
+- **Usage**: apply any filter by name. `select` (default) narrows the visible graph non-destructively; `new_workspace` materializes the filtered subgraph (use for repeated filtering on large graphs — avoids unbounded hidden-element memory); `column` writes membership to a boolean column. Stack `select` calls for AND. See references/filtering.md.
+
+## Data Laboratory
+
+### gephi_column_value_frequencies
+- **Method**: POST `/datalab/frequencies`
+- **Params**: `{column, target?: "node"|"edge"}`
+- **Returns**: `{success, column, target, total, distinct_values, frequencies: {value: count}}`
+- **Usage**: value distribution for a column — check group counts/skew before partitioning, or spot data-entry variants. Read-only.
+
+### gephi_detect_duplicates
+- **Method**: POST `/datalab/duplicates`
+- **Params**: `{column, target?: "node"|"edge", case_sensitive?: bool}`
+- **Returns**: `{success, column, group_count, duplicate_groups: [[id, ...], ...]}`
+- **Usage**: find nodes/edges sharing a column value (same email, same normalized name). Pair with `gephi_merge_nodes` to dedupe. Read-only.
+
+### gephi_merge_nodes
+- **Method**: POST `/datalab/merge-nodes`
+- **Params**: `{ids: [str, ...], into?: str}`
+- **Returns**: `{success, into, merged_count}`
+- **Warning**: Destructive. Merges the given nodes into one (edges reassigned, values merged by Gephi defaults), deletes the rest. `into` picks the survivor (default: first id).
+
+### gephi_create_regex_column
+- **Method**: POST `/datalab/regex-column`
+- **Params**: `{column, new_column, regex, target?: "node"|"edge"}`
+- **Returns**: `{success, column}`
+- **Usage**: adds a boolean column flagging rows whose `column` value matches `regex` — mark a subset to color/size/filter by later, without hiding anything. Errors on invalid regex.
+
+## Timeline
+
+### gephi_get_timeline
+- **Method**: GET `/timeline`
+- **Returns**: `{success, graph_is_dynamic, time_min?, time_max?, time_format, dynamic_columns: [...], timeline_enabled?, has_valid_bounds?, interval_start?, interval_end?}`
+- **Usage**: report a graph's dynamic/timeline state — is it dynamic, what time range, which dynamic columns the timeline sees, current interval. Read-only; reason over node/edge start/end values to narrate change over time. There is intentionally **no** programmatic time-window tool — driving Gephi's timeline from outside destabilizes its render thread in this architecture (both the data-view swap and the timeline-UI toggle proved unsafe in testing); slice by time in the Gephi timeline UI directly if you need the live view filtered.
+
 ## Preview Settings
 
 ### gephi_get_preview_settings
@@ -444,6 +524,11 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_export_gexf
 - **Method**: POST `/export/gexf`
 - **Params**: `{file: str}`
+
+### gephi_export
+- **Method**: POST `/export/format`
+- **Params**: `{file: str, format: str}` — format is the exporter name: `vna`, `pajek`, `dl`, `spreadsheet`, `gdf`, `json`, plus `gexf`/`graphml`/`csv` (`gml` is import-only in this build — no exporter)
+- **Notes**: the general export-by-format passthrough for interchange formats the dedicated tools don't cover (UCINET via `vna`/`dl`, Pajek, a spreadsheet for non-technical readers). Errors listing known formats if unrecognized.
 
 ### gephi_export_graphml
 - **Method**: POST `/export/graphml`

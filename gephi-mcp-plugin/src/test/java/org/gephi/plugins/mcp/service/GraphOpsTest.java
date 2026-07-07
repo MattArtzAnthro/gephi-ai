@@ -227,4 +227,105 @@ class GraphOpsTest {
         assertEquals("Id,Label", lines[0]);
         assertEquals("a,\"Smith, John\"", lines[1]);
     }
+
+    // ─── Data Laboratory cores (Group D) ─────────────────────────────
+
+    @Test
+    void columnValueFrequenciesCountsPerValue() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodesToModel(gm, List.of(
+            node("a", "team", "red"), node("b", "team", "red"),
+            node("c", "team", "blue"), node("d", "team", "red")));
+
+        JsonObject r = GephiControlService.columnValueFrequenciesCore(gm, "node", "team");
+        assertTrue(r.get("success").getAsBoolean());
+        assertEquals(2, r.get("distinct_values").getAsInt());
+        assertEquals(4, r.get("total").getAsInt());
+        JsonObject freq = r.getAsJsonObject("frequencies");
+        assertEquals(3, freq.get("red").getAsInt());
+        assertEquals(1, freq.get("blue").getAsInt());
+    }
+
+    @Test
+    void columnValueFrequenciesErrorsOnMissingColumn() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodesToModel(gm, List.of(node("a")));
+        JsonObject r = GephiControlService.columnValueFrequenciesCore(gm, "node", "nope");
+        assertFalse(r.get("success").getAsBoolean());
+    }
+
+    @Test
+    void detectDuplicatesGroupsSharedValues() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodesToModel(gm, List.of(
+            node("a", "email", "x@y.com"), node("b", "email", "x@y.com"),
+            node("c", "email", "z@y.com"), node("d", "email", "x@y.com")));
+
+        JsonObject r = GephiControlService.detectDuplicatesCore(gm, "node", "email", true);
+        assertTrue(r.get("success").getAsBoolean());
+        assertEquals(1, r.get("group_count").getAsInt()); // only x@y.com is duplicated
+        assertEquals(3, r.getAsJsonArray("duplicate_groups").get(0).getAsJsonArray().size());
+    }
+
+    // ─── Typed parallel edges (Group F) ──────────────────────────────
+
+    private static GraphModel modelWithNodes(String... ids) {
+        GraphModel gm = newModel();
+        java.util.List<Map<String, Object>> ns = new java.util.ArrayList<>();
+        for (String id : ids) ns.add(node(id));
+        GephiControlService.addNodesToModel(gm, ns);
+        return gm;
+    }
+
+    @Test
+    void untypedDuplicateEdgeStillBlocked() {
+        // Regression: the pre-existing single-edge-per-pair rule must be unchanged
+        // when no edge_type is given.
+        GraphModel gm = modelWithNodes("a", "b");
+        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, null).get("success").getAsBoolean());
+        assertFalse(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, null).get("success").getAsBoolean());
+        assertEquals(1, gm.getGraph().getEdgeCount());
+    }
+
+    @Test
+    void differentTypedEdgesCoexistBetweenSamePair() {
+        GraphModel gm = modelWithNodes("a", "b");
+        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "cites").get("success").getAsBoolean());
+        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "coauthor").get("success").getAsBoolean());
+        assertEquals(2, gm.getGraph().getEdgeCount(), "two typed parallel edges should coexist");
+        assertTrue(gm.getEdgeTypeCount() >= 2);
+    }
+
+    @Test
+    void sameTypedEdgeIsStillBlocked() {
+        GraphModel gm = modelWithNodes("a", "b");
+        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "cites").get("success").getAsBoolean());
+        assertFalse(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "cites").get("success").getAsBoolean(),
+            "a second edge of the SAME type between the same pair is still a duplicate");
+        assertEquals(1, gm.getGraph().getEdgeCount());
+    }
+
+    @Test
+    void batchAddHonorsPerEdgeType() {
+        GraphModel gm = modelWithNodes("a", "b");
+        Map<String, Object> e1 = new LinkedHashMap<>();
+        e1.put("source", "a"); e1.put("target", "b"); e1.put("edge_type", "cites");
+        Map<String, Object> e2 = new LinkedHashMap<>();
+        e2.put("source", "a"); e2.put("target", "b"); e2.put("edge_type", "coauthor");
+        JsonObject r = GephiControlService.addEdgesToModel(gm, List.of(e1, e2));
+        assertEquals(2, r.get("added").getAsInt());
+        assertEquals(2, gm.getGraph().getEdgeCount());
+    }
+
+    @Test
+    void detectDuplicatesRespectsCaseInsensitivity() {
+        GraphModel gm = newModel();
+        GephiControlService.addNodesToModel(gm, List.of(
+            node("a", "name", "Alice"), node("b", "name", "alice")));
+
+        assertEquals(0, GephiControlService.detectDuplicatesCore(gm, "node", "name", true)
+            .get("group_count").getAsInt());   // case-sensitive: distinct
+        assertEquals(1, GephiControlService.detectDuplicatesCore(gm, "node", "name", false)
+            .get("group_count").getAsInt());   // case-insensitive: same
+    }
 }

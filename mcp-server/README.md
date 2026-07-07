@@ -1,7 +1,7 @@
 # gephi-mcp
 
 MCP server that bridges any [Model Context Protocol](https://modelcontextprotocol.io) client
-to a running [Gephi Desktop](https://gephi.org) instance, exposing **88 tools** for graph
+to a running [Gephi Desktop](https://gephi.org) instance, exposing **102 tools** for graph
 construction, statistics, community detection, layout, styling, filtering, and
 publication-ready export.
 

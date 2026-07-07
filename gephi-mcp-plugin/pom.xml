@@ -6,7 +6,7 @@
 
     <groupId>org.gephi.plugins</groupId>
     <artifactId>gephi-mcp</artifactId>
-    <version>1.2.5</version>
+    <version>1.2.12</version>
     <packaging>nbm</packaging>
 
     <name>Gephi AI (MCP)</name>
@@ -102,6 +102,21 @@
         <dependency>
             <groupId>org.gephi</groupId>
             <artifactId>visualization-api</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>perspective-api</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>datalab-api</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>timeline-api</artifactId>
             <version>${gephi.version}</version>
         </dependency>
 

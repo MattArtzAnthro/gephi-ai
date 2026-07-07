@@ -2,20 +2,20 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 88 Gephi MCP tools.
+  this skill provides workflows and best practices for the 102 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.5+) installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.12+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.14"
+  version: "1.9.19"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.14 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.19 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
-You have access to 88 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 102 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -208,20 +208,31 @@ those plugins never covered.
 - `gephi_compute_avg_path_length` → avg path length, diameter
 - `gephi_compute_hits` → creates `authority`, `hub` (lowercase column names)
 
+### Analysis & counterfactual
+- `gephi_profile_graph` → one-call quantitative picture (size, density, degree, connectivity, modularity, clustering); run first
+- `gephi_whatif(edits, include_slow=False)` → apply hypothetical edits (`remove_node`/`remove_nodes`/`add_edge`/`remove_edge`) to a throwaway workspace copy, diff the structural profile before/after, auto-clean the scratch copy; the real graph is never touched. For robustness/"what if we removed X" claims — see references/claim-verification.md
+- `gephi_compare_nodes(id_a, id_b, metric)` → deterministic two-node comparison on one metric (from attributes or a built-in field); errors if the metric isn't computed yet. For "is X more central than Y" claims — see references/claim-verification.md
+
 ### Appearance
-`gephi_color_by_partition`, `gephi_color_by_ranking`, `gephi_size_by_ranking`, `gephi_set_node_color`/`gephi_set_node_size`, `gephi_set_edge_color`, `gephi_edge_thickness_by_weight`, `gephi_batch_set_node_colors`, `gephi_reset_appearance`
+`gephi_color_by_partition`, `gephi_color_edges_by_partition` (color edges by a categorical edge column — relationship type/period/tier), `gephi_color_by_ranking`, `gephi_size_by_ranking`, `gephi_set_node_color`/`gephi_set_node_size`, `gephi_set_edge_color`, `gephi_edge_thickness_by_weight`, `gephi_batch_set_node_colors`, `gephi_reset_appearance`
 
 ### Layout
 `gephi_run_layout` (use `"ForceAtlas 2"`, `"Yifan Hu"`, `"Fruchterman Reingold"`, `"Circular"`, `"Random Layout"`), `gephi_stop_layout`, `gephi_get_layout_status`, `gephi_get_available_layouts`, `gephi_get_layout_properties`/`gephi_set_layout_properties`
 
-### View / Camera (Desktop only)
-`gephi_focus_view` (mode graph|zero|node|edge|region, select highlights nodes, zoom) — directs the human viewer's attention in the Gephi window; essential in teaching mode
+### View / Camera / Perspective (Desktop only)
+`gephi_focus_view` (mode graph|zero|node|edge|region, select highlights nodes, zoom) — directs the human viewer's attention in the Gephi window; essential in teaching mode. `gephi_set_selection_mode` (rectangle|direct|disable) — enable box-drag selection so pointing (`gephi_get_selection`) works without the human clicking the toolbar icon; call with `rectangle` at the start of teaching mode. `gephi_get_perspective`/`gephi_switch_perspective` — list/switch the top-level tab (Overview / Data Laboratory / Preview) to bring the viewer to the view you're about to discuss.
 
 ### Filtering
-`gephi_filter_by_degree`, `gephi_filter_by_edge_weight`, `gephi_remove_isolates`, `gephi_extract_ego_network`, `gephi_extract_giant_component`, `gephi_reset_filters`
+`gephi_filter_by_degree`, `gephi_filter_by_edge_weight`, `gephi_remove_isolates`, `gephi_extract_ego_network`, `gephi_extract_giant_component`, `gephi_reset_filters`, `gephi_list_filters`/`gephi_apply_filter` (the general filter tools — apply ANY built-in or per-column attribute filter by name, action `select`/`new_workspace`/`column`; see references/filtering.md)
+
+### Data Laboratory
+`gephi_column_value_frequencies` (value distribution of a column), `gephi_detect_duplicates` (nodes sharing a column value), `gephi_merge_nodes` (merge duplicates into one — destructive), `gephi_create_regex_column` (boolean column flagging regex matches)
+
+### Timeline (dynamic graphs)
+`gephi_get_timeline` (read-only: is the graph dynamic, time bounds, dynamic columns, interval state) — reason over node/edge start/end values to narrate change over time. There is no programmatic time-window tool: driving Gephi's timeline from outside destabilizes its render thread; slice by time in the Gephi timeline UI directly if needed.
 
 ### Preview & Export
-`gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`, `gephi_view_graph` (interactive in-chat view, no `file` param)
+`gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`, `gephi_export` (any format by name — VNA/Pajek/DL/spreadsheet/GDF/JSON, for UCINET/Pajek interchange), `gephi_view_graph` (interactive in-chat view, no `file` param)
 
 ### Import
 `gephi_import_file`, `gephi_import_gexf`/`gephi_import_graphml`/`gephi_import_csv`
@@ -535,3 +546,6 @@ For detailed tool parameters, see [references/tool-reference.md](references/tool
 For layout algorithm details, see [references/layout-guide.md](references/layout-guide.md).
 For statistics interpretation, see [references/statistics-guide.md](references/statistics-guide.md).
 For building and reading text networks, see [references/text-network-analysis.md](references/text-network-analysis.md).
+For verifying a plain-language structural claim against the graph, see [references/claim-verification.md](references/claim-verification.md).
+For compiling a plain-language filter into a Gephi filter, see [references/filtering.md](references/filtering.md).
+Multiplex graphs: `gephi_add_edge`/`gephi_add_edges` accept an `edge_type` label so the same pair can hold several parallel typed edges (e.g. "cites" + "coauthor"). To compare layers, filter to one type (`gephi_apply_filter` with the "Edge Type" filter), compute modularity, repeat per type, and compare the partitions.

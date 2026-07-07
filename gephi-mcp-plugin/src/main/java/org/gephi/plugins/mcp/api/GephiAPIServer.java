@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.5");
+            result.addProperty("version", "1.2.12");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -142,6 +142,20 @@ public class GephiAPIServer extends NanoHTTPD {
                 }
             }
             return service.focusView(mode, id, source, target, x, y, w, h, zoom, select);
+        }
+
+        if ("/view/selection".equals(uri) && Method.POST.equals(method)) {
+            String mode = body != null && body.has("mode") ? body.get("mode").getAsString() : "rectangle";
+            return service.setSelectionMode(mode);
+        }
+
+        if ("/perspective".equals(uri) && Method.GET.equals(method)) {
+            return service.getPerspective();
+        }
+
+        if ("/perspective/switch".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("name")) return errorResult("Missing 'name'");
+            return service.switchPerspective(body.get("name").getAsString());
         }
 
         // ─── Project ─────────────────────────────────────────────────
@@ -267,7 +281,8 @@ public class GephiAPIServer extends NanoHTTPD {
             String target = body.get("target").getAsString();
             Double weight = body.has("weight") ? body.get("weight").getAsDouble() : 1.0;
             boolean directed = !body.has("directed") || body.get("directed").getAsBoolean();
-            return service.addEdge(source, target, weight, directed);
+            String edgeType = body.has("edge_type") ? body.get("edge_type").getAsString() : null;
+            return service.addEdge(source, target, weight, directed, edgeType);
         }
 
         if ("/graph/edges/add".equals(uri) && Method.POST.equals(method)) {
@@ -409,6 +424,21 @@ public class GephiAPIServer extends NanoHTTPD {
                 }
             }
             return service.colorByPartition(column, colorMap);
+        }
+
+        if ("/appearance/edge/partition-color".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            String column = body.get("column").getAsString();
+            Map<String, int[]> colorMap = null;
+            if (body.has("colors") && body.get("colors").isJsonObject()) {
+                colorMap = new HashMap<>();
+                JsonObject colors = body.getAsJsonObject("colors");
+                for (String key : colors.keySet()) {
+                    List<Number> rgb = GSON.fromJson(colors.get(key), List.class);
+                    colorMap.put(key, new int[]{rgb.get(0).intValue(), rgb.get(1).intValue(), rgb.get(2).intValue()});
+                }
+            }
+            return service.colorEdgesByPartition(column, colorMap);
         }
 
         if ("/appearance/ranking/color".equals(uri) && Method.POST.equals(method)) {
@@ -564,6 +594,60 @@ public class GephiAPIServer extends NanoHTTPD {
             return service.resetFilters();
         }
 
+        if ("/filter/list".equals(uri) && Method.GET.equals(method)) {
+            return service.listFilters();
+        }
+
+        if ("/filter/apply".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("name")) return errorResult("Missing 'name'");
+            String fname = body.get("name").getAsString();
+            Map<String, Object> filterParams = body.has("params") ? GSON.fromJson(body.get("params"), Map.class) : null;
+            String action = body.has("action") ? body.get("action").getAsString() : "select";
+            String column = body.has("column") ? body.get("column").getAsString() : null;
+            return service.applyFilter(fname, filterParams, action, column);
+        }
+
+        // ─── Data Laboratory ─────────────────────────────────────────
+
+        if ("/datalab/frequencies".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            String target = body.has("target") ? body.get("target").getAsString() : "node";
+            return service.columnValueFrequencies(target, body.get("column").getAsString());
+        }
+
+        if ("/datalab/duplicates".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            String target = body.has("target") ? body.get("target").getAsString() : "node";
+            boolean cs = body.has("case_sensitive") && body.get("case_sensitive").getAsBoolean();
+            return service.detectDuplicates(target, body.get("column").getAsString(), cs);
+        }
+
+        if ("/datalab/merge-nodes".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("ids")) return errorResult("Missing 'ids'");
+            java.util.List<String> ids = GSON.fromJson(body.get("ids"), java.util.List.class);
+            String into = body.has("into") ? body.get("into").getAsString() : null;
+            return service.mergeNodes(ids, into);
+        }
+
+        if ("/datalab/regex-column".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("column") || !body.has("new_column") || !body.has("regex"))
+                return errorResult("Missing 'column', 'new_column', or 'regex'");
+            String target = body.has("target") ? body.get("target").getAsString() : "node";
+            return service.createRegexColumn(target, body.get("column").getAsString(),
+                body.get("new_column").getAsString(), body.get("regex").getAsString());
+        }
+
+        // ─── Timeline (read-only) ────────────────────────────────────
+        // NOTE: there is deliberately NO write endpoint here. Driving Gephi's
+        // timeline from outside (setInterval/setEnabled, or a time-derived
+        // setVisibleView) wedges the EDT, and Gephi's own shutdown runs on the
+        // EDT — so a wedged timeline op makes the app impossible to quit
+        // normally (Force Quit only). getTimeline is a pure read and is safe.
+
+        if ("/timeline".equals(uri) && Method.GET.equals(method)) {
+            return service.getTimeline();
+        }
+
         // ─── Edge Appearance ────────────────────────────────────────
 
         if ("/appearance/edge/thickness-by-weight".equals(uri) && Method.POST.equals(method)) {
@@ -600,6 +684,12 @@ public class GephiAPIServer extends NanoHTTPD {
                 return service.exportGexfContent();
             }
             return service.exportGexf(body.get("file").getAsString());
+        }
+
+        if ("/export/format".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("file") || !body.has("format"))
+                return errorResult("Missing 'file' or 'format'");
+            return service.exportByFormat(body.get("file").getAsString(), body.get("format").getAsString());
         }
 
         if ("/export/png".equals(uri) && Method.POST.equals(method)) {

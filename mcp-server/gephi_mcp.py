@@ -218,19 +218,32 @@ async def gephi_batch_set_positions(positions: list[dict[str, Any]]) -> str:
 # ─── Edges ────────────────────────────────────────────────────
 
 @mcp.tool(name="gephi_add_edge")
-async def gephi_add_edge(source: str, target: str, weight: float = 1.0, directed: bool = True) -> str:
-    """Add an edge between two existing nodes."""
+async def gephi_add_edge(source: str, target: str, weight: float = 1.0, directed: bool = True,
+                         edge_type: str | None = None) -> str:
+    """Add an edge between two existing nodes.
+
+    edge_type: an optional relationship-type label. Normally a pair of nodes can
+    hold only one edge; giving a type lets the same pair carry several parallel
+    edges of different types (e.g. a "cites" edge and a "coauthor" edge between
+    the same two authors) — a multiplex/multilayer graph. A second edge of the
+    SAME type between the same pair is still rejected as a duplicate. Omit it for
+    ordinary single-edge behavior.
+    """
     return fmt(await gephi.request("POST", "/graph/edge/add",
-                                   json_data={"source": source, "target": target,
-                                              "weight": weight, "directed": directed}))
+                                   json_data=_body(source=source, target=target,
+                                                   weight=weight, directed=directed,
+                                                   edge_type=edge_type)))
 
 @mcp.tool(name="gephi_add_edges")
 async def gephi_add_edges(edges: list[dict[str, Any]]) -> str:
     """Add multiple edges in one batch.
 
     Each edge: {source: str, target: str, weight?: float, directed?: bool,
-    label?: str, attributes?: {column: value}}. Edges referencing missing nodes,
-    or duplicates, are skipped.
+    label?: str, edge_type?: str, attributes?: {column: value}}. Edges
+    referencing missing nodes, or duplicates, are skipped. `edge_type` gives the
+    pair a named relationship type so several parallel typed edges can coexist
+    between the same two nodes (multiplex graph); a duplicate is only skipped
+    within the same type.
     """
     return fmt(await gephi.request("POST", "/graph/edges/add", json_data={"edges": edges}))
 
@@ -352,6 +365,22 @@ async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | N
     categories, color the 8 largest and set the rest to gray [153,153,153].
     """
     return fmt(await gephi.request("POST", "/appearance/partition/color",
+                                   json_data=_body(column=column, colors=colors)))
+
+@mcp.tool(name="gephi_color_edges_by_partition")
+async def gephi_color_edges_by_partition(column: str,
+                                         colors: dict[str, list[int]] | None = None) -> str:
+    """Color edges by a categorical EDGE attribute (relationship type, period, tier).
+
+    The edge counterpart to gephi_color_by_partition. Use it when edges carry a
+    type worth seeing — co-authorship vs. citation, time period, weight tier — so
+    the relationship kind reads at a glance. colors is an optional {value:
+    [r, g, b]} map; otherwise a distinct palette is assigned. Note the different
+    default edge-styling advice: on a dense graph, per-source edge coloring
+    usually reads as noise (see the text-network guidance), but coloring by a
+    small set of relationship TYPES is exactly when edge color earns its keep.
+    """
+    return fmt(await gephi.request("POST", "/appearance/edge/partition-color",
                                    json_data=_body(column=column, colors=colors)))
 
 @mcp.tool(name="gephi_color_by_ranking")
@@ -580,6 +609,42 @@ async def gephi_compute_modularity(resolution: float = 1.0) -> str:
     """
     return fmt(await gephi.request("POST", "/statistics/modularity", json_data={"resolution": resolution}))
 
+async def _compute_profile(include_slow: bool = False) -> dict:
+    """Compute the structural profile panel on the CURRENT workspace.
+
+    Shared by gephi_profile_graph and gephi_whatif so metric computation lives
+    in exactly one place. Returns the profile dict (nodes, edges, density,
+    degree, components, isolates, weighted, flags, plus modularity/clustering
+    and — when include_slow — distance). On a failed GEXF export it returns
+    that failed response verbatim (it carries "success": False); a successful
+    profile dict has no "success" key, so callers test
+    `profile.get("success", True)` to tell them apart.
+    """
+    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    if not exported.get("success"):
+        return exported
+    from gephi_mcp_viewer import parse_gexf
+    from gephi_mcp_viewer.profile import structural_profile
+
+    graph = parse_gexf(exported["content"], max_nodes=10**9)
+    profile = structural_profile(graph)
+
+    mod = await gephi.request("POST", "/statistics/modularity", json_data={})
+    if mod.get("success"):
+        profile["modularity"] = {k: mod[k] for k in ("modularity", "communities") if k in mod}
+    cc = await gephi.request("POST", "/statistics/clustering-coefficient", json_data={})
+    if cc.get("success"):
+        for k in ("average_clustering_coefficient", "clustering_coefficient", "average"):
+            if k in cc:
+                profile["clustering_coefficient"] = cc[k]
+                break
+    if include_slow and profile["nodes"] <= 3000:
+        dist = await gephi.request("POST", "/statistics/avg-path-length", json_data={})
+        if dist.get("success"):
+            profile["distance"] = {k: dist[k] for k in ("avg_path_length", "diameter", "radius") if k in dist}
+    return profile
+
+
 @mcp.tool(name="gephi_profile_graph")
 async def gephi_profile_graph(include_slow: bool = False) -> str:
     """Profile the whole graph in ONE call — run this first, before analyzing.
@@ -607,28 +672,9 @@ async def gephi_profile_graph(include_slow: bool = False) -> str:
     include_slow: also compute average path length / diameter (skipped by
     default; expensive on large graphs — only sensible under ~3k nodes).
     """
-    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
-    if not exported.get("success"):
-        return fmt(exported)
-    from gephi_mcp_viewer import parse_gexf
-    from gephi_mcp_viewer.profile import structural_profile
-
-    graph = parse_gexf(exported["content"], max_nodes=10**9)
-    profile = structural_profile(graph)
-
-    mod = await gephi.request("POST", "/statistics/modularity", json_data={})
-    if mod.get("success"):
-        profile["modularity"] = {k: mod[k] for k in ("modularity", "communities") if k in mod}
-    cc = await gephi.request("POST", "/statistics/clustering-coefficient", json_data={})
-    if cc.get("success"):
-        for k in ("average_clustering_coefficient", "clustering_coefficient", "average"):
-            if k in cc:
-                profile["clustering_coefficient"] = cc[k]
-                break
-    if include_slow and profile["nodes"] <= 3000:
-        dist = await gephi.request("POST", "/statistics/avg-path-length", json_data={})
-        if dist.get("success"):
-            profile["distance"] = {k: dist[k] for k in ("avg_path_length", "diameter", "radius") if k in dist}
+    profile = await _compute_profile(include_slow)
+    if not profile.get("success", True):
+        return fmt(profile)  # GEXF export failed
     profile["success"] = True
     return fmt(profile)
 
@@ -746,6 +792,139 @@ async def gephi_reset_filters() -> str:
     """Reset non-destructive filters and restore the full graph view."""
     return fmt(await gephi.request("POST", "/filter/reset"))
 
+
+@mcp.tool(name="gephi_list_filters")
+async def gephi_list_filters() -> str:
+    """List every filter available in this Gephi instance, with its settable properties.
+
+    Covers the built-in topology filters (Degree Range, K-core, Giant Component,
+    Ego Network, Neighbors, Edge Weight, …) AND a per-column attribute filter for
+    each node/edge column currently in the graph (Attribute Equal / Range /
+    Non-null on that column) — so the exact set depends on what columns exist.
+    Each entry gives name, category, description, and `properties` (name + type)
+    so you know what to pass to gephi_apply_filter. Range-typed properties take a
+    [low, high] pair. This is the discovery step before applying an arbitrary
+    filter, the same way gephi_list_statistics precedes gephi_run_statistic.
+    """
+    return fmt(await gephi.request("GET", "/filter/list"))
+
+
+@mcp.tool(name="gephi_apply_filter")
+async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
+                             action: str = "select", column: str | None = None) -> str:
+    """Apply a filter by name — the general-purpose filter tool.
+
+    name matches an entry from gephi_list_filters (case-insensitive). params is a
+    {property: value} map for that filter's properties (see the filter's
+    `properties` in gephi_list_filters); a Range property takes a [low, high]
+    pair, e.g. params={"Degree Range": [2, 10]}. If a property name doesn't
+    match, the error lists the valid ones.
+
+    action decides what happens with the matches:
+    - "select" (default): filter the visible graph non-destructively (a
+      GraphView — the underlying data is untouched; reset with
+      gephi_reset_filters). Returns node/edge counts before and after.
+    - "new_workspace": materialize the filtered subgraph into a new workspace.
+      Prefer this when filtering repeatedly on a large graph — a visible-only
+      filter keeps the hidden elements resident in memory, so chained filters
+      can grow memory unbounded; exporting to a fresh workspace and working
+      there avoids that.
+    - "column": write filter membership into a boolean column named `column`
+      (required for this action) instead of hiding anything — useful for
+      marking "matches" to color or size by afterward.
+
+    This compiles a plain-language filtering intent ("nodes with degree ≥ 5 in
+    the giant component", "only where type = X") into the right Gephi filter:
+    pick the filter from gephi_list_filters, set its properties, choose the
+    action. For AND/OR of several conditions, apply them in sequence with
+    action="select" (each narrows the visible graph).
+    """
+    return fmt(await gephi.request("POST", "/filter/apply",
+                                   json_data=_body(name=name, params=params,
+                                                   action=action, column=column)))
+
+
+@mcp.tool(name="gephi_get_timeline")
+async def gephi_get_timeline() -> str:
+    """Report the graph's dynamic/timeline state (read-only).
+
+    Returns graph_is_dynamic (does the data carry a time attribute), the time
+    bounds (time_min/time_max) and format, the dynamic_columns the timeline
+    recognizes, and the timeline's enabled/interval state. Use it to check
+    whether an imported graph is dynamic and over what time range.
+
+    To reason about change over time, read this plus the node/edge start/end
+    values (e.g. via gephi_query_nodes / the exported GEXF) — there is no
+    programmatic "restrict the graph to a time window" tool: driving Gephi's
+    timeline from outside destabilizes its render thread in this architecture
+    (both the data-view swap and the timeline-UI toggle proved unsafe), so it's
+    deliberately not exposed. Slice by time in the Gephi timeline UI directly if
+    you need the live view filtered.
+    """
+    return fmt(await gephi.request("GET", "/timeline"))
+
+
+@mcp.tool(name="gephi_column_value_frequencies")
+async def gephi_column_value_frequencies(column: str, target: str = "node") -> str:
+    """Count how often each value appears in a column — the value distribution.
+
+    Returns {value: count} for the given column, plus distinct_values and total.
+    Use it to understand a categorical column before coloring/partitioning by it
+    (how many groups, how skewed), to spot data-entry variants (the same place
+    spelled three ways shows as three near-identical keys), or to sanity-check a
+    computed column. target is "node" (default) or "edge".
+    """
+    return fmt(await gephi.request("POST", "/datalab/frequencies",
+                                   json_data={"target": target, "column": column}))
+
+
+@mcp.tool(name="gephi_detect_duplicates")
+async def gephi_detect_duplicates(column: str, target: str = "node",
+                                  case_sensitive: bool = False) -> str:
+    """Find groups of nodes (or edges) that share a value in one column.
+
+    Returns duplicate_groups — a list of id-lists, one per value held by two or
+    more elements — and group_count. The classic use is deduplication: find the
+    nodes that are really the same entity (same email, same normalized name),
+    then merge them with gephi_merge_nodes. case_sensitive=False (default)
+    treats "Alice"/"alice" as the same; set True to keep them distinct. This
+    only reports; it changes nothing.
+    """
+    return fmt(await gephi.request("POST", "/datalab/duplicates",
+                                   json_data={"target": target, "column": column,
+                                              "case_sensitive": case_sensitive}))
+
+
+@mcp.tool(name="gephi_merge_nodes")
+async def gephi_merge_nodes(ids: list[str], into: str | None = None) -> str:
+    """Merge several nodes into one, reassigning their edges. Destructive.
+
+    Combines the given node ids into a single node (their edges are reattached
+    to it; per-column values are merged with Gephi's default strategies), then
+    deletes the others. `into` picks which id survives as the merged node
+    (default: the first in `ids`). Pair with gephi_detect_duplicates: detect the
+    groups, then merge each group. Cannot be undone — the merged-away nodes are
+    removed.
+    """
+    return fmt(await gephi.request("POST", "/datalab/merge-nodes",
+                                   json_data=_body(ids=ids, into=into)))
+
+
+@mcp.tool(name="gephi_create_regex_column")
+async def gephi_create_regex_column(column: str, new_column: str, regex: str,
+                                    target: str = "node") -> str:
+    """Add a boolean column flagging rows whose value matches a regex.
+
+    For each node/edge, tests `column`'s value against `regex` and writes
+    True/False into a new column named `new_column` — without hiding anything.
+    Use it to mark a subset for later coloring/sizing/filtering (e.g. flag every
+    label starting "Dept-", or every id matching an email pattern). target is
+    "node" (default) or "edge". Errors on an invalid regex.
+    """
+    return fmt(await gephi.request("POST", "/datalab/regex-column",
+                                   json_data={"target": target, "column": column,
+                                              "new_column": new_column, "regex": regex}))
+
 @mcp.tool(name="gephi_clear_graph")
 async def gephi_clear_graph() -> str:
     """Remove all nodes and edges. The project/workspace stay open. Destructive."""
@@ -794,6 +973,23 @@ async def gephi_export_gexf(file: str | None = None) -> str:
     """
     payload = {"file": file} if file else {"inline": True}
     return fmt(await gephi.request("POST", "/export/gexf", json_data=payload))
+
+@mcp.tool(name="gephi_export")
+async def gephi_export(file: str, format: str) -> str:
+    """Export the graph in any format Gephi supports, by name — the general exporter.
+
+    format is the exporter name: `vna`, `pajek`, `dl` (UCINET interchange),
+    `spreadsheet` (for non-technical readers), `gdf`, `json`, plus
+    `gexf`/`graphml`/`csv`. (Note: `gml` is import-only in this Gephi build — no
+    exporter — despite appearing in some format lists.) The common visual/graph
+    formats keep their dedicated tools (gephi_export_gexf, gephi_export_png,
+    gephi_export_csv, …); reach for this when you need one of the interchange
+    formats they don't cover, e.g. handing the network to UCINET (`vna`/`dl`) or
+    Pajek (`pajek`), or giving a collaborator a spreadsheet. Errors listing the
+    known formats if the name isn't recognized.
+    """
+    return fmt(await gephi.request("POST", "/export/format",
+                                   json_data={"file": file, "format": format}))
 
 @mcp.tool(name="gephi_export_png")
 async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> str:
@@ -852,6 +1048,51 @@ async def gephi_focus_view(mode: str = "graph", id: str | None = None,
                                    json_data=_body(mode=mode, id=id, source=source,
                                                    target=target, x=x, y=y, w=w, h=h,
                                                    zoom=zoom, select=select)))
+
+
+@mcp.tool(name="gephi_set_selection_mode")
+async def gephi_set_selection_mode(mode: str = "rectangle") -> str:
+    """Set how the human's mouse selects nodes in the Gephi window.
+
+    This removes the one manual step the pointing feature (gephi_get_selection)
+    otherwise requires: normally the person has to click the dashed-square
+    rectangle-selection icon before they can box-select nodes. Call this with
+    mode="rectangle" at the START of a teaching/watch-along session so pointing
+    just works — they can immediately drag a box and gephi_get_selection reads
+    it.
+
+    mode: "rectangle" (drag a box to select — the persistent mode that pointing
+    relies on), "direct" (click/mouse-radius selection), or "disable" (turn
+    selection off). Desktop only; errors when no visualization is available
+    (headless).
+    """
+    return fmt(await gephi.request("POST", "/view/selection", json_data={"mode": mode}))
+
+
+@mcp.tool(name="gephi_get_perspective")
+async def gephi_get_perspective() -> str:
+    """List Gephi Desktop's perspectives (tabs) and which one is active.
+
+    Perspectives are the top-level tabs: Overview (the graph canvas), Data
+    Laboratory (the node/edge tables), and Preview (the export-styling view).
+    Returns the selected perspective plus the full list, each with name and
+    display_name. Pair with gephi_switch_perspective to move the human's view
+    to the right tab before discussing it. Desktop only.
+    """
+    return fmt(await gephi.request("GET", "/perspective"))
+
+
+@mcp.tool(name="gephi_switch_perspective")
+async def gephi_switch_perspective(name: str) -> str:
+    """Switch Gephi Desktop to a different perspective (tab) by name.
+
+    name matches a perspective's name or display_name from gephi_get_perspective
+    (case-insensitive) — typically "Overview", "Data Laboratory", or "Preview".
+    Use in teaching mode to bring the human to the view you're about to talk
+    about (e.g. switch to Data Laboratory before walking through the attribute
+    table). Desktop only.
+    """
+    return fmt(await gephi.request("POST", "/perspective/switch", json_data={"name": name}))
 
 
 @mcp.tool(name="gephi_get_selection")
@@ -1259,6 +1500,224 @@ async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) ->
         "edges_removed_from_graph": removed,
         "edges_remaining": len(edges) - removed,
     })
+
+
+# ─── Counterfactual / comparison ─────────────────────────────
+
+# Scalar metrics worth diffing before/after a hypothetical edit, as
+# (label, path-into-the-profile-dict). Curated rather than a blind recursive
+# diff so the result reports only the numbers a counterfactual actually turns
+# on, and skips bools/flags/lists that don't diff meaningfully.
+_WHATIF_METRICS = [
+    ("nodes", ("nodes",)),
+    ("edges", ("edges",)),
+    ("density", ("density",)),
+    ("max_degree", ("degree", "max")),
+    ("median_degree", ("degree", "median")),
+    ("components", ("components", "count")),
+    ("isolates", ("isolates",)),
+    ("modularity", ("modularity", "modularity")),
+    ("communities", ("modularity", "communities")),
+    ("clustering_coefficient", ("clustering_coefficient",)),
+    ("avg_path_length", ("distance", "avg_path_length")),
+    ("diameter", ("distance", "diameter")),
+]
+
+
+def _dig(d: dict, path: tuple) -> Any:
+    """Follow a key path into a nested dict; None if any hop is missing."""
+    cur = d
+    for k in path:
+        if not isinstance(cur, dict) or k not in cur:
+            return None
+        cur = cur[k]
+    return cur
+
+
+def _diff_profiles(before: dict, after: dict) -> list[dict]:
+    """Per-metric {before, after, delta} for the curated whatif metrics.
+
+    Skips any metric absent from both profiles; computes delta only when both
+    sides are numeric (so a metric present in one profile but not the other is
+    still reported, just without a delta)."""
+    diff = []
+    for label, path in _WHATIF_METRICS:
+        b, a = _dig(before, path), _dig(after, path)
+        if b is None and a is None:
+            continue
+        entry = {"metric": label, "before": b, "after": a}
+        if isinstance(b, (int, float)) and not isinstance(b, bool) \
+                and isinstance(a, (int, float)) and not isinstance(a, bool):
+            delta = a - b
+            entry["delta"] = round(delta, 4) if isinstance(delta, float) else delta
+        diff.append(entry)
+    return diff
+
+
+async def _apply_edit(edit: dict) -> dict:
+    """Dispatch one whatif edit op to its existing graph endpoint."""
+    op = edit.get("op")
+    try:
+        if op == "remove_node":
+            return await gephi.request("DELETE", f"/graph/node/{edit['id']}")
+        if op == "remove_nodes":
+            return await gephi.request("POST", "/graph/nodes/remove", json_data={"ids": edit["ids"]})
+        if op == "add_edge":
+            e = {"source": edit["source"], "target": edit["target"]}
+            if "weight" in edit:
+                e["weight"] = edit["weight"]
+            if "directed" in edit:
+                e["directed"] = edit["directed"]
+            return await gephi.request("POST", "/graph/edges/add", json_data={"edges": [e]})
+        if op == "remove_edge":
+            return await gephi.request("POST", "/graph/edge/remove",
+                                       json_data={"source": edit["source"], "target": edit["target"]})
+    except KeyError as missing:
+        return {"success": False, "error": f"edit op {op!r} missing field {missing}"}
+    return {"success": False, "error": f"unknown edit op: {op!r}"}
+
+
+async def _cleanup_scratch(scratch_id: Any, orig_id: Any) -> dict:
+    """Restore the original workspace and delete the scratch copy, by id.
+
+    Switches to the original FIRST (so we are never deleting the current
+    workspace), then deletes the scratch. Correlates by stable id and re-lists
+    between steps because deleting a workspace shifts indices."""
+    info: dict[str, Any] = {"scratch_deleted": False, "returned_to_workspace_id": None}
+    ws = await gephi.request("GET", "/workspace/list")
+    workspaces = ws.get("workspaces", []) if ws.get("success", True) else []
+    orig_idx = next((i for i, w in enumerate(workspaces) if w.get("id") == orig_id), None)
+    if orig_idx is not None:
+        s = await gephi.request("POST", "/workspace/switch", json_data={"index": orig_idx})
+        if s.get("success", True):
+            info["returned_to_workspace_id"] = orig_id
+    ws2 = await gephi.request("GET", "/workspace/list")
+    workspaces2 = ws2.get("workspaces", []) if ws2.get("success", True) else []
+    scratch_idx = next((i for i, w in enumerate(workspaces2) if w.get("id") == scratch_id), None)
+    if scratch_idx is not None:
+        d = await gephi.request("DELETE", "/workspace/delete", params={"index": str(scratch_idx)})
+        info["scratch_deleted"] = bool(d.get("success", False))
+    return info
+
+
+@mcp.tool(name="gephi_whatif")
+async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) -> str:
+    """Test a hypothetical edit on a throwaway copy — never touches the real graph.
+
+    Duplicates the current workspace, applies `edits` to the copy, measures the
+    structural before/after, and returns the diff. The original workspace is
+    never modified and the scratch copy is always deleted afterward (even if an
+    edit fails), so this is safe to run repeatedly for scenario-testing:
+    "what would removing this node do to path length and community structure?"
+
+    edits: an ordered list of operations, each one of:
+      - {"op": "remove_node", "id": str}
+      - {"op": "remove_nodes", "ids": [str, ...]}
+      - {"op": "add_edge", "source": str, "target": str, "weight"?: float, "directed"?: bool}
+      - {"op": "remove_edge", "source": str, "target": str}
+    include_slow: also diff average path length / diameter (expensive; only
+    under ~3k nodes, same gate as gephi_profile_graph). Default off.
+
+    Returns {success, edits_applied, diff, cleanup}. `diff` is a list of
+    {metric, before, after, delta} for global structural metrics (nodes, edges,
+    density, degree, components, isolates, modularity, communities, clustering,
+    and path length/diameter when include_slow). The tool returns measurements,
+    not conclusions — narrate the result yourself, and remember a counterfactual
+    on a small or skewed graph can mislead the same way any single sample can.
+    If an edit fails (e.g. add_edge on a pair that already has an edge), the
+    run stops, no diff is produced, and the failure is reported — the scratch
+    copy is still cleaned up.
+    """
+    ws_list = await gephi.request("GET", "/workspace/list")
+    if not ws_list.get("success", True):
+        return fmt(ws_list)
+    workspaces = ws_list.get("workspaces", [])
+    orig = next((w for w in workspaces if w.get("current")), None)
+    if orig is None:
+        return fmt({"success": False, "error": "No current workspace to run a counterfactual on."})
+    orig_id = orig.get("id")
+    orig_index = workspaces.index(orig)
+
+    dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": orig_index})
+    if not dup.get("success", True):
+        return fmt(dup)
+    scratch_id = dup.get("workspace_id")
+
+    outcome: dict[str, Any]
+    try:
+        before = await _compute_profile(include_slow)
+        if not before.get("success", True):
+            outcome = {"success": False, "stage": "baseline_profile", "detail": before}
+        else:
+            failed = None
+            for i, edit in enumerate(edits):
+                er = await _apply_edit(edit)
+                if not er.get("success", True):
+                    failed = {"success": False, "stage": "edit", "index": i, "edit": edit, "detail": er}
+                    break
+            if failed:
+                outcome = failed
+            else:
+                after = await _compute_profile(include_slow)
+                if not after.get("success", True):
+                    outcome = {"success": False, "stage": "after_profile", "detail": after}
+                else:
+                    outcome = {"success": True, "edits_applied": edits,
+                               "diff": _diff_profiles(before, after)}
+    finally:
+        cleanup = await _cleanup_scratch(scratch_id, orig_id)
+
+    outcome["cleanup"] = cleanup
+    return fmt(outcome)
+
+
+@mcp.tool(name="gephi_compare_nodes")
+async def gephi_compare_nodes(id_a: str, id_b: str, metric: str) -> str:
+    """Compare two nodes on one metric — a deterministic answer to "which is more X?".
+
+    Reads both nodes and reports each one's value for `metric` and which is
+    higher. Turns a claim like "she is more central than he is" into a single
+    checkable call instead of two reads plus manual arithmetic.
+
+    metric: a node column that already exists — either a computed statistic in
+    the node's attributes ("Betweenness Centrality", "Degree", "pageranks",
+    "frequency") or a built-in field ("size"). If the column is absent, this
+    errors and tells you to compute the relevant statistic first (e.g. run the
+    betweenness statistic before comparing betweenness). Attributes are checked
+    before top-level fields.
+
+    Returns {success, metric, a, b, higher, difference}. `higher` is the id of
+    the larger value, or null on a tie. `difference` is abs(a - b).
+    """
+    def _value(node: dict) -> Any:
+        attrs = node.get("attributes") or {}
+        if metric in attrs:
+            return attrs[metric]
+        if metric in node:
+            return node[metric]
+        return None
+
+    ra = await gephi.request("GET", f"/graph/node/get/{id_a}")
+    if not ra.get("success", True):
+        return fmt(ra)
+    rb = await gephi.request("GET", f"/graph/node/get/{id_b}")
+    if not rb.get("success", True):
+        return fmt(rb)
+
+    va = _value(ra.get("node", {}))
+    vb = _value(rb.get("node", {}))
+    missing = [nid for nid, v in ((id_a, va), (id_b, vb)) if v is None]
+    if missing:
+        return fmt({"success": False,
+                    "error": f"metric {metric!r} not found on node(s) {missing} — "
+                             f"compute that statistic first, then compare."})
+    if not isinstance(va, (int, float)) or not isinstance(vb, (int, float)):
+        return fmt({"success": False,
+                    "error": f"metric {metric!r} is not numeric (got {va!r}, {vb!r})."})
+
+    higher = None if va == vb else (id_a if va > vb else id_b)
+    return fmt({"success": True, "metric": metric, "a": va, "b": vb,
+                "higher": higher, "difference": abs(va - vb)})
 
 
 # ─── Import ──────────────────────────────────────────────────
