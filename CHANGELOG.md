@@ -4,6 +4,297 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## mcp-server 1.9.11 / claude-plugin 1.9.14
+
+Follow-up to the self-referential-hub work below, prompted by a fair
+challenge: hand-curating a stopword list (like the one used to clean up a
+generic-word mega-cluster on a test corpus) solves one dataset and overfits
+the next — a word that's generic scaffolding in one corpus could be exactly
+the topic in another. Tested whether a structural graph metric could replace
+the manual judgment call; confirmed on real data that graph-level metrics
+can't, but a text-level one (peak per-document count) carries real signal,
+and along the way found that one specific word had been excluded too
+bluntly on that test corpus.
+
+### Added
+- **`context_snippets`** on `build_cooccurrence_graph`/`gephi_text_to_network`
+  (default 0, off) — attaches short excerpts of original surrounding text to
+  each `self_referential_candidates` entry, so the ~40-50% document-frequency
+  gray zone (where genuinely generic words and genuinely topical hub words
+  are statistically indistinguishable) can be resolved by reading real
+  sentences instead of hand-grepping source text or guessing from a word list
+  tuned on a different corpus. Excerpts are drawn from each word's
+  *highest-count* documents first, not just the first documents it happens to
+  appear in — needed to catch a word that's concentrated as a genuine
+  sub-topic in a handful of documents (see Findings).
+- **`peak_document_count`** on every `self_referential_candidates` entry — the
+  word's single highest per-document occurrence count. On the real corpus
+  that motivated this, truly generic words peaked at 12-16 in their heaviest
+  document, while every genuinely topical word tested peaked at 30-175 — a
+  real, consistent (if imperfect) discriminator, reported as evidence to
+  weigh alongside the excerpts, not an automatic cutoff.
+- 5 new tests for `context_snippets` and `peak_document_count` (110 total, up
+  from 105).
+
+### Findings
+- Tested two structural alternatives to a manual stopword list — post-
+  backbone degree and edge-weight concentration (a Herfindahl-style measure
+  of whether a word's connections concentrate on a few strong partners or
+  spread thin) — on the real corpus that motivated this. Neither separates
+  generic scaffolding from a genuine topic hub: a word correctly excluded as
+  generic scaffolding and a word worth keeping as a real topic landed in the
+  same range on both metrics. Graph-level co-occurrence structure alone can't
+  be trusted to auto-classify this gray zone.
+- Caught a real mistake by re-checking with the fixed `context_snippets`
+  ordering: reading two arbitrary example sentences for one word made it
+  look like pure filler, supporting its earlier full exclusion from the test
+  graph. But its single highest-count document used that word well over a
+  hundred times and turned out to be a genuine document specifically about
+  that word's own subject. The earlier blanket exclusion (documented below)
+  discarded that real sub-topic along with the actual scaffolding use
+  elsewhere in the corpus; there was no way to catch this without checking
+  where a word was concentrated, not just where it was scattered.
+
+## mcp-server 1.9.10 / claude-plugin 1.9.13
+
+Direct result of reflecting honestly on a real full-text rebuild: a manual
+top-frequency stopword check missed a word present in 254 of 255 documents,
+because raw frequency rank can't distinguish "real topic" from "corpus-wide
+scaffolding." Fixed the tool, not just the one instance.
+
+### Added
+- **`document_frequency` on every node**, and **`stats.self_referential_
+  candidates`** on `build_cooccurrence_graph`/`gephi_text_to_network` — flags
+  any word appearing in at least `self_referential_threshold` (default 0.5)
+  of documents as a candidate self-referential/generic hub, computed
+  automatically rather than requiring a manual frequency-ranking eyeball
+  check (which is exactly what missed a 99%-of-documents word on a real
+  corpus).
+- **`exclude_self_referential`** — actually drops flagged words from the
+  graph before windowing (same gap-closing treatment as `pos_filter`/
+  `min_word_frequency`), rather than only reporting them. Default off
+  (reporting a methodological choice like dropping half a corpus's
+  vocabulary should be deliberate, not silent).
+- Documented a deeper, structural finding this surfaced: on a large multi-
+  document full-text corpus, a high `min_word_frequency` floor **on its
+  own** can select FOR generic words, not against them — a word needs
+  sustained presence across many documents to reach a high total count. On
+  a real 255-article corpus this meant half the vocabulary surviving a
+  frequency floor was flagged as present in most documents; modularity was
+  0.47 and communities read as generic scaffolding ("Time & Temporal
+  Narrative," "Everyday Speech & Quotation"). Turning on
+  `exclude_self_referential` and lowering the frequency floor (no longer
+  needing double duty as a generic-word filter) raised modularity to 0.60
+  and produced sharply topical communities instead ("Chinese Family Firms &
+  Capitalism," "Ethics, Codes & Professional Networks").
+- 8 new tests for document-frequency tracking and the exclusion filter (105
+  total, up from 97).
+
+## mcp-server 1.9.9 / claude-plugin 1.9.12
+
+### Added
+- **`merge_phrases` on `gephi_text_to_network`/`build_cooccurrence_graph`** —
+  detects cohesive two-word phrases ("machine learning") and merges them
+  into a single node instead of leaving them as two separately co-occurring
+  unigrams. A candidate pair must clear two independent tests: a
+  content-bearing POS pattern (adjective+noun or noun+noun) and pointwise
+  mutual information above a threshold — POS pattern alone still passes
+  grammatically-adjacent-but-unrelated pairs; PMI alone would merge two
+  merely-frequent unrelated words. New `extract_phrases` function exposed
+  separately for inspecting candidates before enabling the merge. Default
+  off (pure unigrams, unchanged prior behavior).
+- Fixed a real bug this surfaced immediately on real data: a merged phrase
+  could hide a stopworded word from the stopword filter (two words
+  individually stopworded as a corpus's own self-referential subject name,
+  but slipping through as a merged phrase) — phrase candidates are now
+  dropped if either half is a stopword before merging.
+- 13 new tests covering phrase detection, the PMI/POS-pattern gates, the
+  stopword-leak fix, and end-to-end integration with
+  `build_cooccurrence_graph` (97 total, up from 84).
+
+## [1.9.11] (Claude Code plugin only)
+
+### Fixed
+- **Corrected 1.9.10's "crowded core = resolution problem" claim.** Root
+  cause was actually a request-building bug in this session's own manual
+  testing: raw HTTP calls to `/layout/run` were sent with the tuning values
+  under a `"params"` key instead of the correct `"properties"` key. The
+  endpoint accepted this silently (`success: true`) and ran every layout on
+  plugin defaults regardless of what was "set" — which is why five very
+  different `scalingRatio`/`gravity` combinations plus a `"Noverlap"` pass
+  all produced nearly the same layout extent. Fixing the key and re-running
+  the *exact same* first parameter values that had appeared to do nothing
+  produced an immediately, clearly better-separated layout. The 2x-crop
+  "fix" from 1.9.10 worked around the symptom without addressing the real
+  cause and is no longer the recommended approach.
+- Softened the ForceAtlas 2 numerical-explosion gotcha (SKILL.md) to not
+  attribute it to a specific parameter combination, since that combination
+  was set via the same broken request pattern and its actual active
+  properties at the time are now unconfirmed.
+
+### Added
+- Documented the `"params"` vs `"properties"` request-key bug and the
+  `"Noverlap"` zero-default trap directly, with the diagnostic tell (a
+  layout that seems insensitive to a parameter across a wide range is
+  itself the anomaly, not a property of the graph).
+
+## [1.9.9] (Claude Code plugin only)
+
+Craft knowledge from actually applying 1.9.8's new capabilities
+(`min_word_frequency`, `gephi_extract_backbone`) to a real hairball complaint,
+plus two more research-report triages (text preprocessing, visual layout,
+cluster-naming methodology).
+
+### Added
+- **Alpha calibration warning on `gephi_extract_backbone`**: the disparity-
+  filter literature's common alpha (0.05-0.1) is calibrated for networks with
+  far more skewed per-node weight distributions than word co-occurrence
+  produces; used naively it can collapse a graph almost entirely (observed:
+  1292 edges to 8). Sweep alpha and check connectivity at each value instead
+  of trusting the literature default.
+- **Neutral gray edge color as the styling default for text networks**,
+  documented as an exception to the general skill's per-source edge-coloring
+  default — cross-referenced in both SKILL.md and the text-network reference.
+- **Reframed decluttering guidance**: `min_word_frequency` +
+  `gephi_extract_backbone` (actually pruning the graph) are now documented as
+  the real fix for a hairball; `edge.rescale-weight` (visual-only) is
+  reframed as a fast first look, not a fix — learned by watching the rescale
+  trick fail to resolve a real density complaint that frequency-floor +
+  backbone extraction then did resolve.
+- **Cluster-label placement**: documented that a cluster's highest-degree
+  node can be geometrically buried by its own same-color neighbors in a
+  dense core, causing a correctly-set label to render invisibly (confirmed
+  present via the API, absent from the exported pixels). Neither "Label
+  Adjust" nor enlarging the buried node reliably fixes this (the latter just
+  buries a different neighbor); repositioning the caption to a same-cluster
+  node nearer the cluster's visual edge does.
+- **Centrality-weighted label candidates**: pick cluster-naming candidates
+  from degree *and* betweenness together, not degree alone — a cluster's
+  most-repeated word and its most structurally-load-bearing word are
+  frequently different words.
+- Extended the "considered, deliberately not built" list: similarity-mapping
+  (VOS/MDS) layouts, automated LLM-based cluster labeling, WebGL/LoD
+  rendering for custom viewers — noted as real techniques that don't fit
+  this tool's scope, with reasoning, rather than left unaddressed.
+
+## [1.9.8] (MCP server + Claude Code plugin)
+
+Triaged two computational-linguistics research reports on text-network-
+analysis best practice against the current tool and implemented what was
+genuinely a gap; documented the rest as deliberate scope decisions rather
+than silently skipping them. Also fixed a real community-naming mistake
+this triage surfaced.
+
+### Added
+- **`pos_filter="nouns"` on `gephi_text_to_network`/`build_cooccurrence_graph`**
+  — restricts the graph to noun tokens before windowing (Rule, Cointet, and
+  Bearman 2015: nouns carry a discourse's topical structure; verbs/
+  adjectives add texture but also noise for topic mapping). Falls back to no
+  filtering, disclosed via `stats.pos_filter_applied`, if the POS tagger
+  isn't installed.
+- **`min_word_frequency` on the same tool** — drops words below a corpus-
+  wide occurrence count before windowing, a node-level floor distinct from
+  the existing edge-level `min_edge_weight`. Standard practice for Zipfian
+  text where most unique words occur once or twice and only add long-tail
+  clutter.
+- **`gephi_extract_backbone`** (new tool) — prunes a graph to its
+  statistically significant backbone using the disparity filter (Serrano,
+  Boguna, and Vespignani 2009): edge significance is judged per node,
+  relative to how that node's own weight is split across its neighbors,
+  rather than against one global cutoff every edge must clear. Works on any
+  weighted graph, not just text networks. A more principled alternative to
+  `min_edge_weight`'s flat threshold and to the previous session's
+  `edge.rescale-weight` visual-only decluttering trick (which is still
+  documented and still useful as a non-destructive first look).
+- Skill reference (`text-network-analysis.md`) sections for all of the
+  above, plus a documented "considered and deliberately not built" list
+  (virtual edges via embeddings for short/sparse texts, multi-word/compound-
+  noun extraction, syntactic dependency networks as an alternative edge-
+  construction paradigm, discourse-state classification, distinctiveness
+  centrality) with the reasoning for each, and a caveat that stripping
+  negation words ("not"/"no"/"never") trades away sentiment/polarity
+  information that co-occurrence graphs can't represent anyway.
+
+### Fixed
+- **A real community-naming mistake, caught by spot-checking against source
+  titles**: a modularity class on a real test corpus had been named "Design,
+  Ethics & Advertising" from its top-3 highest-degree words, implying one
+  coherent topic. Reading the actual titles behind those words showed at
+  least four unrelated articles (design pedagogy, advertising history,
+  interdisciplinary collaboration, organizational innovation) that all
+  happened to use "liminality" as a theoretical frame — a shared-vocabulary
+  cluster, not a shared-topic one. Renamed to "Liminality Across Contexts"
+  and added a new skill-doc section on the general failure mode: naming a
+  cluster from top words alone can mistake a reused theoretical term for a
+  real subject, catchable by reading source documents behind 2-3 of a
+  class's top words (not just the highest) before finalizing a name.
+
+## [1.9.7] (Claude Code plugin only)
+
+Craft knowledge from a live, real-corpus text-network session (10 years of
+academic article titles, 255 documents).
+
+### Added
+- **Weight-based edge rescaling for decluttering dense co-occurrence
+  graphs**: `edge.rescale-weight` with a wide min/max range and low base
+  opacity renders weak, single-occurrence edges as nearly invisible and
+  real repeated co-occurrences as bold, surfacing a graph's backbone
+  structure without deleting any data. Documented in
+  `references/text-network-analysis.md`.
+- **Betweenness caveat**: a high-betweenness, low-degree word can be a
+  citation/bibliographic artifact (author names, cities, publishers embedded
+  in book-review titles) rather than a genuine bridge concept — check the
+  source text before reporting one as a finding.
+- **ForceAtlas 2 numerical explosion gotcha**: a specific parameter
+  combination (high gravity + high edge-weight-influence + many iterations
+  on a weighted graph with a high-weight hub) drove node coordinates to
+  non-finite values silently (the layout call still reports success).
+  Documented with the fix in SKILL.md's known-issues section.
+
+## [1.9.6] (MCP server + Claude Code plugin only)
+
+### Fixed
+- **`gephi_text_to_network` / `build_cooccurrence_graph` no longer bridges
+  co-occurrence windows across document boundaries.** The function accepted
+  only one string, so a caller with many natural documents (article titles,
+  survey responses) had to concatenate them first — and the sliding window
+  would then silently connect the last word of one document to the first
+  words of the next, for every boundary in the corpus. `text` now also
+  accepts a list of strings; the window resets at each item. A single string
+  still works exactly as before. `stats.document_count` reports how many
+  units were actually processed.
+- Removed a stray InfraNodus citation from `gephi_text_to_network`'s
+  docstring (the tool's own design intentionally doesn't reference it).
+
+### Added
+- Skill reference guidance on checking for a self-referential hub before
+  styling by degree/frequency: a corpus that is *about* one subject (a
+  journal's own name in its own article titles) will surface that subject as
+  the dominant node without it reflecting any real structure — add it to
+  `extra_stopwords` and rebuild rather than reporting it as a finding.
+
+## [1.9.5] (MCP server + Claude Code plugin only)
+
+### Added
+- **`gephi_text_to_network`** — builds a word co-occurrence graph from free
+  text (lemmatized, stopwords removed, proximity-weighted sliding window)
+  and loads it directly into Gephi via the existing node/edge tools. No new
+  Java endpoints needed. New `text_network.py` module carries the pure
+  conversion logic, covered by its own unit tests independent of any MCP or
+  Gephi connection.
+- Lemmatization via NLTK's WordNet lemmatizer with POS tagging (not
+  stemming — the output words become visible node labels, so a stemmer's
+  mangled fragments would be visible in the graph). Degrades gracefully to
+  lowercasing only if NLTK's corpus data isn't installed locally; the tool's
+  returned stats disclose which mode actually ran.
+- New skill reference `references/text-network-analysis.md`: when a
+  structural gap is meaningful versus a sampling artifact, window-size
+  tradeoffs, reading betweenness centrality as bridge concepts on a text
+  network, and the lemmatizer's known limitations.
+
+### Changed
+- Added `nltk>=3.8` to `mcp-server`'s dependencies.
+
 ## [1.9.4] (Claude Code plugin only)
 
 The reading craft deepened from Jacomy's wider corpus (the 2021 dissertation,

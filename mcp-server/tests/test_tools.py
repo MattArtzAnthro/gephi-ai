@@ -156,15 +156,16 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_84_tools_registered():
+def test_all_88_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 84, f"expected 80 tools, found {len(names)}"
+    assert len(names) == 88, f"expected 88 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
         "gephi_color_by_ranking", "gephi_filter_by_degree", "gephi_view_graph",
         "gephi_visual_qa", "gephi_label_clusters", "gephi_focus_view",
+        "gephi_extract_backbone",
     ):
         assert expected in names, f"{expected} not registered"
 
@@ -252,3 +253,80 @@ async def test_focus_view_modes(rec):
     assert rec.last["json"] == {"mode": "region", "x": 0, "y": 0, "w": 100, "h": 80, "zoom": 1.5}
     await out_of(gephi_mcp.gephi_focus_view, select=["a", "b"])
     assert rec.last["json"] == {"mode": "graph", "select": ["a", "b"]}
+
+
+async def test_text_to_network_adds_nodes_then_edges(rec):
+    out = await out_of(gephi_mcp.gephi_text_to_network, text="the dog chased the cat")
+    assert rec.calls[0]["endpoint"] == "/graph/nodes/add"
+    assert rec.calls[1]["endpoint"] == "/graph/edges/add"
+    node_ids = {n["id"] for n in rec.calls[0]["json"]["nodes"]}
+    # "chased" lemmatizes to "chase" when NLTK's data is available locally;
+    # accept either so this test doesn't depend on that being installed.
+    assert node_ids in ({"dog", "chased", "cat"}, {"dog", "chase", "cat"})
+    assert out["success"] is True
+    assert out["stats"]["unique_words"] == 3
+
+
+async def test_text_to_network_clears_graph_first_when_requested(rec):
+    await out_of(gephi_mcp.gephi_text_to_network, text="dog cat", clear_existing=True)
+    assert rec.calls[0]["endpoint"] == "/graph/clear"
+    assert rec.calls[1]["endpoint"] == "/graph/nodes/add"
+    assert rec.calls[2]["endpoint"] == "/graph/edges/add"
+
+
+async def test_text_to_network_stops_if_clear_fails(rec):
+    rec.responses.append({"success": False, "error": "not connected"})
+    out = await out_of(gephi_mcp.gephi_text_to_network, text="dog cat", clear_existing=True)
+    assert len(rec.calls) == 1  # never reached nodes/add
+    assert out["success"] is False
+
+
+async def test_text_to_network_rejects_all_stopword_text(rec):
+    out = await out_of(gephi_mcp.gephi_text_to_network, text="the a an")
+    assert out["success"] is False
+    assert rec.calls == []  # never called Gephi at all
+
+
+async def test_text_to_network_passes_through_pos_filter_and_min_frequency(rec):
+    out = await out_of(
+        gephi_mcp.gephi_text_to_network,
+        text=["dog cat dog", "dog bird"],
+        pos_filter=None,
+        min_word_frequency=2,
+    )
+    node_ids = {n["id"] for n in rec.calls[0]["json"]["nodes"]}
+    assert node_ids == {"dog"}  # cat and bird each occur once, below the floor
+    assert out["stats"]["document_count"] == 2
+
+
+async def test_text_to_network_passes_through_merge_phrases(rec):
+    out = await out_of(
+        gephi_mcp.gephi_text_to_network,
+        text="dog cat bird",
+        merge_phrases=False,
+    )
+    assert out["stats"]["phrases_detected"] == 0
+
+
+async def test_extract_backbone_fetches_edges_prunes_and_reports_stats(rec):
+    rec.responses.append({
+        "success": True,
+        "edges": [
+            {"source": "a", "target": "b", "weight": 10.0},
+            {"source": "a", "target": "d", "weight": 1.0},
+        ],
+    })
+    out = await out_of(gephi_mcp.gephi_extract_backbone, alpha=0.05)
+    assert rec.calls[0]["method"] == "GET"
+    assert rec.calls[0]["endpoint"] == "/graph/edges"
+    assert out["success"] is True
+    # both edges are each some node's only edge (degree 1 on b and d), so
+    # both survive the disparity filter — nothing to remove here.
+    assert out["stats"]["edges_removed"] == 0
+    assert out["edges_removed_from_graph"] == 0
+
+
+async def test_extract_backbone_reports_failure_with_no_edges(rec):
+    rec.responses.append({"success": True, "edges": []})
+    out = await out_of(gephi_mcp.gephi_extract_backbone)
+    assert out["success"] is False

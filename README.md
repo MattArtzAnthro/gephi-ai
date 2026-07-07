@@ -17,7 +17,7 @@ Built for researchers working across network science and AI.
 <details>
 <summary>Full feature list</summary>
 
-- 86 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- 88 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
 - Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`
 - Two extra layouts beyond Gephi's own: by role played in the network, and by community (best for reply and retweet networks)
@@ -184,20 +184,20 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (84)
+## Tools (88)
 
 | Category | Count | Examples |
 |----------|-------|---------|
 | Project & Workspace | 10 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_rename_workspace` |
-| Graph Construction | 18 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node` |
-| Statistics | 12 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric, by name) |
-| Layout | 7 | `gephi_run_layout`, `gephi_get_layout_properties` |
+| Graph Construction | 17 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node`, `gephi_text_to_network` |
+| Statistics | 13 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric, by name) |
+| Layout | 8 | `gephi_run_layout`, `gephi_get_layout_properties`, `gephi_community_layout`, `gephi_similarity_layout` |
 | Appearance | 10 | `gephi_color_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
-| Filtering | 6 | `gephi_filter_by_degree`, `gephi_extract_giant_component` |
+| Filtering | 8 | `gephi_filter_by_degree`, `gephi_extract_giant_component`, `gephi_extract_backbone` |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
 | Preview & Export | 9 | `gephi_export_png`, `gephi_export_gexf`, `gephi_view_graph` |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
-| Health & Diagnostics | 2 | `gephi_health_check`, `gephi_visual_qa` |
+| Health & Diagnostics | 3 | `gephi_health_check`, `gephi_visual_qa`, `gephi_profile_graph` |
 | View / Camera | 1 | `gephi_focus_view` |
 
 ## Example workflows
@@ -232,7 +232,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 86 tools
+- **references/tool-reference.md** — Complete API reference for all 88 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

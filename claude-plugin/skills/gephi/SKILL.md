@@ -2,20 +2,20 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 86 Gephi MCP tools.
+  this skill provides workflows and best practices for the 88 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.5+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.4"
+  version: "1.9.14"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.4 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.14 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
-You have access to 86 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 88 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -44,7 +44,7 @@ You have access to 86 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Ge
 3. **Import** — `gephi_import_file` or build with `gephi_add_nodes`/`gephi_add_edges`
 4. **Statistics** — compute degree, modularity, etc.
 5. **Data-truth check** — before coloring by any claimed grouping, run `gephi_visual_qa` with `partition_column` set. If the verdict is "none", the attribute does not match the topology and coloring by it would mislead; compute real communities with `gephi_compute_modularity` instead (and say so). When building demo/synthetic networks, wire real structure: preferential attachment within communities, hub-biased bridges between them, within-group edge share above 60% — never random edges with decorative group labels.
-6. **Style** — color by partition, size by ranking. With community colors applied, tint edges by their source (`edge.color` set to `source`, `edge.opacity` 30-40) so edges carry community identity without noise.
+6. **Style** — color by partition, size by ranking. With community colors applied, tint edges by their source (`edge.color` set to `source`, `edge.opacity` 30-40) so edges carry community identity without noise. Exception: dense word co-occurrence graphs (text networks) — per-source edge coloring adds a second visual dimension on top of an already-high edge count and reads as busier, not clearer; use a flat neutral gray instead (see references/text-network-analysis.md).
 7. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"` (linLogMode true, gravity 0), then run `gephi_visual_qa` and export a small PNG to inspect; fix every warning and adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
 8. **Preview** — `gephi_set_preview_settings` for export appearance
 9. **Export** — size the canvas to the layout shape using `extent.suggested_export` from `gephi_visual_qa`, then `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation (pass `caption_column` for floating cluster captions; the app offers per-node ask-Claude, ego highlighting, in-place refresh, and a time slider on dynamic graphs); use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
@@ -179,6 +179,11 @@ pasted table): parse it yourself and batch `gephi_add_nodes` + `gephi_add_edges`
   edges yourself (only link above a threshold, put similarity in weight).
 - **JSON**: map objects to nodes, references between them to edges.
 - **RDF/triples**: subject and object as nodes, predicate as edge label.
+- **Free text** (an essay, transcript, article, or corpus, not already a
+  node/edge shape): `gephi_text_to_network` builds a word co-occurrence
+  graph directly — don't hand-parse prose yourself. See
+  references/text-network-analysis.md before reporting any structural gap
+  as a finding.
 
 Then run the standard flow (stats -> style -> layout -> QA). This replaces what
 portal users install separate importer plugins for, and it works with formats
@@ -190,7 +195,7 @@ those plugins never covered.
 `gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`, `gephi_duplicate_workspace`, `gephi_rename_workspace`
 
 ### Graph Construction
-`gephi_add_node`/`gephi_add_nodes`, `gephi_add_edge`/`gephi_add_edges`, `gephi_remove_node`/`gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`/`gephi_set_edge_label`, `gephi_set_node_position`/`gephi_batch_set_positions`, `gephi_set_edge_weight`, `gephi_query_nodes`, `gephi_get_node`, `gephi_query_edges`
+`gephi_add_node`/`gephi_add_nodes`, `gephi_add_edge`/`gephi_add_edges`, `gephi_remove_node`/`gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`/`gephi_set_edge_label`, `gephi_set_node_position`/`gephi_batch_set_positions`, `gephi_set_edge_weight`, `gephi_query_nodes`, `gephi_get_node`, `gephi_query_edges`, `gephi_text_to_network` (builds a word co-occurrence graph from free text, with optional `pos_filter="nouns"`, `min_word_frequency`, `merge_phrases`, `exclude_self_referential`/`self_referential_threshold` for document-frequency-based generic-hub detection, and `context_snippets` to attach real source-text excerpts to each flagged candidate for the gray-zone cases no threshold or word list can resolve — see references/text-network-analysis.md), `gephi_extract_backbone` (disparity-filter edge pruning — a principled alternative to a flat weight cutoff, see references/text-network-analysis.md)
 
 ### Statistics (run before styling)
 - `gephi_compute_modularity` → creates `modularity_class`
@@ -284,6 +289,8 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **For dark backgrounds, use the dark-surface variant of the community palette** (see Styling Defaults) — palettes tuned for white surfaces lose contrast on dark ones and vice versa.
 - **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
 - **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. Fix: use gravity 5–8 in FA2. Post-process in Python using centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
+- **ForceAtlas 2 can numerically explode, not just spread out** — observed once on a ~700-node/~1900-edge weighted graph with a high-weight hub, 1500 iterations: node coordinates reached `Infinity`/`NaN` (one node hit `1e37`), not just a large-but-finite bounding box. This is silent: the layout call still returns `success`. Check exported positions with `math.isfinite` before trusting a layout on a weighted graph with a strong hub. (The exact parameter combination that triggered it is unconfirmed — see the `/layout/run` request-key gotcha below, discovered afterward, which casts doubt on which properties were actually active for this run. Treat this as "FA2 can do this on some graphs," not as a specific combination to avoid.) Fix: reset with Random Layout and rerun rather than trying to nudge the exploded node back — the explosion wasn't confined to one node, it corrupted the whole layout.
+- **`/layout/run`'s tuning values must be sent under the key `"properties"`, not `"params"`** — when driving the Gephi HTTP API directly (not through `gephi_run_layout`, which builds this correctly), a request with the wrong key returns `success: true` and runs the layout on its plugin defaults, silently discarding every custom value. There is no error to catch this. The tell: changing `scalingRatio`/`gravity` across a wide range and getting back nearly the same layout extent every time — a layout genuinely that insensitive to a parameter is itself the anomaly. Verify the request shape (or just use `gephi_run_layout`) before concluding a parameter doesn't matter for a given graph. The same applies to `"Noverlap"`'s `speed`/`ratio`/`margin`, which default to `0.0` — a full no-op, not a gentle setting.
 - **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
 - **Vivid source colors are required for white-background visibility** — "soft pastel" appearance on white comes from vivid node colors rendered at high opacity (not from literally pale colors). Pastel node colors (e.g., [227,185,216]) are near-white and disappear even at 90% opacity. Use fully saturated colors (e.g., [220,30,80], [150,30,220]) — at 100% opacity with thick edges they produce a vivid, readable graph. Reduce opacity only if the graph is dense enough that overlapping edges create unwanted solid blobs.
 - **White background KG final settings that work** — `edge.opacity: 100`, `edge.thickness: 6`, `node size min 8 max 30`, vivid modularity colors, centroid-crop the export. These settings produce clearly visible colored lines on white.
@@ -527,3 +534,4 @@ top-PageRank members (`gephi_query_nodes` or the exported node table).
 For detailed tool parameters, see [references/tool-reference.md](references/tool-reference.md).
 For layout algorithm details, see [references/layout-guide.md](references/layout-guide.md).
 For statistics interpretation, see [references/statistics-guide.md](references/statistics-guide.md).
+For building and reading text networks, see [references/text-network-analysis.md](references/text-network-analysis.md).

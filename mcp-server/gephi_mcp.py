@@ -28,6 +28,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
 
 import gephi_mcp_viewer
+import text_network
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gephi_mcp")
@@ -1044,6 +1045,220 @@ async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
         content=[TextContent(type="text", text=summary)],
         structuredContent=structured,
     )
+
+
+# ─── Text ─────────────────────────────────────────────────────
+
+@mcp.tool(name="gephi_text_to_network")
+async def gephi_text_to_network(text: str | list[str], window_size: int = 4,
+                                min_edge_weight: float = 0.0,
+                                extra_stopwords: list[str] | None = None,
+                                pos_filter: str | None = None,
+                                min_word_frequency: int = 1,
+                                merge_phrases: bool = False,
+                                self_referential_threshold: float = 0.5,
+                                exclude_self_referential: bool = False,
+                                context_snippets: int = 0,
+                                clear_existing: bool = False) -> str:
+    """Convert free text into a word co-occurrence network and load it into Gephi.
+
+    Words are lemmatized and stopwords removed; an edge connects two words
+    that appear within `window_size` tokens of each other, weighted by
+    proximity (closer words get a stronger edge). The result is a normal
+    Gephi graph, so every other tool here (layout, community detection,
+    gephi_visual_qa, teachback) applies to it exactly as it would to any
+    other network, with no special-casing needed.
+
+    Pass a list of strings, not one concatenated string, whenever the input
+    is naturally many separate units — article titles, survey responses,
+    transcript turns, tweets. The co-occurrence window resets at each list
+    item; it never bridges from the end of one document into the start of
+    the next. Concatenating first and passing a single string will silently
+    manufacture edges between the last word of one document and the first
+    word of the next.
+
+    Before trusting the result, check stats.self_referential_candidates —
+    words appearing in an unusually large share of documents (the corpus's
+    own subject name, or generic prose scaffolding in full-text corpora)
+    will dominate the graph as a hub without discriminating anything, and
+    raw frequency rank alone is not a reliable way to catch this: a word can
+    be edged out of a top-N-by-count list by rarer, more topical words and
+    still be the single most universal word in the corpus. Add any flagged
+    candidate to extra_stopwords and rebuild rather than reporting it as a
+    finding.
+
+    Do not assume every high document-frequency word is generic scaffolding
+    though — on real data, a word appearing in ~40-50% of documents is
+    genuinely ambiguous: a legitimate topical hub word and a truly generic
+    one can land at nearly the same document ratio, and graph-structural
+    signals (degree, edge-weight concentration) don't reliably separate them
+    either. A word can also be a genuine but minor sub-topic hiding inside
+    what looks like scaffolding overall — on one real corpus, a word read as
+    filler from two arbitrary example sentences, but its single
+    highest-count document used it 184 times and turned out to be a genuine
+    article specifically about that word's own subject; a blanket exclusion
+    would have discarded that real sub-topic along with the actual noise.
+    This has to be read, not computed: rebuild with context_snippets=2-3 (excerpts
+    come from each word's highest-count documents first, precisely to catch
+    concentration like this) and check each candidate's peak_document_count
+    too — scaffolding words rarely repeat more than a dozen times even in
+    their heaviest document, while a real topic spikes much higher in the
+    documents actually about it. Neither signal is a substitute for reading
+    the excerpts; a word that's generic scaffolding on one corpus can be
+    exactly the topic on another, so treat both as evidence to weigh, not a
+    rule to apply blindly.
+
+    Suggested next steps: gephi_profile_network for structural stats, then a
+    layout, then betweenness centrality — high-betweenness words are bridge
+    concepts between topic clusters, a different signal from high-degree
+    words (frequency). Two dense clusters with few or no connecting edges (a
+    structural gap) is a candidate for insight, but verify it's a real
+    pattern rather than an artifact of a small or skewed sample before
+    treating it as a finding — run gephi_visual_qa with the partition set to
+    confirm it's topologically real first. Before naming a detected
+    community from its top words, read the source documents behind at least
+    2-3 of them (not just the highest one) — a shared high-degree word can be
+    a theoretical frame or stock phrase reused across otherwise-unrelated
+    documents rather than a real shared topic; see
+    references/text-network-analysis.md for how to tell the difference.
+
+    extra_stopwords: additional words to filter beyond the built-in English
+    stopword list (e.g. a recurring interviewer name in transcript data, or
+    the corpus's own subject terms).
+    pos_filter: None (default) keeps every part of speech. "nouns" restricts
+    the graph to noun tokens only — nouns carry the concept-level structure
+    of a discourse (Rule, Cointet, and Bearman 2015); a noun-only graph is
+    sparser and more topically legible, at the cost of losing the relational/
+    qualitative information verbs and adjectives carry. Falls back to no
+    filtering (disclosed via stats.pos_filter_applied) if the POS tagger
+    isn't installed.
+    min_edge_weight: drop weak co-occurrence edges after aggregation. For a
+    more principled alternative that doesn't apply one flat cutoff to every
+    node regardless of its own degree, build with min_edge_weight=0 and run
+    gephi_extract_backbone afterward instead.
+    min_word_frequency: drop words appearing fewer than this many times in
+    the whole corpus before building any edges (default 1 keeps everything).
+    Most unique words in natural text occur once or twice and contribute
+    long-tail node clutter rather than repeatable structure — raising this
+    to 2 or 3 is standard practice for reducing that clutter without
+    touching the edge-weight logic at all.
+    merge_phrases: if True, cohesive two-word phrases ("machine learning")
+    are detected corpus-wide and merged into one node instead of remaining
+    two separately co-occurring unigrams — qualifies only if both the POS
+    pattern (adjective+noun or noun+noun) and pointwise mutual information
+    clear a threshold, so frequent-but-unrelated adjacent words don't merge.
+    Disclosed via stats.phrases_detected. Default off (pure unigrams).
+    self_referential_threshold: flags any word appearing in at least this
+    fraction of documents (default 0.5) as a candidate self-referential/
+    generic hub, via stats.self_referential_candidates (each entry:
+    {"word", "document_frequency", "document_ratio", "peak_document_count"})
+    and each node's document_frequency attribute. Lower it (e.g. 0.3) for a
+    stricter check on a large or noisy corpus.
+    exclude_self_referential: if True, flagged words are actually dropped
+    from the graph, not just reported. Worth turning on for large multi-
+    document corpora specifically: a high min_word_frequency floor on its
+    own can select FOR generic words rather than against them there (a word
+    needs sustained presence across many documents to rack up a large total
+    count — on a real 255-document corpus, requiring 200+ occurrences left
+    half the surviving vocabulary flagged as present in most documents).
+    Default False since dropping a large share of the vocabulary is a real
+    methodological choice, not a silent default.
+    context_snippets: how many short excerpts of original surrounding text to
+    attach to each self_referential_candidate (default 0, off). Turn this on
+    when reviewing the gray zone (see above) — excerpts are pulled from each
+    word's highest-count documents first, not just the first documents it
+    happens to appear in, so a word concentrated as a real sub-topic in a
+    handful of documents doesn't get missed by chance. Reading those
+    excerpts is enough to tell "generic scaffolding" from "genuine topic
+    hub" on any dataset, without hand-grepping the source text or guessing
+    from a word list tuned on a different corpus.
+    clear_existing: if True, clears the current graph before loading this one.
+    """
+    graph = text_network.build_cooccurrence_graph(
+        text, window_size=window_size, min_edge_weight=min_edge_weight,
+        extra_stopwords=extra_stopwords, pos_filter=pos_filter,
+        min_word_frequency=min_word_frequency, merge_phrases=merge_phrases,
+        self_referential_threshold=self_referential_threshold,
+        exclude_self_referential=exclude_self_referential,
+        context_snippets=context_snippets,
+    )
+    if not graph["nodes"]:
+        return fmt({"success": False,
+                    "error": "No words survived stopword filtering; nothing to build.",
+                    "stats": graph["stats"]})
+
+    if clear_existing:
+        clear_result = await gephi.request("POST", "/graph/clear")
+        if not clear_result.get("success", True):
+            return fmt(clear_result)
+
+    node_result = await gephi.request("POST", "/graph/nodes/add", json_data={"nodes": graph["nodes"]})
+    if not node_result.get("success", True):
+        return fmt(node_result)
+
+    edge_result = await gephi.request("POST", "/graph/edges/add", json_data={"edges": graph["edges"]})
+
+    return fmt({
+        "success": edge_result.get("success", True),
+        "stats": graph["stats"],
+        "nodes_result": node_result,
+        "edges_result": edge_result,
+    })
+
+@mcp.tool(name="gephi_extract_backbone")
+async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) -> str:
+    """Prune the current graph to its statistically significant backbone.
+
+    Removes edges using the disparity filter (Serrano, Boguna, and
+    Vespignani 2009) instead of a single global weight cutoff: for each node,
+    an edge is judged significant relative to how that node's own total
+    weight is split across its neighbors, so a low-degree node's one real
+    connection survives even if its absolute weight is small, while a
+    high-degree hub's genuinely insignificant edges still get pruned even if
+    their absolute weight looks fine in isolation. This is the principled
+    alternative to min_edge_weight on gephi_text_to_network (a flat
+    threshold) or to visually rescaling edge thickness by weight (a display-
+    only fix that leaves the underlying graph, and any statistics computed
+    on it, unchanged).
+
+    Works on any weighted graph already loaded in Gephi, not just text
+    networks. Applies directly to the live graph: fetches all edges, computes
+    the backbone, and removes every edge that doesn't survive. This changes
+    the actual graph other tools see — recompute modularity/betweenness
+    afterward if you need them to reflect the pruned structure, since values
+    computed before pruning describe the pre-prune graph.
+
+    alpha: significance threshold (lower keeps fewer edges, a stricter
+    backbone); 0.05 and 0.01 are the values most commonly used in the
+    disparity-filter literature. max_edges: safety cap on how many edges this
+    will fetch/prune in one call — pruning removes edges one at a time
+    (no bulk-remove endpoint exists), so very large graphs will be slow;
+    raise the cap deliberately rather than by default.
+    """
+    edges_result = await gephi.request("GET", "/graph/edges", params={"limit": max_edges})
+    if not edges_result.get("success", True):
+        return fmt(edges_result)
+    edges = edges_result.get("edges", [])
+    if not edges:
+        return fmt({"success": False, "error": "No edges found on the current graph."})
+
+    backbone = text_network.extract_backbone(edges, alpha=alpha)
+    kept_pairs = {(e["source"], e["target"]) for e in backbone["edges"]}
+    to_remove = [e for e in edges if (e["source"], e["target"]) not in kept_pairs]
+
+    removed = 0
+    for e in to_remove:
+        result = await gephi.request("POST", "/graph/edge/remove",
+                                     json_data={"source": e["source"], "target": e["target"]})
+        if result.get("success", True):
+            removed += 1
+
+    return fmt({
+        "success": True,
+        "stats": backbone["stats"],
+        "edges_removed_from_graph": removed,
+        "edges_remaining": len(edges) - removed,
+    })
 
 
 # ─── Import ──────────────────────────────────────────────────

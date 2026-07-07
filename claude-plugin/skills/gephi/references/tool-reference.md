@@ -306,11 +306,24 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, modularity}`
 - **Notes**: Higher resolution = more communities. Use `gephi_color_by_partition` with `modularity_class` afterwards.
 
-### gephi_list_statistics` / `gephi_run_statistic` — enumerate and run ANY statistic incl. installed plugin metrics (Leiden etc.)
-- `gephi_compute_degree
+### gephi_compute_degree
 - **Method**: POST `/statistics/degree`
 - **Creates**: `degree`, `indegree`, `outdegree` on nodes
 - **Returns**: `{success, average_degree}`
+
+### gephi_list_statistics
+- **Method**: GET `/statistics/available`
+- **Returns**: every statistic name available in this Gephi instance, including built-ins and any installed plugin metric (e.g. Leiden Algorithm from the Gephi plugin portal)
+- **Notes**: run any listed name with `gephi_run_statistic`.
+
+### gephi_run_statistic
+- **Params**: `{name: str, params?: dict}` — `name` matches an entry from `gephi_list_statistics` (case-insensitive); `params` is an optional `{property: value}` map set on the statistic before it runs
+- **Notes**: the plugin-ecosystem passthrough — install a metric plugin in Gephi (Tools > Plugins) and it's immediately runnable here. Plugin statistics configured by a UI dialog usually need `params` (their fields start null/zero). Results land in node/edge columns as usual.
+
+### gephi_profile_graph
+- **Method**: exports the graph (GEXF) and computes size, density, degree distribution, connectivity, weight signal, modularity, and clustering coefficient in one call
+- **Params**: `{include_slow?: bool (false)}` — also computes average path length/diameter when true (expensive; only sensible under ~3k nodes)
+- **Notes**: run this first, before analyzing anything else. Auto-raises flags (fragmentation, hub dominance, likely hairball) to guide layout/sizing/coloring choices downstream.
 
 ### gephi_compute_betweenness
 - **Method**: POST `/statistics/betweenness`
@@ -390,6 +403,12 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{}` (empty)
 - **Notes**: Restores graph to full view (only works for non-destructive filters).
 
+### gephi_extract_backbone
+- **Method**: fetches all edges (GET `/graph/edges`), computes the disparity filter (Serrano, Boguna, and Vespignani 2009) client-side, removes every non-surviving edge one at a time (POST `/graph/edge/remove`)
+- **Params**: `{alpha?: float (0.05), max_edges?: int (20000)}` — lower alpha keeps fewer edges (stricter backbone); max_edges is a safety cap on how many edges this fetches/prunes in one call
+- **Returns**: `{success, stats: {edges_kept, edges_removed, alpha}, edges_removed_from_graph}`
+- **Warning**: Destructive. Works on any weighted graph, not just text networks — a principled alternative to a flat `min_edge_weight` cutoff (edge significance is judged per-node, relative to that node's own weight distribution, not one global threshold). Recompute modularity/betweenness afterward if needed; existing values describe the pre-prune graph.
+
 ## Preview Settings
 
 ### gephi_get_preview_settings
@@ -466,3 +485,11 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_import_csv
 - **Method**: POST `/import/csv`
 - **Params**: `{file: str}`
+
+## Text Network Analysis
+
+### gephi_text_to_network
+- **Method**: builds a word co-occurrence graph from free text client-side, loads it via `/graph/nodes/add` and `/graph/edges/add`
+- **Params**: `{text: str | list[str], window_size?: int (4), min_edge_weight?: float (0.0), extra_stopwords?: list[str], pos_filter?: "nouns", min_word_frequency?: int (1), merge_phrases?: bool (false), self_referential_threshold?: float (0.5), exclude_self_referential?: bool (false), context_snippets?: int (0), clear_existing?: bool (false)}`
+- **Returns**: `{success, stats: {raw_word_count, kept_word_count, unique_words, words_filtered, edge_count, document_count, lemmatization, pos_filter_applied, phrases_detected, self_referential_candidates}, nodes_result, edges_result}`
+- **Notes**: pass a list of strings, not one concatenated string, whenever the input is naturally many separate documents — the co-occurrence window resets at each list item rather than bridging between unrelated documents. Every node also carries a `document_frequency` attribute. Before trusting the result, check `stats.self_referential_candidates` (each entry: `word`, `document_frequency`, `document_ratio`, `peak_document_count`, plus `context` when `context_snippets > 0`) — a word appearing in an unusually large share of documents can dominate the graph without discriminating anything, and raw frequency rank alone won't reliably catch it. See references/text-network-analysis.md for the full craft knowledge on stopword handling, window size, and reading community structure.
