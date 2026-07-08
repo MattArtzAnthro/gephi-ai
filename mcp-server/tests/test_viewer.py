@@ -520,3 +520,58 @@ def test_structural_profile_leaf_majority_flag():
          "edges": [{"source": "n0", "target": f"n{i}"} for i in range(1, n)]}
     p = structural_profile(g)
     assert any("leaf-majority" in f for f in p["flags"])
+
+
+# ── Regression: partition column resolves by id OR title (2026-07-08) ──
+# Gephi's modularity column is id="modularity_class" / title="Modularity Class".
+# color_by_partition (Java) resolves by id; visual_qa/label_clusters/community_layout
+# (Python) used to resolve by title only, so the canonical "modularity_class" made
+# them see zero groups. parse_gexf now exposes attr_key and resolve_column_key.
+_ID_TITLE_GEXF = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<gexf xmlns="http://www.gexf.net/1.2draft" version="1.2">
+  <graph defaultedgetype="undirected">
+    <attributes class="node">
+      <attribute id="modularity_class" title="Modularity Class" type="integer"/>
+    </attributes>
+    <nodes>
+      <node id="a"><attvalues><attvalue for="modularity_class" value="0"/></attvalues></node>
+      <node id="b"><attvalues><attvalue for="modularity_class" value="0"/></attvalues></node>
+      <node id="c"><attvalues><attvalue for="modularity_class" value="1"/></attvalues></node>
+      <node id="d"><attvalues><attvalue for="modularity_class" value="1"/></attvalues></node>
+    </nodes>
+    <edges>
+      <edge id="0" source="a" target="b"/>
+      <edge id="1" source="c" target="d"/>
+    </edges>
+  </graph>
+</gexf>"""
+
+
+def test_attr_key_maps_id_title_and_normalized():
+    from gephi_mcp_viewer import resolve_column_key
+    g = parse_gexf(_ID_TITLE_GEXF)
+    # node attributes are keyed by title
+    assert g["nodes"][0]["attributes"]["Modularity Class"] == "0"
+    # resolve_column_key accepts id, title, and normalized variants
+    for name in ("modularity_class", "Modularity Class", "MODULARITY_CLASS", " modularity class "):
+        assert resolve_column_key(g, name) == "Modularity Class"
+    # a genuinely absent column falls through unchanged
+    assert resolve_column_key(g, "nope") == "nope"
+
+
+def test_analyze_graph_partition_accepts_id():
+    from gephi_mcp_viewer import analyze_graph
+    g = parse_gexf(_ID_TITLE_GEXF)
+    # both the id and the title must find the 2 real groups (not zero)
+    for name in ("modularity_class", "Modularity Class"):
+        p = analyze_graph(g, partition_column=name)["partition"]
+        assert p["groups"] == 2, f"{name!r} -> {p}"
+        assert p["verdict"] == "strong"
+
+
+def test_pick_cluster_hubs_accepts_id():
+    from gephi_mcp_viewer import pick_cluster_hubs
+    g = parse_gexf(_ID_TITLE_GEXF)
+    hubs = pick_cluster_hubs(g, "modularity_class")
+    assert set(hubs.keys()) == {"0", "1"}

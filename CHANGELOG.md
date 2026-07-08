@@ -4,6 +4,93 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## mcp-server 1.9.21 / claude-plugin 1.9.25
+
+### Added
+- **Update check in `gephi_health_check`.** Once per session, health check compares
+  the installed server/plugin and the Gephi `.nbm` against the latest release and, if
+  behind, returns an `update` field with a surface-specific "how to update" line — so
+  a stale install (the kind that silently hid `/teach` and newer tools) announces
+  itself instead of failing mysteriously. Reads one canonical `latest.json` from the
+  repo; fail-silent with a 2s timeout and cached per session, opt-out via
+  `GEPHI_SKIP_UPDATE_CHECK=1`. Because the Claude plugin pins the server version, a
+  behind-server signal also catches a stale plugin.
+
+## mcp-server 1.9.20 / claude-plugin 1.9.24
+
+### Fixed
+- **Slow statistics no longer time out on large graphs.** `gephi_compute_betweenness`
+  and `gephi_compute_avg_path_length` are all-pairs shortest paths (O(n·m)) and run
+  past the default 60s request timeout on big graphs — a scale test found betweenness
+  timing out at 10k nodes (it completed in ~77s, the client just gave up first). These
+  tools plus `gephi_run_statistic` now use an extended timeout (`GEPHI_SLOW_TIMEOUT`,
+  default 600s). The graph never wedged; only the client was cutting off early.
+
+### Added
+- **`tests/live_scale_test.py`** — a scale/perf harness running the core pipeline at
+  1k / 5k / 10k with per-op timing, and **`tests/test_edge_cases.py`** — 26 headless
+  unit tests for empty/directed/self-loop/parallel-edge/unicode/malformed/scale inputs.
+  Live smoke harness gained integrity probes (import, save-open round-trip, GEXF
+  round-trip, duplicate-workspace undo) and directed/empty edge-case scenarios.
+
+## Java plugin 1.2.15 / mcp-server 1.9.19 / claude-plugin 1.9.23
+
+### Fixed
+- **Opening a `.gephi` project now actually loads the graph.** `gephi_open_project`
+  reported success but landed in an empty workspace whenever a project was already
+  open — the graphstore never deserialized, so a saved graph appeared lost (it was
+  not; the file was intact). Root cause: the open did not close the current project
+  first, so the load landed in a broken half-state. It now closes the current
+  project before loading (as Gephi's own File > Open does) and returns the loaded
+  `node_count`/`edge_count`, so an empty result is reported rather than silent.
+
+### Changed
+- Docstrings steer reversible experiments away from save/reopen round-trips:
+  `gephi_duplicate_workspace` a copy and run the destructive step on the copy so
+  "undo" is an instant workspace switch (no disk), or snapshot with
+  `gephi_export_gexf` + `gephi_import_file`, which round-trips reliably. Noted on
+  `gephi_open_project` and `gephi_filter_by_degree` (whose removals are permanent).
+
+## Java plugin 1.2.14 / mcp-server 1.9.18 / claude-plugin 1.9.22
+
+Makes the "point at the graph and the agent reads it" coupling work without setup.
+
+### Changed
+- **Box-drag selection is enabled automatically** at the start of a session. The
+  human can drag a selection box around nodes right away and `gephi_get_selection`
+  reads exactly those nodes, with no need to first pick the rectangle tool from the
+  toolbar. Fires once and never overrides a mode the human later chooses.
+- **`gephi_get_selection` reads through Gephi's public API**
+  (`VisualizationController.getModel().getSelectedNodes()`) instead of reflecting
+  into the internal render engine, so it is robust across Gephi builds rather than
+  tied to one engine version.
+- The selection reply now reports canvas state — `rectangle_selection`,
+  `selection_enabled`, and `zoom` — so an empty selection can be explained (for
+  example, the human switched mouse modes) rather than returned silently.
+
+## Java plugin 1.2.13 / mcp-server 1.9.17 / claude-plugin 1.9.21
+
+Two correctness fixes found by a full 102-tool live smoke test at 1000-node scale
+(both invisible on small graphs). New reusable harness: `mcp-server/tests/live_smoke_test.py`.
+
+### Fixed
+- **Partition column resolved by id OR title.** `visual_qa`, `label_clusters`, and
+  `community_layout` matched a partition column by its **title** while
+  `color_by_partition` / `color_edges_by_partition` / `color_by_ranking` matched by
+  its **id**. Gephi's modularity column is id `modularity_class` / title
+  `Modularity Class`, so the canonical `modularity_class` made `visual_qa` report a
+  real, strong community partition as "none" — silently misfiring the data-truth
+  gate that `/beautify`, `/analyze-network`, and the layout-iterator agent depend
+  on. `parse_gexf` now exposes an id/title/normalized alias map and a
+  `resolve_column_key` helper; the three tools accept whichever name you pass.
+  (mcp-server 1.9.17; 3 regression tests added.)
+- **`set_layout_properties` no longer starts a layout.** It used to submit the
+  layout to the executor as a side effect, so the natural `set_layout_properties`
+  → `run_layout` sequence failed with "Layout already running." It is now
+  configure-only and stages its config for the next `run_layout` of that algorithm;
+  `run_layout(properties={...})` remains the one-step configure-and-run path.
+  (Java plugin 1.2.13.)
+
 ## claude-plugin 1.9.20
 
 Claude-plugin release (MCP server code unchanged). Adds specialized agents so

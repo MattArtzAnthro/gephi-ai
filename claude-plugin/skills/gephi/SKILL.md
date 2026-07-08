@@ -5,15 +5,15 @@ description: |
   this skill provides workflows and best practices for the 102 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.12+) installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.15+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.20"
+  version: "1.9.25"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.20 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.25 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 102 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -63,11 +63,12 @@ do anything the viewer can't follow.
 **The person can point back.** `gephi_get_selection` reads what they have selected
 in the Gephi window. Whenever they use deictic words about the canvas — "these",
 "this group", "the ones I selected" — read the selection FIRST and answer about
-those exact nodes; never ask them to type node names. Tell them early in a session
-HOW to point: the rectangle-selection tool (dashed-square icon, thin toolbar on
-the left edge of the canvas) — drag a box around nodes and it persists while they
-come back to the conversation. Hover highlighting is transient and does not
-register; the rectangle is the pointing gesture.
+those exact nodes; never ask them to type node names. Box-drag selection is turned
+on automatically at the start of a session, so just tell them they can drag a box
+around nodes and the selection persists while they come back to the conversation —
+no toolbar hunting. Hover highlighting is transient and does not register; the box
+drag is the pointing gesture. (If a reply's `rectangle_selection` is false they
+switched modes — the dashed-square icon in the thin left toolbar turns it back on.)
 
 **Close long sessions by naming the loop.** A working session reshapes both
 sides; say so before ending. One or two sentences on what you now do

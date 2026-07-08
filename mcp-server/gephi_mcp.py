@@ -17,9 +17,11 @@ Developed by Matt Artz (https://www.mattartz.me)
 
 import asyncio
 import contextlib
+import importlib.metadata
 import json
 import logging
 import os
+import re
 import tempfile
 from typing import Any
 
@@ -37,6 +39,71 @@ logger = logging.getLogger("gephi_mcp")
 # Gephi host/port or a slower machine without code changes.
 GEPHI_API_URL = os.environ.get("GEPHI_API_URL", "http://127.0.0.1:8080")
 REQUEST_TIMEOUT = float(os.environ.get("GEPHI_REQUEST_TIMEOUT", "60.0"))
+# Some statistics are O(n*m) (betweenness, average path length) or run an
+# unbounded plugin algorithm (run_statistic). On large graphs these legitimately
+# run well past the default timeout — the computation is fine, the client just
+# needs to wait longer. These tools pass SLOW_REQUEST_TIMEOUT explicitly.
+SLOW_REQUEST_TIMEOUT = float(os.environ.get("GEPHI_SLOW_TIMEOUT", "600.0"))
+
+# ── Version freshness (checked once per session in health_check) ──────────
+try:
+    __version__ = importlib.metadata.version("gephi-mcp")
+except Exception:  # running from source, not an installed dist
+    __version__ = None  # source run: no version to compare, server-freshness check skips
+# One canonical version file on main; a raw file is not GitHub-API-rate-limited.
+LATEST_URL = ("https://raw.githubusercontent.com/MattArtzAnthro/gephi-ai/"
+              "main/latest.json")
+_freshness_cache: dict[str, Any] = {}  # checked once per process
+
+
+def _semver(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3])
+
+
+def _is_behind(installed: str, latest: str) -> bool:
+    if not installed or not latest:
+        return False
+    try:
+        return _semver(installed) < _semver(latest)
+    except Exception:
+        return False
+
+
+async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
+    """Compare the running server + Gephi plugin against the latest published
+    versions. Fail-silent, 2s timeout, cached once per process, opt-out via
+    GEPHI_SKIP_UPDATE_CHECK. Returns an 'update' dict when something is behind."""
+    if os.environ.get("GEPHI_SKIP_UPDATE_CHECK"):
+        return None
+    if "result" in _freshness_cache:
+        return _freshness_cache["result"]
+    result = None
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            latest = (await client.get(LATEST_URL)).json()
+        behind = []
+        if _is_behind(__version__, latest.get("server")):
+            behind.append({"component": "gephi-ai plugin + server",
+                           "installed": __version__, "latest": latest["server"]})
+        nbm = health.get("version")  # Gephi plugin version from /health
+        if _is_behind(nbm, latest.get("nbm")):
+            behind.append({"component": "Gephi Desktop plugin (.nbm)",
+                           "installed": nbm, "latest": latest["nbm"]})
+        if behind:
+            result = {
+                "available": True,
+                "behind": behind,
+                "how_to_update": (
+                    "Claude Code: run `claude plugin update "
+                    "gephi-network-analysis@gephi-ai`, then restart. "
+                    "Claude Desktop: download the newest .mcpb from the Releases "
+                    "page. Gephi plugin: install the newest .nbm from Releases via "
+                    "Tools > Plugins > Downloaded, then restart Gephi."),
+            }
+    except Exception:
+        result = None  # never let a version check break health
+    _freshness_cache["result"] = result
+    return result
 
 mcp = FastMCP("gephi_mcp")
 
@@ -50,10 +117,11 @@ class GephiClient:
 
     async def request(self, method: str, endpoint: str,
                       params: dict[str, Any] | None = None,
-                      json_data: dict[str, Any] | None = None) -> dict[str, Any]:
+                      json_data: dict[str, Any] | None = None,
+                      timeout: float | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
                 response = await client.request(method=method, url=url, params=params, json=json_data)
                 response.raise_for_status()
                 return response.json()
@@ -98,8 +166,17 @@ async def gephi_health_check() -> str:
     lock counters: a nonzero "readers" while Gephi is idle means a leaked read
     hold (writes will fail until restart); "queued" > 0 for long means a writer
     is starving.
+
+    Also reports an `update` field once per session when the installed gephi-ai
+    (server/plugin or the Gephi .nbm) is behind the latest release. When present,
+    tell the user once, plainly, with the matching update step from how_to_update.
     """
-    return fmt(await gephi.request("GET", "/health"))
+    health = await gephi.request("GET", "/health")
+    if isinstance(health, dict) and health.get("success"):
+        update = await _check_freshness(health)
+        if update:
+            health["update"] = update
+    return fmt(health)
 
 
 # ─── Project ─────────────────────────────────────────────────
@@ -111,7 +188,15 @@ async def gephi_create_project(name: str = "New Project") -> str:
 
 @mcp.tool(name="gephi_open_project")
 async def gephi_open_project(file: str) -> str:
-    """Open an existing Gephi project file (.gephi). `file` is an absolute path."""
+    """Open an existing Gephi project file (.gephi). `file` is an absolute path.
+
+    Closes any current project first, then loads, and returns node_count/edge_count
+    so you can confirm the graph came back (a 0 count means the file was empty). For
+    a reversible experiment (a what-if, a teaching demo), prefer an in-memory undo
+    over a save/reopen round-trip: `gephi_duplicate_workspace` a copy and run the
+    destructive step on the copy, so "undo" is just switching back — instant, no disk.
+    If you must snapshot to disk, `gephi_export_gexf` + `gephi_import_file` also
+    round-trips reliably."""
     return fmt(await gephi.request("POST", "/project/open", json_data={"file": file}))
 
 @mcp.tool(name="gephi_save_project")
@@ -708,7 +793,8 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
     Gephi if graph_lock_stats shows readers stuck above zero).
     """
     return fmt(await gephi.request("POST", "/statistics/run",
-                                   json_data=_body(name=name, params=params)))
+                                   json_data=_body(name=name, params=params),
+                                   timeout=SLOW_REQUEST_TIMEOUT))
 
 @mcp.tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
@@ -717,8 +803,15 @@ async def gephi_compute_degree() -> str:
 
 @mcp.tool(name="gephi_compute_betweenness")
 async def gephi_compute_betweenness() -> str:
-    """Compute betweenness/closeness centrality, eccentricity, diameter, radius, avg path length."""
-    return fmt(await gephi.request("POST", "/statistics/betweenness"))
+    """Compute betweenness/closeness centrality, eccentricity, diameter, radius, avg path length.
+
+    This is all-pairs shortest paths (O(n*m)) — it is the slowest built-in metric
+    and scales steeply: near-instant at 1k nodes, ~15s at 5k, ~1min at 10k. It runs
+    with an extended timeout; on very large graphs (tens of thousands of nodes)
+    expect a wait, and consider whether degree or PageRank answers the question more
+    cheaply."""
+    return fmt(await gephi.request("POST", "/statistics/betweenness",
+                                   timeout=SLOW_REQUEST_TIMEOUT))
 
 @mcp.tool(name="gephi_compute_pagerank")
 async def gephi_compute_pagerank() -> str:
@@ -737,8 +830,12 @@ async def gephi_compute_clustering_coefficient() -> str:
 
 @mcp.tool(name="gephi_compute_avg_path_length")
 async def gephi_compute_avg_path_length() -> str:
-    """Compute the average shortest path length across all node pairs."""
-    return fmt(await gephi.request("POST", "/statistics/avg-path-length"))
+    """Compute the average shortest path length across all node pairs.
+
+    All-pairs shortest paths (O(n*m)), as slow as betweenness on large graphs; runs
+    with an extended timeout."""
+    return fmt(await gephi.request("POST", "/statistics/avg-path-length",
+                                   timeout=SLOW_REQUEST_TIMEOUT))
 
 @mcp.tool(name="gephi_compute_hits")
 async def gephi_compute_hits() -> str:
@@ -758,6 +855,12 @@ async def gephi_filter_by_degree(min: int = 0, max: int = 0, dry_run: bool = Fal
     """Filter the graph by node degree range, removing nodes outside it. Destructive.
 
     max=0 means no upper limit. dry_run=True reports how many nodes would be removed.
+    Removal is permanent (reset_filters does not restore deleted nodes). If the person
+    might want it back — any exploratory "what if we drop the low-degree nodes" — run
+    `gephi_duplicate_workspace` first and filter the copy, so switching workspaces is
+    the undo. For a scoped, non-destructive filter instead, `gephi_apply_filter` with
+    action="select" (visible-only) or "new_workspace" (subgraph copy) leaves the
+    original intact.
     """
     return fmt(await gephi.request("POST", "/filter/degree",
                                    json_data={"min": min, "max": max, "dry_run": dry_run}))
@@ -1104,18 +1207,19 @@ async def gephi_get_selection(clear: bool = False) -> str:
     "this group", "the ones I selected", "what did I grab?". Their selection is
     the answer; do not ask them to type node names.
 
-    How the human points: the rectangle-selection tool (dashed-square icon in
-    the thin toolbar on the left edge of the Overview canvas) — drag a box
-    around nodes and the selection persists until they box elsewhere. Tell them
-    this early in a watch-along session; it is the one selection mode that
-    survives the walk back to the conversation (plain hover highlighting is
-    transient and does not register).
+    How the human points: box-drag selection is turned ON automatically at the
+    start of the session, so they can just drag a box around nodes on the
+    Overview canvas and the selection persists until they box elsewhere — no need
+    to hunt for a toolbar tool. (If they switched to another mouse mode, the
+    dashed-square rectangle icon in the thin left toolbar turns it back on; plain
+    hover highlighting is transient and does not register.)
 
     Returns selected_now (the current persistent selection, capped at 200 with
-    selected_count giving the true total) plus clicks, a journal of node
-    clicks (only populated in selection modes that persist, so usually empty —
-    selected_now is the primary channel). clear=True empties the click journal
-    only; the live selection always reflects the canvas. Desktop only.
+    selected_count giving the true total), plus canvas state — rectangle_selection
+    (is box-drag active), selection_enabled, and zoom — so an empty selection can
+    be explained rather than left silent. Also returns clicks, a journal of node
+    clicks (usually empty; selected_now is the primary channel). clear=True empties
+    the click journal only; the live selection always reflects the canvas. Desktop only.
     """
     return fmt(await gephi.request(
         "GET", f"/selection?clear={'true' if clear else 'false'}"))

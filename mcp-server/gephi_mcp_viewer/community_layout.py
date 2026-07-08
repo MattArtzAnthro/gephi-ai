@@ -100,6 +100,8 @@ def compute_community_positions(graph, partition="Modularity Class",
     Returns (positions list of {"id", "x", "y"}, info dict).
     Raises ValueError when the partition attribute is absent.
     """
+    from gephi_mcp_viewer import resolve_column_key
+    partition = resolve_column_key(graph, partition)
     nodes = {n["key"]: n for n in graph["nodes"]}
     comm = {}
     for k, n in nodes.items():
@@ -182,6 +184,8 @@ def separation_score(graph, positions, partition="Modularity Class",
     positions: {id: (x, y)} or a list of {"id", "x", "y"} dicts.
     Returns None when fewer than two communities have min_members members.
     """
+    from gephi_mcp_viewer import resolve_column_key
+    partition = resolve_column_key(graph, partition)
     if isinstance(positions, list):
         positions = {p["id"]: (p["x"], p["y"]) for p in positions}
     groups = {}

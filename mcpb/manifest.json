@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "gephi-ai",
   "display_name": "Gephi AI (MCP)",
-  "version": "1.9.16",
+  "version": "1.9.21",
   "description": "Control Gephi with AI: 102 tools for network analysis plus an interactive in-chat graph viewer.",
   "long_description": "Connects Claude to Gephi Desktop through the Model Context Protocol: build, analyze, lay out, style, and export network graphs, run community detection and centrality, and render an interactive in-chat visualization (pan, zoom, cluster captions, time slider, ask-Claude-about-a-node). Requires Gephi Desktop with the Gephi AI (MCP) plugin installed and running (https://github.com/MattArtzAnthro/gephi-ai).",
   "author": {
@@ -12,20 +12,32 @@
   "homepage": "https://github.com/MattArtzAnthro/gephi-ai",
   "documentation": "https://github.com/MattArtzAnthro/gephi-ai#readme",
   "license": "Apache-2.0",
-  "keywords": ["gephi", "network-analysis", "graph", "visualization", "community-detection"],
+  "keywords": [
+    "gephi",
+    "network-analysis",
+    "graph",
+    "visualization",
+    "community-detection"
+  ],
   "server": {
     "type": "python",
     "entry_point": "server/main.py",
     "mcp_config": {
       "command": "python3",
-      "args": ["${__dirname}/server/main.py"],
+      "args": [
+        "${__dirname}/server/main.py"
+      ],
       "env": {
         "PYTHONPATH": "${__dirname}/server/lib"
       }
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "python": ">=3.10"
     }

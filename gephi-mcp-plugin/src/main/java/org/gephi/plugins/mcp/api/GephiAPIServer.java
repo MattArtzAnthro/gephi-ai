@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.12");
+            result.addProperty("version", "1.2.15");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -466,10 +466,10 @@ public class GephiAPIServer extends NanoHTTPD {
             if (body == null || !body.has("algorithm")) return errorResult("Missing 'algorithm'");
             String algo = body.get("algorithm").getAsString();
             int iterations = body.has("iterations") ? body.get("iterations").getAsInt() : 1000;
-            // Check if properties are provided - use setLayoutProperties for that
+            // Inline properties: configure and run in one step.
             if (body.has("properties") && body.get("properties").isJsonObject()) {
                 Map<String, Object> properties = GSON.fromJson(body.get("properties"), Map.class);
-                return service.setLayoutProperties(algo, properties, iterations);
+                return service.runLayout(algo, iterations, properties);
             }
             return service.runLayout(algo, iterations);
         }

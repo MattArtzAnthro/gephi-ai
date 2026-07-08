@@ -43,6 +43,21 @@ def _spells(elem):
     return spells or None
 
 
+def _norm_col(name) -> str:
+    """Normalize a column name for id-or-title matching (case/underscore/space)."""
+    return str(name).strip().lower().replace("_", " ").replace("-", " ")
+
+
+def resolve_column_key(graph: dict, name):
+    """Map a caller-supplied column name (id, title, or a normalized variant) to
+    the key actually used in node["attributes"]. Falls back to the raw name so a
+    genuinely absent column still surfaces as 'not found' downstream."""
+    if name is None:
+        return None
+    ak = graph.get("attr_key") or {}
+    return ak.get(name) or ak.get(_norm_col(name)) or name
+
+
 def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
     """Parse GEXF from a file path or a GEXF document string."""
     if path.lstrip().startswith("<"):
@@ -53,12 +68,21 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
     directed = graph_el.get("defaultedgetype", "undirected") == "directed"
 
     # Attribute id -> title map plus spec-mandated defaults (node attributes only).
-    titles, defaults = {}, {}
+    # Node attributes are keyed by TITLE below, but callers often pass a column's
+    # ID (e.g. Gephi's modularity column is id "modularity_class" / title
+    # "Modularity Class"). attr_key maps id, title, and normalized forms of both to
+    # the title key actually used in node["attributes"], so resolve_column_key can
+    # accept whichever name the caller has.
+    titles, defaults, attr_key = {}, {}, {}
     for attrs_el in _children(graph_el, "attributes"):
         if attrs_el.get("class") == "node":
             for a in _children(attrs_el, "attribute"):
-                title = a.get("title", a.get("id"))
-                titles[a.get("id")] = title
+                aid = a.get("id")
+                title = a.get("title", aid)
+                titles[aid] = title
+                for alias in (aid, title, _norm_col(aid), _norm_col(title)):
+                    if alias:
+                        attr_key.setdefault(alias, title)
                 for child in a:
                     if _local(child.tag) == "default" and child.text is not None:
                         defaults[title] = child.text
@@ -127,6 +151,7 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
         "dynamic": any(item.get("spells") for item in nodes + edges),
         "time_min": min(times) if times else None,
         "time_max": max(times) if times else None,
+        "attr_key": attr_key,
     }
 
 
@@ -225,6 +250,7 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
     }
 
     if partition_column:
+        partition_column = resolve_column_key(graph, partition_column)
         group = {n["key"]: n["attributes"].get(partition_column) for n in nodes}
         counted = [g for g in group.values() if g is not None]
         shares = {}
@@ -266,6 +292,7 @@ def pick_cluster_hubs(graph: dict, partition_column: str, prefer: str = "degree"
     biggest circle). Lexicographic key breaks remaining ties, so the result is
     deterministic. Nodes without the attribute are ignored.
     """
+    partition_column = resolve_column_key(graph, partition_column)
     degree: dict[str, int] = {}
     for e in graph["edges"]:
         degree[e["source"]] = degree.get(e["source"], 0) + 1

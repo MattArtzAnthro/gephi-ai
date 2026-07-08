@@ -20,7 +20,7 @@ class Recorder:
         self.calls = []
         self.responses = []  # optional queue of responses, FIFO
 
-    async def __call__(self, method, endpoint, params=None, json_data=None):
+    async def __call__(self, method, endpoint, params=None, json_data=None, timeout=None):
         self.calls.append(
             {"method": method, "endpoint": endpoint, "params": params, "json": json_data}
         )
@@ -353,7 +353,7 @@ class RoutingClient:
         self.calls = []
         self.next_id = max((w["id"] for w in workspaces), default=0) + 1
 
-    async def __call__(self, method, endpoint, params=None, json_data=None):
+    async def __call__(self, method, endpoint, params=None, json_data=None, timeout=None):
         self.calls.append({"method": method, "endpoint": endpoint, "params": params, "json": json_data})
         if endpoint == "/workspace/list":
             return {"success": True, "workspaces": [dict(w) for w in self.workspaces]}

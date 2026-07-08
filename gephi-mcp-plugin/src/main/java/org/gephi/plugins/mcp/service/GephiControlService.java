@@ -67,6 +67,11 @@ public class GephiControlService {
     private volatile String currentLayoutName = null;
     private volatile Future<?> layoutFuture = null;
     private final ExecutorService layoutExecutor = Executors.newSingleThreadExecutor();
+    // Config staged by setLayoutProperties (configure-only); the next runLayout of
+    // the same algorithm applies it. Lets set-then-run work without setLayoutProperties
+    // itself starting a layout.
+    private volatile Map<String, Object> pendingLayoutProps = null;
+    private volatile String pendingLayoutAlgo = null;
     // Stored when setPreviewSettings receives background.color — used by exportPng to composite background
     private volatile Color exportBackgroundColor = null;
 
@@ -77,6 +82,10 @@ public class GephiControlService {
     private static final int CLICK_JOURNAL_MAX = 50;
     private final java.util.ArrayDeque<JsonObject> clickJournal = new java.util.ArrayDeque<>();
     private volatile boolean clickListenerInstalled = false;
+    // Rectangle selection is turned on once per session so the human can box-select
+    // nodes for the agent to read without hunting for the toolbar tool. Set only
+    // after it actually succeeds (the view may not be started at the first attempt).
+    private volatile boolean rectangleAutoEnabled = false;
 
     private GephiControlService() {}
 
@@ -330,13 +339,39 @@ public class GephiControlService {
     }
 
     public JsonObject openProject(String filePath) {
+        File file = new File(filePath);
+        if (!file.exists()) return error("File not found: " + filePath);
+        try {
+            ProjectController pc = getProjectController();
+            // Close any open project FIRST. Opening a .gephi on top of an existing
+            // project lands in a broken half-state where the graphstore never
+            // deserializes into a queryable model — the "open reports success but the
+            // graph is blank" bug. Verified: open works as the first action on a fresh
+            // instance and fails only when a project is already open; Gephi's own
+            // File>Open closes first. closeCurrentProject touches UI, so run it on EDT.
+            if (pc.hasCurrentProject()) {
+                runOnEDT(() -> { pc.closeCurrentProject(); return null; });
+            }
+            // openProject(File) off the EDT: it blocks on a LongTaskExecutor Future
+            // whose completion needs a free EDT.
+            pc.openProject(file);
+        } catch (Exception e) {
+            return error("Failed to open project: " + e.getMessage());
+        }
+        // Report the actual loaded counts so an empty result is never a silent success.
         return runOnEDT(() -> {
-            File file = new File(filePath);
-            if (!file.exists()) return error("File not found: " + filePath);
-            try {
-                getProjectController().openProject(file);
-                return success("Project opened");
-            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            JsonObject r = success("Project opened");
+            Workspace cur = getProjectController().getCurrentWorkspace();
+            int nodes = 0, edges = 0;
+            if (cur != null) {
+                Graph g = getGraphController().getGraphModel(cur).getGraph();
+                nodes = g.getNodeCount();
+                edges = g.getEdgeCount();
+            }
+            r.addProperty("node_count", nodes);
+            r.addProperty("edge_count", edges);
+            if (nodes == 0) r.addProperty("warning", "opened but no nodes are in the current workspace");
+            return r;
         });
     }
 
@@ -1448,6 +1483,10 @@ public class GephiControlService {
     // ─── Layout ──────────────────────────────────────────────────────
 
     public JsonObject runLayout(String algo, int iterations) {
+        return runLayout(algo, iterations, null);
+    }
+
+    public JsonObject runLayout(String algo, int iterations, Map<String, Object> properties) {
         try {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
@@ -1455,6 +1494,13 @@ public class GephiControlService {
             Layout layout = findLayout(algo);
             if (layout == null) return error("Layout not found: " + algo);
             layout.setGraphModel(gm);
+            // Apply inline properties, or config staged earlier by setLayoutProperties.
+            if (properties == null && pendingLayoutProps != null && algo.equals(pendingLayoutAlgo)) {
+                properties = pendingLayoutProps;
+            }
+            pendingLayoutProps = null;
+            pendingLayoutAlgo = null;
+            if (properties != null) applyLayoutProperties(layout, properties);
             final Layout fl = layout;
             final int iters = iterations > 0 ? iterations : 1000;
             if (!layoutRunning.compareAndSet(false, true)) return error("Layout already running");
@@ -1534,68 +1580,68 @@ public class GephiControlService {
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
+    /** Match each Layout property against a caller-supplied key map and set it. */
+    private void applyLayoutProperties(Layout layout, Map<String, Object> properties) {
+        if (properties == null) return;
+        LayoutProperty[] props = layout.getProperties();
+        if (props == null) return;
+        for (LayoutProperty prop : props) {
+            String canonicalName = prop.getCanonicalName() != null ? prop.getCanonicalName() : "";
+            String displayName = prop.getProperty().getDisplayName();
+            // Extract middle key from "AlgoName.propertyKey.name" pattern
+            String canonicalKey = "";
+            if (!canonicalName.isEmpty()) {
+                String[] parts = canonicalName.split("\\.");
+                if (parts.length >= 3) canonicalKey = parts[parts.length - 2];
+            }
+            Object val = properties.get(canonicalKey);
+            if (val == null && !canonicalName.isEmpty()) val = properties.get(canonicalName);
+            if (val == null) val = properties.get(displayName);
+            if (val == null) {
+                for (Map.Entry<String, Object> e : properties.entrySet()) {
+                    String k = e.getKey();
+                    if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
+                            || k.equalsIgnoreCase(displayName)
+                            || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
+                        val = e.getValue();
+                        break;
+                    }
+                }
+            }
+            if (val != null) {
+                Class<?> type = prop.getProperty().getValueType();
+                Object converted = convertLayoutProperty(val, type);
+                if (converted != null) {
+                    try { prop.getProperty().setValue(converted); }
+                    catch (Exception e) { LOGGER.log(Level.WARNING, "Set layout property failed", e); }
+                }
+            }
+        }
+    }
+
+    /**
+     * Configure a layout's properties WITHOUT running it. The config is staged so
+     * the next runLayout of the same algorithm applies it — set-then-run works,
+     * and this call no longer hijacks the layout executor (which broke a following
+     * run_layout with "Layout already running"). Prefer run_layout(properties=...)
+     * to configure and run in one step.
+     */
     public JsonObject setLayoutProperties(String algo, Map<String, Object> properties, int iterations) {
         try {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
             Layout layout = findLayout(algo);
             if (layout == null) return error("Layout not found: " + algo);
-            layout.setGraphModel(gm);
-
-            // Set properties
-            if (properties != null) {
-                LayoutProperty[] props = layout.getProperties();
-                if (props != null) {
-                    for (LayoutProperty prop : props) {
-                        String canonicalName = prop.getCanonicalName() != null ? prop.getCanonicalName() : "";
-                        String displayName = prop.getProperty().getDisplayName();
-                        // Extract middle key from "AlgoName.propertyKey.name" pattern
-                        String canonicalKey = "";
-                        if (!canonicalName.isEmpty()) {
-                            String[] parts = canonicalName.split("\\.");
-                            if (parts.length >= 3) canonicalKey = parts[parts.length - 2];
-                        }
-                        Object val = properties.get(canonicalKey);
-                        if (val == null && !canonicalName.isEmpty()) val = properties.get(canonicalName);
-                        if (val == null) val = properties.get(displayName);
-                        if (val == null) {
-                            for (Map.Entry<String, Object> e : properties.entrySet()) {
-                                String k = e.getKey();
-                                if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
-                                        || k.equalsIgnoreCase(displayName)
-                                        || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
-                                    val = e.getValue();
-                                    break;
-                                }
-                            }
-                        }
-                        if (val != null) {
-                            Class<?> type = prop.getProperty().getValueType();
-                            Object converted = convertLayoutProperty(val, type);
-                            if (converted != null) prop.getProperty().setValue(converted);
-                        }
-                    }
-                }
-            }
-
-            // Run layout with configured properties
-            final Layout fl = layout;
-            final int iters = iterations > 0 ? iterations : 1000;
-            if (!layoutRunning.compareAndSet(false, true)) return error("Layout already running");
-            currentLayoutName = algo;
-            layoutFuture = layoutExecutor.submit(() -> {
-                try {
-                    fl.initAlgo();
-                    for (int i = 0; i < iters && layoutRunning.get() && fl.canAlgo(); i++) fl.goAlgo();
-                    fl.endAlgo();
-                } catch (Exception e) { LOGGER.log(Level.WARNING, "Layout error", e); }
-                finally { layoutRunning.set(false); currentLayoutName = null; }
-            });
+            layout.setGraphModel(currentGraphModel());
+            applyLayoutProperties(layout, properties);
+            pendingLayoutProps = properties;
+            pendingLayoutAlgo = algo;
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
             r.addProperty("layout", algo);
-            r.addProperty("status", "running");
+            r.addProperty("configured", true);
+            r.addProperty("running", false);
+            r.addProperty("note", "properties staged; the next run_layout of this algorithm applies them");
             return r;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -2759,6 +2805,29 @@ public class GephiControlService {
             }
         });
         clickListenerInstalled = true;
+        ensureRectangleSelection();
+    }
+
+    /**
+     * Turn on rectangle (box-drag) selection once per session so the human can
+     * point at nodes for the agent to read, without first clicking the toolbar's
+     * selection tool. No-op if the view isn't started yet (retried on the next
+     * call) or if it is already on. Never overrides a mode the human later sets
+     * on their own — it fires at most once, and only while selection is still off.
+     */
+    void ensureRectangleSelection() {
+        if (rectangleAutoEnabled) return;
+        try {
+            org.gephi.visualization.api.VisualizationController vc = Lookup.getDefault()
+                .lookup(org.gephi.visualization.api.VisualizationController.class);
+            if (vc == null) return;
+            org.gephi.visualization.api.VisualizationModel model = vc.getModel();
+            if (model == null) return;  // view not started; try again next call
+            if (!model.isRectangleSelection()) vc.setRectangleSelection();
+            rectangleAutoEnabled = true;
+        } catch (Throwable t) {
+            // Never disturb a health/selection call over a viz hiccup.
+        }
     }
 
     private void recordClick(Node[] nodes) {
@@ -2806,29 +2875,30 @@ public class GephiControlService {
      */
     public JsonObject getSelection(boolean clear) {
         ensureClickListener();
+        ensureRectangleSelection();
         JsonObject r = success("Human selection");
         JsonArray selected = new JsonArray();
         int totalSelected = 0;
         try {
-            Object vc = Lookup.getDefault().lookup(
-                org.gephi.visualization.api.VisualizationController.class);
+            org.gephi.visualization.api.VisualizationController vc = Lookup.getDefault()
+                .lookup(org.gephi.visualization.api.VisualizationController.class);
             if (vc != null) {
-                Object opt = vc.getClass().getMethod("getEngine").invoke(vc);
-                if (opt instanceof java.util.Optional && ((java.util.Optional<?>) opt).isPresent()) {
-                    Object engine = ((java.util.Optional<?>) opt).get();
-                    Object gsel = engine.getClass().getMethod("getGraphSelection").invoke(engine);
-                    if (gsel != null) {
-                        java.lang.reflect.Method m = gsel.getClass().getMethod("getSelectedNodes");
-                        m.setAccessible(true);
-                        Object coll = m.invoke(gsel);
-                        if (coll instanceof java.util.Collection) {
-                            for (Object o : (java.util.Collection<?>) coll) {
-                                totalSelected++;
-                                if (o instanceof Node && selected.size() < SELECTION_MAX_NODES) {
-                                    selected.add(nodeRef((Node) o));
-                                }
-                            }
-                        }
+                // Report the canvas state so the agent can explain an empty selection
+                // (e.g. rectangle mode off) instead of silently returning nothing.
+                org.gephi.visualization.api.VisualizationModel model = vc.getModel();
+                java.util.Collection<Node> sel = null;
+                if (model != null) {
+                    r.addProperty("selection_enabled", model.isSelectionEnabled());
+                    r.addProperty("rectangle_selection", model.isRectangleSelection());
+                    r.addProperty("zoom", model.getZoom());
+                    // Public read path — no dependency on the internal viz engine.
+                    sel = model.getSelectedNodes();
+                }
+                if (sel == null) sel = engineSelectionFallback(vc);  // older builds
+                if (sel != null) {
+                    for (Node n : sel) {
+                        totalSelected++;
+                        if (selected.size() < SELECTION_MAX_NODES) selected.add(nodeRef(n));
                     }
                 }
             }
@@ -2849,6 +2919,36 @@ public class GephiControlService {
         r.addProperty("click_count", clicks.size());
         r.addProperty("listener_active", clickListenerInstalled);
         return r;
+    }
+
+    /**
+     * Legacy read path for Gephi builds whose VisualizationModel does not carry the
+     * selection: reflect into the render engine
+     * (VisualizationController.getEngine() -> VizEngine.getGraphSelection() ->
+     * getSelectedNodes()). Returns null when unavailable so the caller can fall back
+     * to an empty selection. Reflection-only to avoid a compile-time dependency on
+     * the engine module.
+     */
+    @SuppressWarnings("unchecked")
+    private java.util.Collection<Node> engineSelectionFallback(Object vc) {
+        try {
+            Object opt = vc.getClass().getMethod("getEngine").invoke(vc);
+            if (opt instanceof java.util.Optional && ((java.util.Optional<?>) opt).isPresent()) {
+                Object engine = ((java.util.Optional<?>) opt).get();
+                Object gsel = engine.getClass().getMethod("getGraphSelection").invoke(engine);
+                if (gsel != null) {
+                    java.lang.reflect.Method m = gsel.getClass().getMethod("getSelectedNodes");
+                    m.setAccessible(true);
+                    Object coll = m.invoke(gsel);
+                    if (coll instanceof java.util.Collection) {
+                        return (java.util.Collection<Node>) coll;
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            // Unavailable on this build; caller reports an empty selection.
+        }
+        return null;
     }
 
     // ─── View / camera control (teaching mode) ──────────────────────────
