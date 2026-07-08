@@ -67,8 +67,11 @@ The number of connections each node has. In directed graphs, distinguishes betwe
 
 ### Interpretation
 - **High degree nodes**: Hubs, influencers, central actors
-- **Power-law distribution**: Scale-free network (few hubs, many low-degree nodes)
-- **Normal distribution**: Random-like network
+- **Heavy-tailed distribution** (a few high-degree hubs, many low-degree nodes):
+  describe it as hub dominance in *this* network. Do NOT call it "scale-free" or
+  fit a "power law" — power-law and log-normal fits are near-indistinguishable in
+  practice and the label smuggles in a universal-law claim (Jacomy 2020).
+- **Even distribution**: connections spread across nodes, no dominant hubs
 
 ## Betweenness Centrality
 

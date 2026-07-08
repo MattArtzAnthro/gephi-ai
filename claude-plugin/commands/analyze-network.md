@@ -25,7 +25,7 @@ Run a full structural analysis of the current graph and present a detailed repor
    decide which deeper analyses are worth running rather than running
    everything.
 
-4. **Degree distribution**: Call `gephi_compute_degree`. Query nodes to understand the degree distribution — report min, max, average, and whether it follows a power-law (scale-free) or normal distribution.
+4. **Degree distribution**: Call `gephi_compute_degree`. Query nodes to understand the degree distribution — report min, max, average, and whether it is heavy-tailed (a few high-degree hubs) or even. Do NOT label it "scale-free" or "power-law": those fits are near-indistinguishable from log-normal in practice and smuggle in a universal-law claim (Jacomy 2020). Describe hub dominance as a property of this network, not a law.
 
 5. **Community structure**: Call `gephi_compute_modularity` with resolution 1.0. Report the modularity score and number of communities.
 
@@ -52,8 +52,11 @@ Run a full structural analysis of the current graph and present a detailed repor
    ### Key Nodes
    - Top 5 by degree, betweenness, and PageRank
 
-   ### Network Classification
-   - Classify the network type (scale-free, small-world, random, regular) based on the metrics
+   ### Structural character
+   - Describe the network's structure in this-network terms: hub dominance (a few
+     nodes concentrate ties) vs. even degree; clustering + path length relative to
+     size (small-world-*like*, stated as a comparison, not a label); fragmentation.
+     Do NOT slap on universal-law labels ("scale-free") — see step 4.
 
 ## Reading pass (after the numbers)
 

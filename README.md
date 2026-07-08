@@ -19,7 +19,8 @@ Built for researchers working across network science and AI.
 
 - 102 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
-- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach`
+- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`
+- Specialized agents that run multi-step work in their own context and hand back just the result: independent claim verification, layout iteration, structural analysis, and text-network construction
 - Two extra layouts beyond Gephi's own: by role played in the network, and by community (best for reply and retweet networks)
 - Reads your selection in the Gephi window, so "what did I select?" just works
 - Drives any layout or metric plugin installed from the Gephi plugin portal
@@ -178,8 +179,8 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 
 | Component | What it does |
 |-----------|-------------|
-| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/teach` |
-| **Network analyst agent** | Specialized subagent for deep structural analysis, metric comparison, and network classification |
+| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach` |
+| **Agents** | Subagents that run multi-step work in their own context and return just the result: `network-analyst` (structural interpretation), `claim-verifier` (independently checks one claim — confirmed / refuted / can't-tell, with the number), `layout-iterator` (runs the beautify loop to a publication-ready map), `text-network-builder` (turns free text into a word co-occurrence network) |
 | **Gephi skill** | Teaches Claude network science workflows, visualization best practices, and known Gephi gotchas |
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |

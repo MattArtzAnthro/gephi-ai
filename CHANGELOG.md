@@ -4,6 +4,49 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## claude-plugin 1.9.20
+
+Claude-plugin release (MCP server code unchanged). Adds specialized agents so
+multi-step work runs in its own context and returns just the result, repairs a
+drift in the existing analyst agent, and corrects the bundled server pin so the
+plugin runs the full 102-tool server.
+
+### Added — Agents
+- **`claim-verifier`** — independently checks one plain-language structural claim
+  ("she's more central than he is," "these two teams barely interact," "the org
+  survives losing him") and reports **confirmed / refuted / can't-tell** with the
+  actual number. Read-only; its value is independence — a fresh agent isn't rooting
+  for the claim. New **`/verify-claim`** command dispatches it.
+- **`layout-iterator`** — runs the whole run → visual_qa → inspect → adjust loop to
+  a publication-ready map in its own context, returning the export, caption, and a
+  change log. **`/beautify`** now dispatches it instead of inlining the loop.
+- **`text-network-builder`** — turns free text (transcripts, field notes, survey
+  answers) into a word co-occurrence network, inspecting the vocabulary and
+  rebuilding with better stopwords/POS/frequency settings before layout. New
+  **`/text-network`** command dispatches it.
+
+### Changed
+- **`network-analyst`** agent rewritten to be thin and defer to the gephi skill's
+  reference docs rather than re-encoding analytical judgment; scoped to read-leaning
+  tools (it interprets, it does not restyle) and given hard guardrails.
+- All new agents and the analyst embed the same non-negotiables the skill teaches:
+  never assert "scale-free"/"power-law," never read a metric in isolation, keep a
+  first reading provisional, verify a claimed grouping before trusting it.
+
+### Fixed
+- **Scale-free drift** in the `/analyze-network` command: the degree-distribution
+  and classification steps told the model to label distributions "scale-free /
+  power-law," contradicting the skill (Jacomy 2020). Both now describe hub
+  dominance as a property of *this* network and forbid the universal-law label.
+- **Bundled server pin** in `.mcp.json` corrected from `gephi-mcp==1.9.1` (86
+  tools) to `==1.9.16` (102 tools). The pin had lagged since the Groups C–G
+  release, so the plugin was running a server that predated the filter, what-if,
+  compare-nodes, edge-appearance, and text-network tools its commands and agents
+  call.
+- **Statistics reference** (`references/statistics-guide.md`) no longer equates a
+  power-law degree distribution with a "scale-free network" — the one spot in the
+  skill's own reference docs that still asserted the label the skill forbids.
+
 ## Java plugin 1.2.12 / mcp-server 1.9.16 / claude-plugin 1.9.19
 
 Groups C–G of the integration-candidates build-out, in one plugin release —
