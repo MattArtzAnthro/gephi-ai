@@ -290,3 +290,24 @@ async def test_freshness_fails_silent_on_network_error(monkeypatch):
 
     monkeypatch.setattr(g.httpx, "AsyncClient", _Boom)
     assert await g._check_freshness({"version": "1.2.15"}) is None  # never raises
+
+
+async def test_freshness_current_returns_available_false(monkeypatch):
+    import gephi_mcp as g
+    g._freshness_cache.clear()
+    monkeypatch.delenv("GEPHI_SKIP_UPDATE_CHECK", raising=False)
+    monkeypatch.setattr(g, "__version__", "1.0.0")
+
+    class _Resp:
+        def json(self):
+            return {"server": "1.0.0", "nbm": "1.2.15"}  # exactly current
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url): return _Resp()
+
+    monkeypatch.setattr(g.httpx, "AsyncClient", _Client)
+    r = await g._check_freshness({"version": "1.2.15"})
+    assert r == {"available": False}  # checked and current, distinct from None

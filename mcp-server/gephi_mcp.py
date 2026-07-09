@@ -100,8 +100,10 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
                     "page. Gephi plugin: install the newest .nbm from Releases via "
                     "Tools > Plugins > Downloaded, then restart Gephi."),
             }
+        else:
+            result = {"available": False}  # checked and current (distinct from None)
     except Exception:
-        result = None  # never let a version check break health
+        result = None  # check couldn't run (offline/error) — status unknown, stay silent
     _freshness_cache["result"] = result
     return result
 
@@ -167,15 +169,24 @@ async def gephi_health_check() -> str:
     hold (writes will fail until restart); "queued" > 0 for long means a writer
     is starving.
 
-    Also reports an `update` field once per session when the installed gephi-ai
-    (server/plugin or the Gephi .nbm) is behind the latest release. When present,
-    tell the user once, plainly, with the matching update step from how_to_update.
+    Also reports `server_version` (the MCP server) alongside `version` (the Gephi
+    plugin), plus a freshness signal checked once per session: `update` when the
+    install is behind the latest release (tell the user once, plainly, with the
+    how_to_update step), or `up_to_date: true` when it is current. Neither appears
+    if the check can't reach the network (then say nothing about versions).
     """
     health = await gephi.request("GET", "/health")
     if isinstance(health, dict) and health.get("success"):
-        update = await _check_freshness(health)
-        if update:
-            health["update"] = update
+        # Surface the MCP server version alongside the Gephi plugin version (the
+        # response's "version" field) so what's installed is always visible, not
+        # inferred from silence.
+        health["server_version"] = __version__ or "unknown (running from source)"
+        fresh = await _check_freshness(health)
+        if fresh and fresh.get("available"):
+            health["update"] = fresh          # something is behind
+        elif fresh is not None:
+            health["up_to_date"] = True       # checked and current
+        # fresh is None -> couldn't check (offline/opt-out); say nothing
     return fmt(health)
 
 
