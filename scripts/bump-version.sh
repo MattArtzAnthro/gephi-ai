@@ -18,6 +18,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Portable in-place sed (BSD/macOS needs an empty -i arg; GNU/Linux does not).
+sedi() {
+  if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi
+}
+
 NEW_SERVER="" NEW_JAVA="" NEW_PLUGIN=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -44,27 +49,27 @@ PY
 
 if [ -n "$NEW_SERVER" ] && [ "$NEW_SERVER" != "$OLD_SERVER" ]; then
   echo "server  $OLD_SERVER -> $NEW_SERVER"
-  sed -i '' "s/^version = \"$OLD_SERVER\"/version = \"$NEW_SERVER\"/" mcp-server/pyproject.toml
-  sed -i '' "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" claude-plugin/.mcp.json
+  sedi "s/^version = \"$OLD_SERVER\"/version = \"$NEW_SERVER\"/" mcp-server/pyproject.toml
+  sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" claude-plugin/.mcp.json
   jset mcpb/manifest.json version "$NEW_SERVER"
   jset latest.json server "$NEW_SERVER"
 fi
 
 if [ -n "$NEW_JAVA" ] && [ "$NEW_JAVA" != "$OLD_JAVA" ]; then
   echo "java    $OLD_JAVA -> $NEW_JAVA"
-  sed -i '' "s|<version>$OLD_JAVA</version>|<version>$NEW_JAVA</version>|" gephi-mcp-plugin/pom.xml
-  sed -i '' "s/\"version\", \"$OLD_JAVA\"/\"version\", \"$NEW_JAVA\"/" \
+  sedi "s|<version>$OLD_JAVA</version>|<version>$NEW_JAVA</version>|" gephi-mcp-plugin/pom.xml
+  sedi "s/\"version\", \"$OLD_JAVA\"/\"version\", \"$NEW_JAVA\"/" \
     gephi-mcp-plugin/src/main/java/org/gephi/plugins/mcp/api/GephiAPIServer.java
-  sed -i '' "s/gephi-mcp-$OLD_JAVA\.nbm/gephi-mcp-$NEW_JAVA.nbm/g" README.md
-  sed -i '' "s/Gephi MCP Plugin ($OLD_JAVA+)/Gephi MCP Plugin ($NEW_JAVA+)/" claude-plugin/skills/gephi/SKILL.md
+  sedi "s/gephi-mcp-$OLD_JAVA\.nbm/gephi-mcp-$NEW_JAVA.nbm/g" README.md
+  sedi "s/Gephi MCP Plugin ($OLD_JAVA+)/Gephi MCP Plugin ($NEW_JAVA+)/" claude-plugin/skills/gephi/SKILL.md
   jset latest.json nbm "$NEW_JAVA"
 fi
 
 if [ -n "$NEW_PLUGIN" ] && [ "$NEW_PLUGIN" != "$OLD_PLUGIN" ]; then
   echo "plugin  $OLD_PLUGIN -> $NEW_PLUGIN"
   jset claude-plugin/.claude-plugin/plugin.json version "$NEW_PLUGIN"
-  sed -i '' "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" claude-plugin/skills/gephi/SKILL.md
-  sed -i '' "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" claude-plugin/skills/gephi/SKILL.md
+  sedi "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" claude-plugin/skills/gephi/SKILL.md
+  sedi "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" claude-plugin/skills/gephi/SKILL.md
   jset latest.json plugin "$NEW_PLUGIN"
 fi
 

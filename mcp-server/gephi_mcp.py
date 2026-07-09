@@ -190,9 +190,14 @@ async def gephi_create_project(name: str = "New Project") -> str:
 async def gephi_open_project(file: str) -> str:
     """Open an existing Gephi project file (.gephi). `file` is an absolute path.
 
-    Closes any current project first, then loads, and returns node_count/edge_count
-    so you can confirm the graph came back (a 0 count means the file was empty). For
-    a reversible experiment (a what-if, a teaching demo), prefer an in-memory undo
+    WARNING: this closes the current project first, DISCARDING any unsaved changes
+    in it without prompting (unlike Gephi's own File > Open). If the current graph
+    has unsaved work the person might want, `gephi_save_project` it (or confirm with
+    them) BEFORE opening another file.
+
+    It then loads and returns node_count/edge_count so you can confirm the graph came
+    back (a 0 count means the file was empty). For a reversible experiment (a
+    what-if, a teaching demo), prefer an in-memory undo
     over a save/reopen round-trip: `gephi_duplicate_workspace` a copy and run the
     destructive step on the copy, so "undo" is just switching back — instant, no disk.
     If you must snapshot to disk, `gephi_export_gexf` + `gephi_import_file` also

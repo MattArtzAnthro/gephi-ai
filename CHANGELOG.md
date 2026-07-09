@@ -4,6 +4,15 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## mcp-server 1.9.22 / claude-plugin 1.9.26
+
+### Changed
+- **`gephi_open_project` now warns that it discards the current project.** Opening a
+  `.gephi` closes the current project first (needed for the load to work), which drops
+  any unsaved changes in it without prompting — unlike Gephi's own File > Open. The
+  docstring now says so explicitly, so the assistant offers to save (or confirm) before
+  opening another file.
+
 ## mcp-server 1.9.21 / claude-plugin 1.9.25
 
 ### Added
