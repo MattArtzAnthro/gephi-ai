@@ -17,7 +17,8 @@ Built for researchers working across network science and AI.
 <details>
 <summary>Full feature list</summary>
 
-- 102 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- 104 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
 - Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`
 - Specialized agents that run multi-step work in their own context and hand back just the result: independent claim verification, layout iteration, structural analysis, and text-network construction
@@ -49,7 +50,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 102 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 104 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -177,7 +178,9 @@ is missing), run the update below once to catch up. Updating is safe to do anyti
 - **Claude Desktop (config file):** nothing to do — the `uvx` entry fetches the latest release each time you fully quit and reopen Claude Desktop.
 - **Switching connection methods:** remove the old one first (bundle: uninstall in Settings > Extensions; config file: delete the `gephi-mcp` block). Two methods at once means two servers and duplicated tools.
 - **Cowork:** Cowork keeps its own copy of plugins, separate from Claude Code — updating one does not update the other. If Cowork's commands look older than this README (for example, no `/teach`), ask Cowork itself to update the gephi-network-analysis plugin, then fully quit and reopen the app.
-- **Gephi plugin:** install the newest `.nbm` from Releases via Tools > Plugins > Downloaded and restart Gephi. `gephi_health_check` reports the installed version.
+- **Gephi plugin:** install the newest `.nbm` from Releases via Tools > Plugins > Downloaded and restart Gephi.
+
+`gephi_health_check` reports both the Gephi plugin version and the MCP server version, and says whether they are up to date, so you can see at a glance what you are running.
 
 ## What the Claude Code plugin adds
 
@@ -191,11 +194,11 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (102)
+## Tools (104)
 
 | Category | Count | Examples |
 |----------|-------|---------|
-| Project & Workspace | 10 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_rename_workspace` |
+| Project & Workspace | 12 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_snapshot`, `gephi_undo` |
 | Graph Construction | 17 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node`, `gephi_text_to_network` |
 | Statistics & Analysis | 15 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric), `gephi_whatif` (counterfactual), `gephi_compare_nodes` |
 | Layout | 8 | `gephi_run_layout`, `gephi_get_layout_properties`, `gephi_community_layout`, `gephi_similarity_layout` |
@@ -241,7 +244,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 102 tools
+- **references/tool-reference.md** — Complete API reference for all 104 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

@@ -45,6 +45,19 @@ REQUEST_TIMEOUT = float(os.environ.get("GEPHI_REQUEST_TIMEOUT", "60.0"))
 # needs to wait longer. These tools pass SLOW_REQUEST_TIMEOUT explicitly.
 SLOW_REQUEST_TIMEOUT = float(os.environ.get("GEPHI_SLOW_TIMEOUT", "600.0"))
 
+# ── Undo snapshots ─────────────────────────────────────────────────────────
+# A rolling one-level undo: before each destructive tool runs, the current
+# workspace is duplicated into a "[undo] ..." workspace (then we switch straight
+# back), so gephi_undo can restore the pre-operation graph. One snapshot exists
+# at a time — taking a new one deletes the old — so memory stays bounded at
+# roughly 2x the working graph.
+AUTO_SNAPSHOT = os.environ.get("GEPHI_AUTO_SNAPSHOT", "1") != "0"
+# Above this node count the automatic snapshot is skipped (duplicating a huge
+# graph before every destructive call costs real time and memory). Manual
+# gephi_snapshot ignores the cap — calling it is the explicit choice to pay.
+SNAPSHOT_MAX_NODES = int(os.environ.get("GEPHI_SNAPSHOT_MAX_NODES", "200000"))
+UNDO_PREFIX = "[undo] "
+
 # ── Version freshness (checked once per session in health_check) ──────────
 try:
     __version__ = importlib.metadata.version("gephi-mcp")
@@ -154,6 +167,111 @@ def _body(**kwargs: Any) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+# ── Undo snapshot machinery ────────────────────────────────────────────────
+# The workspace API is index-based and indices shift whenever a workspace is
+# added or deleted, so every step below re-resolves workspaces from a fresh
+# /workspace/list (matching by the stable workspace id, or by the "[undo] "
+# name prefix for the snapshot itself). Also: /workspace/duplicate switches the
+# current workspace TO the copy, which is why a snapshot ends by switching back.
+
+async def _workspaces() -> list[dict[str, Any]] | None:
+    r = await gephi.request("GET", "/workspace/list")
+    if isinstance(r, dict) and r.get("success") and isinstance(r.get("workspaces"), list):
+        return r["workspaces"]
+    return None
+
+
+def _is_snapshot(w: dict[str, Any]) -> bool:
+    return str(w.get("name", "")).startswith(UNDO_PREFIX)
+
+
+def _index_of(wss: list[dict[str, Any]], workspace_id: Any) -> int | None:
+    return next((i for i, w in enumerate(wss) if w.get("id") == workspace_id), None)
+
+
+def _original_name(snapshot_name: str) -> str:
+    """Recover the workspace's pre-snapshot name from '[undo] <name> (before <op>)'."""
+    base = snapshot_name
+    if base.startswith(UNDO_PREFIX):
+        base = base[len(UNDO_PREFIX):]
+    if " (before " in base and base.endswith(")"):
+        base = base.rsplit(" (before ", 1)[0]
+    return base
+
+
+async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any]:
+    """Duplicate the current workspace into the rolling '[undo] ...' snapshot.
+
+    Returns {"ok": True, "snapshot": name} or {"ok": False, "reason": ...}.
+    Replaces any existing snapshot (deleted before duplicating, so peak memory
+    stays bounded). enforce_cap applies SNAPSHOT_MAX_NODES (auto-snapshots
+    only; manual snapshots pay whatever the graph costs).
+    """
+    wss = await _workspaces()
+    if wss is None:
+        return {"ok": False, "reason": "workspace list unavailable"}
+    cur = next((w for w in wss if w.get("current")), None)
+    if cur is None:
+        return {"ok": False, "reason": "no current workspace"}
+    if _is_snapshot(cur):
+        return {"ok": False, "reason": "the current workspace is itself an undo "
+                "snapshot; switch to a working workspace before snapshotting"}
+    if enforce_cap and cur.get("node_count", 0) > SNAPSHOT_MAX_NODES:
+        return {"ok": False, "reason": f"graph exceeds GEPHI_SNAPSHOT_MAX_NODES "
+                f"({SNAPSHOT_MAX_NODES}); use gephi_snapshot to snapshot explicitly"}
+
+    old_i = next((i for i, w in enumerate(wss) if _is_snapshot(w)), None)
+    if old_i is not None:  # rolling: one snapshot at a time
+        await gephi.request("DELETE", "/workspace/delete", params={"index": str(old_i)})
+        wss = await _workspaces()  # indices shifted
+        if wss is None:
+            return {"ok": False, "reason": "workspace list unavailable"}
+
+    cur_i = _index_of(wss, cur.get("id"))
+    if cur_i is None:
+        return {"ok": False, "reason": "current workspace disappeared mid-snapshot"}
+    dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": cur_i})
+    if not dup.get("success", False):
+        return {"ok": False, "reason": dup.get("error", "duplicate failed")}
+
+    wss = await _workspaces()
+    if wss is None:
+        return {"ok": False, "reason": "workspace list unavailable after duplicate"}
+    copy_i = next((i for i, w in enumerate(wss)
+                   if w.get("current") and w.get("id") != cur.get("id")), None)
+    if copy_i is None:
+        return {"ok": False, "reason": "duplicate did not switch to the copy"}
+    snap_name = f"{UNDO_PREFIX}{cur['name']} (before {op})"
+    await gephi.request("POST", "/workspace/rename",
+                        json_data={"index": copy_i, "name": snap_name})
+    orig_i = _index_of(wss, cur.get("id"))
+    sw = await gephi.request("POST", "/workspace/switch", json_data={"index": orig_i})
+    if not sw.get("success", False):
+        return {"ok": False, "reason": "could not switch back to the original workspace"}
+    return {"ok": True, "snapshot": snap_name}
+
+
+async def _auto_snapshot(op: str) -> bool:
+    """Best-effort rolling snapshot before a destructive op.
+
+    Never raises and never blocks the operation — a failed snapshot just means
+    the op's result reports undo_available: false.
+    """
+    if not AUTO_SNAPSHOT:
+        return False
+    try:
+        result = await _snapshot_current(op, enforce_cap=True)
+        return bool(result.get("ok"))
+    except Exception:
+        return False
+
+
+def _with_undo(result: Any, undo_ok: bool) -> Any:
+    if isinstance(result, dict):
+        result["undo_available"] = undo_ok
+    return result
+
+
 # ==================== MCP Tools ====================
 
 # ─── Health ───────────────────────────────────────────────────
@@ -259,6 +377,97 @@ async def gephi_rename_workspace(index: int, name: str) -> str:
     return fmt(await gephi.request("POST", "/workspace/rename", json_data={"index": index, "name": name}))
 
 
+# ─── Undo ─────────────────────────────────────────────────────
+
+@mcp.tool(name="gephi_snapshot")
+async def gephi_snapshot(label: str = "") -> str:
+    """Save an undo point: copy the current workspace so gephi_undo can restore it.
+
+    The copy appears as a "[undo] ..." workspace in Gephi's tab bar and replaces
+    any previous snapshot — one undo point exists at a time, so this is a
+    one-level undo (no redo). Destructive tools (clear_graph, merge_nodes, the
+    filter/extract family) already take this snapshot automatically before they
+    run; call this explicitly before a risky sequence of SMALL edits (per-node
+    removals, attribute rewrites) that aren't auto-snapshotted, or to move the
+    undo point forward after work you want to keep.
+
+    label: optional note recorded in the snapshot's name, e.g.
+    label="manual cleanup" -> "[undo] MyGraph (before manual cleanup)".
+    """
+    result = await _snapshot_current(label or "snapshot", enforce_cap=False)
+    if result.get("ok"):
+        return fmt({"success": True, "snapshot": result["snapshot"],
+                    "message": "Undo point saved. gephi_undo restores the graph to this state."})
+    return fmt({"success": False, "error": result.get("reason", "snapshot failed")})
+
+
+@mcp.tool(name="gephi_undo")
+async def gephi_undo() -> str:
+    """Restore the graph to the last undo snapshot, discarding changes since.
+
+    Switches to the "[undo] ..." snapshot workspace, deletes the modified
+    workspace, and renames the snapshot back to its original name — so the graph
+    (nodes, edges, attributes, positions, appearance) is exactly as it was when
+    the snapshot was taken. One level only: after undoing there is no snapshot
+    left until the next destructive tool (or gephi_snapshot) creates one, and
+    there is no redo — to compare before/after instead of reverting, use
+    gephi_whatif or duplicate the workspace yourself before editing.
+
+    Errors with "nothing to undo" if no snapshot exists (none taken yet, already
+    undone, or the graph was above GEPHI_SNAPSHOT_MAX_NODES when the destructive
+    tool ran — its result would have said undo_available: false).
+    """
+    wss = await _workspaces()
+    if wss is None:
+        return fmt({"success": False, "error": "workspace list unavailable"})
+    snap = next((w for w in wss if _is_snapshot(w)), None)
+    if snap is None:
+        return fmt({"success": False, "error":
+                    "Nothing to undo: no undo snapshot exists. Snapshots are taken "
+                    "automatically before destructive tools, or explicitly with "
+                    "gephi_snapshot."})
+    restored = _original_name(str(snap.get("name", "")))
+    cur = next((w for w in wss if w.get("current")), None)
+
+    if cur is not None and cur.get("id") == snap.get("id"):
+        # Already sitting on the snapshot (e.g. the person switched to it by
+        # hand): just give it back its working name.
+        snap_i = _index_of(wss, snap.get("id"))
+        rn = await gephi.request("POST", "/workspace/rename",
+                                 json_data={"index": snap_i, "name": restored})
+        if not rn.get("success", False):
+            return fmt(rn)
+        return fmt({"success": True, "restored": restored,
+                    "node_count": snap.get("node_count"),
+                    "edge_count": snap.get("edge_count")})
+
+    snap_i = _index_of(wss, snap.get("id"))
+    sw = await gephi.request("POST", "/workspace/switch", json_data={"index": snap_i})
+    if not sw.get("success", False):
+        return fmt(sw)
+    if cur is not None:
+        fresh = await _workspaces()  # indices may differ from the first list
+        if fresh is not None:
+            damaged_i = _index_of(fresh, cur.get("id"))
+            if damaged_i is not None:
+                await gephi.request("DELETE", "/workspace/delete",
+                                    params={"index": str(damaged_i)})
+    fresh = await _workspaces()
+    if fresh is None:
+        return fmt({"success": False, "error": "workspace list unavailable after undo"})
+    snap_i = _index_of(fresh, snap.get("id"))
+    if snap_i is None:
+        return fmt({"success": False, "error": "snapshot workspace lost during undo"})
+    rn = await gephi.request("POST", "/workspace/rename",
+                             json_data={"index": snap_i, "name": restored})
+    if not rn.get("success", False):
+        return fmt(rn)
+    entry = fresh[snap_i]
+    return fmt({"success": True, "restored": restored,
+                "node_count": entry.get("node_count"),
+                "edge_count": entry.get("edge_count")})
+
+
 # ─── Nodes ────────────────────────────────────────────────────
 
 @mcp.tool(name="gephi_add_node")
@@ -282,13 +491,21 @@ async def gephi_add_nodes(nodes: list[dict[str, Any]]) -> str:
 
 @mcp.tool(name="gephi_remove_node")
 async def gephi_remove_node(id: str) -> str:
-    """Remove a node and all its connected edges. Destructive; cannot be undone."""
+    """Remove a node and all its connected edges. Destructive.
+
+    Single-node removals are NOT auto-snapshotted (a snapshot per node would
+    thrash on bulk cleanups) — call gephi_snapshot first if this might need
+    undoing, or use gephi_bulk_remove_nodes, which is.
+    """
     return fmt(await gephi.request("DELETE", f"/graph/node/{id}"))
 
 @mcp.tool(name="gephi_bulk_remove_nodes")
 async def gephi_bulk_remove_nodes(ids: list[str]) -> str:
-    """Remove multiple nodes (and their edges) by ID. Destructive."""
-    return fmt(await gephi.request("POST", "/graph/nodes/remove", json_data={"ids": ids}))
+    """Remove multiple nodes (and their edges) by ID. Destructive; an undo
+    snapshot is taken automatically first (gephi_undo reverses it)."""
+    undo = await _auto_snapshot("bulk_remove_nodes")
+    return fmt(_with_undo(await gephi.request("POST", "/graph/nodes/remove",
+                                              json_data={"ids": ids}), undo))
 
 @mcp.tool(name="gephi_query_nodes")
 async def gephi_query_nodes(limit: int = 100, offset: int = 0) -> str:
@@ -871,40 +1088,51 @@ async def gephi_filter_by_degree(min: int = 0, max: int = 0, dry_run: bool = Fal
     """Filter the graph by node degree range, removing nodes outside it. Destructive.
 
     max=0 means no upper limit. dry_run=True reports how many nodes would be removed.
-    Removal is permanent (reset_filters does not restore deleted nodes). If the person
-    might want it back — any exploratory "what if we drop the low-degree nodes" — run
-    `gephi_duplicate_workspace` first and filter the copy, so switching workspaces is
-    the undo. For a scoped, non-destructive filter instead, `gephi_apply_filter` with
+    Removal is permanent (reset_filters does not restore deleted nodes), but an undo
+    snapshot is taken automatically before a real run — gephi_undo restores the graph
+    as it was. For a scoped, non-destructive filter instead, `gephi_apply_filter` with
     action="select" (visible-only) or "new_workspace" (subgraph copy) leaves the
     original intact.
     """
-    return fmt(await gephi.request("POST", "/filter/degree",
-                                   json_data={"min": min, "max": max, "dry_run": dry_run}))
+    undo = await _auto_snapshot("filter_by_degree") if not dry_run else False
+    result = await gephi.request("POST", "/filter/degree",
+                                 json_data={"min": min, "max": max, "dry_run": dry_run})
+    return fmt(_with_undo(result, undo) if not dry_run else result)
 
 @mcp.tool(name="gephi_filter_by_edge_weight")
 async def gephi_filter_by_edge_weight(min: float = 0, max: float = 0, dry_run: bool = False) -> str:
     """Filter the graph by edge weight range, removing edges outside it. Destructive.
 
     max=0 means no upper limit. dry_run=True reports how many edges would be removed.
+    A real run auto-snapshots first; gephi_undo reverses it.
     """
-    return fmt(await gephi.request("POST", "/filter/edge-weight",
-                                   json_data={"min": min, "max": max, "dry_run": dry_run}))
+    undo = await _auto_snapshot("filter_by_edge_weight") if not dry_run else False
+    result = await gephi.request("POST", "/filter/edge-weight",
+                                 json_data={"min": min, "max": max, "dry_run": dry_run})
+    return fmt(_with_undo(result, undo) if not dry_run else result)
 
 @mcp.tool(name="gephi_remove_isolates")
 async def gephi_remove_isolates() -> str:
-    """Remove all isolated nodes (degree 0). Destructive."""
-    return fmt(await gephi.request("POST", "/filter/remove-isolates"))
+    """Remove all isolated nodes (degree 0). Destructive; auto-snapshots first
+    (gephi_undo reverses it)."""
+    undo = await _auto_snapshot("remove_isolates")
+    return fmt(_with_undo(await gephi.request("POST", "/filter/remove-isolates"), undo))
 
 @mcp.tool(name="gephi_extract_ego_network")
 async def gephi_extract_ego_network(node_id: str, depth: int = 1) -> str:
-    """Keep only a node and its neighbors within `depth`; remove everything else. Destructive."""
-    return fmt(await gephi.request("POST", "/filter/ego-network",
-                                   json_data={"node_id": node_id, "depth": depth}))
+    """Keep only a node and its neighbors within `depth`; remove everything else.
+    Destructive; auto-snapshots first (gephi_undo reverses it)."""
+    undo = await _auto_snapshot("extract_ego_network")
+    return fmt(_with_undo(await gephi.request("POST", "/filter/ego-network",
+                                              json_data={"node_id": node_id, "depth": depth}),
+                          undo))
 
 @mcp.tool(name="gephi_extract_giant_component")
 async def gephi_extract_giant_component() -> str:
-    """Keep only the largest connected component; remove all smaller ones. Destructive."""
-    return fmt(await gephi.request("POST", "/filter/giant-component"))
+    """Keep only the largest connected component; remove all smaller ones.
+    Destructive; auto-snapshots first (gephi_undo reverses it)."""
+    undo = await _auto_snapshot("extract_giant_component")
+    return fmt(_with_undo(await gephi.request("POST", "/filter/giant-component"), undo))
 
 @mcp.tool(name="gephi_reset_filters")
 async def gephi_reset_filters() -> str:
@@ -1022,11 +1250,13 @@ async def gephi_merge_nodes(ids: list[str], into: str | None = None) -> str:
     to it; per-column values are merged with Gephi's default strategies), then
     deletes the others. `into` picks which id survives as the merged node
     (default: the first in `ids`). Pair with gephi_detect_duplicates: detect the
-    groups, then merge each group. Cannot be undone — the merged-away nodes are
-    removed.
+    groups, then merge each group. An undo snapshot is taken automatically first,
+    so gephi_undo reverses a bad merge — but only the most recent one (one-level
+    undo), so verify each merge before doing the next.
     """
-    return fmt(await gephi.request("POST", "/datalab/merge-nodes",
-                                   json_data=_body(ids=ids, into=into)))
+    undo = await _auto_snapshot("merge_nodes")
+    return fmt(_with_undo(await gephi.request("POST", "/datalab/merge-nodes",
+                                              json_data=_body(ids=ids, into=into)), undo))
 
 
 @mcp.tool(name="gephi_create_regex_column")
@@ -1046,8 +1276,10 @@ async def gephi_create_regex_column(column: str, new_column: str, regex: str,
 
 @mcp.tool(name="gephi_clear_graph")
 async def gephi_clear_graph() -> str:
-    """Remove all nodes and edges. The project/workspace stay open. Destructive."""
-    return fmt(await gephi.request("POST", "/graph/clear"))
+    """Remove all nodes and edges. The project/workspace stay open. Destructive;
+    auto-snapshots first (gephi_undo brings the graph back)."""
+    undo = await _auto_snapshot("clear_graph")
+    return fmt(_with_undo(await gephi.request("POST", "/graph/clear"), undo))
 
 @mcp.tool(name="gephi_edge_thickness_by_weight")
 async def gephi_edge_thickness_by_weight(min_thickness: float = 1, max_thickness: float = 5) -> str:
@@ -1533,7 +1765,9 @@ async def gephi_text_to_network(text: str | list[str], window_size: int = 4,
     excerpts is enough to tell "generic scaffolding" from "genuine topic
     hub" on any dataset, without hand-grepping the source text or guessing
     from a word list tuned on a different corpus.
-    clear_existing: if True, clears the current graph before loading this one.
+    clear_existing: if True, clears the current graph before loading this one
+    (an undo snapshot is taken automatically before the clear; gephi_undo
+    restores the previous graph).
     """
     graph = text_network.build_cooccurrence_graph(
         text, window_size=window_size, min_edge_weight=min_edge_weight,
@@ -1548,7 +1782,9 @@ async def gephi_text_to_network(text: str | list[str], window_size: int = 4,
                     "error": "No words survived stopword filtering; nothing to build.",
                     "stats": graph["stats"]})
 
+    undo = False
     if clear_existing:
+        undo = await _auto_snapshot("text_to_network")
         clear_result = await gephi.request("POST", "/graph/clear")
         if not clear_result.get("success", True):
             return fmt(clear_result)
@@ -1559,12 +1795,15 @@ async def gephi_text_to_network(text: str | list[str], window_size: int = 4,
 
     edge_result = await gephi.request("POST", "/graph/edges/add", json_data={"edges": graph["edges"]})
 
-    return fmt({
+    out = {
         "success": edge_result.get("success", True),
         "stats": graph["stats"],
         "nodes_result": node_result,
         "edges_result": edge_result,
-    })
+    }
+    if clear_existing:  # only then was anything destroyed
+        out["undo_available"] = undo
+    return fmt(out)
 
 @mcp.tool(name="gephi_extract_backbone")
 async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) -> str:
@@ -1607,6 +1846,11 @@ async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) ->
     kept_pairs = {(e["source"], e["target"]) for e in backbone["edges"]}
     to_remove = [e for e in edges if (e["source"], e["target"]) not in kept_pairs]
 
+    # Snapshot after the (read-only) fetch + computation, right before pruning —
+    # so a call that errors out or removes nothing doesn't roll away a useful
+    # undo point.
+    undo = await _auto_snapshot("extract_backbone")
+
     removed = 0
     for e in to_remove:
         result = await gephi.request("POST", "/graph/edge/remove",
@@ -1619,6 +1863,7 @@ async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) ->
         "stats": backbone["stats"],
         "edges_removed_from_graph": removed,
         "edges_remaining": len(edges) - removed,
+        "undo_available": undo,
     })
 
 

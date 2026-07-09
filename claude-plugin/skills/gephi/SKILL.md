@@ -2,20 +2,20 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 102 Gephi MCP tools.
+  this skill provides workflows and best practices for the 104 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.15+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.26"
+  version: "1.9.28"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.26 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.28 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
-You have access to 102 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 104 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -193,7 +193,7 @@ those plugins never covered.
 ## Tool Quick Reference
 
 ### Project & Workspace
-`gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`, `gephi_duplicate_workspace`, `gephi_rename_workspace`
+`gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`, `gephi_duplicate_workspace`, `gephi_rename_workspace`, `gephi_snapshot` (save a one-level undo point), `gephi_undo` (restore it)
 
 ### Graph Construction
 `gephi_add_node`/`gephi_add_nodes`, `gephi_add_edge`/`gephi_add_edges`, `gephi_remove_node`/`gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`/`gephi_set_edge_label`, `gephi_set_node_position`/`gephi_batch_set_positions`, `gephi_set_edge_weight`, `gephi_query_nodes`, `gephi_get_node`, `gephi_query_edges`, `gephi_text_to_network` (builds a word co-occurrence graph from free text, with optional `pos_filter="nouns"`, `min_word_frequency`, `merge_phrases`, `exclude_self_referential`/`self_referential_threshold` for document-frequency-based generic-hub detection, and `context_snippets` to attach real source-text excerpts to each flagged candidate for the gray-zone cases no threshold or word list can resolve — see references/text-network-analysis.md), `gephi_extract_backbone` (disparity-filter edge pruning — a principled alternative to a flat weight cutoff, see references/text-network-analysis.md)
@@ -282,7 +282,7 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **"Graph is busy" errors and the wedge detector.** Plugin 1.2.0+ fixed the historic macOS wedge at the root (writes pause the renderer via Gephi's own viz-engine API, and a read-lock leak in the query endpoints — the main culprit — is closed), and every lock wait is bounded, so nothing hangs anymore. If a call returns "Graph is busy", retry once — a transient render pass can hold the lock briefly. If it **persists**, run `gephi_health_check` and read the verdict: `graph_lock: "busy"` or a **nonzero `graph_lock_stats.readers` while Gephi is idle means a leaked read hold — nothing will recover this; tell the user plainly that Gephi must be fully quit and reopened**, and that their graph data in an unsaved project will be lost (suggest `gephi_save_project` earlier in sessions). `queued > 0` for a long time means a writer is starving behind render load — pause mutations and let it drain. On plugin 1.1.x these protections don't exist: writes can hang indefinitely, so keep sessions to one focused build → style → layout → export pass and upgrade the plugin.
 - **Preview settings do not affect Gephi's Overview canvas.** Everything set via `gephi_set_preview_settings` (including `node.label.show`) applies to exports and the Preview tab only. To see labels live in the Overview window, the user must click the black **T** toggle in the toolbar at the bottom of the graph canvas — only they can do that.
 - **Label fonts render in graph-coordinate space and clamp weirdly.** A fixed point size vanishes on large layouts, and with `node.label.proportinalSize: false` Gephi clamps every label to its node's bounds (bigger fonts silently do nothing). For readable hub captions use `gephi_label_clusters` (proportional sizing + extent-scaled font handled for you); when hand-tuning, set proportional TRUE and scale the base font to the layout extent.
-- **Filters are destructive** — they permanently remove nodes/edges. Save project first.
+- **Filters are destructive** — they permanently remove nodes/edges. An undo snapshot is taken automatically before each destructive tool (their results report `undo_available`), and `gephi_undo` restores the graph — but it is ONE level deep with no redo, so verify after each destructive step before taking the next. Single `gephi_remove_node`/`gephi_remove_edge` calls are NOT auto-snapshotted; call `gephi_snapshot` first before a risky sequence of small edits.
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
 - **Opening the Overview tab can freeze Gephi on macOS (race, full force-quit
   to recover).** Root cause captured by thread dump: the UI thread blocks

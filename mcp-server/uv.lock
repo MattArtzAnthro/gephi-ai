@@ -288,7 +288,7 @@ wheels = [
 
 [[package]]
 name = "gephi-mcp"
-version = "1.9.22"
+version = "1.9.24"
 source = { editable = "." }
 dependencies = [
     { name = "defusedxml" },

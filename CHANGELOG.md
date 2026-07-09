@@ -4,6 +4,32 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## mcp-server 1.9.24 / claude-plugin 1.9.28
+
+### Added
+- **One-level undo: `gephi_snapshot` + `gephi_undo` (104 tools).** Destructive tools
+  (`clear_graph`, `merge_nodes`, `bulk_remove_nodes`, the filter/extract family, and
+  `text_to_network` with `clear_existing`) now automatically save the workspace to a
+  rolling `[undo] …` snapshot before running, and report `undo_available` in their
+  result. `gephi_undo` restores the graph — nodes, edges, attributes, positions,
+  appearance — exactly as it was; `gephi_snapshot` saves an undo point explicitly
+  (e.g. before a sequence of per-node edits, which aren't auto-snapshotted). One
+  snapshot exists at a time (taking a new one replaces the old, so memory stays
+  bounded at ~2x the graph) and there is no redo. Implemented workspace-copy style
+  (duplicate → rename → switch back), entirely on the Python side — no Gephi plugin
+  change. Automatic snapshots are skipped above `GEPHI_SNAPSHOT_MAX_NODES`
+  (default 200000) and can be disabled with `GEPHI_AUTO_SNAPSHOT=0`; a failed
+  snapshot never blocks the operation itself.
+
+## mcp-server 1.9.23 / claude-plugin 1.9.27
+
+### Changed
+- **`gephi_health_check` now shows both versions and an explicit freshness signal.**
+  It reports `server_version` (the MCP server) alongside `version` (the Gephi plugin),
+  plus `up_to_date: true` when the install is current or the `update` nag when it is
+  behind. Previously it showed only the Gephi plugin version, which could read as
+  current while the server (where the tools and the update check live) was stale.
+
 ## mcp-server 1.9.22 / claude-plugin 1.9.26
 
 ### Changed

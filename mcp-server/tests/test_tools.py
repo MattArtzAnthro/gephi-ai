@@ -156,10 +156,10 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_102_tools_registered():
+def test_all_104_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 102, f"expected 102 tools, found {len(names)}"
+    assert len(names) == 104, f"expected 104 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -170,7 +170,7 @@ def test_all_102_tools_registered():
         "gephi_list_filters", "gephi_apply_filter", "gephi_column_value_frequencies",
         "gephi_detect_duplicates", "gephi_merge_nodes", "gephi_create_regex_column",
         "gephi_color_edges_by_partition", "gephi_export",
-        "gephi_get_timeline",
+        "gephi_get_timeline", "gephi_snapshot", "gephi_undo",
     ):
         assert expected in names, f"{expected} not registered"
 
@@ -274,15 +274,19 @@ async def test_text_to_network_adds_nodes_then_edges(rec):
 
 async def test_text_to_network_clears_graph_first_when_requested(rec):
     await out_of(gephi_mcp.gephi_text_to_network, text="dog cat", clear_existing=True)
-    assert rec.calls[0]["endpoint"] == "/graph/clear"
-    assert rec.calls[1]["endpoint"] == "/graph/nodes/add"
-    assert rec.calls[2]["endpoint"] == "/graph/edges/add"
+    # clear_existing triggers an undo-snapshot attempt first (just a
+    # /workspace/list probe here — the canned response has no workspaces).
+    assert rec.calls[0]["endpoint"] == "/workspace/list"
+    assert rec.calls[1]["endpoint"] == "/graph/clear"
+    assert rec.calls[2]["endpoint"] == "/graph/nodes/add"
+    assert rec.calls[3]["endpoint"] == "/graph/edges/add"
 
 
 async def test_text_to_network_stops_if_clear_fails(rec):
-    rec.responses.append({"success": False, "error": "not connected"})
+    rec.responses.append({"success": False, "error": "no workspaces"})   # snapshot probe
+    rec.responses.append({"success": False, "error": "not connected"})   # clear fails
     out = await out_of(gephi_mcp.gephi_text_to_network, text="dog cat", clear_existing=True)
-    assert len(rec.calls) == 1  # never reached nodes/add
+    assert len(rec.calls) == 2  # never reached nodes/add
     assert out["success"] is False
 
 

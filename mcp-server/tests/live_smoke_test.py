@@ -341,6 +341,40 @@ async def main():
                       "[integrity] duplicate_workspace gives a clean undo", 0.0,
                       f"original after undo={undo_nodes} (expect 1000)"))
 
+    # one-level undo: a destructive tool auto-snapshots, gephi_undo restores at 1000n
+    await g.gephi_create_project("integrity-auto-undo")
+    await g.gephi_import_gexf(GEXF)
+    t0 = time.perf_counter()
+    fil = json.loads(await g.gephi_filter_by_degree(min=50))  # auto-snapshot + destroy
+    filter_dt = time.perf_counter() - t0
+    after_filter = await stats_nodes()
+    t0 = time.perf_counter()
+    und = json.loads(await g.gephi_undo())
+    undo_dt = time.perf_counter() - t0
+    restored_nodes = await stats_nodes()
+    auto_ok = (fil.get("undo_available") is True and after_filter < 1000
+               and und.get("success") is True and restored_nodes == 1000)
+    R.results.append(("PASS" if auto_ok else "FAIL",
+                      "[integrity] auto-snapshot + gephi_undo restores the graph",
+                      filter_dt + undo_dt,
+                      f"undo_available={fil.get('undo_available')} "
+                      f"after_filter={after_filter} restored={restored_nodes} "
+                      f"(expect 1000); filter+snap {filter_dt:.2f}s undo {undo_dt:.2f}s"))
+    # rolling snapshot: two manual snapshots leave exactly one [undo] workspace
+    await R.run("snapshot(first)", g.gephi_snapshot("first"))
+    await R.run("snapshot(second, rolls first)", g.gephi_snapshot("second"))
+    wss = json.loads(await g.gephi_list_workspaces()).get("workspaces", [])
+    snap_count = sum(1 for w in wss if str(w.get("name", "")).startswith("[undo] "))
+    R.results.append(("PASS" if snap_count == 1 else "FAIL",
+                      "[integrity] rolling snapshot keeps exactly one undo point",
+                      0.0, f"snapshot workspaces={snap_count} (expect 1)"))
+    # undo consumes the snapshot; a second undo must error cleanly, not crash
+    await R.run("undo", g.gephi_undo())
+    second = json.loads(await g.gephi_undo())
+    R.results.append(("PASS" if second.get("success") is False else "FAIL",
+                      "[integrity] second undo reports nothing-to-undo", 0.0,
+                      str(second.get("error", ""))[:100]))
+
     # ---- edge-case scenarios: directed + empty graphs must not crash the tools ----
     # Directed graph: in/out degree, directional pagerank, layout, export.
     await g.gephi_create_project("directed")

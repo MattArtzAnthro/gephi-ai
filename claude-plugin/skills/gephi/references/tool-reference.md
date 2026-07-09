@@ -113,6 +113,26 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{index: int, name: str}`
 - **Returns**: `{success, message}`
 
+### gephi_snapshot
+- **Method**: composite (Python-side; workspace list + duplicate + rename + switch)
+- **Params**: `{label?: str}` - optional note recorded in the snapshot's name
+- **Returns**: `{success, snapshot, message}`
+- **Notes**: Saves a one-level undo point by copying the current workspace to a
+  `[undo] …` workspace and switching straight back. Replaces any previous
+  snapshot (one exists at a time). Destructive tools take this snapshot
+  automatically; call it explicitly before risky per-node edits, which aren't
+  auto-snapshotted. Ignores `GEPHI_SNAPSHOT_MAX_NODES` (that cap only limits
+  automatic snapshots; env `GEPHI_AUTO_SNAPSHOT=0` disables those entirely).
+
+### gephi_undo
+- **Method**: composite (Python-side; workspace list + switch + delete + rename)
+- **Params**: `{}` (empty)
+- **Returns**: `{success, restored, node_count, edge_count}`
+- **Notes**: Restores the last `[undo] …` snapshot: switches to it, deletes the
+  modified workspace, renames the snapshot back to its working name. One level,
+  no redo. Errors with "nothing to undo" when no snapshot exists. Destructive
+  tools report `undo_available: true/false` so you know whether this will work.
+
 ## Node Operations
 
 ### gephi_add_node

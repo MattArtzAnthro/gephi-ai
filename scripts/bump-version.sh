@@ -71,6 +71,15 @@ if [ -n "$NEW_PLUGIN" ] && [ "$NEW_PLUGIN" != "$OLD_PLUGIN" ]; then
   sedi "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" claude-plugin/skills/gephi/SKILL.md
   sedi "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" claude-plugin/skills/gephi/SKILL.md
   jset latest.json plugin "$NEW_PLUGIN"
+  # marketplace.json carries the plugin version in TWO fields
+  python3 - "$NEW_PLUGIN" <<'PY'
+import json, sys
+p = ".claude-plugin/marketplace.json"
+d = json.load(open(p))
+d["version"] = sys.argv[1]
+d["plugins"][0]["version"] = sys.argv[1]
+json.dump(d, open(p, "w"), indent=2); open(p, "a").write("\n")
+PY
 fi
 
 # ---- verify every surface agrees ----
@@ -88,5 +97,6 @@ check "README nbm"         "$(grep -oE 'gephi-mcp-[0-9.]+\.nbm' README.md | head
 check "latest.json nbm"    "$(python3 -c "import json;print(json.load(open('latest.json'))['nbm'])")" "$J"
 check "SKILL version"      "$(grep -m1 'version:' claude-plugin/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
 check "latest.json plugin" "$(python3 -c "import json;print(json.load(open('latest.json'))['plugin'])")" "$P"
+check "marketplace.json"   "$(python3 -c "import json;print(json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'])")" "$P"
 [ "$fail" = 0 ] && echo "  OK  server=$S java=$J plugin=$P — all surfaces consistent" || { echo "  FAILED"; exit 1; }
 echo "Next: update CHANGELOG, run tests, build + publish (see RELEASING.md)."
