@@ -166,6 +166,12 @@ It should call `gephi_health_check` and confirm the connection. In Claude Code, 
 
 ## Updating
 
+gephi-ai improves often, so keep it current. Most fixes and new tools arrive through
+updates. The health check tells you once per session when your install is behind the
+latest release and shows the matching update step, but that notice only appears on
+recent versions, so if you installed a while ago (or an older command like `/teach`
+is missing), run the update below once to catch up. Updating is safe to do anytime.
+
 - **Claude Code:** `claude plugin update gephi-network-analysis@gephi-ai`, then start a new session.
 - **Claude Desktop (one-click bundle):** download the newest `.mcpb` from Releases and double-click it again.
 - **Claude Desktop (config file):** nothing to do — the `uvx` entry fetches the latest release each time you fully quit and reopen Claude Desktop.
