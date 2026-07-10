@@ -8,12 +8,12 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.15+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.28"
+  version: "1.9.29"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.28 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.29 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 104 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -89,11 +89,18 @@ The first turn decides the quality of everything after it. Two moves, always:
    labels), and treat their expectations as hypotheses to test, not truths to
    assume.
 2. **Run `gephi_profile_graph`** — one call, the full quantitative picture
-   (size, density, degree distribution, components, isolates, weights,
-   modularity, clustering, auto-raised flags). You can absorb a dozen
+   (size, density, degree distribution with Gini and assortativity,
+   components, isolates, weight distribution, modularity, clustering with its
+   random-graph expectation, auto-raised flags). You can absorb a dozen
    simultaneous measurements better than most humans can; do it, then give a
    short plain-language first reading that marries their description with the
-   numbers, and ask the 2-3 questions the profile raises.
+   numbers, and ask the 2-3 questions the profile raises. Three of its
+   numbers pick layout parameters before any render: `weights.heavy_tailed`
+   means log-transform weights (or lower edgeWeightInfluence) before a force
+   layout; strongly negative `degree.assortativity` means enable
+   distributedAttraction (dissuade hubs); `clustering_vs_random` is the
+   baseline-relative form of "highly clustered" — quote the ratio, never the
+   raw coefficient alone.
 
 **The first reading is provisional by design — the goal is exploration, not
 conclusions.** Success is measured by what the person notices next, not by how
@@ -210,7 +217,7 @@ those plugins never covered.
 - `gephi_compute_hits` → creates `authority`, `hub` (lowercase column names)
 
 ### Analysis & counterfactual
-- `gephi_profile_graph` → one-call quantitative picture (size, density, degree, connectivity, modularity, clustering); run first
+- `gephi_profile_graph` → one-call quantitative picture (size, density, degree with Gini + assortativity, connectivity, weight distribution, modularity, clustering vs random expectation); run first — its flags name layout fixes (heavy-tailed weights → log-transform; disassortative → dissuade hubs)
 - `gephi_whatif(edits, include_slow=False)` → apply hypothetical edits (`remove_node`/`remove_nodes`/`add_edge`/`remove_edge`) to a throwaway workspace copy, diff the structural profile before/after, auto-clean the scratch copy; the real graph is never touched. For robustness/"what if we removed X" claims — see references/claim-verification.md
 - `gephi_compare_nodes(id_a, id_b, metric)` → deterministic two-node comparison on one metric (from attributes or a built-in field); errors if the metric isn't computed yet. For "is X more central than Y" claims — see references/claim-verification.md
 
@@ -272,7 +279,7 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 ### Layout
 - Choosing by purpose (groups, scale, maps, circles, finishing passes): see the layout guide's "Choosing a layout" table — lead with what the person wants to see, then name the algorithm.
 - ForceAtlas 2 for most graphs: `{"scalingRatio": 15, "linLogMode": true, "gravity": 0, "sync": true}`, 1000-1500 iterations — scale `scalingRatio` up with node count (see Beautiful Graph Recipe table). Gravity stays 0 on connected graphs (use 0.5-1.0 only to keep disconnected components in frame); excessive gravity packs nodes into a central blob and is the most common layout mistake. LinLog mode + gravity 0 is the reference config for making communities visible (Venturini, Jacomy, and Jensen 2021).
-- **Inspect and adjust, always:** after the layout, export a small PNG, look at it, diagnose with the symptom table in references/layout-guide.md (blob = gravity too high; hairball = LinLog off or scaling too low; unreadable cluster interiors = raise scalingRatio), change ONE parameter, rerun ~300 iterations. Two or three loops usually converge — say what you saw and changed.
+- **Inspect and adjust, always — and measure, don't just look:** after the layout, run `gephi_visual_qa` with `partition_column` set to the community column. Its `partition.separation` (mean intra-community pair distance over mean random pair distance; 1.0 = fully mixed, near 0 = tight distinct clusters) is the objective form of "did the communities separate" — track it across parameter changes and quote the before/after when explaining an adjustment. Then export a small PNG, look at it, diagnose with the symptom table in references/layout-guide.md (blob = gravity too high; hairball = LinLog off or scaling too low; unreadable cluster interiors = raise scalingRatio), change ONE parameter, rerun ~300 iterations. Two or three loops usually converge — say what you saw, what the separation did, and what you changed.
 - Follow with Noverlap: `{"algorithm": "Noverlap", "iterations": 500, "properties": {"margin": 5.0}, "sync": true}`
 - Follow with Label Adjust (500 iterations, sync: true) if labels are enabled
 - **`barnesHutOptimize` is wrong** — the correct key is `barnesHutOptimization`
@@ -300,8 +307,8 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
 - **For dark backgrounds, use the dark-surface variant of the community palette** (see Styling Defaults) — palettes tuned for white surfaces lose contrast on dark ones and vice versa.
 - **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
-- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. Fix: use gravity 5–8 in FA2. Post-process in Python using centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
-- **ForceAtlas 2 can numerically explode, not just spread out** — observed once on a ~700-node/~1900-edge weighted graph with a high-weight hub, 1500 iterations: node coordinates reached `Infinity`/`NaN` (one node hit `1e37`), not just a large-but-finite bounding box. This is silent: the layout call still returns `success`. Check exported positions with `math.isfinite` before trusting a layout on a weighted graph with a strong hub. (The exact parameter combination that triggered it is unconfirmed — see the `/layout/run` request-key gotcha below, discovered afterward, which casts doubt on which properties were actually active for this run. Treat this as "FA2 can do this on some graphs," not as a specific combination to avoid.) Fix: reset with Random Layout and rerun rather than trying to nudge the exploded node back — the explosion wasn't confined to one node, it corrupted the whole layout.
+- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. `gephi_visual_qa` now detects this (`extent.outliers` lists the runaway nodes) and computes `suggested_export` from the main cloud, so export with the suggested dimensions before reaching for Python cropping. To pull outliers into frame instead: gravity 5–8 in FA2 (temporary containment only). If post-processing anyway, centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
+- **ForceAtlas 2 can numerically explode, not just spread out** — observed once on a ~700-node/~1900-edge weighted graph with a high-weight hub, 1500 iterations: node coordinates reached `Infinity`/`NaN` (one node hit `1e37`), not just a large-but-finite bounding box. This is silent: the layout call still returns `success`. Sync runs of `gephi_run_layout` now check for this automatically — a `layout_exploded` block in the result means do NOT export or style; follow its fix. Async runs and older servers still need the manual `math.isfinite` check on exported positions. (The exact parameter combination that triggered it is unconfirmed — see the `/layout/run` request-key gotcha below, discovered afterward, which casts doubt on which properties were actually active for this run. Treat this as "FA2 can do this on some graphs," not as a specific combination to avoid.) Fix: reset with Random Layout and rerun rather than trying to nudge the exploded node back — the explosion wasn't confined to one node, it corrupted the whole layout. The profile's heavy-tailed-weights flag is the advance warning: log-transform weights or lower edgeWeightInfluence before laying out a graph that carries it.
 - **`/layout/run`'s tuning values must be sent under the key `"properties"`, not `"params"`** — when driving the Gephi HTTP API directly (not through `gephi_run_layout`, which builds this correctly), a request with the wrong key returns `success: true` and runs the layout on its plugin defaults, silently discarding every custom value. There is no error to catch this. The tell: changing `scalingRatio`/`gravity` across a wide range and getting back nearly the same layout extent every time — a layout genuinely that insensitive to a parameter is itself the anomaly. Verify the request shape (or just use `gephi_run_layout`) before concluding a parameter doesn't matter for a given graph. The same applies to `"Noverlap"`'s `speed`/`ratio`/`margin`, which default to `0.0` — a full no-op, not a gentle setting.
 - **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
 - **Vivid source colors are required for white-background visibility** — "soft pastel" appearance on white comes from vivid node colors rendered at high opacity (not from literally pale colors). Pastel node colors (e.g., [227,185,216]) are near-white and disappear even at 90% opacity. Use fully saturated colors (e.g., [220,30,80], [150,30,220]) — at 100% opacity with thick edges they produce a vivid, readable graph. Reduce opacity only if the graph is dense enough that overlapping edges create unwanted solid blobs.

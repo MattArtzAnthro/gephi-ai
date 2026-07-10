@@ -20,6 +20,7 @@ import contextlib
 import importlib.metadata
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -727,6 +728,36 @@ async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: flo
 
 # ─── Layout ──────────────────────────────────────────────────
 
+async def _check_layout_positions() -> dict | None:
+    """Detect a numerically exploded layout: non-finite or absurd coordinates.
+
+    ForceAtlas 2 can blow up silently (observed live: coordinates at 1e37 and
+    Infinity on a weighted graph with a strong hub) while still reporting
+    success. Returns an explosion report dict, or None when positions are sane
+    or the check itself can't run (never blocks the layout result).
+    """
+    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    if not exported.get("success") or "content" not in exported:
+        return None
+    try:
+        graph = gephi_mcp_viewer.parse_gexf(exported["content"], max_nodes=10**9)
+    except Exception:
+        return None
+    bad = [n["key"] for n in graph["nodes"]
+           if not (math.isfinite(n["x"]) and math.isfinite(n["y"])
+                   and abs(n["x"]) < 1e12 and abs(n["y"]) < 1e12)]
+    if not bad:
+        return None
+    return {
+        "non_finite_nodes": len(bad),
+        "sample": bad[:5],
+        "fix": ("the layout exploded numerically — do NOT export or trust these "
+                "positions; reset with Random Layout (1 iteration), then rerun "
+                "(on weighted graphs, log-transform weights or lower "
+                "edgeWeightInfluence first)"),
+    }
+
+
 @mcp.tool(name="gephi_run_layout")
 async def gephi_run_layout(algorithm: str, iterations: int = 1000,
                            properties: dict[str, Any] | None = None, sync: bool = False) -> str:
@@ -748,6 +779,12 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     barnesHutOptimization, ...). sync=True waits until the layout finishes before
     returning; otherwise it returns immediately with status "running" (poll
     gephi_get_layout_status for completion).
+
+    Sync runs end with a finite-positions check: if the layout exploded
+    numerically (non-finite or absurd coordinates — FA2 can do this silently,
+    especially on weighted graphs with a strong hub), the result carries a
+    layout_exploded block with the affected nodes and the fix. When present,
+    do NOT export or style — follow the fix first.
     """
     result = await gephi.request("POST", "/layout/run",
                                  json_data=_body(algorithm=algorithm, iterations=iterations,
@@ -761,6 +798,11 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
         if not status.get("running", True):
             result["status"] = "completed"
             result["message"] = "Layout finished after polling"
+            exploded = await _check_layout_positions()
+            if exploded:
+                result["layout_exploded"] = exploded
+                result["message"] = ("Layout finished but positions exploded "
+                                     "numerically — see layout_exploded")
             return fmt(result)
     result["status"] = "timeout"
     result["message"] = "Layout still running after 5 minutes"
@@ -956,6 +998,11 @@ async def _compute_profile(include_slow: bool = False) -> dict:
             if k in cc:
                 profile["clustering_coefficient"] = cc[k]
                 break
+    # Observed / configuration-model expectation: the baseline-relative verdict.
+    expected = profile.get("clustering_expected_random", 0)
+    observed = profile.get("clustering_coefficient")
+    if observed is not None and expected:
+        profile["clustering_vs_random"] = round(float(observed) / expected, 2)
     if include_slow and profile["nodes"] <= 3000:
         dist = await gephi.request("POST", "/statistics/avg-path-length", json_data={})
         if dist.get("success"):
@@ -967,11 +1014,20 @@ async def _compute_profile(include_slow: bool = False) -> dict:
 async def gephi_profile_graph(include_slow: bool = False) -> str:
     """Profile the whole graph in ONE call — run this first, before analyzing.
 
-    Returns a compact quantitative picture: size, density, degree distribution,
-    connectivity (components, isolates), whether weights carry signal, plus
-    Gephi-computed modularity (community count and strength) and clustering
-    coefficient, with auto-raised flags (fragmentation, hub dominance, likely
-    hairball). One call = one approval prompt instead of six.
+    Returns a compact quantitative picture: size, density, degree distribution
+    (including gini — degree inequality, 0 equal to 1 winner-take-all — and
+    assortativity — negative means hub-and-spoke wiring), connectivity
+    (components, isolates), weight distribution when weights carry signal
+    (weights.heavy_tailed means the strongest ties will dominate a force
+    layout: log-transform weights or lower edgeWeightInfluence before laying
+    out), plus Gephi-computed modularity (community count and strength) and
+    clustering coefficient with its random-graph expectation
+    (clustering_vs_random is the verdict: observed/expected for this exact
+    degree sequence — quote the ratio, never the raw coefficient alone).
+    Auto-raised flags (fragmentation, hub dominance, likely hairball,
+    heavy-tailed weights, strong disassortativity) each name their fix — act
+    on them before choosing layout parameters. One call = one approval prompt
+    instead of six.
 
     USE IT TO GUIDE EVERYTHING DOWNSTREAM, together with the person's own
     description of their data: their description supplies meaning (what nodes
@@ -1480,9 +1536,20 @@ async def gephi_visual_qa(partition_column: str | None = None) -> str:
     Call BEFORE styling with partition_column set (e.g. "group", "modularity_class")
     to verify a claimed grouping is topologically real — if the verdict is "none",
     coloring by it would mislead; compute real communities instead. Call again AFTER
-    styling/layout to catch invisible node sizes, near-white colors, gradient color
-    schemes, and to get the export dimensions that match the layout's shape
+    styling/layout — always with partition_column when the graph has communities —
+    to catch invisible node sizes, near-white colors, gradient color schemes, and
+    to get the export dimensions that match the layout's shape
     (extent.suggested_export). Fix every warning before the final export.
+
+    Layout-quality outputs: partition.separation measures how spatially mixed the
+    partition is in the CURRENT layout (mean intra-community pair distance over
+    mean random pair distance; 1.0 = fully mixed, near 0 = tight distinct
+    clusters) — compare it across parameter changes instead of eyeballing PNGs,
+    and quote the before/after when explaining an adjustment. extent.outliers
+    lists nodes far outside the main cloud (the hub-and-spoke bounding-box
+    blowout); when present, suggested_export already frames the main cloud, so
+    export with it rather than hand-cropping. Non-finite positions (an exploded
+    layout) are warned about and excluded from all extent math.
     """
     fd, path = tempfile.mkstemp(suffix=".gexf")
     os.close(fd)

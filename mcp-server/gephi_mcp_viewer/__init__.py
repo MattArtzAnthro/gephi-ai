@@ -6,6 +6,8 @@ Consciously unsupported for now: per-edge type overrides in mixed graphs,
 viz:shape, hierarchical (nested) nodes, and dynamic graphs (spells/timestamps
 — a time-aware viewer is a candidate future feature).
 """
+import math
+import statistics
 from importlib import resources
 
 import defusedxml.ElementTree as ET  # noqa: N817 — stdlib-conventional alias
@@ -221,21 +223,61 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
             "gradient; if color should show categories, use a categorical palette "
             "(and never double-encode the variable already shown by size)")
 
-    xs = [n["x"] for n in nodes] or [0.0]
-    ys = [n["y"] for n in nodes] or [0.0]
+    finite = [n for n in nodes
+              if math.isfinite(n["x"]) and math.isfinite(n["y"])]
+    if len(finite) < len(nodes):
+        warnings.append(
+            f"{len(nodes) - len(finite)} node(s) have non-finite positions — the "
+            "layout exploded numerically; reset with Random Layout (1 iteration) "
+            "and rerun the force layout")
+    xs = [n["x"] for n in finite] or [0.0]
+    ys = [n["y"] for n in finite] or [0.0]
     w, h = max(xs) - min(xs), max(ys) - min(ys)
-    aspect = (w / h) if h else 1.0
+
+    # Robust extent: hub-and-spoke graphs push a few nodes far outside the
+    # cloud, blowing up the bounding box (and with it, export framing). Frame
+    # on the main cloud instead: nodes beyond 5x the 90th-percentile radius
+    # from the median center are outliers and excluded from suggested_export.
+    outlier_keys: list[str] = []
+    core = finite
+    if len(finite) >= 20:
+        cx = statistics.median(xs)
+        cy = statistics.median(ys)
+        radii = sorted(math.dist((n["x"], n["y"]), (cx, cy)) for n in finite)
+        p90 = radii[int(0.9 * (len(radii) - 1))]
+        if p90 > 0:
+            threshold = 5 * p90
+            outlier_keys = [n["key"] for n in finite
+                            if math.dist((n["x"], n["y"]), (cx, cy)) > threshold]
+            if outlier_keys:
+                core = [n for n in finite if n["key"] not in set(outlier_keys)]
+    rxs = [n["x"] for n in core] or [0.0]
+    rys = [n["y"] for n in core] or [0.0]
+    rw, rh = max(rxs) - min(rxs), max(rys) - min(rys)
+    aspect = (rw / rh) if rh else 1.0
     long_side = 2000
     if aspect >= 1:
         sug = {"width": long_side, "height": max(800, int(long_side / max(aspect, 0.1) / 10) * 10)}
     else:
         sug = {"width": max(800, int(long_side * aspect / 10) * 10), "height": long_side}
-    extent = {"width": round(w, 1), "height": round(h, 1), "aspect": round(aspect, 2),
+    extent = {"width": round(w, 1), "height": round(h, 1),
+              "aspect": round((w / h) if h else 1.0, 2),
+              "outliers": {"count": len(outlier_keys),
+                           "nodes": sorted(outlier_keys)[:5]},
               "suggested_export": sug}
+    if outlier_keys:
+        extent["robust"] = {"width": round(rw, 1), "height": round(rh, 1),
+                            "aspect": round(aspect, 2)}
+        warnings.append(
+            f"{len(outlier_keys)} node(s) sit far outside the main cloud (e.g. "
+            f"'{sorted(outlier_keys)[0]}') — suggested_export frames the main "
+            "cloud, not the full bounding box; to pull them in, raise gravity "
+            "temporarily or check whether those nodes belong in the graph")
     # Node presence: when the biggest node is under ~1% of the extent's long
     # side, exports show specks in whitespace (found live: LinLog with a high
     # scalingRatio exploded a 500-node layout to 17k units against size-60 nodes).
-    long_side = max(w, h, 1.0)
+    # Judged on the robust extent so a single runaway node doesn't trip it.
+    long_side = max(rw, rh, 1.0)
     if len(nodes) > 1 and sizes[-1] / long_side < 0.01:
         warnings.append(
             f"layout is over-spread: largest node ({sizes[-1]:g}) is under 1% of the "
@@ -274,11 +316,23 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
                 f"share {fraction:.0%} vs random baseline {baseline:.0%}) — coloring by "
                 "it would be misleading; compute real communities with "
                 "gephi_compute_modularity instead")
+        # Spatial separation of the partition in the CURRENT layout: mean
+        # intra-group pair distance over mean random pair distance (1.0 =
+        # fully mixed, near 0 = tight distinct clusters). This is the
+        # objective form of "did the communities separate" — compare it
+        # across parameter changes instead of eyeballing exports.
+        from .community_layout import separation_score
+        # Measured over the main cloud only: a handful of runaway outliers
+        # (reported in extent.outliers) would otherwise swamp the pair
+        # distances and make the score meaningless.
+        positions = {n["key"]: (n["x"], n["y"]) for n in core}
+        separation = separation_score(graph, positions, partition_column)
         result["partition"] = {
             "column": partition_column, "groups": len(shares),
             "within_fraction": round(fraction, 3),
             "random_baseline": round(baseline, 3),
             "ratio_vs_random": round(ratio, 2), "verdict": verdict,
+            "separation": separation,
         }
 
     return result

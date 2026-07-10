@@ -4,6 +4,40 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## mcp-server 1.10.0 / claude-plugin 1.9.29
+
+### Added
+- **Profile and QA enrichment: layout quality is measured, not eyeballed.** Six
+  one-pass statistics folded into existing tools (no new tools; every number
+  ships with a decision rule):
+  - `gephi_profile_graph`: degree **Gini** (inequality) and **assortativity**
+    (negative = hub-and-spoke; a strong negative raises a
+    "enable distributedAttraction" flag), a **weight distribution** block when
+    weights carry signal (`heavy_tailed` raises a "log-transform weights or
+    lower edgeWeightInfluence" flag — the advance warning for FA2 numeric
+    explosions on weighted graphs), and `clustering_expected_random` +
+    `clustering_vs_random` — the configuration-model expectation for this exact
+    degree sequence, so "highly clustered" is always relative to a baseline.
+  - `gephi_visual_qa`: `partition.separation` — mean intra-community pair
+    distance over mean random pair distance (1.0 = fully mixed, near 0 = tight
+    clusters), the objective form of "did the communities separate," measured
+    on the current layout for any partition (previously only reported by
+    `gephi_community_layout`); `extent.outliers` + `extent.robust` — runaway
+    nodes far outside the main cloud are detected (median center, 5x the
+    90th-percentile radius) and `suggested_export` now frames the main cloud,
+    ending the hub-and-spoke bounding-box blowout that forced Python
+    centroid-cropping; non-finite positions are warned about and excluded from
+    extent math.
+  - `gephi_run_layout` (sync runs): a finite-positions check after every
+    layout — a numerically exploded layout (non-finite or absurd coordinates,
+    which Gephi reports as `success`) now returns a `layout_exploded` block
+    with affected nodes and the fix instead of passing silently.
+
+### Fixed
+- **`gephi_profile_graph` never detected weighted graphs.** `parse_gexf` stores
+  GEXF edge weight under `size`, but the profile read a nonexistent `weight`
+  key, so `weighted` was always `false` and weight-based guidance never fired.
+
 ## mcp-server 1.9.24 / claude-plugin 1.9.28
 
 ### Added

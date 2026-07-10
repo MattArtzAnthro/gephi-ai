@@ -145,7 +145,9 @@ async def test_run_layout_sync_polls_until_done(rec, monkeypatch):
     out = await out_of(
         gephi_mcp.gephi_run_layout, algorithm="ForceAtlas2", iterations=50, sync=True
     )
-    assert [c["endpoint"] for c in rec.calls] == ["/layout/run", "/layout/status", "/layout/status"]
+    # the trailing /export/gexf is the finite-positions guard
+    assert [c["endpoint"] for c in rec.calls] == [
+        "/layout/run", "/layout/status", "/layout/status", "/export/gexf"]
     assert out["status"] == "completed"
 
 

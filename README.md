@@ -19,6 +19,7 @@ Built for researchers working across network science and AI.
 
 - 104 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
+- Layout quality is measured, not eyeballed: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separated and frames exports around the main cloud (ignoring runaway outlier nodes), and numerically exploded layouts are caught automatically instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
 - Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`
 - Specialized agents that run multi-step work in their own context and hand back just the result: independent claim verification, layout iteration, structural analysis, and text-network construction
