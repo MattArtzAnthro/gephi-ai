@@ -1,6 +1,6 @@
 {
   "server": "1.10.0",
   "nbm": "1.2.15",
-  "plugin": "1.9.29",
+  "plugin": "1.9.30",
   "_comment": "Canonical latest-version marker read by gephi_health_check. Bump on every release (part of RELEASING.md). server = PyPI gephi-mcp, nbm = Gephi Java plugin, plugin = Claude Code plugin."
 }

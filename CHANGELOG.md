@@ -4,6 +4,18 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## claude-plugin 1.9.30
+
+### Added
+- **`/whatif` and `/counterfactual` slash commands.** The `gephi_whatif` tool
+  (counterfactual graph surgery on a throwaway workspace copy) previously had no
+  direct entry point beyond the claim-verifier agent's robustness checks. Both
+  commands resolve a plain-language what-if question into an edit, run it, and
+  report the diff as a hypothesis to check, never a verdict — matching the
+  tool's own "measurements, not conclusions" framing. `/counterfactual` is kept
+  as a separate name (the paper's vocabulary for this capability) but delegates
+  to the same procedure as `/whatif`; no new MCP tool, mcp-server/nbm unchanged.
+
 ## mcp-server 1.10.0 / claude-plugin 1.9.29
 
 ### Added
