@@ -4,6 +4,15 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## claude-plugin 1.9.31
+
+### Changed
+- **Dropped `/whatif`, kept `/counterfactual`.** Having two command names for the
+  identical procedure (introduced in 1.9.30) was more confusing than helpful in
+  practice. `/counterfactual` is now the single, self-contained command for
+  testing a hypothetical edit against the loaded graph; `gephi_whatif` remains
+  the underlying MCP tool name and is unchanged.
+
 ## claude-plugin 1.9.30
 
 ### Added
