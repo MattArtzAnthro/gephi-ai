@@ -1481,6 +1481,16 @@ async def gephi_focus_view(mode: str = "graph", id: str | None = None,
     clears the selection); zoom sets the zoom level. Call it after layouts, before
     narrating a cluster, or when saying "watch this part". Desktop only; returns an
     error when no visualization is available (headless).
+
+    `select` is for VISUAL HIGHLIGHTING only (drawing the viewer's eye), not for
+    setting up a selection you will read back. It switches Gephi's engine into
+    "custom selection" mode, a separate mode from the rectangle box-drag the
+    person uses to point, and confirmed unreliable to read back afterward via
+    gephi_get_selection (Gephi's own selection-mode bookkeeping does not clean up
+    the switch symmetrically). The response's `selected` count is verified at
+    the moment of this call, but do not rely on it still being readable in a
+    later call. For anything you need to read back, rely on the human's real
+    box-drag selection (gephi_get_selection), not this parameter.
     """
     return fmt(await gephi.request("POST", "/view/focus",
                                    json_data=_body(mode=mode, id=id, source=source,
@@ -1555,6 +1565,12 @@ async def gephi_get_selection(clear: bool = False) -> str:
     be explained rather than left silent. Also returns clicks, a journal of node
     clicks (usually empty; selected_now is the primary channel). clear=True empties
     the click journal only; the live selection always reflects the canvas. Desktop only.
+
+    Only reliably reads back the human's real box-drag (rectangle) selection.
+    A selection set programmatically via gephi_focus_view's `select` parameter
+    is NOT guaranteed to still be here — that parameter switches Gephi into a
+    separate "custom selection" engine mode that does not interoperate cleanly
+    with this read path (confirmed unreliable; do not chain the two).
     """
     return fmt(await gephi.request(
         "GET", f"/selection?clear={'true' if clear else 'false'}"))
