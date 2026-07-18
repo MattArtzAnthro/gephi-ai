@@ -2277,6 +2277,109 @@ public class GephiControlService {
         });
     }
 
+    /**
+     * Export the LIVE Overview canvas as it is actually rendered on screen — selection
+     * highlighting, hover state, current camera framing — using Gephi's own built-in
+     * screenshot feature (org.gephi.visualization.api.ScreenshotController), the same
+     * backend behind the toolbar "take a snapshot" button. This is a DIFFERENT pipeline
+     * from exportPng: exportPng renders the graph's stored data (colors, positions) through
+     * the Preview renderer, which has no concept of selection at all. This method captures
+     * the actual GL framebuffer, so a person's box-drag selection (dimmed unselected nodes,
+     * vivid selected ones) shows up exactly as they see it.
+     *
+     * scaleFactor: a multiplier on the current on-screen canvas size (not literal pixel
+     * width/height like exportPng — Gephi's screenshot API only supports a scale factor).
+     *
+     * takeScreenshot() is asynchronous (queued against the render engine's next frame via
+     * a LongTaskExecutor), so this polls a dedicated fresh temp directory for the resulting
+     * file rather than assuming completion on return.
+     */
+    public JsonObject exportScreenshot(String filePath, int scaleFactor, boolean transparentBackground) {
+        Workspace ws = currentWorkspace();
+        if (ws == null) return error("No project open");
+
+        File targetFile = new File(filePath);
+        File targetDir = targetFile.getAbsoluteFile().getParentFile();
+        File captureDir;
+        try {
+            captureDir = java.nio.file.Files.createTempDirectory("gephi-screenshot-").toFile();
+        } catch (java.io.IOException e) {
+            return error("Could not create temp capture directory: " + e.getMessage());
+        }
+
+        try {
+            runOnEDT(() -> {
+                org.gephi.visualization.api.ScreenshotController sc = Lookup.getDefault()
+                    .lookup(org.gephi.visualization.api.ScreenshotController.class);
+                if (sc == null) throw new RuntimeException("Screenshot controller not available");
+                sc.setAutoSave(true);
+                sc.setDefaultDirectory(captureDir);
+                sc.setScaleFactor(scaleFactor);
+                sc.setTransparentBackground(transparentBackground);
+                sc.takeScreenshot();
+                return null;
+            });
+
+            File written = pollForNewFile(captureDir, 10_000);
+            if (written == null) {
+                return error("Screenshot did not complete within 10s — the render engine may be busy, "
+                    + "retry, or fully restart Gephi if this persists");
+            }
+            if (!waitForStableFileSize(written, 5_000)) {
+                return error("Screenshot file did not finish writing within 5s");
+            }
+
+            if (targetDir != null) targetDir.mkdirs();
+            java.nio.file.Files.move(written.toPath(), targetFile.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+            JsonObject r = success("Exported to " + filePath);
+            r.addProperty("scale_factor", scaleFactor);
+            r.addProperty("selection_aware", true);
+            return r;
+        } catch (Exception e) {
+            return error("Screenshot export failed: " + e.getMessage());
+        } finally {
+            deleteDirQuietly(captureDir);
+        }
+    }
+
+    /** Poll a directory for the first file to appear in it, up to timeoutMs. */
+    private File pollForNewFile(File dir, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            File[] files = dir.listFiles();
+            if (files != null && files.length > 0) return files[0];
+            try { Thread.sleep(150); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** Wait for a file's size to stop changing between polls (write-in-progress guard). */
+    private boolean waitForStableFileSize(File file, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        long lastSize = -1;
+        while (System.currentTimeMillis() < deadline) {
+            long size = file.length();
+            if (size > 0 && size == lastSize) return true;
+            lastSize = size;
+            try { Thread.sleep(100); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return file.length() == lastSize && lastSize > 0;
+    }
+
+    private void deleteDirQuietly(File dir) {
+        File[] files = dir.listFiles();
+        if (files != null) for (File f : files) f.delete();
+        dir.delete();
+    }
+
     public JsonObject exportPdf(String filePath, int w, int h) {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();

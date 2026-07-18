@@ -210,6 +210,7 @@ async def main():
         ("export_csv", g.gephi_export_csv("/tmp/smoke.csv")),
         ("export(gdf)", g.gephi_export("/tmp/smoke.gdf", "gdf")),
         ("export_png", g.gephi_export_png("/tmp/smoke.png", 1200, 900)),
+        ("export_screenshot", g.gephi_export_screenshot("/tmp/smoke_screenshot.png", scale=2)),
         ("export_pdf", g.gephi_export_pdf("/tmp/smoke.pdf")),
         ("export_svg", g.gephi_export_svg("/tmp/smoke.svg")),
     ]:

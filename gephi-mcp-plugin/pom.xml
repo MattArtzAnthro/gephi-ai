@@ -6,7 +6,7 @@
 
     <groupId>org.gephi.plugins</groupId>
     <artifactId>gephi-mcp</artifactId>
-    <version>1.2.15</version>
+    <version>1.2.16</version>
     <packaging>nbm</packaging>
 
     <name>Gephi AI (MCP)</name>

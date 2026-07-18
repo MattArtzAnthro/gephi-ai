@@ -1412,6 +1412,37 @@ async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> 
     return fmt(await gephi.request("POST", "/export/png",
                                    json_data={"file": file, "width": width, "height": height}))
 
+@mcp.tool(name="gephi_export_screenshot")
+async def gephi_export_screenshot(file: str, scale: int = 2, transparent_background: bool = False) -> str:
+    """Export the LIVE Overview canvas exactly as it looks on screen right now —
+    selection highlighting, hover state, current camera framing — using Gephi's own
+    built-in screenshot feature. Use this instead of gephi_export_png whenever the
+    figure needs to show what the analyst is currently looking at, most importantly
+    an active selection: gephi_export_png renders the graph's stored data through
+    Gephi's Preview pipeline, which has no concept of selection at all and can only
+    fake it by recoloring nodes (the rest of the map stays at full strength instead
+    of dimming). This tool captures the real rendered frame, so a box-drag selection
+    shows dimmed-unselected / vivid-selected exactly as the person sees it.
+
+    Tradeoff: this is the interactive Overview renderer, not the publication-quality
+    Preview renderer gephi_export_png uses (no edge bundling, plainer typography), so
+    a screenshot may look visually rougher than Preview-based exports. Use
+    gephi_export_png for clean data-driven figures; use this specifically when
+    selection state (or exactly what's on screen) needs to be in the image.
+
+    scale: an integer multiplier on the current on-screen canvas size (Gephi's
+    screenshot API takes a scale factor, not literal width/height like
+    gephi_export_png). 2 is a reasonable default for print-quality output.
+    transparent_background: if true, exports with a transparent background instead
+    of Gephi's current canvas background.
+
+    Desktop only; the Overview window must be visible (not minimized) since this
+    reads the actual rendered pixels.
+    """
+    return fmt(await gephi.request("POST", "/export/screenshot",
+                                   json_data={"file": file, "scale": scale,
+                                              "transparent_background": transparent_background}))
+
 @mcp.tool(name="gephi_export_pdf")
 async def gephi_export_pdf(file: str, width: int | None = None, height: int | None = None) -> str:
     """Export the graph visualization as PDF (page size auto-detected if omitted)."""

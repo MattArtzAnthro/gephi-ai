@@ -4,6 +4,32 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## mcp-server 1.11.0 / Java 1.2.16 / claude-plugin 1.9.31 (this release)
+
+### Added
+- **`gephi_export_screenshot` (tool #105): selection-aware live canvas export.**
+  `gephi_export_png` renders through Gephi's Preview pipeline, which works off
+  the graph's stored data and has no concept of a live selection at all, so a
+  box-drag selection could only be faked by recoloring nodes (the rest of the
+  map stayed at full strength instead of dimming, visibly different from what
+  the analyst actually sees on screen). This tool captures the LIVE Overview
+  canvas instead, using Gephi's own built-in screenshot feature
+  (`org.gephi.visualization.api.ScreenshotController`, the same backend behind
+  the toolbar snapshot button) — selection highlighting, hover state, and
+  current camera framing all show up exactly as rendered. `takeScreenshot()`
+  is asynchronous (queued against the render engine via a `LongTaskExecutor`),
+  so the Java side polls a dedicated fresh temp directory for the resulting
+  file rather than assuming completion on return, then waits for the file
+  size to stabilize before moving it to the requested path. Takes a `scale`
+  multiplier rather than literal width/height, Gephi's screenshot API has no
+  pixel-dimension control, only a scale factor on the current canvas size.
+  Tradeoff documented in the tool's own docstring: this is the interactive
+  Overview renderer, not the publication-quality Preview renderer, so output
+  is visually rougher (no edge bundling, plainer typography) than
+  `gephi_export_png`, use each tool for what it's for. `visualization-api`
+  was already a compile dependency, no new Maven dependency needed. Tool
+  count now 105 (README/SKILL.md/tool-reference.md/manifest swept).
+
 ## claude-plugin 1.9.31
 
 ### Changed

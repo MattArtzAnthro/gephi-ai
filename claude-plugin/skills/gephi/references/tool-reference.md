@@ -531,7 +531,12 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_export_png
 - **Method**: POST `/export/png`
 - **Params**: `{file: str, width?: int (1920), height?: int (1080)}`
-- **Notes**: Automatically refreshes preview before export.
+- **Notes**: Automatically refreshes preview before export. Renders through Gephi's Preview pipeline (the graph's stored data), which has no concept of live selection — use gephi_export_screenshot when the figure needs to show what's currently selected.
+
+### gephi_export_screenshot
+- **Method**: POST `/export/screenshot`
+- **Params**: `{file: str, scale?: int (2), transparent_background?: bool (false)}`
+- **Notes**: Captures the LIVE Overview canvas via Gephi's own built-in screenshot feature (`org.gephi.visualization.api.ScreenshotController`) — selection highlighting, hover state, and current camera framing all show up exactly as rendered on screen, unlike gephi_export_png. `scale` is a multiplier on the current on-screen canvas size, not literal pixel dimensions. Visually rougher than Preview-based exports (no edge bundling, plainer typography), so prefer gephi_export_png for clean data-driven figures and this tool specifically when selection/on-screen state needs to be captured. Desktop only; the Overview window must be visible.
 
 ### gephi_export_pdf
 - **Method**: POST `/export/pdf`

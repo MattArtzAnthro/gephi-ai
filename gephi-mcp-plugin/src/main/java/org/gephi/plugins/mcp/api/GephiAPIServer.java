@@ -104,7 +104,7 @@ public class GephiAPIServer extends NanoHTTPD {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("service", "Gephi MCP API");
-            result.addProperty("version", "1.2.15");
+            result.addProperty("version", "1.2.16");
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -698,6 +698,15 @@ public class GephiAPIServer extends NanoHTTPD {
             int w = body.has("width") ? body.get("width").getAsInt() : 1920;
             int h = body.has("height") ? body.get("height").getAsInt() : 1080;
             return service.exportPng(file, w, h);
+        }
+
+        if ("/export/screenshot".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            String file = body.get("file").getAsString();
+            int scale = body.has("scale") ? body.get("scale").getAsInt() : 2;
+            boolean transparent = body.has("transparent_background")
+                && body.get("transparent_background").getAsBoolean();
+            return service.exportScreenshot(file, scale, transparent);
         }
 
         if ("/export/pdf".equals(uri) && Method.POST.equals(method)) {

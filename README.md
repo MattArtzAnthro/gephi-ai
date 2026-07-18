@@ -17,7 +17,7 @@ Built for researchers working across network science and AI.
 <details>
 <summary>Full feature list</summary>
 
-- 104 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- 105 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
 - Layout quality is measured, not eyeballed: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separated and frames exports around the main cloud (ignoring runaway outlier nodes), and numerically exploded layouts are caught automatically instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
@@ -51,7 +51,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 104 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 105 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -83,7 +83,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-mcp-1.2.15.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-mcp-1.2.16.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
@@ -195,7 +195,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (104)
+## Tools (105)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -206,7 +206,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | Appearance | 11 | `gephi_color_by_partition`, `gephi_color_edges_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
 | Filtering | 10 | `gephi_filter_by_degree`, `gephi_extract_backbone`, `gephi_list_filters`, `gephi_apply_filter` (any filter, by name) |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
-| Preview & Export | 10 | `gephi_export_png`, `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph` |
+| Preview & Export | 11 | `gephi_export_png`, `gephi_export_screenshot` (live selection-aware canvas capture), `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph` |
 | Data Laboratory | 4 | `gephi_column_value_frequencies`, `gephi_detect_duplicates`, `gephi_merge_nodes`, `gephi_create_regex_column` |
 | Timeline | 1 | `gephi_get_timeline` (dynamic-graph state, read-only) |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
@@ -245,7 +245,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 104 tools
+- **references/tool-reference.md** — Complete API reference for all 105 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

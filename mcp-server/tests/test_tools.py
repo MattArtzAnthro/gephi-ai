@@ -158,10 +158,29 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
-def test_all_104_tools_registered():
+async def test_export_screenshot_sends_body(rec):
+    await out_of(gephi_mcp.gephi_export_screenshot, file="/tmp/shot.png")
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/export/screenshot"
+    assert rec.last["json"] == {
+        "file": "/tmp/shot.png", "scale": 2, "transparent_background": False,
+    }
+
+
+async def test_export_screenshot_overrides(rec):
+    await out_of(
+        gephi_mcp.gephi_export_screenshot,
+        file="/tmp/shot.png", scale=3, transparent_background=True,
+    )
+    assert rec.last["json"] == {
+        "file": "/tmp/shot.png", "scale": 3, "transparent_background": True,
+    }
+
+
+def test_all_105_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 104, f"expected 104 tools, found {len(names)}"
+    assert len(names) == 105, f"expected 105 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -173,6 +192,7 @@ def test_all_104_tools_registered():
         "gephi_detect_duplicates", "gephi_merge_nodes", "gephi_create_regex_column",
         "gephi_color_edges_by_partition", "gephi_export",
         "gephi_get_timeline", "gephi_snapshot", "gephi_undo",
+        "gephi_export_screenshot",
     ):
         assert expected in names, f"{expected} not registered"
 
