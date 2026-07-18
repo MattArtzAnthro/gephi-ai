@@ -2314,8 +2314,13 @@ public class GephiControlService {
 
         try {
             runOnEDT(() -> {
-                org.gephi.visualization.api.ScreenshotController sc = Lookup.getDefault()
-                    .lookup(org.gephi.visualization.api.ScreenshotController.class);
+                // ScreenshotController is not independently registered in Lookup — it is only
+                // reachable via VisualizationController.getScreenshotController() (the same
+                // VisualizationController singleton getSelection/focusView already use).
+                org.gephi.visualization.api.VisualizationController vc = Lookup.getDefault()
+                    .lookup(org.gephi.visualization.api.VisualizationController.class);
+                if (vc == null) throw new RuntimeException("Visualization controller not available");
+                org.gephi.visualization.api.ScreenshotController sc = vc.getScreenshotController();
                 if (sc == null) throw new RuntimeException("Screenshot controller not available");
                 sc.setAutoSave(true);
                 sc.setDefaultDirectory(captureDir);
