@@ -24,11 +24,18 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_focus_view
 - **Method**: POST `/view/focus`
 - **Params**: `{mode: "graph"|"zero"|"node"|"edge"|"region", id?, source?, target?, x?, y?, w?, h?, zoom?: float, select?: [node ids]}`
-- **Returns**: `{success, mode, selected?}`
+- **Returns**: `{success, mode, selected?}` — `selected` is the verified count actually
+  applied (polled, bounded 1s), not an echo of the request size.
 - **Usage**: Camera/attention control for the Gephi Desktop window: fit the graph,
   center on a node/edge/region, visually select nodes (empty select clears), set
   zoom. Desktop only — errors politely when headless. Use in teaching mode so the
   viewer always sees what you're describing.
+- **Note**: `select` is for visual highlighting only, not for setting up a
+  selection to read back later — it switches Gephi into "custom selection"
+  engine mode, which does not interoperate cleanly with `gephi_get_selection`'s
+  read path (confirmed via bytecode: Gephi's own mode-switch does not clear
+  the flag symmetrically). Only a real box-drag selection is guaranteed
+  readable via `gephi_get_selection`.
 
 ### gephi_set_selection_mode
 - **Method**: POST `/view/selection`
@@ -54,7 +61,9 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
   the persistent selection (made with the rectangle-selection tool — the
   pointing gesture; capped at 200, selected_count is the true total). Read it
   whenever they use deictic words ("these", "the ones I selected") and answer
-  about those exact nodes. clicks is a secondary click journal, usually empty
+  about those exact nodes. Only reliably reads back a real box-drag selection —
+  a selection set via `gephi_focus_view`'s `select` is not guaranteed to still
+  be here (see that tool's note). clicks is a secondary click journal, usually empty
   (hover highlighting is transient and does not register). clear=true empties
   the click journal only. Desktop only.
 

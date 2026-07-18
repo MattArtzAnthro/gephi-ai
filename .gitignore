@@ -1,5 +1,8 @@
 gephi-mcp-plugin/target/
 
+# Personal Claude Code config (machine-specific hooks, not for other contributors)
+.claude/settings.local.json
+
 # Python
 __pycache__/
 *.pyc

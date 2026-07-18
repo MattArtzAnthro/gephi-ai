@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## mcp-server 1.11.0 / Java 1.2.16 / claude-plugin 1.9.31 (this release)
+## Java plugin 1.2.16 / mcp-server 1.11.0
 
 ### Added
 - **`gephi_export_screenshot` (tool #105): selection-aware live canvas export.**
@@ -29,6 +29,46 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
   `gephi_export_png`, use each tool for what it's for. `visualization-api`
   was already a compile dependency, no new Maven dependency needed. Tool
   count now 105 (README/SKILL.md/tool-reference.md/manifest swept).
+
+### Fixed
+- **`gephi_export_screenshot` actually worked only after two live-testing rounds
+  surfaced real bugs, both root-caused against the real Gephi log/bytecode,
+  not guessed:**
+  - **`ScreenshotController` lookup was wrong.** The initial implementation did
+    `Lookup.getDefault().lookup(ScreenshotController.class)`, which always
+    returned null (`"Screenshot controller not available"`) —
+    `ScreenshotController` is not independently registered in the global
+    Lookup at all. It's only reachable via
+    `VisualizationController.getScreenshotController()`, the same
+    `VisualizationController` singleton `gephi_get_selection`/`gephi_focus_view`
+    already use. Confirmed via `javap` on Gephi's own
+    `org-gephi-visualization-api.jar`.
+  - **Any write could crash the HTTP connection with zero response, unrelated
+    to this feature.** `lockWrite()` only caught `InterruptedException`, so a
+    `NoClassDefFoundError` (triggered live by rebuilding the plugin jar while
+    Gephi was still running the previous build — a lazily-loaded class,
+    `RenderPause`, failed to read from the now-different jar bytes on disk)
+    skipped every `catch(Exception)` up the call chain and killed the NanoHTTPD
+    connection thread outright (`curl`: "empty reply from server"). `lockWrite`
+    now catches `Throwable` and converts it into a normal JSON error response,
+    matching the pattern every other helper in this file already follows.
+    Root-caused from Gephi's own `messages.log`, not symptom-guessed.
+- **`gephi_focus_view`'s `select` response lied about what actually got
+  selected.** It echoed back `select.size()` (the request) instead of the
+  verified applied count — `selectNodes()` queues its effect onto the render
+  engine asynchronously, so an immediate read (including the response field
+  itself) could race ahead of it, and IDs that didn't resolve to a real node
+  were silently counted as selected anyway. `focusView` now polls
+  `getSelectedNodes()` (bounded, 1s) and reports the real, settled count.
+  Live-testing this also surfaced a genuine Gephi-side limitation, not
+  something in our plugin: `select`'s "custom selection" engine mode does not
+  interoperate cleanly with `gephi_get_selection`'s read path (Gephi's own
+  `setCustomSelection()` never clears the `rectangleSelection` flag
+  `setRectangleSelection()` sets, confirmed via bytecode). Rather than paper
+  over an engine-level inconsistency with more guessed code, both tools'
+  docstrings now say plainly: `select` is for visual highlighting only, not
+  for setting up a selection to read back later — only a real box-drag
+  selection is guaranteed readable via `gephi_get_selection`.
 
 ## claude-plugin 1.9.31
 

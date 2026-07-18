@@ -261,8 +261,14 @@ Building the Gephi plugin from source requires JDK 11+ and Maven:
 
 ```bash
 cd gephi-mcp-plugin
-mvn clean package    # output: target/gephi-mcp-<version>.nbm
+mvn clean package    # output: target/gephi-mcp-<version>.nbm, auto-deployed to Gephi's modules dir
 ```
+
+**Fully quit and reopen Gephi after every rebuild, even mid-session.** Gephi lazily
+loads plugin classes on first use; overwriting the jar file on disk while Gephi is
+still running an earlier build corrupts the classloader's view of any class not yet
+loaded, and the resulting crash (a raw dropped connection, no error message) can be
+hard to trace back to the real cause.
 
 The MCP server is a standard Python package under `mcp-server/` (`pytest` for tests,
 `ruff` for linting).
