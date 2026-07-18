@@ -2390,6 +2390,29 @@ public class GephiControlService {
         dir.delete();
     }
 
+    /**
+     * Poll the live engine selection until its size matches expected or timeoutMs
+     * elapses. selectNodes()/resetSelection() queue their effect onto the render
+     * engine rather than applying it synchronously with the call, so a read (or a
+     * screenshot) taken immediately after can race ahead of it and see stale state.
+     * Returns the final observed size (may differ from expected on timeout).
+     */
+    private static int waitForSelectionCount(
+            org.gephi.visualization.api.VisualizationController vc, int expected, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        int last = -1;
+        while (System.currentTimeMillis() < deadline) {
+            org.gephi.visualization.api.VisualizationModel model = vc.getModel();
+            last = model != null ? model.getSelectedNodes().size() : 0;
+            if (last == expected) return last;
+            try { Thread.sleep(30); } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return last;
+            }
+        }
+        return last;
+    }
+
     public JsonObject exportPdf(String filePath, int w, int h) {
         return runOnEDT(() -> {
             Workspace ws = currentWorkspace();
@@ -3119,9 +3142,12 @@ public class GephiControlService {
                 default:
                     return error("Unknown mode: " + mode + " (use graph|zero|node|edge|region)");
             }
+            Integer selectedCount = null;
             if (select != null) {
+                int expected;
                 if (select.isEmpty()) {
                     vc.resetSelection();
+                    expected = 0;
                 } else {
                     java.util.List<Node> nodes = new java.util.ArrayList<>();
                     for (String id : select) {
@@ -3129,12 +3155,19 @@ public class GephiControlService {
                         if (n != null) nodes.add(n);
                     }
                     vc.selectNodes(nodes.toArray(new Node[0]));
+                    expected = nodes.size();
                 }
+                // selectNodes()/resetSelection() apply asynchronously against the render
+                // engine (queued, not synchronous with this call) — wait briefly for the
+                // change to actually land instead of blindly echoing the request size, so
+                // a caller (e.g. gephi_get_selection or a screenshot right after) sees it
+                // too. Also correct for IDs that didn't resolve to a real node.
+                selectedCount = waitForSelectionCount(vc, expected, 1000);
             }
             if (zoom != null) vc.setZoom(zoom.floatValue());
             JsonObject r = success("View focused (" + m + ")");
             r.addProperty("mode", m);
-            if (select != null) r.addProperty("selected", select.size());
+            if (selectedCount != null) r.addProperty("selected", selectedCount);
             return r;
         } catch (Exception e) {
             return error("Focus failed: " + e.getMessage());
