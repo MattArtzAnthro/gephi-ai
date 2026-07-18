@@ -193,6 +193,11 @@ public class GephiControlService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while acquiring the write lock");
+        } catch (Throwable t) {
+            // Any other failure here (e.g. a classloading Error, which is not an Exception
+            // and would otherwise skip every catch(Exception) up the call chain and kill the
+            // HTTP connection with no response) must still surface as a normal API error.
+            throw new RuntimeException("Could not acquire write lock: " + t, t);
         } finally {
             if (!acquired) RenderPause.resume();
         }
@@ -2345,7 +2350,7 @@ public class GephiControlService {
     }
 
     /** Poll a directory for the first file to appear in it, up to timeoutMs. */
-    private File pollForNewFile(File dir, long timeoutMs) {
+    static File pollForNewFile(File dir, long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
             File[] files = dir.listFiles();
@@ -2359,7 +2364,7 @@ public class GephiControlService {
     }
 
     /** Wait for a file's size to stop changing between polls (write-in-progress guard). */
-    private boolean waitForStableFileSize(File file, long timeoutMs) {
+    static boolean waitForStableFileSize(File file, long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         long lastSize = -1;
         while (System.currentTimeMillis() < deadline) {
@@ -2374,7 +2379,7 @@ public class GephiControlService {
         return file.length() == lastSize && lastSize > 0;
     }
 
-    private void deleteDirQuietly(File dir) {
+    static void deleteDirQuietly(File dir) {
         File[] files = dir.listFiles();
         if (files != null) for (File f : files) f.delete();
         dir.delete();
