@@ -314,7 +314,7 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_run_layout
 - **Method**: POST `/layout/run`
 - **Params**: `{algorithm: str, iterations?: int (1000), properties?: {name: value}}`
-- **Notes**: Runs asynchronously. Algorithm names: forceatlas2, yifanhu, fruchterman, circular, random.
+- **Notes**: Runs asynchronously. Algorithm names: forceatlas2, yifanhu, openord, fruchterman, circular, random (plus any layout plugin installed in Gephi — `gephi_get_available_layouts` lists what is present). Unmatched property keys are silently discarded, so check spelling against `gephi_get_layout_properties`: OpenOrd takes display names (`"Edge Cut"`, `"Layout Size"`), ForceAtlas 2 and Yifan Hu take camelCase. On Java plugin 1.2.16 and earlier, omitting properties for OpenOrd or Yifan Hu produced a collapsed or no-op layout — see references/layout-guide.md.
 
 ### gephi_stop_layout
 - **Method**: POST `/layout/stop`
@@ -331,6 +331,7 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Method**: GET `/layout/properties`
 - **Params**: `{algorithm: str}`
 - **Returns**: `{success, algorithm, properties: [{name, display_name, type, value, description}]}`
+- **Notes**: `value` is the layout's default, not a setting you made earlier — each call builds a fresh layout instance, so it never reflects a previous `gephi_run_layout`. On Java plugin 1.2.16 and earlier it reported an un-reset instance's zeros instead of the real defaults; if you see all-zero values, the install is pre-1.2.17.
 
 ### gephi_set_layout_properties
 - **Method**: POST `/layout/properties`

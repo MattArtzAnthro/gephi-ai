@@ -294,7 +294,22 @@ public class GephiControlService {
         return e;
     }
 
-    /** Locate a layout builder by name (see bestLayoutMatch for the matching rules). */
+    /**
+     * Locate a layout builder by name (see bestLayoutMatch for the matching rules) and
+     * return a ready-to-use instance.
+     *
+     * <p>A freshly built layout has its properties at Java zero-values, NOT at Gephi's
+     * defaults — those live in {@code resetPropertiesValues()}, which the Gephi UI calls
+     * when you select a layout and which nothing here used to call. Layouts whose builder
+     * self-initializes (ForceAtlas 2) were fine; the rest silently ran on zeros. OpenOrd
+     * with {@code Layout Size} 0 collapsed every node onto (0,0), and Yifan Hu with
+     * {@code optimalDistance}/{@code stepRatio} 0 was a complete no-op that still reported
+     * success. Reset here so every layout starts from Gephi's real defaults and callers
+     * only need to pass the properties they actually want to change.
+     *
+     * <p>The graph model is attached first because size-dependent defaults read it
+     * (ForceAtlas 2 picks scalingRatio 2.0 vs 10.0 off the node count).
+     */
     private Layout findLayout(String algo) {
         java.util.List<LayoutBuilder> builders = new java.util.ArrayList<>();
         java.util.List<String> names = new java.util.ArrayList<>();
@@ -303,7 +318,24 @@ public class GephiControlService {
             names.add(b.getName());
         }
         int idx = bestLayoutMatch(names, algo);
-        return idx >= 0 ? builders.get(idx).buildLayout() : null;
+        if (idx < 0) return null;
+        Layout layout = builders.get(idx).buildLayout();
+        if (layout == null) return null;
+        // Separate failure paths: a missing graph model must not skip the reset, which is
+        // the part that actually keeps OpenOrd and Yifan Hu from running on zeros.
+        try {
+            GraphModel gm = currentGraphModel();
+            if (gm != null) layout.setGraphModel(gm);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "setGraphModel failed for layout: " + algo, e);
+        }
+        try {
+            layout.resetPropertiesValues();
+        } catch (Exception e) {
+            // A layout that rejects the reset is still usable on its own defaults.
+            LOGGER.log(Level.WARNING, "resetPropertiesValues failed for layout: " + algo, e);
+        }
+        return layout;
     }
 
     /**

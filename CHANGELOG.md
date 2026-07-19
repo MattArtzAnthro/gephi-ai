@@ -4,6 +4,67 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Java plugin 1.2.17 / claude-plugin 1.9.32
+
+### Fixed
+- **Layouts ran on zeros instead of Gephi's defaults — OpenOrd collapsed the
+  graph, Yifan Hu did nothing at all.** `findLayout()` returned
+  `builder.buildLayout()` directly, and nothing in the plugin ever called
+  `resetPropertiesValues()` — the method where Gephi actually installs a
+  layout's defaults, which the desktop UI invokes when you select a layout in
+  the panel. Every property the caller did not explicitly pass was therefore
+  left at its Java zero-value. Measured on a 40-node graph: a bare
+  `gephi_run_layout("OpenOrd")` put **all 40 nodes at (0, 0)**, because
+  `Layout Size` was `0` and the output coordinate space had zero span; a bare
+  `gephi_run_layout("yifanhu")` was a **complete no-op**, returning node
+  positions byte-identical to before the run because `optimalDistance`,
+  `initialStepSize`, and `stepRatio` were all `0`. Both reported
+  `success: true`, so the only symptom was a silently wrong picture. ForceAtlas 2
+  was never affected — its builder self-initializes, which is why the workhorse
+  layout looked fine and the bug survived this long; the documented "large graph"
+  workflow (Yifan Hu pre-pass, then FA2) had been quietly degrading to FA2-alone.
+  `findLayout()` now attaches the graph model and calls `resetPropertiesValues()`
+  before returning, in separate try blocks so a missing graph model cannot skip
+  the reset. The graph model goes on first because size-dependent defaults read
+  it (FA2 picks scalingRatio 2.0 vs 10.0 off the node count). Callers now only
+  pass the properties they actually want to change.
+- `gephi_get_layout_properties` consequently reported an un-reset instance's
+  zero-values as though they were current settings or defaults, and — because
+  every call built a fresh layout — never reflected a value set on a previous
+  call. It now reports real defaults.
+
+### Added
+- `LayoutDefaultsTest` (3 tests, 48 total) pins the premise directly against the
+  real Gephi layout classes: OpenOrd and Yifan Hu genuinely arrive on zeros,
+  `resetPropertiesValues()` genuinely clears them, and ForceAtlas 2 genuinely
+  self-initializes. Asserting the *before* state means that if a future Gephi
+  release starts self-initializing these layouts, the test fails loudly rather
+  than the fix quietly becoming redundant. Adds `layout-plugin` as a test-scoped
+  dependency (at runtime these classes come from the host Gephi install).
+
+### Changed
+- **Skill: corrected the modularity resolution direction, which was backwards.**
+  `statistics-guide.md` claimed resolution < 1.0 gives fewer, larger communities
+  and > 1.0 gives more, smaller ones. It is the opposite. Verified on a graph
+  built with 8 tight groups paired into 4: resolution 0.3 yielded **8**
+  communities, resolution 1.5 yielded **4**. Gephi implements the
+  Lambiotte-Delvenne-Barahona resolution, where raising the value *merges*
+  communities — the reverse of the gamma convention in much of the modularity
+  literature, which is the likely source of the error. Noted inline so it does
+  not get "corrected" back.
+- **Skill: OpenOrd is now documented.** It had appeared only as a name in a
+  selection table with no parameter guidance at all. Adds exact property keys,
+  the five-stage annealing schedule, a starting config, and the reproducibility
+  caveat (output depends on seed, iteration count, *and* thread count; repeated
+  runs with a fixed seed and one thread still diverged, so do not promise
+  determinism). Property names are display names — `"Edge Cut"`, `"Layout Size"`,
+  `"Liquid (%)"` — because OpenOrd exposes no dotted canonical names, so a
+  camelCased `edgeCut` matches nothing and is silently discarded by
+  `applyLayoutProperties`. Yifan Hu's camelCase keys do resolve, via the middle
+  segment of `YifanHu.optimalDistance.name`.
+- Skill: Yifan Hu gains `relativeStrength`, `initialStepSize`,
+  `convergenceThreshold`, and `adaptiveCooling`.
+
 ## Java plugin 1.2.16 / mcp-server 1.11.0
 
 ### Added

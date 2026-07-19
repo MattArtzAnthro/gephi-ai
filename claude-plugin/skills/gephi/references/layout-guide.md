@@ -61,6 +61,7 @@ expect to reach a good layout by iteration, not by one perfect setting.
 |-----------|----------|------------|-------|---------|
 | **ForceAtlas2** | Most networks, community visualization | <50k nodes | Medium | Excellent |
 | **Yifan Hu** | Large graphs, fast overview | >10k nodes | Fast | Good |
+| **OpenOrd** | Massive graphs, hard cluster separation | >50k nodes | Fast | Good (clustered) |
 | **Fruchterman-Reingold** | Small networks, even spacing | <5k nodes | Slow | Good |
 | **Circular** | Ring layouts, ordered visualization | Any | Instant | Varies |
 | **Random** | Reset positions before re-layout | Any | Instant | N/A |
@@ -181,12 +182,94 @@ graphs, often followed by ForceAtlas2 refinement.
 ### Key Parameters
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `stepRatio` | 0.95 | Convergence speed (lower = faster) |
-| `optimalDistance` | 100 | Target distance between nodes |
+| `stepRatio` | 0.95 | Cooling rate. Higher cools slower — cleaner final layout, longer runtime |
+| `optimalDistance` | 100 | Target distance between nodes. Raise to separate clusters in dense graphs |
 | `theta` | 1.2 | Barnes-Hut approximation (higher = faster, less precise) |
+| `relativeStrength` | 0.2 | Repulsion/attraction balance. Guards against clusters collapsing or over-expanding |
+| `initialStepSize` | 20 | Max displacement per iteration. ~10% of `optimalDistance` is the rule of thumb; high values untangle dense graphs fast |
+| `convergenceThreshold` | 1.0E-4 | Energy floor at which the layout stops. Smaller = more accurate |
+| `adaptiveCooling` | false | Helps escape local energy minima on stubborn graphs |
+
+These camelCase keys resolve correctly — the plugin matches them against the
+middle segment of `YifanHu.optimalDistance.name` (verified: passing them moves
+nodes; omitting them does not).
+
+**On Java plugin 1.2.16 and earlier, Yifan Hu will not run without them** — a
+bare `gephi_run_layout("yifanhu")` returns `success: true` and changes nothing
+at all, because every property is 0. See the OpenOrd section above. Fixed in
+1.2.17; on older builds always pass at least `optimalDistance`,
+`initialStepSize`, and `stepRatio`.
 
 ### Recommended Iterations
 - 100-500 iterations (converges fast)
+
+## OpenOrd
+
+Built for very large graphs (up to ~1M nodes). Unlike the force layouts, it runs
+a fixed simulated-annealing schedule and terminates on its own. Use it as the
+first pass on a huge graph, then refine with a short ForceAtlas 2 run.
+
+### Property names are the trap here
+
+OpenOrd exposes **no dotted canonical names**, so the display name is the only
+key that resolves — spaces, capitals, and `(%)` included. Unlike Yifan Hu
+(where `optimalDistance` matches `YifanHu.optimalDistance.name`) and
+ForceAtlas 2 (camelCase), a camelCased `edgeCut` here matches nothing and is
+**silently discarded** — the run returns `success: true` on stock defaults. Use
+exactly these strings, or call `gephi_get_layout_properties("OpenOrd")` first.
+
+| Property (exact key) | Default | Effect |
+|---|---|---|
+| `"Edge Cut"` | 0.8 | 0 = no cutting; 1 = maximum. Higher = more clustered, more separated result. The main knob |
+| `"Num Iterations"` | 750 | Raise only for very large graphs. More iterations = less dense result |
+| `"Num Threads"` | cores − 1 | |
+| `"Layout Size"` | 20000 | Total coordinate span; furthest node lands at ± half this |
+| `"Random seed"` | 0 | Output depends on seed, iterations, AND thread count. Not reproducible run-to-run even with a fixed seed — do not promise reproducibility |
+
+### Requires plugin 1.2.17+ (older plugins produce a collapsed layout)
+
+Those defaults are the ones the Gephi UI applies via `resetPropertiesValues()`.
+**Java plugin 1.2.16 and earlier never called it**, so every unspecified OpenOrd
+property ran at its Java zero-value. Measured on a 40-node graph under 1.2.16:
+`gephi_run_layout("OpenOrd")` with no properties put **all 40 nodes at (0, 0)**,
+because `Layout Size` was 0 and the coordinate space had zero span. Yifan Hu was
+worse — a bare run was a **complete no-op**, positions byte-identical to before.
+Both returned `success: true`. ForceAtlas 2 was never affected; its builder
+self-initializes, which is why the bug went unnoticed for so long.
+
+1.2.17 resets properties in `findLayout`, so bare calls now behave like the
+Gephi UI and you only pass what you want to change. **If the user is on 1.2.16
+or earlier**, either tell them to update or pass every property explicitly —
+`{"Layout Size": 20000, "Num Iterations": 750, "Edge Cut": 0.8}` restored a
+normal ±10000 spread on the old build.
+
+The tell that you are on an affected build: `gephi_get_layout_properties`
+returns all-zero `value` fields for OpenOrd or Yifan Hu. On 1.2.17+ they report
+the real defaults. Either way the `description` field states the true default in
+prose, so prefer it when the numbers look implausible.
+
+### The five-stage schedule
+
+Time is split across five annealing stages, tunable as percentages
+(`"Liquid (%)"` 25, `"Expansion (%)"` 25, `"Cooldown (%)"` 25,
+`"Crunch (%)"` 10, `"Simmer (%)"` 15 — they should sum to 100):
+
+1. **Liquid** — high-temperature global structure
+2. **Expansion** — push outward, maximize cluster separation
+3. **Cooldown** — settle into semi-stable regions
+4. **Crunch** — compress around cluster centers, sharpen boundaries
+5. **Simmer** — local stabilization, resolve overlaps
+
+Leave the split alone unless you have a specific reason; `Edge Cut` is the knob
+that actually changes the picture.
+
+### Recommended starting point
+
+```json
+{"Edge Cut": 0.8, "Num Iterations": 750}
+```
+Then a short ForceAtlas 2 pass (`linLogMode: true, gravity: 0`) for detail.
+Lower `Edge Cut` toward 0 if the result fragments more than the data warrants.
 
 ## Fruchterman-Reingold
 
@@ -235,9 +318,14 @@ gephi_run_layout({algorithm: "forceatlas2", iterations: 150, properties: {preven
 
 ### Large graph
 ```
-gephi_run_layout({algorithm: "yifanhu", iterations: 300})
+# Properties are explicit so this also works on Java plugin 1.2.16 and earlier,
+# where a bare Yifan Hu call is a silent no-op (see the OpenOrd section).
+gephi_run_layout({algorithm: "yifanhu", iterations: 300, properties: {optimalDistance: 100, initialStepSize: 20, stepRatio: 0.95, relativeStrength: 0.2}})
 gephi_run_layout({algorithm: "forceatlas2", iterations: 1500, properties: {linLogMode: true, gravity: 0, scalingRatio: 10.0, barnesHutOptimization: true}})
 ```
+On an affected build with the properties omitted, the pre-pass does nothing and
+FA2 silently does all the work from the original positions — and the run still
+reports success, so the only symptom is a layout that looks like FA2 alone.
 
 ## Real-world harvest networks (single-window mention/interaction data)
 

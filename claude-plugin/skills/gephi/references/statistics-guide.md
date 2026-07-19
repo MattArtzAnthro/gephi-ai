@@ -18,8 +18,14 @@ Groups nodes into communities (clusters) using the Louvain method. Nodes in the 
 ### Tool
 `gephi_compute_modularity` with `{resolution: float}`
 - Resolution 1.0 (default): Standard communities
-- Resolution < 1.0: Fewer, larger communities
-- Resolution > 1.0: More, smaller communities
+- Resolution > 1.0 (e.g. 1.5): Fewer, larger communities
+- Resolution < 1.0 (e.g. 0.3): More, smaller, tightly-knit communities
+
+**Watch the direction.** Gephi implements the Lambiotte-Delvenne-Barahona
+resolution, where *raising* the value merges communities. This is the opposite
+of the gamma parameter in much of the modularity literature, where raising the
+value splits them. Sanity-check by running two resolutions and comparing the
+`modularity_class` count before reporting anything about community granularity.
 
 ### Node Attributes Created
 | Attribute | Type | Description |

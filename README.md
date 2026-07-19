@@ -83,7 +83,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-mcp-1.2.16.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-mcp-1.2.17.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 

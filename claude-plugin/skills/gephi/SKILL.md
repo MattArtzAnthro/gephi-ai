@@ -5,15 +5,15 @@ description: |
   this skill provides workflows and best practices for the 105 Gephi MCP tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.16+) installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.17+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.9.31"
+  version: "1.9.32"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.9.31 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.9.32 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 105 MCP tools (prefixed `mcp__gephi-mcp__`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 

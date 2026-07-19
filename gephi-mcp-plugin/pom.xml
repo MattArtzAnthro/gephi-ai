@@ -6,7 +6,7 @@
 
     <groupId>org.gephi.plugins</groupId>
     <artifactId>gephi-mcp</artifactId>
-    <version>1.2.16</version>
+    <version>1.2.17</version>
     <packaging>nbm</packaging>
 
     <name>Gephi AI (MCP)</name>
@@ -159,6 +159,20 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          Test only: the concrete layout implementations (OpenOrd, Yifan Hu, ForceAtlas 2).
+          Needed by LayoutDefaultsTest to assert that a freshly built layout starts on
+          zeros and that resetPropertiesValues() installs Gephi's real defaults — the
+          premise the findLayout() fix rests on. Not a runtime dependency: at runtime these
+          classes come from the host Gephi install via Lookup.
+        -->
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>layout-plugin</artifactId>
+            <version>${gephi.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
