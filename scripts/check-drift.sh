@@ -90,9 +90,38 @@ check_clone() {  # check_clone <label> <path>
   fi
 }
 
-check_clone "host" "$HOME/.claude/plugins/marketplaces/gephi-ai"
-
 LATEST_PLUGIN=$(python3 -c "import json;print(json.load(open('latest.json'))['plugin'])" 2>/dev/null)
+
+# A synced marketplace clone does NOT mean the plugin actually loaded is current:
+# Claude installs from the clone into a versioned cache and pins the version in
+# installed_plugins.json, and loads from THAT. Applies to the host exactly as it
+# does to Cowork — on 2026-07-19 the host clone was current while the host
+# manifest still sat at 1.9.29 against a released 1.9.31, and this script
+# reported clean because it only looked at the clone.
+check_manifest() {  # check_manifest <label> <installed_plugins.json path>
+  local label="$1" manifest="$2"
+  [ -f "$manifest" ] || return 0
+  [ -n "$LATEST_PLUGIN" ] || return 0
+  local installed
+  installed=$(python3 -c "
+import json
+try:
+    d = json.load(open('$manifest'))
+    print(d['plugins']['gephi-network-analysis@gephi-ai'][0]['version'])
+except Exception:
+    print('')
+" 2>/dev/null)
+  if [ -z "$installed" ]; then
+    : # plugin not installed here — nothing to check
+  elif [ "$installed" = "$LATEST_PLUGIN" ]; then
+    ok "$label installed_plugins.json is current ($installed)"
+  else
+    note "$label installed_plugins.json is STALE ($installed vs $LATEST_PLUGIN) — run: claude plugin marketplace update gephi-ai && claude plugin update gephi-network-analysis@gephi-ai"
+  fi
+}
+
+check_clone    "host" "$HOME/.claude/plugins/marketplaces/gephi-ai"
+check_manifest "host" "$HOME/.claude/plugins/installed_plugins.json"
 
 while IFS= read -r -d '' cowork_mp; do
   # label with the Cowork session id (two dirs up from marketplaces/gephi-ai:
@@ -102,28 +131,10 @@ while IFS= read -r -d '' cowork_mp; do
   session_id=$(basename "$session_dir")
   check_clone "Cowork ($session_id)" "$cowork_mp"
 
-  # Cowork loads plugins from its OWN cache + installed_plugins.json, separate
-  # from the marketplace clone git history — a synced clone does not mean
-  # Cowork will actually pick it up. Check that manifest directly too.
+  # Cowork loads from its OWN cache + installed_plugins.json, separate from the
+  # marketplace clone's git history — check that manifest directly too.
   cowork_plugins_dir=$(dirname "$(dirname "$cowork_mp")")
-  manifest="$cowork_plugins_dir/installed_plugins.json"
-  if [ -f "$manifest" ] && [ -n "$LATEST_PLUGIN" ]; then
-    installed=$(python3 -c "
-import json
-try:
-    d = json.load(open('$manifest'))
-    print(d['plugins']['gephi-network-analysis@gephi-ai'][0]['version'])
-except Exception:
-    print('')
-" 2>/dev/null)
-    if [ -z "$installed" ]; then
-      : # plugin not installed in this Cowork session — nothing to check
-    elif [ "$installed" = "$LATEST_PLUGIN" ]; then
-      ok "Cowork ($session_id) installed_plugins.json is current ($installed)"
-    else
-      note "Cowork ($session_id) installed_plugins.json is STALE ($installed vs $LATEST_PLUGIN) — cache dir + manifest need updating, not just the clone"
-    fi
-  fi
+  check_manifest "Cowork ($session_id)" "$cowork_plugins_dir/installed_plugins.json"
 done < <(find "$HOME/Library/Application Support/Claude/local-agent-mode-sessions" \
   -maxdepth 6 -type d -iname "gephi-ai" -path "*marketplaces*" -print0 2>/dev/null)
 echo ""
