@@ -16,3 +16,8 @@ mcp-server/dist/
 # MCPB build artifacts
 mcpb/server/lib/
 *.mcpb
+
+# Local drafts and internal notes — never publish (LinkedIn posts, papers, scratch)
+docs/
+*-draft.md
+*-draft.*
