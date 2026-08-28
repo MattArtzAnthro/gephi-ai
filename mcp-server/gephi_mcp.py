@@ -156,7 +156,6 @@ _READ_ONLY = {
     "gephi_list_filters", "gephi_get_timeline", "gephi_column_value_frequencies",
     "gephi_detect_duplicates", "gephi_get_preview_settings", "gephi_get_perspective",
     "gephi_get_selection", "gephi_view_graph", "gephi_whatif", "gephi_compare_nodes",
-    "gephi_claim_record",
 }
 _DESTRUCTIVE = {
     "gephi_create_project", "gephi_open_project", "gephi_delete_workspace",
@@ -2293,7 +2292,7 @@ async def gephi_claim_record(claim: str, classification: str, verdict: str,
     values: {node_id: cited value of `metric`}. numbers: other cited figures
     (a within-group edge share, a component count) kept as given.
     export: optional path; writes the record as JSON for a methods appendix.
-    Read-only on the graph.
+    Writes nothing to the graph; the only side effect is that file, when asked.
     """
     if verdict not in _VERDICTS:
         return CallToolResult(

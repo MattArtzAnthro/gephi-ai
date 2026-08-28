@@ -4,6 +4,16 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.13.1 / claude-plugin 1.11.1
+
+### Fixed
+- **`gephi_claim_record` no longer advertises itself as read-only.** It never
+  changes the graph, but its `export` parameter writes a file, and
+  `readOnlyHint` promises a host that nothing in the environment changes, so a
+  host honoring the hint could have skipped confirmation on a file write. It
+  now carries the same annotation as the export tools: neither read-only nor
+  destructive. Caught by a post-commit review of 1.13.0.
+
 ## MCP server 1.13.0 / claude-plugin 1.11.0
 
 ### Added

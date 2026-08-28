@@ -131,7 +131,10 @@ async def test_record_exports_bundle(graph, tmp_path):
     assert saved["caption"] == result.structured_content["caption"]
 
 
-async def test_claim_record_is_read_only():
+async def test_claim_record_annotation_admits_the_file_write():
+    """It never changes the graph, but `export` writes a file, so it must not
+    advertise itself as read-only (a host may skip confirmation on that hint).
+    Same classification as the export tools."""
     from gephi_mcp import _annotations_for
     ann = _annotations_for("gephi_claim_record")
-    assert ann.read_only_hint is True and ann.destructive_hint is False
+    assert ann.read_only_hint is False and ann.destructive_hint is False
