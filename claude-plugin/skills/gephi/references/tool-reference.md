@@ -358,6 +358,12 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, modularity}`
 - **Notes**: Higher resolution = more communities. Use `gephi_color_by_partition` with `modularity_class` afterwards.
 
+### gephi_community_stability
+- **Method**: runs community detection `runs` times on the unchanged graph, reading the partition back between runs, and measures how often each pair of nodes lands together. Writes the consensus partition to its own column so the run already on the graph survives.
+- **Params**: `{runs: int (20), resolution: float (1.0), consensus_column: str ("consensus_community")}`.
+- **Returns**: `{success, runs, distinct_partitions, node_stability: {id: 0-1}, mean_stability, unstable_nodes: [{node, stability}], consensus_groups, consensus_column, caveats?}`.
+- **Notes**: use this BEFORE describing communities as a finding. Gephi reports one partition as though it were the answer; it is one draw. A node scores 1.0 when every co-membership relation came out the same way every time and 0.5 when its placement is undetermined. Fewer than 2 runs is refused, and a partition that cannot be read back is an error rather than an empty result, because empty is indistinguishable from stable.
+
 ### gephi_compute_degree
 - **Method**: POST `/statistics/degree`
 - **Creates**: `degree`, `indegree`, `outdegree` on nodes
@@ -437,6 +443,24 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{claim: str, classification: str, verdict: "confirmed"|"refuted"|"cant_tell", metric?: str, nodes?: [id], values?: {id: number}, numbers?: {name: value}, caveat?: str, export?: path}`
 - **Returns**: a structured record (also as `structuredContent`): `{claim, classification, metric, verdict, verified, evidence: {nodes: [{id, label, value, cited}]}, numbers, caveat, checks: {nodes_checked, nodes_missing, value_mismatches}, caption, export?}`. `verified` is false when a cited node does not exist or a cited value differs from the live one; the verdict itself is never changed by the tool.
 - **Notes**: the receipt behind a verified claim. Call it after measuring, with the ids and numbers the verdict rests on; `caption` is one sentence ready for a figure caption or methods appendix, and `export` writes the record as JSON. See references/claim-verification.md.
+
+### gephi_compare_workspaces
+- **Method**: reads both workspaces (switching to each and back), diffs node and edge sets, and — when `compare` names a numeric column — tracks it across the nodes present in both.
+- **Params**: `{before: int, after: int, compare?: str, directed?: bool (false)}`. Workspace arguments are zero-based indices, not the ids the workspace list reports.
+- **Returns**: `{success, nodes: {added, removed, shared, before, after}, edges: {added, removed, shared, directed}, changed: {column, comparable, grew, shrank, unchanged}|null, warning?}`.
+- **Notes**: the comparison rests on node identity. Two graphs sharing no nodes carry a warning, because a mismatched identifier looks exactly like a network that replaced every member and is much more common. Omitting `compare` returns `changed: null` rather than an empty section, since an empty one reads as a finding that nothing moved.
+
+### gephi_bipartite_layout
+- **Method**: reads the graph, computes two columns of coordinates in Python, and pushes them as positions. No Gephi layout plugin is involved.
+- **Params**: `{mode_column: str, separation?: float (600), spacing?: float (60)}`.
+- **Returns**: `{success, positioned, modes: {left, right}, mode_column}`.
+- **Notes**: `mode_column` names the attribute separating the two kinds of node — Gephi has no concept of a mode, so it must be told. A column holding more than two distinct values is refused rather than guessed at.
+
+### gephi_bipartite_projection
+- **Method**: collapses a two-mode network onto one mode, joining nodes that share a partner and weighting by how many they share, then builds the result in a NEW workspace. The original is untouched.
+- **Params**: `{mode_column: str, keep: str, workspace_name?: str}`.
+- **Returns**: `{success, nodes, edges, kept_mode, warning?, within_mode_edges?}`.
+- **Notes**: the standard way to analyse two-mode data (people by events, authors by concepts) as a social network; Gephi cannot do it at all. Nodes sharing no partner are kept with no edges — dropping them would quietly remove people from the network. An edge joining two nodes of the same mode means the data is not bipartite; those edges are ignored and reported.
 
 ## Filters
 
@@ -592,6 +616,18 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
   Hosts without MCP Apps get a text summary only, so use `gephi_export_png` there.
   Run a layout first so nodes are positioned. Graphs over `max_nodes` are trimmed to
   the highest-degree nodes (the summary says so).
+
+### gephi_export_legend
+- **Method**: draws an SVG key from the mappings applied in this session. Swatch colours for a partition are read back from the graph, because Gephi assigns a palette itself when none is given and never reports which one.
+- **Params**: `{file: str}` (an `.svg` path).
+- **Returns**: `{success, file, items}` or `{success: false, error}` when nothing has been mapped.
+- **Notes**: answers gephi/gephi#511 — Gephi has never shipped a legend. It describes only what was applied through these tools; styling done by hand in the Gephi window is invisible to it, so it REFUSES rather than guessing. A legend guessed from an unknown appearance is worse in a published figure than no legend. Pair it with a PNG or PDF export.
+
+### gephi_session_receipt
+- **Method**: reports the mappings in force, the statistics run and their parameters, the layout and its settings, and the plugin and server versions.
+- **Params**: `{file?: str}` — writes JSON when given a path.
+- **Returns**: `{success, legend, statistics, layout, scope, versions: {server, plugin}, file?}`.
+- **Notes**: for a methods section. Gephi does not record which layout ran with which settings, so without this a figure cannot be explained or reproduced later. `scope` states the limit: work done by hand in the Gephi window is not visible here.
 
 ## Import
 

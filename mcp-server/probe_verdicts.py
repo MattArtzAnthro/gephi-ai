@@ -51,6 +51,37 @@ class Verdicts:
         print(f"  {probe}: NO VERDICT — {why}")
 
 
+def write_overlay(overlay_path: Path, verdicts: dict[str, str],
+                  today: str | None = None,
+                  evidence: dict[str, str] | None = None) -> list[str]:
+    """Record this machine's verdicts beside the register, never inside it.
+
+    A verdict describes one install. Written into the shipped register it becomes a claim about
+    every install: a silenced caveat for users whose Gephi was never tested, and a defect reported
+    as "reproduced on this Gephi" on machines nobody probed.
+    """
+    today = today or date.today().isoformat()
+    for probe, verdict in verdicts.items():
+        if verdict not in VALID_VERDICTS:
+            raise ValueError(
+                f"{verdict!r} is not a verdict for {probe}; expected one of "
+                f"{sorted(VALID_VERDICTS)}")
+    try:
+        existing = json.loads(overlay_path.read_text(encoding="utf-8"))
+    except Exception:
+        existing = {}
+    changes = []
+    for caveat_id, verdict in verdicts.items():
+        was = existing.get(caveat_id, {}).get("status")
+        existing[caveat_id] = {"status": verdict, "checked_on": today}
+        if (evidence or {}).get(caveat_id):
+            existing[caveat_id]["evidence"] = evidence[caveat_id]
+        if was != verdict:
+            changes.append(f"  {caveat_id}: {was or 'unverified'} -> {verdict}")
+    overlay_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    return changes
+
+
 def apply_verdicts(register_path: Path, verdicts: dict[str, str],
                    today: str | None = None,
                    evidence: dict[str, str] | None = None) -> list[str]:

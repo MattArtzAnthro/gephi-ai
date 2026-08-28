@@ -227,13 +227,13 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | Category | Count | Examples |
 |----------|-------|---------|
 | Project & Workspace | 12 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_snapshot`, `gephi_undo` |
-| Graph Construction | 17 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node`, `gephi_text_to_network` |
-| Statistics & Analysis | 15 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric), `gephi_whatif` (counterfactual), `gephi_compare_nodes` |
-| Layout | 8 | `gephi_run_layout`, `gephi_get_layout_properties`, `gephi_community_layout`, `gephi_similarity_layout` |
+| Graph Construction | 18 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node`, `gephi_text_to_network`, `gephi_bipartite_projection` (two-mode to one-mode) |
+| Statistics & Analysis | 18 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric), `gephi_whatif` (counterfactual), `gephi_compare_nodes`, `gephi_community_stability` (are the communities real?), `gephi_compare_workspaces` (what changed between two versions) |
+| Layout | 9 | `gephi_run_layout`, `gephi_get_layout_properties`, `gephi_community_layout`, `gephi_similarity_layout`, `gephi_bipartite_layout` |
 | Appearance | 11 | `gephi_color_by_partition`, `gephi_color_edges_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
 | Filtering | 10 | `gephi_filter_by_degree`, `gephi_extract_backbone`, `gephi_list_filters`, `gephi_apply_filter` (any filter, by name) |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
-| Preview & Export | 11 | `gephi_export_png`, `gephi_export_screenshot` (live selection-aware canvas capture), `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph` |
+| Preview & Export | 13 | `gephi_export_png`, `gephi_export_screenshot` (live selection-aware canvas capture), `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph`, `gephi_export_legend`, `gephi_session_receipt` (how the figure was made) |
 | Data Laboratory | 4 | `gephi_column_value_frequencies`, `gephi_detect_duplicates`, `gephi_merge_nodes`, `gephi_create_regex_column` |
 | Timeline | 1 | `gephi_get_timeline` (dynamic-graph state, read-only) |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |

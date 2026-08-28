@@ -20,8 +20,9 @@ import json
 import random
 import time
 
-import gephi_mcp as g
 from mcp.types import CallToolResult
+
+import gephi_mcp as g
 
 GEXF = "/tmp/gephi_smoke_big.gexf"
 

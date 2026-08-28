@@ -7,6 +7,7 @@ disconnected components, and scale. These run headless in CI (no live Gephi).
 """
 import pytest
 
+import text_network as tn
 from gephi_mcp_viewer import (
     analyze_graph,
     parse_gexf,
@@ -14,7 +15,6 @@ from gephi_mcp_viewer import (
     resolve_column_key,
 )
 from gephi_mcp_viewer.community_layout import compute_community_positions
-import text_network as tn
 
 
 def _gexf(nodes_xml, edges_xml, directed=False, node_attrs="", edge_attrs=""):

@@ -29,6 +29,18 @@ from typing import Any
 
 REGISTER_PATH = Path(__file__).with_name("caveats.json")
 
+#: Probe verdicts live beside the register, never inside it. A verdict is a statement about one
+#: install: baked into the distributed package it would be published as a claim about every
+#: install, silencing caveats for users whose Gephi was never tested and telling them a defect was
+#: "reproduced on this Gephi" when theirs was never touched. The register therefore ships pristine
+#: and a probe run writes here.
+OVERLAY_NAME = "caveats.local.json"
+
+
+def local_overlay_path() -> Path:
+    """Where this machine's probe verdicts are recorded. Not part of the package."""
+    return REGISTER_PATH.with_name(OVERLAY_NAME)
+
 #: Statuses a register entry's verification block may carry.
 #:
 #: "not_probeable" is not a lesser "unverified". It means the defect cannot be reproduced through
@@ -62,8 +74,38 @@ def load_register(path: Path | None = None) -> list[dict[str, Any]]:
     if path is not None:
         return json.loads(path.read_text(encoding="utf-8"))["caveats"]
     if _register_cache is None:
-        _register_cache = json.loads(REGISTER_PATH.read_text(encoding="utf-8"))["caveats"]
+        entries = json.loads(REGISTER_PATH.read_text(encoding="utf-8"))["caveats"]
+        _register_cache = _apply_overlay(entries)
     return _register_cache
+
+
+def _apply_overlay(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge this machine's probe verdicts over the shipped register.
+
+    A malformed or unreadable overlay is ignored rather than raised: it sits on the path of every
+    statistic, and a bad local file must not be able to break measurement.
+    """
+    try:
+        overlay = json.loads(local_overlay_path().read_text(encoding="utf-8"))
+    except Exception:
+        return entries
+    if not isinstance(overlay, dict):
+        return entries
+    merged = []
+    for entry in entries:
+        verdict = overlay.get(entry["id"])
+        if isinstance(verdict, dict):
+            entry = {**entry, "verification": {**entry["verification"], **verdict}}
+            if verdict.get("status") == "reproduced" and verdict.get("checked_on"):
+                entry["says"] = (entry["says"].replace(UNVERIFIED_SUFFIX, "").rstrip()
+                                 + f" Reproduced on this Gephi on {verdict['checked_on']}.")
+        merged.append(entry)
+    return merged
+
+
+UNVERIFIED_SUFFIX = (
+    " Not verified against your Gephi: run the probe suite to confirm it still holds."
+)
 
 
 def _param_not_default(spec: dict[str, Any], params: dict[str, Any]) -> bool:

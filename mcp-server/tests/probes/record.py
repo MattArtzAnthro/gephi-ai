@@ -6,6 +6,9 @@ script is what turns those entries into claims about the install in front of you
 
     GEPHI_PROBE=1 PYTHONPATH=. uv run python tests/probes/record.py
 
+Verdicts are written to caveats.local.json beside the register, never into it: a
+verdict describes one install and must not travel in the package.
+
 An entry a probe reproduces becomes "reproduced" and is asserted. An entry a probe positively
 fails to reproduce becomes "not_reproduced" and stops being surfaced, which is how the suite tells
 you the day Gephi fixes one. A probe that could not measure at all changes nothing: it produces no
@@ -74,10 +77,23 @@ if __name__ == "__main__":
     if not os.environ.get("GEPHI_PROBE"):
         raise SystemExit("Set GEPHI_PROBE=1 to confirm you want to drive a live Gephi.")
 
-    from probe_verdicts import apply_verdicts
+    import json as _json
+
+    from probe_verdicts import write_overlay
+    from stats_integrity import local_overlay_path
 
     verdicts = asyncio.run(run_probes())
-    changes = apply_verdicts(REGISTER, verdicts.results, evidence=verdicts.evidence)
+
+    # The overlay is keyed by caveat id, not probe name, since that is what load_register merges.
+    by_caveat, evidence = {}, {}
+    register = _json.loads(REGISTER.read_text(encoding="utf-8"))["caveats"]
+    for entry in register:
+        probe = entry["verification"].get("probe")
+        if probe and probe in verdicts.results:
+            by_caveat[entry["id"]] = verdicts.results[probe]
+            if probe in verdicts.evidence:
+                evidence[entry["id"]] = verdicts.evidence[probe]
+    changes = write_overlay(local_overlay_path(), by_caveat, evidence=evidence)
 
     print("\n" + "-" * 60)
     print(f"{len(verdicts.results)} verdict(s), {len(verdicts.failures)} probe(s) with no verdict")
