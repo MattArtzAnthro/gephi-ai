@@ -222,6 +222,14 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
             f"{len(colors)} distinct node colors — this looks like a continuous "
             "gradient; if color should show categories, use a categorical palette "
             "(and never double-encode the variable already shown by size)")
+    if size_info["flat"] and len(colors) == 1 and len(nodes) > 1:
+        # Uniform size and a single color is what a graph looks like straight
+        # after loading: nothing has been laid out or styled yet. Exporting it
+        # gives the block of overlapping default nodes, not a map.
+        warnings.append(
+            "looks untouched: every node is the same size and color, so this "
+            "graph has been loaded but not laid out or styled — run a layout, "
+            "size by degree, and color by community (or /beautify) before exporting")
 
     finite = [n for n in nodes
               if math.isfinite(n["x"]) and math.isfinite(n["y"])]

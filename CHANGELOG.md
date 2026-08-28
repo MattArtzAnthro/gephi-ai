@@ -4,6 +4,62 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.12.0 / claude-plugin 1.10.0
+
+### Fixed
+- **Every fresh install had been failing since the MCP Python SDK 2.0 release**
+  (issue #5). `pyproject.toml` allowed `mcp>=1.0.0` while the server imported
+  `mcp.server.fastmcp`, which SDK 2.x removed, so `uvx --from gephi-mcp==1.11.0`
+  resolved the newest SDK and died on the first import with
+  `ModuleNotFoundError: No module named 'mcp.server.fastmcp'`; Claude Code
+  reported it as `Failed to reconnect ... -32000`. Existing installs with a
+  cached 1.x SDK kept working, which is why it went unnoticed for a month.
+
+### Changed
+- **Migrated to MCP Python SDK 2.x** (`mcp>=2.1,<3`): `FastMCP` is now
+  `MCPServer`, and `CallToolResult` takes `structured_content` / `is_error`
+  (Python field names only; the wire format is unchanged). The SDK serves both
+  the 2026-07-28 protocol and the 2025-era `initialize` handshake that Claude
+  Code and Claude Desktop send today; the release was verified over stdio with a
+  raw 2025-06-18 handshake, with the SDK's own client, and with the live smoke
+  test against Gephi 1.2.17 (126/126 tools pass). The `ui://gephi/graph-view`
+  MCP App resource and its tool metadata carry over unchanged.
+- **Every tool now carries annotations** (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`), classified by effect on the Gephi
+  workspace: 24 read-only tools, 18 destructive ones (each already
+  auto-snapshots for `gephi_undo`), the rest add or restyle without removing.
+  Hosts that honor annotations can skip confirmation for reads and ask before
+  `gephi_clear_graph`. Tools register through one helper so a new tool cannot
+  ship unclassified.
+- **`tools/list` and `resources/list` advertise a one-hour public cache hint.**
+  105 tool schemas are about 77k characters; a host that honors the hint stops
+  re-fetching them every session.
+- **Server startup no longer pays for nltk.** `text_network` imported nltk and
+  probed three corpora at module import, which every server process paid
+  (about 1.4 s) before a single tool could run. The probe now runs on first
+  use of lemmatization and is memoized; `import text_network` went from 1.4 s
+  to 0.02 s. `LEMMATIZATION_AVAILABLE` still reads the same from outside.
+- **`gephi_visual_qa` flags a graph that has been loaded but never laid out or
+  styled** ("looks untouched": every node the same size and color). Exporting
+  such a graph gives the block of overlapping default nodes rather than a map.
+
+### Added (claude-plugin)
+- **`/explore`**: the `/import-and-explore` flow for a graph that is already
+  open in Gephi, with no file path. Finding a path is the hard part for many
+  people; opening the file in Gephi first removes it.
+- **`/export-map`**, the new name of `/visualize`. The command exports; laying
+  out and styling live in `/beautify` and `/analyze-network`, and the old name
+  suggested otherwise. It now checks `gephi_visual_qa` first and, on an
+  untouched graph, offers `/beautify` before exporting. `/visualize` remains as
+  an alias for one release.
+- **`/community-detection` asks which kind of community first**: Louvain and
+  Leiden (both descriptive reductions of the observed edges; Leiden is more
+  robust and returns less even community sizes; needs the CWTS Leiden plugin),
+  against statistical inference (Peixoto's stochastic block model, which posits
+  a generative model and does not find communities in a random graph). The
+  last is not available in Gephi, and the command says so and points to
+  graph-tool rather than pretending. Leiden runs through `gephi_run_statistic`.
+
 ## Java plugin 1.2.17 / claude-plugin 1.9.32
 
 ### Fixed

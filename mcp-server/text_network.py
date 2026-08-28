@@ -25,26 +25,47 @@ import math
 import re
 from collections import Counter
 
-try:
-    import nltk
-    from nltk.corpus import wordnet as _wordnet
+_LEMMA_STATE: dict[str, bool] = {}
 
-    def _lemmatizer_ready() -> bool:
+
+def _probe_lemmatizer() -> bool:
+    """Import nltk and check its corpora. Deferred to first use: at import time this
+    cost every server process ~1.4 s of startup (three nltk.data.find calls plus the
+    wordnet import) before a single tool could run."""
+    try:
+        import nltk
+    except ImportError:
+        return False
+    try:
+        nltk.data.find("corpora/wordnet")
+        nltk.data.find("corpora/omw-1.4")
+        nltk.data.find("taggers/averaged_perceptron_tagger_eng")
+    except LookupError:
         try:
-            nltk.data.find("corpora/wordnet")
-            nltk.data.find("corpora/omw-1.4")
-            nltk.data.find("taggers/averaged_perceptron_tagger_eng")
+            # older nltk releases shipped the tagger under this name
+            nltk.data.find("taggers/averaged_perceptron_tagger")
         except LookupError:
-            try:
-                # older nltk releases shipped the tagger under this name
-                nltk.data.find("taggers/averaged_perceptron_tagger")
-            except LookupError:
-                return False
-        return True
+            return False
+    return True
 
-    LEMMATIZATION_AVAILABLE = _lemmatizer_ready()
-except ImportError:
-    LEMMATIZATION_AVAILABLE = False
+
+def _lemmatization_available() -> bool:
+    """Memoized probe. An explicit module attribute (tests monkeypatch
+    LEMMATIZATION_AVAILABLE) takes precedence over the probe."""
+    override = globals().get("LEMMATIZATION_AVAILABLE")
+    if override is not None:
+        return bool(override)
+    if "value" not in _LEMMA_STATE:
+        _LEMMA_STATE["value"] = _probe_lemmatizer()
+    return _LEMMA_STATE["value"]
+
+
+def __getattr__(name: str):
+    # Keeps `text_network.LEMMATIZATION_AVAILABLE` readable as before, computed lazily.
+    if name == "LEMMATIZATION_AVAILABLE":
+        return _lemmatization_available()
+    raise AttributeError(name)
+
 
 _WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z'-]*")
 
@@ -92,6 +113,8 @@ def _wordnet_pos(treebank_tag: str) -> str:
     """Map a Penn Treebank POS tag to the WordNet POS category the
     lemmatizer needs (it defaults to noun otherwise, which mislemmatizes
     verbs, e.g. "running" would stay "running" instead of becoming "run")."""
+    from nltk.corpus import wordnet as _wordnet
+
     if treebank_tag.startswith("J"):
         return _wordnet.ADJ
     if treebank_tag.startswith("V"):
@@ -128,8 +151,10 @@ def _tag_and_lemmatize(tokens: list[str]) -> list[tuple[str, str]]:
     """
     if not tokens:
         return []
-    if not LEMMATIZATION_AVAILABLE:
+    if not _lemmatization_available():
         return [(t, "other") for t in tokens]
+    import nltk
+
     lemmatizer = nltk.stem.WordNetLemmatizer()
     tagged = nltk.pos_tag(tokens)
     return [(lemmatizer.lemmatize(word, _wordnet_pos(tag)), _coarse_pos(tag)) for word, tag in tagged]
@@ -143,7 +168,7 @@ def lemmatize(tokens: list[str]) -> list[str]:
     using its tag. Returns tokens unchanged if LEMMATIZATION_AVAILABLE is
     False rather than raising — see the module docstring.
     """
-    if not LEMMATIZATION_AVAILABLE or not tokens:
+    if not _lemmatization_available() or not tokens:
         return tokens
     return [lemma for lemma, _pos in _tag_and_lemmatize(tokens)]
 
@@ -434,7 +459,7 @@ def build_cooccurrence_graph(
         raise ValueError('pos_filter must be None or "nouns"')
 
     documents = [text] if isinstance(text, str) else list(text)
-    pos_filter_applied = pos_filter is not None and LEMMATIZATION_AVAILABLE
+    pos_filter_applied = pos_filter is not None and _lemmatization_available()
 
     stop = DEFAULT_STOPWORDS
     if extra_stopwords:
@@ -455,7 +480,7 @@ def build_cooccurrence_graph(
         raw_word_count += len(raw_tokens)
 
     phrases_detected: dict[tuple[str, str], str] = {}
-    if merge_phrases and LEMMATIZATION_AVAILABLE:
+    if merge_phrases and _lemmatization_available():
         phrases_detected = extract_phrases(tagged_documents)
         # A stopword (or an extra_stopword like a corpus's own self-
         # referential subject name) must not survive by hiding inside a
@@ -572,7 +597,7 @@ def build_cooccurrence_graph(
             "words_filtered": raw_word_count - kept_word_count,
             "edge_count": len(edges),
             "document_count": len(documents),
-            "lemmatization": "active" if LEMMATIZATION_AVAILABLE else "unavailable",
+            "lemmatization": "active" if _lemmatization_available() else "unavailable",
             "pos_filter_applied": pos_filter_applied,
             "phrases_detected": len(phrases_detected),
             "self_referential_candidates": self_referential_candidates,

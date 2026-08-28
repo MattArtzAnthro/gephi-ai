@@ -21,7 +21,7 @@ Built for researchers working across network science and AI.
 - One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
 - Layout quality is measured, not eyeballed: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separated and frames exports around the main cloud (ignoring runaway outlier nodes), and numerically exploded layouts are caught automatically instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
-- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual`
+- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/export-map`, `/import-and-explore`, `/explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual`
 - Specialized agents that run multi-step work in their own context and hand back just the result: independent claim verification, layout iteration, structural analysis, and text-network construction
 - Two extra layouts beyond Gephi's own: by role played in the network, and by community (best for reply and retweet networks)
 - Reads your selection in the Gephi window, so "what did I select?" just works
@@ -175,6 +175,7 @@ recent versions, so if you installed a while ago (or an older command like `/tea
 is missing), run the update below once to catch up. Updating is safe to do anytime.
 
 - **Claude Code:** `claude plugin update gephi-network-analysis@gephi-ai`, then start a new session.
+- **If `/mcp` shows `Failed to reconnect to plugin:gephi-network-analysis:gephi-mcp: -32000`** on server 1.11.0 or older, that is the MCP SDK 2.0 break (issue #5); updating to 1.12.0 or newer is the fix, no pin needed.
 - **Claude Desktop (one-click bundle):** download the newest `.mcpb` from Releases and double-click it again.
 - **Claude Desktop (config file):** nothing to do — the `uvx` entry fetches the latest release each time you fully quit and reopen Claude Desktop.
 - **Switching connection methods:** remove the old one first (bundle: uninstall in Settings > Extensions; config file: delete the `gephi-mcp` block). Two methods at once means two servers and duplicated tools.
@@ -189,7 +190,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 
 | Component | What it does |
 |-----------|-------------|
-| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/import-and-explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual` |
+| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/export-map`, `/import-and-explore`, `/explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual` |
 | **Agents** | Subagents that run multi-step work in their own context and return just the result: `network-analyst` (structural interpretation), `claim-verifier` (independently checks one claim — confirmed / refuted / can't-tell, with the number), `layout-iterator` (runs the beautify loop to a publication-ready map), `text-network-builder` (turns free text into a word co-occurrence network) |
 | **Gephi skill** | Teaches Claude network science workflows, visualization best practices, and known Gephi gotchas |
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
@@ -252,7 +253,7 @@ Reference guides are in `claude-plugin/skills/gephi/`:
 ## Tech stack
 
 - **Gephi Plugin**: Java 11, NetBeans Platform, NanoHTTPD, Gson
-- **MCP Server**: Python 3.10+, MCP SDK (FastMCP), httpx, Pydantic, defusedxml; vendored sigma.js + graphology for the in-chat viewer
+- **MCP Server**: Python 3.10+, MCP Python SDK 2.x (`MCPServer`, 2026-07-28 protocol with the 2025-era handshake still served), httpx, Pydantic, defusedxml; vendored sigma.js + graphology for the in-chat viewer
 - **Target**: Gephi 0.11.1, NetBeans RELEASE290
 
 ## Development

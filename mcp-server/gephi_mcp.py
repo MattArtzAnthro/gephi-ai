@@ -27,8 +27,8 @@ import tempfile
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
-from mcp.types import CallToolResult, TextContent
+from mcp.server import CacheHint, MCPServer
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gephi_mcp_viewer
 import text_network
@@ -121,7 +121,61 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
     _freshness_cache["result"] = result
     return result
 
-mcp = FastMCP("gephi_mcp")
+# tools/list and resources/list are static for the life of a release: 105 schemas
+# (~77k chars) that a host can cache instead of re-fetching per session.
+mcp = MCPServer(
+    "gephi_mcp",
+    cache_hints={
+        "tools/list": CacheHint(ttl_ms=3_600_000, scope="public"),
+        "resources/list": CacheHint(ttl_ms=3_600_000, scope="public"),
+    },
+)
+
+# ==================== Tool annotations ====================
+# Hints for hosts (confirmation prompts, read-only fast paths). Classified by
+# effect on the Gephi workspace, not on the filesystem: exports write files but
+# never change the graph, so they are neither read-only nor destructive.
+#   read-only:   reads state, writes nothing to the graph
+#   destructive: removes nodes/edges/workspaces or replaces the current graph
+#                (each auto-snapshots first, so gephi_undo reverses it)
+#   everything else: adds or restyles without removing (columns, colors, layout)
+_READ_ONLY = {
+    "gephi_health_check", "gephi_get_project_info", "gephi_list_workspaces",
+    "gephi_query_nodes", "gephi_get_node", "gephi_query_edges",
+    "gephi_get_graph_stats", "gephi_get_graph_type", "gephi_get_columns",
+    "gephi_get_layout_status", "gephi_get_available_layouts",
+    "gephi_get_layout_properties", "gephi_profile_graph", "gephi_list_statistics",
+    "gephi_list_filters", "gephi_get_timeline", "gephi_column_value_frequencies",
+    "gephi_detect_duplicates", "gephi_get_preview_settings", "gephi_get_perspective",
+    "gephi_get_selection", "gephi_view_graph", "gephi_whatif", "gephi_compare_nodes",
+}
+_DESTRUCTIVE = {
+    "gephi_create_project", "gephi_open_project", "gephi_delete_workspace",
+    "gephi_undo", "gephi_remove_node", "gephi_bulk_remove_nodes",
+    "gephi_remove_edge", "gephi_filter_by_degree", "gephi_filter_by_edge_weight",
+    "gephi_remove_isolates", "gephi_extract_ego_network",
+    "gephi_extract_giant_component", "gephi_extract_backbone",
+    "gephi_merge_nodes", "gephi_clear_graph", "gephi_reset_appearance",
+    "gephi_reset_filters", "gephi_apply_filter",
+}
+# Reaches beyond Gephi: the health check fetches latest.json from GitHub.
+_OPEN_WORLD = {"gephi_health_check"}
+
+
+def _annotations_for(name: str) -> ToolAnnotations:
+    read_only = name in _READ_ONLY
+    return ToolAnnotations(
+        read_only_hint=read_only,
+        destructive_hint=name in _DESTRUCTIVE,
+        idempotent_hint=read_only,
+        open_world_hint=name in _OPEN_WORLD,
+    )
+
+
+def _tool(name: str, **kwargs: Any):
+    """mcp.tool() with the annotation table applied. Every tool registers through
+    this so a new tool cannot ship unclassified."""
+    return mcp.tool(name=name, annotations=_annotations_for(name), **kwargs)
 
 
 # ==================== HTTP Client ====================
@@ -277,7 +331,7 @@ def _with_undo(result: Any, undo_ok: bool) -> Any:
 
 # ─── Health ───────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_health_check")
+@_tool(name="gephi_health_check")
 async def gephi_health_check() -> str:
     """Check if Gephi Desktop is running and the MCP plugin is accessible.
 
@@ -311,12 +365,12 @@ async def gephi_health_check() -> str:
 
 # ─── Project ─────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_create_project")
+@_tool(name="gephi_create_project")
 async def gephi_create_project(name: str = "New Project") -> str:
     """Create a new empty Gephi project/workspace."""
     return fmt(await gephi.request("POST", "/project/new", json_data={"name": name}))
 
-@mcp.tool(name="gephi_open_project")
+@_tool(name="gephi_open_project")
 async def gephi_open_project(file: str) -> str:
     """Open an existing Gephi project file (.gephi). `file` is an absolute path.
 
@@ -334,12 +388,12 @@ async def gephi_open_project(file: str) -> str:
     round-trips reliably."""
     return fmt(await gephi.request("POST", "/project/open", json_data={"file": file}))
 
-@mcp.tool(name="gephi_save_project")
+@_tool(name="gephi_save_project")
 async def gephi_save_project(file: str) -> str:
     """Save the current Gephi project. `file` is the absolute destination path."""
     return fmt(await gephi.request("POST", "/project/save", json_data={"file": file}))
 
-@mcp.tool(name="gephi_get_project_info")
+@_tool(name="gephi_get_project_info")
 async def gephi_get_project_info() -> str:
     """Get current project info: workspace status, node/edge counts, and graph type."""
     return fmt(await gephi.request("GET", "/project/info"))
@@ -347,32 +401,32 @@ async def gephi_get_project_info() -> str:
 
 # ─── Workspace ────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_new_workspace")
+@_tool(name="gephi_new_workspace")
 async def gephi_new_workspace() -> str:
     """Create a new workspace in the current project."""
     return fmt(await gephi.request("POST", "/workspace/new"))
 
-@mcp.tool(name="gephi_list_workspaces")
+@_tool(name="gephi_list_workspaces")
 async def gephi_list_workspaces() -> str:
     """List all workspaces in the current project."""
     return fmt(await gephi.request("GET", "/workspace/list"))
 
-@mcp.tool(name="gephi_switch_workspace")
+@_tool(name="gephi_switch_workspace")
 async def gephi_switch_workspace(index: int) -> str:
     """Switch to a different workspace by zero-based index."""
     return fmt(await gephi.request("POST", "/workspace/switch", json_data={"index": index}))
 
-@mcp.tool(name="gephi_delete_workspace")
+@_tool(name="gephi_delete_workspace")
 async def gephi_delete_workspace(index: int) -> str:
     """Delete a workspace by zero-based index."""
     return fmt(await gephi.request("DELETE", "/workspace/delete", params={"index": str(index)}))
 
-@mcp.tool(name="gephi_duplicate_workspace")
+@_tool(name="gephi_duplicate_workspace")
 async def gephi_duplicate_workspace(index: int) -> str:
     """Duplicate a workspace by index, copying graph data, statistics, and appearance."""
     return fmt(await gephi.request("POST", "/workspace/duplicate", json_data={"index": index}))
 
-@mcp.tool(name="gephi_rename_workspace")
+@_tool(name="gephi_rename_workspace")
 async def gephi_rename_workspace(index: int, name: str) -> str:
     """Rename the workspace at the given zero-based index."""
     return fmt(await gephi.request("POST", "/workspace/rename", json_data={"index": index, "name": name}))
@@ -380,7 +434,7 @@ async def gephi_rename_workspace(index: int, name: str) -> str:
 
 # ─── Undo ─────────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_snapshot")
+@_tool(name="gephi_snapshot")
 async def gephi_snapshot(label: str = "") -> str:
     """Save an undo point: copy the current workspace so gephi_undo can restore it.
 
@@ -402,7 +456,7 @@ async def gephi_snapshot(label: str = "") -> str:
     return fmt({"success": False, "error": result.get("reason", "snapshot failed")})
 
 
-@mcp.tool(name="gephi_undo")
+@_tool(name="gephi_undo")
 async def gephi_undo() -> str:
     """Restore the graph to the last undo snapshot, discarding changes since.
 
@@ -471,7 +525,7 @@ async def gephi_undo() -> str:
 
 # ─── Nodes ────────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_add_node")
+@_tool(name="gephi_add_node")
 async def gephi_add_node(id: str, label: str | None = None,
                          attributes: dict[str, Any] | None = None) -> str:
     """Add a single node. Placed at a random position; run a layout to reposition.
@@ -481,7 +535,7 @@ async def gephi_add_node(id: str, label: str | None = None,
     return fmt(await gephi.request("POST", "/graph/node/add",
                                    json_data=_body(id=id, label=label, attributes=attributes)))
 
-@mcp.tool(name="gephi_add_nodes")
+@_tool(name="gephi_add_nodes")
 async def gephi_add_nodes(nodes: list[dict[str, Any]]) -> str:
     """Add multiple nodes in one batch (efficient for large graphs).
 
@@ -490,7 +544,7 @@ async def gephi_add_nodes(nodes: list[dict[str, Any]]) -> str:
     """
     return fmt(await gephi.request("POST", "/graph/nodes/add", json_data={"nodes": nodes}))
 
-@mcp.tool(name="gephi_remove_node")
+@_tool(name="gephi_remove_node")
 async def gephi_remove_node(id: str) -> str:
     """Remove a node and all its connected edges. Destructive.
 
@@ -500,7 +554,7 @@ async def gephi_remove_node(id: str) -> str:
     """
     return fmt(await gephi.request("DELETE", f"/graph/node/{id}"))
 
-@mcp.tool(name="gephi_bulk_remove_nodes")
+@_tool(name="gephi_bulk_remove_nodes")
 async def gephi_bulk_remove_nodes(ids: list[str]) -> str:
     """Remove multiple nodes (and their edges) by ID. Destructive; an undo
     snapshot is taken automatically first (gephi_undo reverses it)."""
@@ -508,27 +562,27 @@ async def gephi_bulk_remove_nodes(ids: list[str]) -> str:
     return fmt(_with_undo(await gephi.request("POST", "/graph/nodes/remove",
                                               json_data={"ids": ids}), undo))
 
-@mcp.tool(name="gephi_query_nodes")
+@_tool(name="gephi_query_nodes")
 async def gephi_query_nodes(limit: int = 100, offset: int = 0) -> str:
     """Query nodes with pagination. Returns id, label, position, size, color, attributes."""
     return fmt(await gephi.request("GET", "/graph/nodes", params={"limit": limit, "offset": offset}))
 
-@mcp.tool(name="gephi_get_node")
+@_tool(name="gephi_get_node")
 async def gephi_get_node(id: str) -> str:
     """Get full details for a single node: id, label, x/y, size, color, and attributes."""
     return fmt(await gephi.request("GET", f"/graph/node/get/{id}"))
 
-@mcp.tool(name="gephi_set_node_label")
+@_tool(name="gephi_set_node_label")
 async def gephi_set_node_label(id: str, label: str) -> str:
     """Set or change the label of a node."""
     return fmt(await gephi.request("POST", "/graph/node/label", json_data={"id": id, "label": label}))
 
-@mcp.tool(name="gephi_set_node_position")
+@_tool(name="gephi_set_node_position")
 async def gephi_set_node_position(id: str, x: float, y: float) -> str:
     """Set the X/Y position of a node."""
     return fmt(await gephi.request("POST", "/graph/node/position", json_data={"id": id, "x": x, "y": y}))
 
-@mcp.tool(name="gephi_batch_set_positions")
+@_tool(name="gephi_batch_set_positions")
 async def gephi_batch_set_positions(positions: list[dict[str, Any]]) -> str:
     """Set positions of multiple nodes at once. Each entry: {id: str, x: float, y: float}."""
     return fmt(await gephi.request("POST", "/graph/nodes/positions", json_data={"positions": positions}))
@@ -536,7 +590,7 @@ async def gephi_batch_set_positions(positions: list[dict[str, Any]]) -> str:
 
 # ─── Edges ────────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_add_edge")
+@_tool(name="gephi_add_edge")
 async def gephi_add_edge(source: str, target: str, weight: float = 1.0, directed: bool = True,
                          edge_type: str | None = None) -> str:
     """Add an edge between two existing nodes.
@@ -553,7 +607,7 @@ async def gephi_add_edge(source: str, target: str, weight: float = 1.0, directed
                                                    weight=weight, directed=directed,
                                                    edge_type=edge_type)))
 
-@mcp.tool(name="gephi_add_edges")
+@_tool(name="gephi_add_edges")
 async def gephi_add_edges(edges: list[dict[str, Any]]) -> str:
     """Add multiple edges in one batch.
 
@@ -566,25 +620,25 @@ async def gephi_add_edges(edges: list[dict[str, Any]]) -> str:
     """
     return fmt(await gephi.request("POST", "/graph/edges/add", json_data={"edges": edges}))
 
-@mcp.tool(name="gephi_remove_edge")
+@_tool(name="gephi_remove_edge")
 async def gephi_remove_edge(source: str, target: str) -> str:
     """Remove the edge between two nodes."""
     return fmt(await gephi.request("POST", "/graph/edge/remove",
                                    json_data={"source": source, "target": target}))
 
-@mcp.tool(name="gephi_set_edge_weight")
+@_tool(name="gephi_set_edge_weight")
 async def gephi_set_edge_weight(source: str, target: str, weight: float) -> str:
     """Set the weight of an edge."""
     return fmt(await gephi.request("POST", "/graph/edge/weight",
                                    json_data={"source": source, "target": target, "weight": weight}))
 
-@mcp.tool(name="gephi_set_edge_label")
+@_tool(name="gephi_set_edge_label")
 async def gephi_set_edge_label(source: str, target: str, label: str) -> str:
     """Set or change the label of an edge."""
     return fmt(await gephi.request("POST", "/graph/edge/label",
                                    json_data={"source": source, "target": target, "label": label}))
 
-@mcp.tool(name="gephi_query_edges")
+@_tool(name="gephi_query_edges")
 async def gephi_query_edges(limit: int = 100, offset: int = 0) -> str:
     """Query edges with pagination. Returns source, target, weight, directed, attributes."""
     return fmt(await gephi.request("GET", "/graph/edges", params={"limit": limit, "offset": offset}))
@@ -592,12 +646,12 @@ async def gephi_query_edges(limit: int = 100, offset: int = 0) -> str:
 
 # ─── Graph Stats & Type ──────────────────────────────────────
 
-@mcp.tool(name="gephi_get_graph_stats")
+@_tool(name="gephi_get_graph_stats")
 async def gephi_get_graph_stats() -> str:
     """Get node count, edge count, density, average degree, and graph type."""
     return fmt(await gephi.request("GET", "/graph/stats"))
 
-@mcp.tool(name="gephi_get_graph_type")
+@_tool(name="gephi_get_graph_type")
 async def gephi_get_graph_type() -> str:
     """Get whether the graph is directed, undirected, or mixed."""
     return fmt(await gephi.request("GET", "/graph/type"))
@@ -605,12 +659,12 @@ async def gephi_get_graph_type() -> str:
 
 # ─── Attributes / Columns ────────────────────────────────────
 
-@mcp.tool(name="gephi_get_columns")
+@_tool(name="gephi_get_columns")
 async def gephi_get_columns(target: str = "node") -> str:
     """List columns (attributes) in the node or edge table. target: "node" | "edge"."""
     return fmt(await gephi.request("GET", "/graph/columns", params={"target": target}))
 
-@mcp.tool(name="gephi_add_column")
+@_tool(name="gephi_add_column")
 async def gephi_add_column(name: str, type: str, target: str = "node") -> str:
     """Add a column to the node or edge table.
 
@@ -620,18 +674,18 @@ async def gephi_add_column(name: str, type: str, target: str = "node") -> str:
     return fmt(await gephi.request("POST", "/graph/columns/add",
                                    json_data={"name": name, "type": type, "target": target}))
 
-@mcp.tool(name="gephi_set_node_attributes")
+@_tool(name="gephi_set_node_attributes")
 async def gephi_set_node_attributes(id: str, attributes: dict[str, Any]) -> str:
     """Set custom attributes on a node. Columns are created automatically if needed."""
     return fmt(await gephi.request("POST", "/graph/node/attributes",
                                    json_data={"id": id, "attributes": attributes}))
 
-@mcp.tool(name="gephi_batch_set_node_attributes")
+@_tool(name="gephi_batch_set_node_attributes")
 async def gephi_batch_set_node_attributes(updates: list[dict[str, Any]]) -> str:
     """Set attributes on multiple nodes. Each update: {id: str, attributes: {column: value}}."""
     return fmt(await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": updates}))
 
-@mcp.tool(name="gephi_set_edge_attributes")
+@_tool(name="gephi_set_edge_attributes")
 async def gephi_set_edge_attributes(source: str, target: str, attributes: dict[str, Any]) -> str:
     """Set custom attributes on an edge. Columns are created automatically if needed."""
     return fmt(await gephi.request("POST", "/graph/edge/attributes",
@@ -640,30 +694,30 @@ async def gephi_set_edge_attributes(source: str, target: str, attributes: dict[s
 
 # ─── Appearance: Individual Styling ──────────────────────────
 
-@mcp.tool(name="gephi_set_node_color")
+@_tool(name="gephi_set_node_color")
 async def gephi_set_node_color(id: str, r: int, g: int, b: int, a: int = 255) -> str:
     """Set the color of a single node. r/g/b/a are 0-255."""
     return fmt(await gephi.request("POST", "/appearance/node/color",
                                    json_data={"id": id, "r": r, "g": g, "b": b, "a": a}))
 
-@mcp.tool(name="gephi_set_node_size")
+@_tool(name="gephi_set_node_size")
 async def gephi_set_node_size(id: str, size: float) -> str:
     """Set the size of a single node."""
     return fmt(await gephi.request("POST", "/appearance/node/size", json_data={"id": id, "size": size}))
 
-@mcp.tool(name="gephi_set_edge_color")
+@_tool(name="gephi_set_edge_color")
 async def gephi_set_edge_color(source: str, target: str, r: int, g: int, b: int, a: int = 255) -> str:
     """Set the color of a single edge. r/g/b/a are 0-255."""
     return fmt(await gephi.request("POST", "/appearance/edge/color",
                                    json_data={"source": source, "target": target,
                                               "r": r, "g": g, "b": b, "a": a}))
 
-@mcp.tool(name="gephi_batch_set_node_colors")
+@_tool(name="gephi_batch_set_node_colors")
 async def gephi_batch_set_node_colors(nodes: list[dict[str, Any]]) -> str:
     """Set colors of multiple nodes. Each entry: {id: str, r: int, g: int, b: int, a?: int}."""
     return fmt(await gephi.request("POST", "/appearance/nodes/color", json_data={"nodes": nodes}))
 
-@mcp.tool(name="gephi_reset_appearance")
+@_tool(name="gephi_reset_appearance")
 async def gephi_reset_appearance(r: int = 153, g: int = 153, b: int = 153, size: float = 10) -> str:
     """Reset all nodes to a default color and size (defaults to grey / size 10)."""
     return fmt(await gephi.request("POST", "/appearance/reset",
@@ -672,7 +726,7 @@ async def gephi_reset_appearance(r: int = 153, g: int = 153, b: int = 153, size:
 
 # ─── Appearance: Color/Size by Attribute ─────────────────────
 
-@mcp.tool(name="gephi_color_by_partition")
+@_tool(name="gephi_color_by_partition")
 async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | None = None) -> str:
     """Color nodes by a categorical attribute (e.g. modularity_class, type).
 
@@ -686,7 +740,7 @@ async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | N
     return fmt(await gephi.request("POST", "/appearance/partition/color",
                                    json_data=_body(column=column, colors=colors)))
 
-@mcp.tool(name="gephi_color_edges_by_partition")
+@_tool(name="gephi_color_edges_by_partition")
 async def gephi_color_edges_by_partition(column: str,
                                          colors: dict[str, list[int]] | None = None) -> str:
     """Color edges by a categorical EDGE attribute (relationship type, period, tier).
@@ -702,7 +756,7 @@ async def gephi_color_edges_by_partition(column: str,
     return fmt(await gephi.request("POST", "/appearance/edge/partition-color",
                                    json_data=_body(column=column, colors=colors)))
 
-@mcp.tool(name="gephi_color_by_ranking")
+@_tool(name="gephi_color_by_ranking")
 async def gephi_color_by_ranking(column: str,
                                  r_min: int = 255, g_min: int = 255, b_min: int = 200,
                                  r_max: int = 255, g_max: int = 0, b_max: int = 0) -> str:
@@ -715,7 +769,7 @@ async def gephi_color_by_ranking(column: str,
                                               "r_min": r_min, "g_min": g_min, "b_min": b_min,
                                               "r_max": r_max, "g_max": g_max, "b_max": b_max}))
 
-@mcp.tool(name="gephi_size_by_ranking")
+@_tool(name="gephi_size_by_ranking")
 async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: float = 60) -> str:
     """Size nodes by a numeric attribute, mapping values between min_size and max_size.
 
@@ -758,7 +812,7 @@ async def _check_layout_positions() -> dict | None:
     }
 
 
-@mcp.tool(name="gephi_run_layout")
+@_tool(name="gephi_run_layout")
 async def gephi_run_layout(algorithm: str, iterations: int = 1000,
                            properties: dict[str, Any] | None = None, sync: bool = False) -> str:
     """Run a layout algorithm to position nodes.
@@ -808,7 +862,7 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result["message"] = "Layout still running after 5 minutes"
     return fmt(result)
 
-@mcp.tool(name="gephi_similarity_layout")
+@_tool(name="gephi_similarity_layout")
 async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
                                   finish_noverlap: bool = True) -> str:
     """Position nodes by structural similarity instead of springs — a layout no
@@ -862,7 +916,7 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
                 "nodes_positioned": len(positions),
                 "reading_note": "proximity = similar structural role, not direct connection"})
 
-@mcp.tool(name="gephi_community_layout")
+@_tool(name="gephi_community_layout")
 async def gephi_community_layout(partition_column: str = "Modularity Class",
                                  min_community_size: int = 6,
                                  finish_noverlap: bool = True) -> str:
@@ -894,8 +948,7 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
     of getting a disc.
     """
     from gephi_mcp_viewer import parse_gexf
-    from gephi_mcp_viewer.community_layout import (compute_community_positions,
-                                                   separation_score)
+    from gephi_mcp_viewer.community_layout import compute_community_positions, separation_score
 
     exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
     if not exported.get("success"):
@@ -930,27 +983,27 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
                                  "the data; disc placement is arranged for "
                                  "legibility and means nothing")})
 
-@mcp.tool(name="gephi_stop_layout")
+@_tool(name="gephi_stop_layout")
 async def gephi_stop_layout() -> str:
     """Stop a currently running layout algorithm."""
     return fmt(await gephi.request("POST", "/layout/stop"))
 
-@mcp.tool(name="gephi_get_layout_status")
+@_tool(name="gephi_get_layout_status")
 async def gephi_get_layout_status() -> str:
     """Check whether a layout algorithm is currently running."""
     return fmt(await gephi.request("GET", "/layout/status"))
 
-@mcp.tool(name="gephi_get_available_layouts")
+@_tool(name="gephi_get_available_layouts")
 async def gephi_get_available_layouts() -> str:
     """Get the list of available layout algorithms."""
     return fmt(await gephi.request("GET", "/layout/available"))
 
-@mcp.tool(name="gephi_get_layout_properties")
+@_tool(name="gephi_get_layout_properties")
 async def gephi_get_layout_properties(algorithm: str) -> str:
     """Get tunable properties (gravity, scaling, speed, ...) for a layout algorithm."""
     return fmt(await gephi.request("GET", "/layout/properties", params={"algorithm": algorithm}))
 
-@mcp.tool(name="gephi_set_layout_properties")
+@_tool(name="gephi_set_layout_properties")
 async def gephi_set_layout_properties(algorithm: str, properties: dict[str, Any],
                                       iterations: int = 1000) -> str:
     """Run a layout with custom property values (gravity, scaling, speed, ...)."""
@@ -961,7 +1014,7 @@ async def gephi_set_layout_properties(algorithm: str, properties: dict[str, Any]
 
 # ─── Statistics ──────────────────────────────────────────────
 
-@mcp.tool(name="gephi_compute_modularity")
+@_tool(name="gephi_compute_modularity")
 async def gephi_compute_modularity(resolution: float = 1.0) -> str:
     """Run modularity (Louvain) community detection. Stores 'modularity_class' on nodes.
 
@@ -1010,7 +1063,7 @@ async def _compute_profile(include_slow: bool = False) -> dict:
     return profile
 
 
-@mcp.tool(name="gephi_profile_graph")
+@_tool(name="gephi_profile_graph")
 async def gephi_profile_graph(include_slow: bool = False) -> str:
     """Profile the whole graph in ONE call — run this first, before analyzing.
 
@@ -1052,7 +1105,7 @@ async def gephi_profile_graph(include_slow: bool = False) -> str:
     profile["success"] = True
     return fmt(profile)
 
-@mcp.tool(name="gephi_list_statistics")
+@_tool(name="gephi_list_statistics")
 async def gephi_list_statistics() -> str:
     """List every statistic available in this Gephi instance, by name.
 
@@ -1062,7 +1115,7 @@ async def gephi_list_statistics() -> str:
     """
     return fmt(await gephi.request("GET", "/statistics/available"))
 
-@mcp.tool(name="gephi_run_statistic")
+@_tool(name="gephi_run_statistic")
 async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -> str:
     """Run any available statistic by name — including installed plugin metrics.
 
@@ -1085,12 +1138,12 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
                                    json_data=_body(name=name, params=params),
                                    timeout=SLOW_REQUEST_TIMEOUT))
 
-@mcp.tool(name="gephi_compute_degree")
+@_tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
     """Compute degree, in-degree, and out-degree for all nodes."""
     return fmt(await gephi.request("POST", "/statistics/degree"))
 
-@mcp.tool(name="gephi_compute_betweenness")
+@_tool(name="gephi_compute_betweenness")
 async def gephi_compute_betweenness() -> str:
     """Compute betweenness/closeness centrality, eccentricity, diameter, radius, avg path length.
 
@@ -1102,22 +1155,22 @@ async def gephi_compute_betweenness() -> str:
     return fmt(await gephi.request("POST", "/statistics/betweenness",
                                    timeout=SLOW_REQUEST_TIMEOUT))
 
-@mcp.tool(name="gephi_compute_pagerank")
+@_tool(name="gephi_compute_pagerank")
 async def gephi_compute_pagerank() -> str:
     """Compute PageRank for all nodes. Stores 'pageranks' on nodes."""
     return fmt(await gephi.request("POST", "/statistics/pagerank"))
 
-@mcp.tool(name="gephi_compute_connected_components")
+@_tool(name="gephi_compute_connected_components")
 async def gephi_compute_connected_components() -> str:
     """Compute connected components. Stores 'componentnumber' on nodes."""
     return fmt(await gephi.request("POST", "/statistics/connected-components"))
 
-@mcp.tool(name="gephi_compute_clustering_coefficient")
+@_tool(name="gephi_compute_clustering_coefficient")
 async def gephi_compute_clustering_coefficient() -> str:
     """Compute the clustering coefficient for all nodes. Stores 'clustering' on nodes."""
     return fmt(await gephi.request("POST", "/statistics/clustering-coefficient"))
 
-@mcp.tool(name="gephi_compute_avg_path_length")
+@_tool(name="gephi_compute_avg_path_length")
 async def gephi_compute_avg_path_length() -> str:
     """Compute the average shortest path length across all node pairs.
 
@@ -1126,12 +1179,12 @@ async def gephi_compute_avg_path_length() -> str:
     return fmt(await gephi.request("POST", "/statistics/avg-path-length",
                                    timeout=SLOW_REQUEST_TIMEOUT))
 
-@mcp.tool(name="gephi_compute_hits")
+@_tool(name="gephi_compute_hits")
 async def gephi_compute_hits() -> str:
     """Compute HITS hub and authority scores. Stores 'Authority' and 'Hub' on nodes."""
     return fmt(await gephi.request("POST", "/statistics/hits"))
 
-@mcp.tool(name="gephi_compute_eigenvector")
+@_tool(name="gephi_compute_eigenvector")
 async def gephi_compute_eigenvector() -> str:
     """Compute eigenvector centrality. Stores 'eigencentrality' on nodes."""
     return fmt(await gephi.request("POST", "/statistics/eigenvector"))
@@ -1139,7 +1192,7 @@ async def gephi_compute_eigenvector() -> str:
 
 # ─── Filters ─────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_filter_by_degree")
+@_tool(name="gephi_filter_by_degree")
 async def gephi_filter_by_degree(min: int = 0, max: int = 0, dry_run: bool = False) -> str:
     """Filter the graph by node degree range, removing nodes outside it. Destructive.
 
@@ -1155,7 +1208,7 @@ async def gephi_filter_by_degree(min: int = 0, max: int = 0, dry_run: bool = Fal
                                  json_data={"min": min, "max": max, "dry_run": dry_run})
     return fmt(_with_undo(result, undo) if not dry_run else result)
 
-@mcp.tool(name="gephi_filter_by_edge_weight")
+@_tool(name="gephi_filter_by_edge_weight")
 async def gephi_filter_by_edge_weight(min: float = 0, max: float = 0, dry_run: bool = False) -> str:
     """Filter the graph by edge weight range, removing edges outside it. Destructive.
 
@@ -1167,14 +1220,14 @@ async def gephi_filter_by_edge_weight(min: float = 0, max: float = 0, dry_run: b
                                  json_data={"min": min, "max": max, "dry_run": dry_run})
     return fmt(_with_undo(result, undo) if not dry_run else result)
 
-@mcp.tool(name="gephi_remove_isolates")
+@_tool(name="gephi_remove_isolates")
 async def gephi_remove_isolates() -> str:
     """Remove all isolated nodes (degree 0). Destructive; auto-snapshots first
     (gephi_undo reverses it)."""
     undo = await _auto_snapshot("remove_isolates")
     return fmt(_with_undo(await gephi.request("POST", "/filter/remove-isolates"), undo))
 
-@mcp.tool(name="gephi_extract_ego_network")
+@_tool(name="gephi_extract_ego_network")
 async def gephi_extract_ego_network(node_id: str, depth: int = 1) -> str:
     """Keep only a node and its neighbors within `depth`; remove everything else.
     Destructive; auto-snapshots first (gephi_undo reverses it)."""
@@ -1183,20 +1236,20 @@ async def gephi_extract_ego_network(node_id: str, depth: int = 1) -> str:
                                               json_data={"node_id": node_id, "depth": depth}),
                           undo))
 
-@mcp.tool(name="gephi_extract_giant_component")
+@_tool(name="gephi_extract_giant_component")
 async def gephi_extract_giant_component() -> str:
     """Keep only the largest connected component; remove all smaller ones.
     Destructive; auto-snapshots first (gephi_undo reverses it)."""
     undo = await _auto_snapshot("extract_giant_component")
     return fmt(_with_undo(await gephi.request("POST", "/filter/giant-component"), undo))
 
-@mcp.tool(name="gephi_reset_filters")
+@_tool(name="gephi_reset_filters")
 async def gephi_reset_filters() -> str:
     """Reset non-destructive filters and restore the full graph view."""
     return fmt(await gephi.request("POST", "/filter/reset"))
 
 
-@mcp.tool(name="gephi_list_filters")
+@_tool(name="gephi_list_filters")
 async def gephi_list_filters() -> str:
     """List every filter available in this Gephi instance, with its settable properties.
 
@@ -1212,7 +1265,7 @@ async def gephi_list_filters() -> str:
     return fmt(await gephi.request("GET", "/filter/list"))
 
 
-@mcp.tool(name="gephi_apply_filter")
+@_tool(name="gephi_apply_filter")
 async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
                              action: str = "select", column: str | None = None) -> str:
     """Apply a filter by name — the general-purpose filter tool.
@@ -1247,7 +1300,7 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
                                                    action=action, column=column)))
 
 
-@mcp.tool(name="gephi_get_timeline")
+@_tool(name="gephi_get_timeline")
 async def gephi_get_timeline() -> str:
     """Report the graph's dynamic/timeline state (read-only).
 
@@ -1267,7 +1320,7 @@ async def gephi_get_timeline() -> str:
     return fmt(await gephi.request("GET", "/timeline"))
 
 
-@mcp.tool(name="gephi_column_value_frequencies")
+@_tool(name="gephi_column_value_frequencies")
 async def gephi_column_value_frequencies(column: str, target: str = "node") -> str:
     """Count how often each value appears in a column — the value distribution.
 
@@ -1281,7 +1334,7 @@ async def gephi_column_value_frequencies(column: str, target: str = "node") -> s
                                    json_data={"target": target, "column": column}))
 
 
-@mcp.tool(name="gephi_detect_duplicates")
+@_tool(name="gephi_detect_duplicates")
 async def gephi_detect_duplicates(column: str, target: str = "node",
                                   case_sensitive: bool = False) -> str:
     """Find groups of nodes (or edges) that share a value in one column.
@@ -1298,7 +1351,7 @@ async def gephi_detect_duplicates(column: str, target: str = "node",
                                               "case_sensitive": case_sensitive}))
 
 
-@mcp.tool(name="gephi_merge_nodes")
+@_tool(name="gephi_merge_nodes")
 async def gephi_merge_nodes(ids: list[str], into: str | None = None) -> str:
     """Merge several nodes into one, reassigning their edges. Destructive.
 
@@ -1315,7 +1368,7 @@ async def gephi_merge_nodes(ids: list[str], into: str | None = None) -> str:
                                               json_data=_body(ids=ids, into=into)), undo))
 
 
-@mcp.tool(name="gephi_create_regex_column")
+@_tool(name="gephi_create_regex_column")
 async def gephi_create_regex_column(column: str, new_column: str, regex: str,
                                     target: str = "node") -> str:
     """Add a boolean column flagging rows whose value matches a regex.
@@ -1330,14 +1383,14 @@ async def gephi_create_regex_column(column: str, new_column: str, regex: str,
                                    json_data={"target": target, "column": column,
                                               "new_column": new_column, "regex": regex}))
 
-@mcp.tool(name="gephi_clear_graph")
+@_tool(name="gephi_clear_graph")
 async def gephi_clear_graph() -> str:
     """Remove all nodes and edges. The project/workspace stay open. Destructive;
     auto-snapshots first (gephi_undo brings the graph back)."""
     undo = await _auto_snapshot("clear_graph")
     return fmt(_with_undo(await gephi.request("POST", "/graph/clear"), undo))
 
-@mcp.tool(name="gephi_edge_thickness_by_weight")
+@_tool(name="gephi_edge_thickness_by_weight")
 async def gephi_edge_thickness_by_weight(min_thickness: float = 1, max_thickness: float = 5) -> str:
     """Scale rendered edge thickness proportionally to edge weight."""
     return fmt(await gephi.request("POST", "/appearance/edge/thickness-by-weight",
@@ -1346,12 +1399,12 @@ async def gephi_edge_thickness_by_weight(min_thickness: float = 1, max_thickness
 
 # ─── Preview ─────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_get_preview_settings")
+@_tool(name="gephi_get_preview_settings")
 async def gephi_get_preview_settings() -> str:
     """Get current preview/rendering settings (background, labels, edge style, opacity, ...)."""
     return fmt(await gephi.request("GET", "/preview/settings"))
 
-@mcp.tool(name="gephi_set_preview_settings")
+@_tool(name="gephi_set_preview_settings")
 async def gephi_set_preview_settings(settings: dict[str, Any]) -> str:
     """Set preview/rendering settings used for export (PNG/PDF/SVG).
 
@@ -1371,7 +1424,7 @@ async def gephi_set_preview_settings(settings: dict[str, Any]) -> str:
 
 # ─── Export ──────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_export_gexf")
+@_tool(name="gephi_export_gexf")
 async def gephi_export_gexf(file: str | None = None) -> str:
     """Export the graph to GEXF (preserves attributes, positions, and viz properties).
 
@@ -1381,7 +1434,7 @@ async def gephi_export_gexf(file: str | None = None) -> str:
     payload = {"file": file} if file else {"inline": True}
     return fmt(await gephi.request("POST", "/export/gexf", json_data=payload))
 
-@mcp.tool(name="gephi_export")
+@_tool(name="gephi_export")
 async def gephi_export(file: str, format: str) -> str:
     """Export the graph in any format Gephi supports, by name — the general exporter.
 
@@ -1398,7 +1451,7 @@ async def gephi_export(file: str, format: str) -> str:
     return fmt(await gephi.request("POST", "/export/format",
                                    json_data={"file": file, "format": format}))
 
-@mcp.tool(name="gephi_export_png")
+@_tool(name="gephi_export_png")
 async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> str:
     """Export the graph visualization as PNG. Run a layout first to position nodes.
 
@@ -1412,7 +1465,7 @@ async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> 
     return fmt(await gephi.request("POST", "/export/png",
                                    json_data={"file": file, "width": width, "height": height}))
 
-@mcp.tool(name="gephi_export_screenshot")
+@_tool(name="gephi_export_screenshot")
 async def gephi_export_screenshot(file: str, scale: int = 2, transparent_background: bool = False) -> str:
     """Export the LIVE Overview canvas exactly as it looks on screen right now —
     selection highlighting, hover state, current camera framing — using Gephi's own
@@ -1443,29 +1496,29 @@ async def gephi_export_screenshot(file: str, scale: int = 2, transparent_backgro
                                    json_data={"file": file, "scale": scale,
                                               "transparent_background": transparent_background}))
 
-@mcp.tool(name="gephi_export_pdf")
+@_tool(name="gephi_export_pdf")
 async def gephi_export_pdf(file: str, width: int | None = None, height: int | None = None) -> str:
     """Export the graph visualization as PDF (page size auto-detected if omitted)."""
     return fmt(await gephi.request("POST", "/export/pdf",
                                    json_data=_body(file=file, width=width, height=height)))
 
-@mcp.tool(name="gephi_export_svg")
+@_tool(name="gephi_export_svg")
 async def gephi_export_svg(file: str) -> str:
     """Export the graph visualization as SVG (scalable vector graphics)."""
     return fmt(await gephi.request("POST", "/export/svg", json_data={"file": file}))
 
-@mcp.tool(name="gephi_export_graphml")
+@_tool(name="gephi_export_graphml")
 async def gephi_export_graphml(file: str) -> str:
     """Export the graph to GraphML (widely supported XML format)."""
     return fmt(await gephi.request("POST", "/export/graphml", json_data={"file": file}))
 
-@mcp.tool(name="gephi_export_csv")
+@_tool(name="gephi_export_csv")
 async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes") -> str:
     """Export the graph to CSV. target: "nodes" | "edges" | "both"."""
     return fmt(await gephi.request("POST", "/export/csv",
                                    json_data={"file": file, "separator": separator, "target": target}))
 
-@mcp.tool(name="gephi_focus_view")
+@_tool(name="gephi_focus_view")
 async def gephi_focus_view(mode: str = "graph", id: str | None = None,
                            source: str | None = None, target: str | None = None,
                            x: float | None = None, y: float | None = None,
@@ -1498,7 +1551,7 @@ async def gephi_focus_view(mode: str = "graph", id: str | None = None,
                                                    zoom=zoom, select=select)))
 
 
-@mcp.tool(name="gephi_set_selection_mode")
+@_tool(name="gephi_set_selection_mode")
 async def gephi_set_selection_mode(mode: str = "rectangle") -> str:
     """Set how the human's mouse selects nodes in the Gephi window.
 
@@ -1517,7 +1570,7 @@ async def gephi_set_selection_mode(mode: str = "rectangle") -> str:
     return fmt(await gephi.request("POST", "/view/selection", json_data={"mode": mode}))
 
 
-@mcp.tool(name="gephi_get_perspective")
+@_tool(name="gephi_get_perspective")
 async def gephi_get_perspective() -> str:
     """List Gephi Desktop's perspectives (tabs) and which one is active.
 
@@ -1530,7 +1583,7 @@ async def gephi_get_perspective() -> str:
     return fmt(await gephi.request("GET", "/perspective"))
 
 
-@mcp.tool(name="gephi_switch_perspective")
+@_tool(name="gephi_switch_perspective")
 async def gephi_switch_perspective(name: str) -> str:
     """Switch Gephi Desktop to a different perspective (tab) by name.
 
@@ -1543,7 +1596,7 @@ async def gephi_switch_perspective(name: str) -> str:
     return fmt(await gephi.request("POST", "/perspective/switch", json_data={"name": name}))
 
 
-@mcp.tool(name="gephi_get_selection")
+@_tool(name="gephi_get_selection")
 async def gephi_get_selection(clear: bool = False) -> str:
     """Read the nodes the human has SELECTED in the Gephi window — pointing,
     made legible.
@@ -1576,7 +1629,7 @@ async def gephi_get_selection(clear: bool = False) -> str:
         "GET", f"/selection?clear={'true' if clear else 'false'}"))
 
 
-@mcp.tool(name="gephi_visual_qa")
+@_tool(name="gephi_visual_qa")
 async def gephi_visual_qa(partition_column: str | None = None) -> str:
     """Run visual-design diagnostics on the current graph. Cheap; use it often.
 
@@ -1611,7 +1664,7 @@ async def gephi_visual_qa(partition_column: str | None = None) -> str:
     return fmt(gephi_mcp_viewer.analyze_graph(graph, partition_column=partition_column))
 
 
-@mcp.tool(name="gephi_label_clusters")
+@_tool(name="gephi_label_clusters")
 async def gephi_label_clusters(partition_column: str,
                                names: dict[str, str] | None = None,
                                caption_scale: float = 1.0,
@@ -1705,7 +1758,7 @@ def gephi_graph_view_app() -> str:
     """Static MCP App page that renders graph data pushed by the host."""
     return gephi_mcp_viewer.build_app_html()
 
-@mcp.tool(name="gephi_view_graph",
+@_tool(name="gephi_view_graph",
           meta={"ui": {"resourceUri": "ui://gephi/graph-view"}})
 async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
                            caption_column: str | None = None,
@@ -1728,7 +1781,7 @@ async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
         result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
         if not result.get("success", False):
             return CallToolResult(
-                content=[TextContent(type="text", text=fmt(result))], isError=True)
+                content=[TextContent(type="text", text=fmt(result))], is_error=True)
         graph = gephi_mcp_viewer.parse_gexf(path, max_nodes=max_nodes)
     finally:
         with contextlib.suppress(OSError):
@@ -1750,13 +1803,13 @@ async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
                                   "names": caption_names or {}}
     return CallToolResult(
         content=[TextContent(type="text", text=summary)],
-        structuredContent=structured,
+        structured_content=structured,
     )
 
 
 # ─── Text ─────────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_text_to_network")
+@_tool(name="gephi_text_to_network")
 async def gephi_text_to_network(text: str | list[str], window_size: int = 4,
                                 min_edge_weight: float = 0.0,
                                 extra_stopwords: list[str] | None = None,
@@ -1919,7 +1972,7 @@ async def gephi_text_to_network(text: str | list[str], window_size: int = 4,
         out["undo_available"] = undo
     return fmt(out)
 
-@mcp.tool(name="gephi_extract_backbone")
+@_tool(name="gephi_extract_backbone")
 async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) -> str:
     """Prune the current graph to its statistically significant backbone.
 
@@ -2079,7 +2132,7 @@ async def _cleanup_scratch(scratch_id: Any, orig_id: Any) -> dict:
     return info
 
 
-@mcp.tool(name="gephi_whatif")
+@_tool(name="gephi_whatif")
 async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) -> str:
     """Test a hypothetical edit on a throwaway copy — never touches the real graph.
 
@@ -2150,7 +2203,7 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
     return fmt(outcome)
 
 
-@mcp.tool(name="gephi_compare_nodes")
+@_tool(name="gephi_compare_nodes")
 async def gephi_compare_nodes(id_a: str, id_b: str, metric: str) -> str:
     """Compare two nodes on one metric — a deterministic answer to "which is more X?".
 
@@ -2201,22 +2254,22 @@ async def gephi_compare_nodes(id_a: str, id_b: str, metric: str) -> str:
 
 # ─── Import ──────────────────────────────────────────────────
 
-@mcp.tool(name="gephi_import_gexf")
+@_tool(name="gephi_import_gexf")
 async def gephi_import_gexf(file: str) -> str:
     """Import a graph from a GEXF file. Merged with any existing graph."""
     return fmt(await gephi.request("POST", "/import/gexf", json_data={"file": file}))
 
-@mcp.tool(name="gephi_import_graphml")
+@_tool(name="gephi_import_graphml")
 async def gephi_import_graphml(file: str) -> str:
     """Import a graph from a GraphML file."""
     return fmt(await gephi.request("POST", "/import/graphml", json_data={"file": file}))
 
-@mcp.tool(name="gephi_import_csv")
+@_tool(name="gephi_import_csv")
 async def gephi_import_csv(file: str) -> str:
     """Import a graph from a CSV file."""
     return fmt(await gephi.request("POST", "/import/csv", json_data={"file": file}))
 
-@mcp.tool(name="gephi_import_file")
+@_tool(name="gephi_import_file")
 async def gephi_import_file(file: str) -> str:
     """Import a graph from any supported format (GEXF, GraphML, GML, CSV, DOT, Pajek, ...).
 

@@ -109,9 +109,9 @@ async def test_view_graph_returns_structured_result(gexf_file, monkeypatch):
     result = await gephi_mcp.gephi_view_graph(title="My net")
     from mcp.types import CallToolResult
     assert isinstance(result, CallToolResult)
-    assert result.isError is False
+    assert result.is_error is False
     assert "3 nodes" in result.content[0].text
-    sc = result.structuredContent
+    sc = result.structured_content
     assert sc["title"] == "My net"
     assert {n["key"] for n in sc["nodes"]} == {"a", "b", "c"}
 
@@ -123,7 +123,7 @@ async def test_view_graph_export_failure_is_error(monkeypatch):
     result = await gephi_mcp.gephi_view_graph()
     from mcp.types import CallToolResult
     assert isinstance(result, CallToolResult)
-    assert result.isError is True
+    assert result.is_error is True
     assert "no workspace" in result.content[0].text
 
 
@@ -433,10 +433,10 @@ async def test_view_graph_captions_param(gexf_file, monkeypatch):
     monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
     result = await gephi_mcp.gephi_view_graph(
         caption_column="team", caption_names={"A": "Alpha"})
-    sc = result.structuredContent
+    sc = result.structured_content
     assert sc["captions"] == {"column": "team", "names": {"A": "Alpha"}}
     result2 = await gephi_mcp.gephi_view_graph()
-    assert "captions" not in result2.structuredContent
+    assert "captions" not in result2.structured_content
 
 
 def test_app_html_has_interactive_features():
@@ -575,3 +575,23 @@ def test_pick_cluster_hubs_accepts_id():
     g = parse_gexf(_ID_TITLE_GEXF)
     hubs = pick_cluster_hubs(g, "modularity_class")
     assert set(hubs.keys()) == {"0", "1"}
+
+
+def test_visual_qa_flags_untouched_graph():
+    """A graph straight after loading (uniform size, one color) gets the
+    'looks untouched' warning; a styled one does not."""
+    from gephi_mcp_viewer import analyze_graph
+    untouched = {"directed": False,
+                 "nodes": [{"key": str(i), "label": str(i), "x": float(i), "y": 0.0,
+                            "size": 10.0, "color": "#999999", "attributes": {}}
+                           for i in range(6)],
+                 "edges": []}
+    d = analyze_graph(untouched)
+    assert any(w.startswith("looks untouched") for w in d["warnings"])
+    styled = {"directed": False,
+              "nodes": [{"key": str(i), "label": str(i), "x": float(i), "y": 0.0,
+                         "size": 10.0 + i, "color": "#2a78d6" if i % 2 else "#1baf7a",
+                         "attributes": {}} for i in range(6)],
+              "edges": []}
+    d = analyze_graph(styled)
+    assert not any(w.startswith("looks untouched") for w in d["warnings"])
