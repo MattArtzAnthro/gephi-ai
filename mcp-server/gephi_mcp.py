@@ -24,6 +24,7 @@ import math
 import os
 import re
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -33,7 +34,15 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 import gephi_mcp_viewer
 import text_network
 from community_stability import consensus
-from stats_integrity import GraphFacts, caveats_for, mutates_graph, needs_graph_facts
+from legend import legend_document
+from session_ledger import Ledger
+from stats_integrity import (
+    GraphFacts,
+    caveats_for,
+    mutates_graph,
+    needs_graph_facts,
+    replaces_graph,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gephi_mcp")
@@ -204,6 +213,8 @@ class GephiClient:
         # we are looking at, or its shape, retires them before it runs.
         if mutates_graph(method, endpoint):
             invalidate_graph_facts()
+            if replaces_graph(method, endpoint):
+                LEDGER.reset()
         try:
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
                 response = await client.request(method=method, url=url, params=params, json=json_data)
@@ -711,6 +722,18 @@ async def gephi_set_edge_attributes(source: str, target: str, attributes: dict[s
 
 # ─── Appearance: Individual Styling ──────────────────────────
 
+def _fmt_styled(resp: dict[str, Any], operation: str, **detail: Any) -> str:
+    """Format a styling result, noting it in the ledger when Gephi accepted it.
+
+    Only a call the application actually applied belongs in the record: a refused one changed
+    nothing, and a legend describing it would name an encoding the map does not carry.
+    """
+    if isinstance(resp, dict) and resp.get("success"):
+        LEDGER.record(operation, **detail)
+    return fmt(resp)
+
+
+
 @_tool(name="gephi_set_node_color")
 async def gephi_set_node_color(id: str, r: int, g: int, b: int, a: int = 255) -> str:
     """Set the color of a single node. r/g/b/a are 0-255."""
@@ -754,8 +777,9 @@ async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | N
     "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}. With more than 8
     categories, color the 8 largest and set the rest to gray [153,153,153].
     """
-    return fmt(await gephi.request("POST", "/appearance/partition/color",
-                                   json_data=_body(column=column, colors=colors)))
+    return _fmt_styled(await gephi.request("POST", "/appearance/partition/color",
+                                           json_data=_body(column=column, colors=colors)),
+                       "color_by_partition", column=column)
 
 @_tool(name="gephi_color_edges_by_partition")
 async def gephi_color_edges_by_partition(column: str,
@@ -793,8 +817,11 @@ async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: flo
     Always do this before exporting or viewing — unsized nodes render as invisible
     specks. Degree with min 10, max 60 is a good default; scale up for large canvases.
     """
-    return fmt(await gephi.request("POST", "/appearance/ranking/size",
-                                   json_data={"column": column, "min_size": min_size, "max_size": max_size}))
+    return _fmt_styled(await gephi.request("POST", "/appearance/ranking/size",
+                                           json_data={"column": column, "min_size": min_size,
+                                                      "max_size": max_size}),
+                       "size_by_ranking", column=column,
+                       min_size=min_size, max_size=max_size)
 
 
 # ─── Layout ──────────────────────────────────────────────────
@@ -860,6 +887,9 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result = await gephi.request("POST", "/layout/run",
                                  json_data=_body(algorithm=algorithm, iterations=iterations,
                                                  properties=properties))
+    if isinstance(result, dict) and result.get("success"):
+        LEDGER.record("run_layout", algorithm=algorithm, iterations=iterations,
+                      **({"properties": properties} if properties else {}))
     if not sync or not result.get("success"):
         return fmt(result)
     # Poll until layout stops
@@ -1037,6 +1067,11 @@ async def gephi_set_layout_properties(algorithm: str, properties: dict[str, Any]
 
 _graph_facts: GraphFacts | None = None
 
+#: What this session applied to the current graph. A legend and a methods note both need it, and
+#: neither can be recovered from the graph afterwards: Gephi keeps the pixels, not the decision
+#: that produced them. Reset whenever the graph changes, since it describes one graph.
+LEDGER = Ledger()
+
 
 def invalidate_graph_facts() -> None:
     """Forget cached facts about the graph. Called whenever the graph may have changed."""
@@ -1090,6 +1125,7 @@ async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
     try:
         if not (isinstance(resp, dict) and resp.get("success", True)):
             return fmt(resp)
+        LEDGER.record("statistic", metric=metric, params=dict(params))
         facts = await _fetch_graph_facts() if needs_graph_facts(metric) else GraphFacts()
         found = caveats_for(metric, params=params, facts=facts)
         if found:
@@ -1608,6 +1644,102 @@ async def gephi_set_preview_settings(settings: dict[str, Any]) -> str:
 
 
 # ─── Export ──────────────────────────────────────────────────
+
+async def _derive_partition_colours(column: str) -> dict[str, str] | None:
+    """Read the colour each group actually carries, from the graph rather than from assumption.
+
+    When no palette is passed, Gephi assigns one and never reports it back, so the mapping is
+    known but its colours are not. Reading them off the nodes is the only way a swatch can be
+    trusted; inventing one would produce a legend that confidently mislabels the map.
+    """
+    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    if not (isinstance(exported, dict) and exported.get("success") and exported.get("content")):
+        return None
+    from gephi_mcp_viewer import parse_gexf
+    graph = parse_gexf(exported["content"], max_nodes=10**9)
+    wanted = column.replace("_", "").replace(" ", "").lower()
+    groups: dict[str, str] = {}
+    for node in graph["nodes"]:
+        value = next((v for k, v in (node.get("attributes") or {}).items()
+                      if k.replace("_", "").replace(" ", "").lower() == wanted), None)
+        if value is None or str(value) in groups:
+            continue
+        match = re.match(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)", str(node.get("color") or ""))
+        if match:
+            r, g, b = (int(v) for v in match.groups())
+            groups[str(value)] = f"#{r:02x}{g:02x}{b:02x}"
+    return groups or None
+
+
+@_tool(name="gephi_export_legend")
+async def gephi_export_legend(file: str) -> str:
+    """Write a legend for the current map as SVG, so an export can be read without you present.
+
+    A Gephi export is coloured circles with no key. This draws the key from the mappings applied
+    in this session: which column each visual channel encodes, the groups and their swatches, and
+    the range a size mapping spans. Swatch colours are read back from the graph, because Gephi
+    assigns a palette itself when none is given and never reports which one.
+
+    Refuses when nothing was mapped through these tools. Styling done by hand in the Gephi window
+    is invisible here, and a legend guessed from an unknown appearance would be confidently wrong,
+    which is worse for a published figure than having no legend at all.
+
+    Pair it with a PNG or PDF export, or splice it into an SVG one. Answers gephi/gephi#511.
+    """
+    items = LEDGER.legend_items()
+    if not items:
+        return fmt({"success": False,
+                    "error": ("Nothing to put in a legend: no colour, size, or width mapping has "
+                              "been applied through these tools in this session. Anything styled "
+                              "by hand in the Gephi window is not visible here, so a legend would "
+                              "be a guess. Apply a mapping (gephi_color_by_partition, "
+                              "gephi_size_by_ranking) and try again.")})
+
+    resolved = []
+    for item in items:
+        if item.get("groups") or not (item["channel"].endswith("colour") and item.get("column")):
+            resolved.append(item)
+            continue
+        groups = await _derive_partition_colours(item["column"])
+        resolved.append({**item, "groups": groups} if groups else item)
+
+    document = legend_document(resolved)
+    try:
+        Path(file).write_text(document, encoding="utf-8")
+    except OSError as exc:
+        return fmt({"success": False, "error": f"Could not write {file}: {exc}"})
+    return fmt({"success": True, "file": file, "items": resolved})
+
+
+@_tool(name="gephi_session_receipt")
+async def gephi_session_receipt(file: str | None = None) -> str:
+    """Report how the current figure was made, ready to paste into a methods section.
+
+    Gephi does not record which layout ran with which settings, or which statistics produced which
+    columns, so six months later a figure cannot be explained or reproduced. This returns that
+    record: the visual mappings in force, the statistics run and the parameters they ran under,
+    the layout and its settings, and the plugin and server versions.
+
+    The record covers what went through these tools. Work done by hand in the Gephi window is not
+    visible here, and the receipt says so rather than letting silence read as completeness.
+    """
+    receipt: dict[str, Any] = {"success": True}
+    receipt.update(LEDGER.receipt())
+    health = await gephi.request("GET", "/health")
+    receipt["versions"] = {
+        "server": __version__,
+        "plugin": health.get("version") if isinstance(health, dict) else None,
+    }
+    if file:
+        try:
+            Path(file).write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+            receipt["file"] = file
+        except OSError as exc:
+            return fmt({"success": False, "error": f"Could not write {file}: {exc}"})
+    return fmt(receipt)
+
+
+
 
 @_tool(name="gephi_export_gexf")
 async def gephi_export_gexf(file: str | None = None) -> str:

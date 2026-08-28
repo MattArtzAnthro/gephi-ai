@@ -134,6 +134,24 @@ def mutates_graph(method: str, endpoint: str) -> bool:
     return not any(path.startswith(prefix) for prefix in _NON_STRUCTURAL)
 
 
+#: Endpoints that replace the graph rather than editing it. A styling record survives an ordinary
+#: edit — adding a node leaves a colour mapping meaningful — but not a change of graph.
+_REPLACES_GRAPH = (
+    "/graph/clear",
+    "/workspace/",
+    "/project/",
+    "/import/",
+)
+
+
+def replaces_graph(method: str, endpoint: str) -> bool:
+    """Whether this call swaps in a different graph, making a styling record obsolete."""
+    if str(method or "").upper() == "GET":
+        return False
+    path = str(endpoint or "")
+    return any(path.startswith(prefix) for prefix in _REPLACES_GRAPH)
+
+
 #: Predicates whose truth depends on the graph rather than on the call's arguments.
 _FACT_PREDICATES = frozenset({"undirected", "directed", "weights_vary"})
 
