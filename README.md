@@ -17,7 +17,7 @@ Built for researchers working across network science and AI.
 <details>
 <summary>Full feature list</summary>
 
-- 109 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- 112 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
 - Layout quality is measured, not eyeballed: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separated and frames exports around the main cloud (ignoring runaway outlier nodes), and numerically exploded layouts are caught automatically instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
@@ -51,7 +51,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 109 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 112 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -146,7 +146,7 @@ gemini mcp add -s user gephi-mcp uvx gephi-mcp
 
 (Claude Code without the plugin: `claude mcp add gephi-mcp -- uvx gephi-mcp`.)
 
-These agents get all 109 tools. To give them the network-analysis guidance as well, copy the skill folder into your agent's skills directory:
+These agents get all 112 tools. To give them the network-analysis guidance as well, copy the skill folder into your agent's skills directory:
 
 ```bash
 git clone https://github.com/MattArtzAnthro/gephi-ai.git
@@ -222,7 +222,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (109)
+## Tools (112)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -272,7 +272,7 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 Reference guides are in `claude-plugin/skills/gephi/`:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 109 tools
+- **references/tool-reference.md** — Complete API reference for all 112 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

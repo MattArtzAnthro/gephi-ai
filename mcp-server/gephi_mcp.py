@@ -33,7 +33,9 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gephi_mcp_viewer
 import text_network
+from bipartite import bipartite_positions, project_bipartite, split_modes
 from community_stability import consensus
+from graph_diff import diff_graphs
 from legend import legend_document
 from session_ledger import Ledger
 from stats_integrity import (
@@ -2379,6 +2381,144 @@ async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) ->
 
 
 # ─── Counterfactual / comparison ─────────────────────────────
+
+async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
+    """Parse the graph of a workspace, switching to it and back if one is named."""
+    original = None
+    if workspace is not None:
+        listed = await gephi.request("GET", "/workspace/list")
+        if not (isinstance(listed, dict) and listed.get("success")):
+            return None
+        # The list reports an id; every switch/rename call takes a zero-based INDEX. They are
+        # different numbers, and using the id lands on the wrong workspace or on none at all.
+        original = next((i for i, w in enumerate(listed.get("workspaces", []))
+                         if w.get("current")), None)
+        switched = await gephi.request("POST", "/workspace/switch", json_data={"index": workspace})
+        if not (isinstance(switched, dict) and switched.get("success")):
+            return None
+    try:
+        exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+        if not (isinstance(exported, dict) and exported.get("success") and exported.get("content")):
+            return None
+        from gephi_mcp_viewer import parse_gexf
+        return parse_gexf(exported["content"], max_nodes=10**9)
+    finally:
+        if workspace is not None and original is not None:
+            await gephi.request("POST", "/workspace/switch", json_data={"index": original})
+
+
+@_tool(name="gephi_compare_workspaces")
+async def gephi_compare_workspaces(before: int, after: int, compare: str | None = None,
+                                   directed: bool = False) -> str:
+    """Compare the same network at two points in time, held in two workspaces.
+
+    Reports which nodes and edges arrived, which left, and — when `compare` names a numeric column
+    such as Degree — which of the nodes present in both grew and which shrank. Answering this today
+    means exporting both sides and comparing by hand.
+
+    The comparison rests entirely on node identity: the two sides only diff meaningfully if the
+    same id means the same thing in both. When they share no nodes at all the result says so
+    rather than reporting total turnover, because a mismatched identifier looks identical to a
+    network that replaced every member and is very much more common.
+
+    Answers gephi/gephi#2013.
+    """
+    left = await _read_graph(before)
+    if left is None:
+        return fmt({"success": False, "error": f"Could not read workspace {before}."})
+    right = await _read_graph(after)
+    if right is None:
+        return fmt({"success": False, "error": f"Could not read workspace {after}."})
+    result = {"success": True, "before_workspace": before, "after_workspace": after}
+    result.update(diff_graphs(left, right, compare=compare, directed=directed))
+    return fmt(result)
+
+
+@_tool(name="gephi_bipartite_layout")
+async def gephi_bipartite_layout(mode_column: str, separation: float = 600.0,
+                                 spacing: float = 60.0) -> str:
+    """Lay a two-mode network out as two columns, one per mode.
+
+    Two-mode data — people by events, authors by concepts, informants by sites — is drawn by Gephi
+    as though every node were the same kind of thing, which misreads the data at a glance. This
+    places each mode in its own column so the structure is visible.
+
+    `mode_column` names the attribute separating the two kinds; Gephi has no notion of a node's
+    mode, so it has to be told. A column holding more than two distinct values is refused rather
+    than guessed at.
+
+    Answers gephi/gephi#3131. Computed here and pushed as coordinates, so no layout plugin is
+    involved.
+    """
+    graph = await _read_graph()
+    if graph is None:
+        return fmt({"success": False, "error": "Could not read the current graph."})
+    try:
+        positions = bipartite_positions(graph, mode_column,
+                                        separation=separation, spacing=spacing)
+    except ValueError as exc:
+        return fmt({"success": False, "error": str(exc)})
+    pushed = await gephi.request("POST", "/graph/nodes/positions",
+                                 json_data={"positions": positions})
+    if not (isinstance(pushed, dict) and pushed.get("success")):
+        return fmt(pushed)
+    left, right = split_modes(graph, mode_column)
+    return fmt({"success": True, "positioned": len(positions),
+                "modes": {"left": len(left), "right": len(right)},
+                "mode_column": mode_column})
+
+
+@_tool(name="gephi_bipartite_projection")
+async def gephi_bipartite_projection(mode_column: str, keep: str,
+                                     workspace_name: str | None = None) -> str:
+    """Collapse a two-mode network onto one mode, in a new workspace.
+
+    Two people who attended the same event become connected, weighted by how many events they
+    shared. This is the standard way to analyse two-mode data as a social network, and Gephi
+    cannot do it at all.
+
+    Nodes sharing no partner are kept with no edges. Dropping them would quietly remove people
+    from the network, which produces a different graph rather than a tidier one.
+
+    The original is left untouched: the projection is built in a new workspace, so the two-mode
+    data survives alongside the one-mode view of it.
+    """
+    graph = await _read_graph()
+    if graph is None:
+        return fmt({"success": False, "error": "Could not read the current graph."})
+    try:
+        projected = project_bipartite(graph, mode_column, keep=keep)
+    except ValueError as exc:
+        return fmt({"success": False, "error": str(exc)})
+
+    created = await gephi.request("POST", "/workspace/new")
+    if not (isinstance(created, dict) and created.get("success")):
+        return fmt(created)
+    if workspace_name:
+        listed = await gephi.request("GET", "/workspace/list")
+        if isinstance(listed, dict) and listed.get("success"):
+            # Rename addresses a workspace by index, and the new one is current.
+            index = next((i for i, w in enumerate(listed.get("workspaces", []))
+                          if w.get("current")), None)
+            if index is not None:
+                await gephi.request("POST", "/workspace/rename",
+                                    json_data={"index": index, "name": workspace_name})
+    await gephi.request("POST", "/graph/nodes/add",
+                        json_data={"nodes": [{"id": n} for n in projected["nodes"]]})
+    if projected["edges"]:
+        await gephi.request("POST", "/graph/edges/add",
+                            json_data={"edges": [{"source": e["source"], "target": e["target"],
+                                                  "weight": e["weight"], "directed": False}
+                                                 for e in projected["edges"]]})
+    result = {"success": True, "nodes": len(projected["nodes"]),
+              "edges": len(projected["edges"]), "kept_mode": keep}
+    if projected.get("warning"):
+        result["warning"] = projected["warning"]
+        result["within_mode_edges"] = projected["within_mode_edges"]
+    return fmt(result)
+
+
+
 
 # Scalar metrics worth diffing before/after a hypothetical edit, as
 # (label, path-into-the-profile-dict). Curated rather than a blind recursive
