@@ -21,7 +21,7 @@ Built for researchers working across network science and AI.
 - One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
 - Layout quality is measured, not eyeballed: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separated and frames exports around the main cloud (ignoring runaway outlier nodes), and numerically exploded layouts are caught automatically instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
-- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/export-map`, `/import-and-explore`, `/explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual`
+- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/export-map`, `/import-and-explore`, `/explore`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual`
 - Specialized agents that run multi-step work in their own context and hand back just the result: independent claim verification, layout iteration, structural analysis, and text-network construction
 - Two extra layouts beyond Gephi's own: by role played in the network, and by community (best for reply and retweet networks)
 - Reads your selection in the Gephi window, so "what did I select?" just works
@@ -190,8 +190,8 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 
 | Component | What it does |
 |-----------|-------------|
-| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/export-map`, `/import-and-explore`, `/explore`, `/beautify`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual` |
-| **Agents** | Subagents that run multi-step work in their own context and return just the result: `network-analyst` (structural interpretation), `claim-verifier` (independently checks one claim — confirmed / refuted / can't-tell, with the number), `layout-iterator` (runs the beautify loop to a publication-ready map), `text-network-builder` (turns free text into a word co-occurrence network) |
+| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/export-map`, `/import-and-explore`, `/explore`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual` |
+| **Agents** | Subagents that run multi-step work in their own context and return just the result: `network-analyst` (structural interpretation), `claim-verifier` (independently checks one claim — confirmed / refuted / can't-tell, with the number), `layout-iterator` (runs the `/visualize` loop to a publication-ready map), `text-network-builder` (turns free text into a word co-occurrence network) |
 | **Gephi skill** | Teaches Claude network science workflows, visualization best practices, and known Gephi gotchas |
 | **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |

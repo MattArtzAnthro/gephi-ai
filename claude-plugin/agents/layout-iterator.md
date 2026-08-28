@@ -3,7 +3,7 @@ name: layout-iterator
 description: |
   Take the graph currently open in Gephi to a clean, legible, publication-ready
   map through the run → visual_qa → inspect → adjust loop, returning just the
-  finished export + caption + a short change log. Use for "beautify / make this
+  finished export + caption + a short change log. Use for "visualize / make this
   look good / lay this out well." Mutates the live graph's layout and style (that
   is the job); never edits nodes or edges.
 allowed-tools: mcp__gephi-mcp__gephi_health_check, mcp__gephi-mcp__gephi_get_graph_stats, mcp__gephi-mcp__gephi_profile_graph, mcp__gephi-mcp__gephi_visual_qa, mcp__gephi-mcp__gephi_compute_modularity, mcp__gephi-mcp__gephi_compute_degree, mcp__gephi-mcp__gephi_color_by_partition, mcp__gephi-mcp__gephi_color_edges_by_partition, mcp__gephi-mcp__gephi_size_by_ranking, mcp__gephi-mcp__gephi_set_preview_settings, mcp__gephi-mcp__gephi_run_layout, mcp__gephi-mcp__gephi_get_layout_properties, mcp__gephi-mcp__gephi_set_layout_properties, mcp__gephi-mcp__gephi_label_clusters, mcp__gephi-mcp__gephi_export_png, mcp__gephi-mcp__gephi_export_gexf, mcp__gephi-mcp__gephi_view_graph, Skill, Read, Bash

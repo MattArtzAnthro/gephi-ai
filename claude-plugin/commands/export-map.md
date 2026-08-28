@@ -1,5 +1,5 @@
 ---
-description: Export the current map as clean and labeled PNG plus SVG (formerly /visualize)
+description: Export the current map as clean and labeled PNG plus SVG
 argument-hint: "[output-path]"
 allowed-tools: mcp__gephi-mcp__*
 ---
@@ -8,8 +8,7 @@ allowed-tools: mcp__gephi-mcp__*
 
 Export the map currently open in Gephi: a clean PNG, a labeled PNG, and an SVG.
 This command exports; it does not lay out or style. The map has to be a map
-first (laid out, sized, colored), which `/beautify` or `/analyze-network` does.
-It was called `/visualize` before 1.10.0; that name still works as an alias.
+first (laid out, sized, colored), which `/visualize` or `/analyze-network` does.
 
 **Tell the user what you're doing at each step** — narrate briefly before each tool call so they know what's happening.
 
@@ -23,7 +22,7 @@ It was called `/visualize` before 1.10.0; that name still works as an alias.
    graph has one). If its `warnings` include the "looks untouched" warning, or
    `sizes.flat` is true and `colors.distinct` is 1, the graph has been loaded
    but not laid out or styled: exporting now produces the block of overlapping
-   default nodes. Say that, and offer the recommended path: run `/beautify`
+   default nodes. Say that, and offer the recommended path: run `/visualize`
    (layout, sizes, colors, with a visual check) and then export. Only continue
    without it if the user says so. If `visual_qa` returns other warnings (invisible
    sizes, near-white colors, an exploded layout), fix or flag them before exporting.

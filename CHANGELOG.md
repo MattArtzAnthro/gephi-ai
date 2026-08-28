@@ -4,6 +4,18 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## claude-plugin 1.10.1
+
+### Changed
+- **`/visualize` is now the map-making command, and `/beautify` is gone.** In
+  1.10.0 `/visualize` had become an alias of `/export-map`, which left the
+  most natural word for "turn this graph into a map" pointing at export alone.
+  It now does what the name says: it dispatches the layout-iterator agent to
+  lay out, size, color, check, and export the graph in place, which is what
+  `/beautify` did. `/export-map` remains the
+  export-only command. `/beautify` has no alias; the name lasted one release
+  and its job now has the better name.
+
 ## MCP server 1.12.0 / claude-plugin 1.10.0
 
 ### Fixed

@@ -5,7 +5,7 @@ description: |
   wants a comprehensive read of a network's properties — centrality comparison,
   community characterization, bridge/hub identification, structural
   interpretation — rather than one specific claim (that's claim-verifier) or a
-  build/beautify job. Read-leaning: it interprets, it does not restyle.
+  build/visualize job. Read-leaning: it interprets, it does not restyle.
 allowed-tools: mcp__gephi-mcp__*, Skill, Read
 ---
 
@@ -61,11 +61,11 @@ relevant reference rather than guessing.
 
 ## You interpret; you do not restyle
 
-Leave layout, coloring, and export to the layout-iterator agent / the beautify
+Leave layout, coloring, and export to the layout-iterator agent / the /visualize
 workflow. You may run read tools and non-destructive checks freely, but do not
 recolor, relayout, or edit the graph as part of an analysis — that changes the
 user's working state under them. If a visual would help the interpretation, say so
-and let them run beautify.
+and let them run /visualize.
 
 ## Deliverable
 
