@@ -100,6 +100,8 @@ def test_build_app_html_is_static():
 # No async markers needed: pyproject sets asyncio_mode = "auto".
 async def test_view_graph_returns_structured_result(gexf_file, monkeypatch):
     async def fake_request(method, endpoint, params=None, json_data=None):
+        if endpoint == "/preview/settings":
+            return {"success": False}
         assert endpoint == "/export/gexf"
         import shutil
         shutil.copy(gexf_file, json_data["file"])
@@ -427,6 +429,8 @@ def test_parse_gexf_static_has_no_dynamics(gexf_file):
 
 async def test_view_graph_captions_param(gexf_file, monkeypatch):
     async def fake_request(method, endpoint, params=None, json_data=None):
+        if endpoint == "/preview/settings":
+            return {"success": False}
         import shutil
         shutil.copy(gexf_file, json_data["file"])
         return {"success": True}
@@ -595,3 +599,80 @@ def test_visual_qa_flags_untouched_graph():
               "edges": []}
     d = analyze_graph(styled)
     assert not any(w.startswith("looks untouched") for w in d["warnings"])
+
+
+TITLED_GEXF = """<?xml version="1.0" encoding="UTF-8"?>
+<gexf xmlns="http://www.gexf.net/1.2draft" xmlns:viz="http://www.gexf.net/1.2draft/viz" version="1.2">
+  <graph defaultedgetype="undirected">
+    <attributes class="node">
+      <attribute id="modularity_class" title="Modularity Class" type="integer"/>
+    </attributes>
+    <nodes>
+      <node id="a" label="A"><attvalues><attvalue for="modularity_class" value="0"/></attvalues></node>
+      <node id="b" label="B"><attvalues><attvalue for="modularity_class" value="1"/></attvalues></node>
+    </nodes>
+    <edges><edge id="e" source="a" target="b"/></edges>
+  </graph>
+</gexf>"""
+
+PREVIEW = {"success": True, "settings": {
+    "edge.opacity": 25.0, "edge.curved": True, "edge.color": "source", "edge.thickness": 2.0,
+    "node.border.width": 0.3, "node.opacity": 100.0, "node.label.show": False, "arrow.size": 0.0}}
+
+
+def _titled_host(tmp_path, monkeypatch, preview_ok=True):
+    p = tmp_path / "t.gexf"
+    p.write_text(TITLED_GEXF, encoding="utf-8")
+
+    async def fake_request(method, endpoint, params=None, json_data=None, timeout=None):
+        if endpoint == "/export/gexf":
+            import shutil
+            shutil.copy(str(p), json_data["file"])
+            return {"success": True}
+        if endpoint == "/preview/settings":
+            return PREVIEW if preview_ok else {"success": False, "error": "no workspace"}
+        raise AssertionError(endpoint)
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
+
+
+async def test_view_graph_resolves_caption_column_by_id(tmp_path, monkeypatch):
+    """Callers pass the column id (modularity_class); node attributes are keyed by
+    title (Modularity Class). The app must receive the key that is actually there,
+    or captions silently never render."""
+    _titled_host(tmp_path, monkeypatch)
+    r = await gephi_mcp.gephi_view_graph(caption_column="modularity_class")
+    sc = r.structured_content
+    assert sc["captions"]["column"] == "Modularity Class"
+    assert all("Modularity Class" in n["attributes"] for n in sc["nodes"])
+
+
+async def test_view_graph_carries_preview_settings(tmp_path, monkeypatch):
+    """The in-chat view should draw the way Gephi's own export would: the tool
+    passes the preview settings the user set, normalized for the app."""
+    _titled_host(tmp_path, monkeypatch)
+    r = await gephi_mcp.gephi_view_graph()
+    pv = r.structured_content["preview"]
+    assert pv == {"edge_opacity": 0.25, "edge_curved": True, "edge_color": "source",
+                  "edge_thickness": 2.0, "node_border_width": 0.3, "node_opacity": 1.0,
+                  "label_show": False, "arrow_size": 0.0}
+
+
+async def test_view_graph_without_preview_settings_still_renders(tmp_path, monkeypatch):
+    _titled_host(tmp_path, monkeypatch, preview_ok=False)
+    r = await gephi_mcp.gephi_view_graph()
+    assert r.is_error is False
+    assert "preview" not in r.structured_content
+
+
+def test_app_html_declares_its_host_contract():
+    """Tripwire for the MCP Apps surface the page depends on. If a rename drops
+    one of these, the host silently stops receiving that message."""
+    from gephi_mcp_viewer import build_app_html
+    html = build_app_html()
+    for method in ("ui/initialize", "ui/notifications/initialized", "ui/notifications/tool-result",
+                   "ui/notifications/host-context-changed", "ui/request-display-mode",
+                   "ui/update-model-context", "ui/message", "tools/call"):
+        assert method in html, method
+    # The page must be self-contained: vendored libraries inlined, no placeholders left.
+    assert "__SIGMA_JS__" not in html and "__GRAPHOLOGY_JS__" not in html
+    assert "gephi_focus_view" in html and "gephi_view_graph" in html

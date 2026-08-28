@@ -1769,6 +1769,27 @@ def gephi_graph_view_app() -> str:
     """Static MCP App page that renders graph data pushed by the host."""
     return gephi_mcp_viewer.build_app_html()
 
+def _preview_for_view(result: dict) -> dict | None:
+    """Normalize Gephi's preview settings for the in-chat view so it draws the
+    way Gephi's own export would (opacities as 0-1, the edge color mode as-is).
+    Returns None when the settings could not be read; the app then uses defaults."""
+    if not result.get("success", True):
+        return None
+    st = result.get("settings") or result
+    if "edge.opacity" not in st:
+        return None
+    return {
+        "edge_opacity": float(st.get("edge.opacity", 100.0)) / 100.0,
+        "edge_curved": bool(st.get("edge.curved", False)),
+        "edge_color": st.get("edge.color", "mixed"),
+        "edge_thickness": float(st.get("edge.thickness", 1.0)),
+        "node_border_width": float(st.get("node.border.width", 1.0)),
+        "node_opacity": float(st.get("node.opacity", 100.0)) / 100.0,
+        "label_show": bool(st.get("node.label.show", False)),
+        "arrow_size": float(st.get("arrow.size", 3.0)),
+    }
+
+
 @_tool(name="gephi_view_graph",
           meta={"ui": {"resourceUri": "ui://gephi/graph-view"}})
 async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
@@ -1810,8 +1831,14 @@ async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
                 "have x, y, color, size); avoid falling back to a static PNG.")
     structured = {**graph, "title": title}
     if caption_column:
-        structured["captions"] = {"column": caption_column,
-                                  "names": caption_names or {}}
+        # Callers pass a column id (modularity_class); node attributes are keyed
+        # by title (Modularity Class). Hand the app the key that is actually there.
+        structured["captions"] = {
+            "column": gephi_mcp_viewer.resolve_column_key(graph, caption_column),
+            "names": caption_names or {}}
+    preview = _preview_for_view(await gephi.request("GET", "/preview/settings"))
+    if preview:
+        structured["preview"] = preview
     return CallToolResult(
         content=[TextContent(type="text", text=summary)],
         structured_content=structured,

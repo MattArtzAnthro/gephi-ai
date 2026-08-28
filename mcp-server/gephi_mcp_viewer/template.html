@@ -4,61 +4,100 @@
 <meta charset="utf-8">
 <title>Gephi network view</title>
 <style>
-  html, body { margin: 0; height: 100%; font-family: -apple-system, "Segoe UI", sans-serif; }
-  #container { width: 100%; height: 100%; }
-  #panel { position: absolute; top: 46px; left: 10px; background: rgba(255,255,255,.96);
-           border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; font-size: 13px;
-           max-width: 300px; display: none; box-shadow: 0 2px 8px rgba(0,0,0,.08); z-index: 30; }
+  :root {
+    color-scheme: light dark;
+    /* Fallbacks; the host overrides these through its style variables. */
+    --color-background-primary: light-dark(#ffffff, #1b1b1d);
+    --color-background-secondary: light-dark(#f6f6f7, #26262a);
+    --color-text-primary: light-dark(#1f2328, #ececef);
+    --color-text-secondary: light-dark(#59636e, #a2a6ad);
+    --color-border-primary: light-dark(#d9dce1, #3a3a40);
+    --color-background-info: light-dark(#eaf2fd, #1e3a5f);
+    --color-text-info: light-dark(#1d4ed8, #8ab4f8);
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --border-radius-md: 6px;
+  }
+  html, body { margin: 0; height: 100%; font-family: var(--font-sans); font-size: 13px;
+               background: var(--color-background-primary); color: var(--color-text-primary); }
+  #container { position: absolute; inset: 0; }
+  body.with-legend #container, body.with-legend #captions { right: 200px; }
+  .card { position: absolute; z-index: 30; background: color-mix(in srgb, var(--color-background-primary) 94%, transparent);
+          border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md);
+          box-shadow: 0 2px 8px rgba(0,0,0,.10); }
+  #toolbar { top: 8px; left: 8px; display: flex; gap: 4px; align-items: center; padding: 4px 6px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+  button { font: inherit; font-size: 12px; padding: 3px 8px; cursor: pointer; color: var(--color-text-primary);
+           border: 1px solid var(--color-border-primary); border-radius: 4px; background: var(--color-background-secondary); }
+  button:hover { filter: brightness(0.95); }
+  button.active { background: var(--color-text-info); color: var(--color-background-primary); border-color: var(--color-text-info); }
+  #search { font: inherit; font-size: 12px; padding: 3px 6px; width: 130px; border: 1px solid var(--color-border-primary);
+            border-radius: 4px; background: var(--color-background-primary); color: var(--color-text-primary); }
+  #hits { position: absolute; z-index: 40; max-height: 160px; overflow: auto; padding: 4px 0; display: none; min-width: 160px; }
+  #hits div { padding: 3px 10px; cursor: pointer; white-space: nowrap; }
+  #hits div:hover { background: var(--color-background-info); }
+  #legend { top: 8px; right: 8px; bottom: 8px; width: 170px; padding: 8px 10px; overflow: auto; display: none; }
+  @media (max-width: 560px) { body.with-legend #container, body.with-legend #captions { right: 0; } #legend { top: 46px; bottom: auto; max-height: 50%; } }
+  #legend h4 { margin: 0 0 6px; font-size: 12px; color: var(--color-text-secondary); font-weight: 600; }
+  .lg { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; }
+  .lg:hover, .lg.active { color: var(--color-text-info); }
+  .sw { width: 11px; height: 11px; border-radius: 50%; flex: none; border: 1px solid rgba(0,0,0,.25); }
+  .lg .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lg .c { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+  #panel { top: 46px; left: 8px; padding: 10px 12px; max-width: 280px; max-height: calc(100% - 100px); overflow: auto; display: none; }
   #panel h3 { margin: 0 0 6px; font-size: 14px; }
-  #panel dl { margin: 0 0 8px; } #panel dt { font-weight: 600; float: left; clear: left; margin-right: 6px; }
-  #panel dd { margin: 0 0 2px 0; overflow: hidden; }
-  #panel button { font-size: 12px; margin-right: 6px; padding: 3px 8px; cursor: pointer;
-                  border: 1px solid #bbb; border-radius: 4px; background: #f7f7f7; }
-  #panel button:hover { background: #ececec; }
-  #meta { position: absolute; bottom: 10px; left: 10px; font-size: 12px; color: #666;
-          background: rgba(255,255,255,.9); padding: 4px 8px; border-radius: 4px; z-index: 30; }
-  #toolbar { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; align-items: center;
-             background: rgba(255,255,255,.94); border: 1px solid #ddd; border-radius: 6px;
-             padding: 5px 8px; font-size: 12px; z-index: 30; }
-  #toolbar button { font-size: 12px; padding: 3px 9px; cursor: pointer; border: 1px solid #bbb;
-                    border-radius: 4px; background: #f7f7f7; }
-  #toolbar button:hover { background: #ececec; }
-  #toolbar button.active { background: #2a78d6; color: #fff; border-color: #2a78d6; }
+  #panel dl { margin: 0 0 8px; display: grid; grid-template-columns: max-content 1fr; gap: 1px 8px; }
+  #panel dt { font-weight: 600; color: var(--color-text-secondary); } #panel dd { margin: 0; overflow-wrap: anywhere; }
+  #panel .row { display: flex; flex-wrap: wrap; gap: 4px; }
+  #meta { bottom: 8px; left: 8px; padding: 3px 8px; font-size: 12px; color: var(--color-text-secondary); }
+  #zoom { bottom: 8px; right: 8px; }
+  body.with-legend #zoom { right: 186px; }
+  #zoom { display: flex; flex-direction: column; gap: 2px; padding: 3px; }
+  #zoom button { padding: 1px 7px; font-size: 14px; line-height: 1.3; }
   #timebox { display: none; align-items: center; gap: 6px; }
-  #timebox input[type=range] { width: 160px; }
+  #timebox input[type=range] { width: 140px; }
   #captions { position: absolute; inset: 0; pointer-events: none; z-index: 20; display: none; }
-  .caption { position: absolute; transform: translate(-50%, -50%); font-weight: 800;
-             letter-spacing: .04em; color: #222;
-             text-shadow: 0 0 4px #fff, 0 0 4px #fff, 0 0 6px #fff, 0 0 8px #fff; }
+  .caption { position: absolute; transform: translate(-50%, -50%); font-weight: 800; letter-spacing: .04em;
+             color: var(--color-text-primary); text-shadow: 0 0 4px var(--color-background-primary), 0 0 6px var(--color-background-primary),
+             0 0 8px var(--color-background-primary), 0 0 10px var(--color-background-primary); }
+  #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); }
 </style>
 </head>
 <body>
 <div id="container"></div>
 <div id="captions"></div>
-<div id="toolbar">
-  <button id="btn-refresh" title="Re-fetch the graph from Gephi">&#8635; Refresh</button>
-  <button id="btn-captions" title="Toggle cluster captions" style="display:none">Labels</button>
-  <button id="btn-clear" title="Clear highlight" style="display:none">Clear highlight</button>
+<div id="empty">Waiting for graph data&hellip;</div>
+<div id="toolbar" class="card">
+  <input id="search" type="search" placeholder="Find a node" autocomplete="off">
+  <button id="btn-captions" title="Cluster names on the map" style="display:none">Names</button>
+  <button id="btn-legend" title="Communities and their sizes" style="display:none">Legend</button>
+  <button id="btn-clear" title="Clear highlight" style="display:none">Clear</button>
+  <button id="btn-refresh" title="Re-fetch the graph from Gephi">&#8635;</button>
+  <button id="btn-full" title="Fullscreen" style="display:none">&#x26F6;</button>
   <span id="timebox">
     <label><input id="timechk" type="checkbox"> time</label>
     <input id="timeslider" type="range" min="0" max="1000" value="0" disabled>
     <span id="timeval"></span>
   </span>
 </div>
-<div id="panel"></div>
-<div id="meta">Waiting for graph data&hellip;</div>
+<div id="hits" class="card"></div>
+<div id="legend" class="card"></div>
+<div id="panel" class="card"></div>
+<div id="meta" class="card"></div>
+<div id="zoom" class="card"><button id="z-in" title="Zoom in">+</button><button id="z-out" title="Zoom out">&minus;</button><button id="z-fit" title="Fit">&#x25A1;</button></div>
 <script>__GRAPHOLOGY_JS__</script>
 <script>__SIGMA_JS__</script>
 <script>
   // ── MCP Apps transport (spec 2026-01-26) ─────────────────────────────
-  // App -> host requests: ui/initialize, tools/call, ui/message.
-  // Host -> app: responses by id, plus ui/notifications/tool-result.
-  let reqId = 0;
-  const pending = {};   // id -> {method, resolve}
+  // App -> host requests: ui/initialize, tools/call, ui/message,
+  // ui/request-display-mode, ui/update-model-context.
+  // Host -> app: responses by id, ui/notifications/tool-result,
+  // ui/notifications/host-context-changed.
+  let nextId = 1;
+  const pending = new Map();
+  let hostCtx = {};
   function request(method, params) {
     return new Promise((resolve) => {
-      const id = ++reqId;
-      pending[id] = { method, resolve };
+      const id = nextId++;
+      pending.set(id, resolve);
       window.parent.postMessage({ jsonrpc: "2.0", id, method, params: params || {} }, "*");
     });
   }
@@ -68,10 +107,13 @@
   window.addEventListener("message", (ev) => {
     const m = ev.data;
     if (!m || m.jsonrpc !== "2.0") return;
-    if (m.id !== undefined && pending[m.id]) {
-      const p = pending[m.id]; delete pending[m.id];
-      if (p.method === "ui/initialize") notify("ui/notifications/initialized");
-      p.resolve(m.result);
+    if (m.id != null && pending.has(m.id)) {
+      const p = pending.get(m.id); pending.delete(m.id);
+      if (p.method === "ui/initialize") {
+        applyHostContext((m.result && m.result.hostContext) || {});
+        notify("ui/notifications/initialized");
+      }
+      p(m.result);
       return;
     }
     if (m.method === "ui/notifications/tool-result") {
@@ -79,170 +121,295 @@
       if (sc && sc.nodes) renderGraph(sc);
       return;
     }
-    if (m.method === "ui/notifications/tool-cancelled") {
-      document.getElementById("meta").textContent = "Tool call was cancelled.";
-    }
+    if (m.method === "ui/notifications/host-context-changed") { applyHostContext(m.params || {}); return; }
+    if (m.method === "ui/notifications/tool-cancelled") { $("meta").textContent = "Cancelled."; }
   });
-  request("ui/initialize", { appCapabilities: { availableDisplayModes: ["inline"] } });
-
+  (function init() {
+    const id = nextId++;
+    pending.set(id, Object.assign((r) => {}, { method: "ui/initialize" }));
+    window.parent.postMessage({ jsonrpc: "2.0", id, method: "ui/initialize",
+      params: { appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] } } }, "*");
+  })();
+  function applyHostContext(ctx) {
+    hostCtx = Object.assign({}, hostCtx, ctx);
+    if (ctx.theme) document.documentElement.dataset.theme = ctx.theme;
+    document.documentElement.style.colorScheme = (hostCtx.theme === "dark") ? "dark" : (hostCtx.theme === "light" ? "light" : "light dark");
+    const vars = ctx.styles && ctx.styles.variables;
+    if (vars) for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v);
+    const modes = hostCtx.availableDisplayModes || [];
+    $("btn-full").style.display = modes.includes("fullscreen") ? "" : "none";
+    $("btn-full").classList.toggle("active", hostCtx.displayMode === "fullscreen");
+    if (renderer) { renderer.setSetting("labelColor", { color: textColor() }); renderer.refresh(); }
+  }
+  function textColor() { return getComputedStyle(document.documentElement).getPropertyValue("--color-text-primary").trim() || "#222"; }
+  function bgColor() { return getComputedStyle(document.documentElement).getPropertyValue("--color-background-primary").trim() || "#fff"; }
   // ── State ────────────────────────────────────────────────────────────
-  let renderer = null, g = null, data = null;
-  let egoSet = null;                 // Set of node keys to highlight, else null
-  let timeT = null;                  // active time (number), else null = all time
-  let captionsOn = true;
+  let renderer = null, g = null, data = null, preview = null;
+  let focusSet = null;      // Set of node keys to highlight, else null
+  let focusLabels = null;   // the few highlighted nodes that get a label (top degree)
+  function setFocus(keys) {
+    focusSet = keys ? new Set(keys) : null;
+    focusLabels = null;
+    if (focusSet) {
+      const ranked = [...focusSet].map(k => [k, g.degree(k)]).sort((a, b) => b[1] - a[1]);
+      focusLabels = new Set(ranked.slice(0, focusSet.size <= 12 ? focusSet.size : 6).map(r => r[0]));
+    }
+    $("btn-clear").style.display = focusSet ? "" : "none";
+  }
+  let hovered = null;       // node key under the pointer, else null
+  let timeT = null;         // active time (number), else null = all time
+  let captionsOn = true, legendOn = true;
+  let groups = {};          // caption column value -> {members, color, name}
   const $ = (id) => document.getElementById(id);
-  const esc = (s) => { const d = document.createElement("div"); d.innerText = s; return d.innerHTML; };
+  const esc = (s) => { const d = document.createElement("div"); d.innerText = s == null ? "" : String(s); return d.innerHTML; };
   const toTime = (v) => (typeof v === "number" ? v : (v == null ? null : Date.parse(v)));
   const inSpells = (spells, t) => !spells || spells.some(([s, e]) => {
     const ss = toTime(s), ee = toTime(e);
     return (ss == null || ss <= t) && (ee == null || t < ee);
   });
-
+  // Color helpers: parse "rgb(r,g,b)" / "#rrggbb" and blend / alpha.
+  function rgb(c) {
+    if (!c) return [153, 153, 153];
+    if (c[0] === "#" && c.length >= 7) return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    const m = c.match(/\d+/g); return m ? m.slice(0, 3).map(Number) : [153, 153, 153];
+  }
+  // sigma composites with premultiplied alpha; an unpremultiplied translucent
+  // color renders additively (blue turns cyan on white), so premultiply here.
+  const rgba = (c, a) => { const [r, gg, b] = rgb(c); return `rgba(${Math.round(r * a)},${Math.round(gg * a)},${Math.round(b * a)},${a})`; };
+  const isDark = () => document.documentElement.dataset.theme === "dark";
+  const mix = (a, b) => { const x = rgb(a), y = rgb(b); return `rgb(${(x[0] + y[0]) >> 1},${(x[1] + y[1]) >> 1},${(x[2] + y[2]) >> 1})`; };
   // ── Rendering ────────────────────────────────────────────────────────
+  // Gephi node sizes are canvas units; sigma sizes are pixel radii. Rescale by
+  // square root into a range that reads at inline size, keeping the ranking.
+  function sizeScale(nodes) {
+    let lo = Infinity, hi = -Infinity;
+    for (const n of nodes) { if (n.size < lo) lo = n.size; if (n.size > hi) hi = n.size; }
+    const big = nodes.length > 400;
+    const minPx = big ? 1.5 : 3, maxPx = big ? 9 : 14;
+    if (!(hi > lo)) return () => (minPx + maxPx) / 2;
+    return (s) => minPx + (maxPx - minPx) * Math.sqrt((s - lo) / (hi - lo));
+  }
   function renderGraph(sc) {
-    data = sc;
+    data = sc; preview = sc.preview || null;
     if (renderer) { renderer.kill(); renderer = null; }
-    egoSet = null; timeT = null; $("btn-clear").style.display = "none";
+    focusSet = null; focusLabels = null; hovered = null; timeT = null; $("btn-clear").style.display = "none";
+    $("empty").style.display = "none";
     if (data.title) document.title = data.title;
-
+    // Reserve the legend column before sigma measures its container, so the
+    // map is fitted to the space beside the legend rather than under it.
+    document.body.classList.toggle("with-legend", !!data.captions && legendOn);
+    const scale = sizeScale(data.nodes);
+    let edgeAlpha = preview ? Math.max(0.05, Math.min(1, preview.edge_opacity)) : 0.25;
+    if (isDark()) edgeAlpha *= 0.7;   // light strokes on a dark ground read stronger
+    const edgeMode = preview ? preview.edge_color : "mixed";
+    const curved = preview ? !!preview.edge_curved : false;
+    const border = preview ? preview.node_border_width > 0 : true;
+    const showLabels = preview ? !!preview.label_show : false;
     g = new graphology.Graph({ multi: true, type: data.directed ? "directed" : "undirected" });
     for (const n of data.nodes) {
-      g.addNode(n.key, { label: n.label, x: n.x, y: n.y, size: n.size, color: n.color,
-                         gephiAttrs: n.attributes, spells: n.spells });
+      g.addNode(n.key, { label: n.label, x: n.x, y: n.y, size: scale(n.size), color: n.color,
+                         gephiAttrs: n.attributes, spells: n.spells, type: border ? "bordered" : "circle" });
     }
+    const R = Sigma.rendering;
+    const edgeType = data.directed && preview && preview.arrow_size > 0 ? "arrow" : (curved ? "curve" : "line");
     for (const e of data.edges) {
+      const sc_ = g.hasNode(e.source) ? g.getNodeAttribute(e.source, "color") : null;
+      const tc_ = g.hasNode(e.target) ? g.getNodeAttribute(e.target, "color") : null;
+      let col;
+      if (edgeMode === "source" && sc_) col = sc_;
+      else if (edgeMode === "target" && tc_) col = tc_;
+      else if (edgeMode === "mixed" && sc_ && tc_) col = mix(sc_, tc_);
+      else if (edgeMode && edgeMode[0] === "#") col = edgeMode;
+      else col = e.color || "#999999";
       try {
-        g.addEdge(e.source, e.target, { size: Math.min(e.size, 6),
-                                        color: e.color || "#cccccc", spells: e.spells });
+        g.addEdge(e.source, e.target, { size: Math.max(0.4, Math.min(e.size || 1, 4) * 0.5),
+                                        color: rgba(col, edgeAlpha), baseColor: col, spells: e.spells, type: edgeType });
       } catch (err) { /* skip edges referencing missing nodes */ }
     }
-
+    const nodePrograms = { circle: R.NodeCircleProgram, bordered: R.createNodeBorderProgram({
+      borders: [{ size: { value: 0.12 }, color: { attribute: "borderColor", defaultValue: "rgba(0,0,0,.35)" } },
+                { size: { fill: true }, color: { attribute: "color" } }] }) };
+    const edgePrograms = { line: R.EdgeLineProgram, curve: R.EdgeCurveProgram, arrow: R.EdgeArrowProgram };
     renderer = new Sigma(g, $("container"), {
-      renderEdgeLabels: false, labelDensity: 0.6,
+      nodeProgramClasses: nodePrograms, edgeProgramClasses: edgePrograms,
+      defaultEdgeType: edgeType,
+      renderEdgeLabels: false, renderLabels: true, labelDensity: showLabels ? 1 : 0,
+      labelRenderedSizeThreshold: showLabels ? 4 : 1e9, labelColor: { color: textColor() },
+      labelFont: "system-ui, sans-serif", labelSize: 12, zIndex: true,
       nodeReducer: (node, attrs) => {
         const out = { ...attrs };
         if (timeT != null && !inSpells(attrs.spells, timeT)) { out.hidden = true; return out; }
-        if (egoSet && !egoSet.has(node)) { out.color = "#e3e3e3"; out.label = null; out.zIndex = 0; }
-        else if (egoSet) { out.zIndex = 1; }
+        const active = hovered ? (node === hovered || g.areNeighbors(hovered, node)) : (focusSet ? focusSet.has(node) : true);
+        if (!active) { out.color = rgba(attrs.color, 0.12); out.label = null; out.zIndex = 0; out.borderColor = "rgba(0,0,0,0)"; }
+        else { out.zIndex = 1; if (hovered && node === hovered) out.highlighted = true; if (hovered) out.forceLabel = node === hovered; else if (focusSet) out.forceLabel = focusLabels.has(node); }
         return out;
       },
       edgeReducer: (edge, attrs) => {
         const out = { ...attrs };
         if (timeT != null && !inSpells(attrs.spells, timeT)) { out.hidden = true; return out; }
-        if (egoSet) {
-          const [s, t] = g.extremities(edge);
-          if (!(egoSet.has(s) && egoSet.has(t))) out.hidden = true;
-        }
+        const [s, t] = g.extremities(edge);
+        if (hovered) { if (s !== hovered && t !== hovered) out.hidden = true; else { out.color = rgba(attrs.baseColor, 0.9); out.zIndex = 1; } }
+        else if (focusSet && !(focusSet.has(s) && focusSet.has(t))) out.hidden = true;
         return out;
       },
     });
-
+    renderer.on("enterNode", ({ node }) => { hovered = node; renderer.refresh(); });
+    renderer.on("leaveNode", () => { hovered = null; renderer.refresh(); });
     setupPanel();
-    setupCaptions();
+    setupGroups();
     setupTime();
+    setupSearch();
     updateMeta();
     renderer.on("afterRender", placeCaptions);
     placeCaptions();
+    tellModel();
   }
-
   function updateMeta() {
     const meta = data.truncated
       ? `${data.nodes.length} of ${data.node_count_total} nodes, ${data.edges.length} edges`
       : `${data.node_count_total} nodes, ${data.edge_count_total} edges`;
     $("meta").textContent = meta + (timeT != null ? ` · t=${$("timeval").textContent}` : "");
   }
-
-  // ── Node panel: attributes + ego highlight + ask Claude ─────────────
+  // ── Keep the model informed about what the person is looking at ─────
+  let modelTimer = null;
+  function tellModel(extra) {
+    clearTimeout(modelTimer);
+    modelTimer = setTimeout(() => {
+      const lines = [`graph: ${data.node_count_total} nodes, ${data.edge_count_total} edges` + (data.title ? ` (${data.title})` : "")];
+      if (data.captions) lines.push(`grouping: ${data.captions.column}, ${Object.keys(groups).length} groups`);
+      if (extra) lines.push(extra);
+      if (focusSet && !extra) lines.push(`highlighted: ${focusSet.size} nodes`);
+      request("ui/update-model-context", { content: [{ type: "text", text: "The person is viewing the interactive Gephi map in chat.\n" + lines.join("\n") }] });
+    }, 300);
+  }
+  // ── Node panel: attributes, highlight, show in Gephi, ask ────────────
+  function openPanel(node) {
+    const a = g.getNodeAttributes(node), panel = $("panel");
+    let rows = "";
+    for (const [k, v] of Object.entries(a.gephiAttrs || {})) rows += `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`;
+    panel.innerHTML = `<h3>${esc(a.label)}</h3><dl><dt>degree</dt><dd>${g.degree(node)}</dd>${rows}</dl>` +
+      `<div class="row"><button id="btn-ego">Connections</button><button id="btn-gephi">Show in Gephi</button><button id="btn-ask">Ask about it</button></div>`;
+    panel.style.display = "block";
+    $("btn-ego").onclick = () => { setFocus([node, ...g.neighbors(node)]); renderer.refresh(); tellModel(`highlighted: "${a.label}" and its ${g.degree(node)} connections`); };
+    $("btn-gephi").onclick = () => { request("tools/call", { name: "gephi_focus_view", arguments: { mode: "node", id: node, select: [node] } }); };
+    $("btn-ask").onclick = () => {
+      request("ui/message", { role: "user", content: { type: "text",
+        text: `In the current Gephi graph, tell me about the node "${a.label}" (id ${node}, degree ${g.degree(node)}): its structural role, which communities it connects, and its most important relationships.` } });
+      panel.style.display = "none";
+    };
+    tellModel(`selected node: "${a.label}" (id ${node}, degree ${g.degree(node)})`);
+  }
   function setupPanel() {
-    const panel = $("panel");
-    renderer.on("clickNode", ({ node }) => {
-      const a = g.getNodeAttributes(node);
-      let rows = "";
-      for (const [k, v] of Object.entries(a.gephiAttrs || {})) {
-        rows += `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`;
-      }
-      panel.innerHTML =
-        `<h3>${esc(a.label)}</h3>` +
-        `<dl><dt>degree</dt><dd>${g.degree(node)}</dd>${rows}</dl>` +
-        `<button id="btn-ego">Highlight connections</button>` +
-        `<button id="btn-ask">Ask Claude</button>`;
-      panel.style.display = "block";
-      $("btn-ego").onclick = () => {
-        egoSet = new Set([node, ...g.neighbors(node)]);
-        $("btn-clear").style.display = "";
+    renderer.on("clickNode", ({ node }) => openPanel(node));
+    renderer.on("clickStage", () => { $("panel").style.display = "none"; $("hits").style.display = "none"; });
+  }
+  // ── Groups: legend + cluster captions ───────────────────────────────
+  let captionData = [];
+  function setupGroups() {
+    groups = {}; captionData = [];
+    const layer = $("captions"), legend = $("legend");
+    layer.innerHTML = ""; legend.innerHTML = "";
+    if (!data.captions) { $("btn-captions").style.display = "none"; $("btn-legend").style.display = "none"; layer.style.display = "none"; legend.style.display = "none"; return; }
+    const col = data.captions.column, names = data.captions.names || {};
+    for (const n of data.nodes) {
+      const v = n.attributes ? n.attributes[col] : null;
+      if (v == null) continue;
+      (groups[v] = groups[v] || { members: [], colors: {} }).members.push(n);
+      groups[v].colors[n.color] = (groups[v].colors[n.color] || 0) + 1;
+    }
+    const keys = Object.keys(groups).sort((a, b) => groups[b].members.length - groups[a].members.length);
+    if (!keys.length) { $("btn-captions").style.display = "none"; $("btn-legend").style.display = "none"; return; }
+    const maxSize = groups[keys[0]].members.length;
+    for (const k of keys) {
+      const grp = groups[k];
+      grp.name = names[k] || String(k);
+      grp.color = Object.entries(grp.colors).sort((a, b) => b[1] - a[1])[0][0];
+      const w = grp.members.reduce((acc, n) => acc + n.size, 0) || 1;
+      grp.cx = grp.members.reduce((acc, n) => acc + n.x * n.size, 0) / w;
+      grp.cy = grp.members.reduce((acc, n) => acc + n.y * n.size, 0) / w;
+      const div = document.createElement("div");
+      div.className = "caption"; div.textContent = grp.name.toUpperCase();
+      div.style.fontSize = `${12 + 8 * (grp.members.length / maxSize)}px`;
+      layer.appendChild(div); captionData.push({ x: grp.cx, y: grp.cy, div });
+      const row = document.createElement("div");
+      row.className = "lg"; row.dataset.key = k;
+      row.innerHTML = `<span class="sw" style="background:${esc(grp.color)}"></span><span class="n">${esc(grp.name)}</span><span class="c">${grp.members.length}</span>`;
+      row.onclick = () => {
+        const already = row.classList.contains("active");
+        for (const r of legend.querySelectorAll(".lg")) r.classList.remove("active");
+        if (already) setFocus(null);
+        else { row.classList.add("active"); setFocus(grp.members.map(n => n.key)); }
         renderer.refresh();
+        tellModel(already ? null : `highlighted group: "${grp.name}" (${grp.members.length} nodes)`);
       };
-      $("btn-ask").onclick = () => {
-        notifyAsk(a.label, node, g.degree(node));
-        panel.style.display = "none";
-      };
-    });
-    renderer.on("clickStage", () => { panel.style.display = "none"; });
+      legend.appendChild(row);
+    }
+    const h = document.createElement("h4"); h.textContent = `${col} · ${keys.length} groups`; legend.prepend(h);
+    $("btn-captions").style.display = ""; $("btn-legend").style.display = "";
+    $("btn-captions").classList.toggle("active", captionsOn); layer.style.display = captionsOn ? "block" : "none";
+    $("btn-legend").classList.toggle("active", legendOn); legend.style.display = legendOn ? "block" : "none"; document.body.classList.toggle("with-legend", legendOn);
+    $("btn-captions").onclick = () => { captionsOn = !captionsOn; layer.style.display = captionsOn ? "block" : "none"; $("btn-captions").classList.toggle("active", captionsOn); };
+    $("btn-legend").onclick = () => { legendOn = !legendOn; legend.style.display = legendOn ? "block" : "none"; $("btn-legend").classList.toggle("active", legendOn); document.body.classList.toggle("with-legend", legendOn); setTimeout(() => { renderer.resize(); renderer.getCamera().animatedReset({ duration: 200 }); placeCaptions(); }, 30); };
   }
-  function notifyAsk(label, key, degree) {
-    request("ui/message", { role: "user", content: { type: "text",
-      text: `In the current Gephi graph, tell me about the node "${label}" (id ${key}, degree ${degree}): its structural role, which communities it connects, and its most important relationships.` } });
+  function placeCaptions() {
+    if (!captionData.length || !renderer) return;
+    for (const c of captionData) {
+      const p = renderer.graphToViewport({ x: c.x, y: c.y });
+      c.div.style.left = `${p.x}px`; c.div.style.top = `${p.y}px`;
+    }
   }
-
-  // ── Refresh from Gephi (tools/call round trip) ───────────────────────
+  // ── Search ───────────────────────────────────────────────────────────
+  function setupSearch() {
+    const box = $("search"), hits = $("hits");
+    box.value = "";
+    box.oninput = () => {
+      const q = box.value.trim().toLowerCase();
+      hits.innerHTML = "";
+      if (!q) { hits.style.display = "none"; return; }
+      const found = [];
+      g.forEachNode((k, a) => { if (found.length < 12 && a.label && a.label.toLowerCase().includes(q)) found.push([k, a.label]); });
+      for (const [k, label] of found) {
+        const d = document.createElement("div"); d.textContent = label;
+        d.onclick = () => { hits.style.display = "none"; box.value = label; focusNode(k); };
+        hits.appendChild(d);
+      }
+      const r = box.getBoundingClientRect(); hits.style.left = `${r.left}px`; hits.style.top = `${r.bottom + 4}px`;
+      hits.style.display = found.length ? "block" : "none";
+    };
+    box.onkeydown = (ev) => { if (ev.key === "Enter") { const first = hits.querySelector("div"); if (first) first.click(); } if (ev.key === "Escape") { hits.style.display = "none"; } };
+  }
+  function focusNode(k) {
+    const a = g.getNodeAttributes(k);
+    setFocus([k, ...g.neighbors(k)]);
+    // Camera coordinates are sigma's normalized frame, not graph units.
+    const pos = renderer.getNodeDisplayData(k);
+    if (pos) renderer.getCamera().animate({ x: pos.x, y: pos.y, ratio: Math.min(renderer.getCamera().ratio, 0.35) }, { duration: 400 });
+    renderer.refresh(); openPanel(k);
+  }
+  // ── Zoom, fullscreen, refresh, clear ────────────────────────────────
+  $("z-in").onclick = () => renderer && renderer.getCamera().animatedZoom({ duration: 200 });
+  $("z-out").onclick = () => renderer && renderer.getCamera().animatedUnzoom({ duration: 200 });
+  $("z-fit").onclick = () => renderer && renderer.getCamera().animatedReset({ duration: 300 });
+  $("btn-full").onclick = async () => {
+    const mode = hostCtx.displayMode === "fullscreen" ? "inline" : "fullscreen";
+    const r = await request("ui/request-display-mode", { mode });
+    if (r && r.mode) { hostCtx.displayMode = r.mode; $("btn-full").classList.toggle("active", r.mode === "fullscreen"); }
+    setTimeout(() => renderer && renderer.refresh(), 50);
+  };
   $("btn-refresh").onclick = async () => {
     $("meta").textContent = "Refreshing from Gephi…";
     const args = {};
-    if (data && data.captions) {
-      args.caption_column = data.captions.column;
-      args.caption_names = data.captions.names;
-    }
+    if (data && data.captions) { args.caption_column = data.captions.column; args.caption_names = data.captions.names; }
     const result = await request("tools/call", { name: "gephi_view_graph", arguments: args });
-    if (result && result.structuredContent && result.structuredContent.nodes) {
-      renderGraph(result.structuredContent);
-    } else { updateMeta(); }
+    if (result && result.structuredContent && result.structuredContent.nodes) renderGraph(result.structuredContent);
+    else updateMeta();
   };
-
-  // ── Cluster caption overlay ──────────────────────────────────────────
-  let captionData = [];
-  function setupCaptions() {
-    const layer = $("captions"), btn = $("btn-captions");
-    captionData = [];
-    layer.innerHTML = "";
-    if (!data.captions) { btn.style.display = "none"; layer.style.display = "none"; return; }
-    const col = data.captions.column, names = data.captions.names || {};
-    const groups = {};
-    for (const n of data.nodes) {
-      const gval = n.attributes ? n.attributes[col] : null;
-      if (gval == null) continue;
-      (groups[gval] = groups[gval] || []).push(n);
-    }
-    const sizes = Object.values(groups).map(m => m.length);
-    const maxSize = Math.max(...sizes, 1);
-    for (const [gval, members] of Object.entries(groups)) {
-      const w = members.reduce((acc, n) => acc + n.size, 0);
-      const cx = members.reduce((acc, n) => acc + n.x * n.size, 0) / w;
-      const cy = members.reduce((acc, n) => acc + n.y * n.size, 0) / w;
-      const div = document.createElement("div");
-      div.className = "caption";
-      div.textContent = (names[gval] || String(gval)).toUpperCase();
-      div.style.fontSize = `${13 + 9 * (members.length / maxSize)}px`;
-      layer.appendChild(div);
-      captionData.push({ x: cx, y: cy, div });
-    }
-    btn.style.display = "";
-    btn.classList.toggle("active", captionsOn);
-    layer.style.display = captionsOn ? "block" : "none";
-    btn.onclick = () => {
-      captionsOn = !captionsOn;
-      layer.style.display = captionsOn ? "block" : "none";
-      btn.classList.toggle("active", captionsOn);
-    };
-  }
-  function placeCaptions() {
-    if (!captionData.length) return;
-    for (const c of captionData) {
-      const p = renderer.graphToViewport({ x: c.x, y: c.y });
-      c.div.style.left = `${p.x}px`;
-      c.div.style.top = `${p.y}px`;
-    }
-  }
-
+  $("btn-clear").onclick = () => {
+    setFocus(null); timeT = null;
+    for (const r of $("legend").querySelectorAll(".lg")) r.classList.remove("active");
+    if (renderer) renderer.refresh(); tellModel();
+  };
+  window.addEventListener("resize", () => renderer && renderer.refresh());
   // ── Time slider (dynamic GEXF) ───────────────────────────────────────
   function setupTime() {
     const box = $("timebox"), chk = $("timechk"), slider = $("timeslider"), val = $("timeval");
@@ -253,22 +420,9 @@
     const toT = () => tmin + (slider.value / 1000) * (tmax - tmin);
     const show = (t) => { val.textContent = Number.isFinite(t) ? (Math.round(t * 100) / 100) : t; };
     chk.checked = false; slider.disabled = true; timeT = null; val.textContent = "all";
-    chk.onchange = () => {
-      slider.disabled = !chk.checked;
-      timeT = chk.checked ? toT() : null;
-      if (chk.checked) show(timeT); else val.textContent = "all";
-      updateMeta(); renderer.refresh();
-    };
-    slider.oninput = () => {
-      if (!chk.checked) return;
-      timeT = toT(); show(timeT); updateMeta(); renderer.refresh();
-    };
+    chk.onchange = () => { slider.disabled = !chk.checked; timeT = chk.checked ? toT() : null; if (chk.checked) show(timeT); else val.textContent = "all"; updateMeta(); renderer.refresh(); };
+    slider.oninput = () => { if (!chk.checked) return; timeT = toT(); show(timeT); updateMeta(); renderer.refresh(); };
   }
-
-  // ── Clear highlight ──────────────────────────────────────────────────
-  $("btn-clear").onclick = () => {
-    egoSet = null; timeT = null; $("btn-clear").style.display = "none"; renderer.refresh();
-  };
 </script>
 </body>
 </html>

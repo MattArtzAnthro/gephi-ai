@@ -4,6 +4,35 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.14.0 / claude-plugin 1.11.2
+
+### Changed
+- **The in-chat graph view (MCP App) now looks like a Gephi map.** Four defects
+  made the old view read as a set of solid blobs: Gephi node sizes were drawn as
+  raw pixel radii, so each community collapsed into one disc; edges were
+  full-opacity straight gray lines; cluster captions never rendered because the
+  caption column was passed by id while the exported attributes are keyed by
+  title; and the chrome was generic white with no legend. Now: sizes are
+  rescaled to the view (square root, keeping the ranking); edges follow the
+  preview settings the person set in Gephi (opacity, curved, colored by source
+  or mixed), which `gephi_view_graph` reads and passes along; the caption
+  column is resolved by id or title; and the view has a legend column (color,
+  group name, count; click to highlight a group), search by label, hover
+  highlighting of a node's neighborhood, zoom controls, fullscreen, and the
+  host's theme (dark mode and its fonts through the host style variables).
+  Default node labels stay off unless Gephi's label setting is on; highlights
+  label only the top-degree nodes so a group does not become a wall of text.
+- **The view and Gephi Desktop now point at the same thing.** A node's panel
+  has "Show in Gephi" (`gephi_focus_view` centers Gephi's camera on it and
+  highlights it), and the app keeps the model informed of what the person is
+  looking at (the graph, the grouping, a highlighted group, a selected node)
+  through `ui/update-model-context`, so "why is this cluster here?" needs no
+  re-explanation.
+
+### Fixed
+- Translucent edge and node colors were composited additively (blue rendered as
+  cyan, orange as yellow); colors are now premultiplied for sigma's blending.
+
 ## MCP server 1.13.1 / claude-plugin 1.11.1
 
 ### Fixed
