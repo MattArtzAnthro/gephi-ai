@@ -4,6 +4,21 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.14.1 / claude-plugin 1.11.3
+
+### Fixed
+- **The in-chat view asks the host for a frame tall enough to hold a map.**
+  Hosts size the app's iframe from the size the app reports, and a page whose
+  content is positioned absolutely reports almost nothing, so inline frames
+  came up around 300 px tall and the whole graph collapsed into a strip of
+  overlapping captions (seen in Cowork). The app now requests a height between
+  360 and 640 px, within whatever maximum the host states. When a host keeps
+  the frame short anyway, a compact layout takes over: the legend becomes a
+  one-line strip along the bottom, captions shrink, and the map is refitted
+  to the space, instead of colliding.
+- A container resize could leave the previous frame unpainted until the next
+  camera move; every layout change now forces a redraw.
+
 ## MCP server 1.14.0 / claude-plugin 1.11.2
 
 ### Changed

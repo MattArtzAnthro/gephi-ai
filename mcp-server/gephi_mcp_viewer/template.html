@@ -59,6 +59,16 @@
              color: var(--color-text-primary); text-shadow: 0 0 4px var(--color-background-primary), 0 0 6px var(--color-background-primary),
              0 0 8px var(--color-background-primary), 0 0 10px var(--color-background-primary); }
   #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); }
+  /* Compact: the host kept the frame short (under 380px) despite our size request. */
+  body.compact.with-legend #container, body.compact.with-legend #captions { right: 0; }
+  body.legend-on #legend { display: block; }
+  body.compact.legend-on #legend { top: auto; bottom: 6px; left: 8px; right: 8px; width: auto; max-height: none; padding: 3px 8px;
+    display: flex; flex-wrap: nowrap; gap: 0 12px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; }
+  body.compact #legend h4 { display: none; }
+  body.compact #legend .lg { padding: 0; flex: none; }
+  body.compact #zoom, body.compact #meta { display: none; }
+  body.compact .caption { font-size: 11px !important; }
+  body.compact #toolbar { padding: 2px 4px; }
 </style>
 </head>
 <body>
@@ -140,7 +150,39 @@
     $("btn-full").style.display = modes.includes("fullscreen") ? "" : "none";
     $("btn-full").classList.toggle("active", hostCtx.displayMode === "fullscreen");
     if (renderer) { renderer.setSetting("labelColor", { color: textColor() }); renderer.refresh(); }
+    requestFrameSize();
   }
+  // ── Frame size: ask the host for room ─────────────────────────────────
+  // Hosts size the iframe from ui/notifications/size-changed. A map needs
+  // height; left to the default, inline frames come up around 300px and the
+  // whole graph collapses into a strip. Ask for what the host allows.
+  function desiredHeight() {
+    const dims = hostCtx.containerDimensions || {};
+    if (dims.height) return null;                     // fixed by the host; nothing to ask
+    const max = dims.maxHeight || 640;
+    return Math.max(360, Math.min(640, max));
+  }
+  let sizeTimer = null;
+  function requestFrameSize() {
+    if (hostCtx.displayMode === "fullscreen") { document.documentElement.style.height = "100%"; return; }
+    const h = desiredHeight();
+    if (h) { document.documentElement.style.height = `${h}px`; notify("ui/notifications/size-changed", { height: h }); }
+    clearTimeout(sizeTimer);
+    sizeTimer = setTimeout(applyCompact, 400);       // the host had its chance; adapt to what we got
+  }
+  function applyCompact() {
+    const compact = window.innerHeight < 380 && hostCtx.displayMode !== "fullscreen";
+    if (document.body.classList.contains("compact") === compact) return;
+    document.body.classList.toggle("compact", compact);
+    redraw();
+  }
+  // After any container change: resize, refit, and force a draw (a resize alone
+  // can leave the last frame unpainted until the next camera move).
+  function redraw() {
+    if (!renderer) return;
+    requestAnimationFrame(() => { renderer.resize(); renderer.refresh(); renderer.getCamera().animatedReset({ duration: 150 }); placeCaptions(); });
+  }
+  window.addEventListener("resize", () => { clearTimeout(sizeTimer); sizeTimer = setTimeout(applyCompact, 150); });
   function textColor() { return getComputedStyle(document.documentElement).getPropertyValue("--color-text-primary").trim() || "#222"; }
   function bgColor() { return getComputedStyle(document.documentElement).getPropertyValue("--color-background-primary").trim() || "#fff"; }
   // ── State ────────────────────────────────────────────────────────────
@@ -262,6 +304,7 @@
     updateMeta();
     renderer.on("afterRender", placeCaptions);
     placeCaptions();
+    requestFrameSize();
     tellModel();
   }
   function updateMeta() {
@@ -309,7 +352,8 @@
     groups = {}; captionData = [];
     const layer = $("captions"), legend = $("legend");
     layer.innerHTML = ""; legend.innerHTML = "";
-    if (!data.captions) { $("btn-captions").style.display = "none"; $("btn-legend").style.display = "none"; layer.style.display = "none"; legend.style.display = "none"; return; }
+    document.body.classList.remove("legend-on");
+    if (!data.captions) { $("btn-captions").style.display = "none"; $("btn-legend").style.display = "none"; layer.style.display = "none"; return; }
     const col = data.captions.column, names = data.captions.names || {};
     for (const n of data.nodes) {
       const v = n.attributes ? n.attributes[col] : null;
@@ -347,9 +391,9 @@
     const h = document.createElement("h4"); h.textContent = `${col} · ${keys.length} groups`; legend.prepend(h);
     $("btn-captions").style.display = ""; $("btn-legend").style.display = "";
     $("btn-captions").classList.toggle("active", captionsOn); layer.style.display = captionsOn ? "block" : "none";
-    $("btn-legend").classList.toggle("active", legendOn); legend.style.display = legendOn ? "block" : "none"; document.body.classList.toggle("with-legend", legendOn);
+    $("btn-legend").classList.toggle("active", legendOn); document.body.classList.toggle("legend-on", legendOn); document.body.classList.toggle("with-legend", legendOn);
     $("btn-captions").onclick = () => { captionsOn = !captionsOn; layer.style.display = captionsOn ? "block" : "none"; $("btn-captions").classList.toggle("active", captionsOn); };
-    $("btn-legend").onclick = () => { legendOn = !legendOn; legend.style.display = legendOn ? "block" : "none"; $("btn-legend").classList.toggle("active", legendOn); document.body.classList.toggle("with-legend", legendOn); setTimeout(() => { renderer.resize(); renderer.getCamera().animatedReset({ duration: 200 }); placeCaptions(); }, 30); };
+    $("btn-legend").onclick = () => { legendOn = !legendOn; document.body.classList.toggle("legend-on", legendOn); $("btn-legend").classList.toggle("active", legendOn); document.body.classList.toggle("with-legend", legendOn); setTimeout(redraw, 30); };
   }
   function placeCaptions() {
     if (!captionData.length || !renderer) return;
@@ -394,7 +438,7 @@
     const mode = hostCtx.displayMode === "fullscreen" ? "inline" : "fullscreen";
     const r = await request("ui/request-display-mode", { mode });
     if (r && r.mode) { hostCtx.displayMode = r.mode; $("btn-full").classList.toggle("active", r.mode === "fullscreen"); }
-    setTimeout(() => renderer && renderer.refresh(), 50);
+    setTimeout(() => { requestFrameSize(); redraw(); }, 50);
   };
   $("btn-refresh").onclick = async () => {
     $("meta").textContent = "Refreshing from Gephi…";
@@ -409,7 +453,6 @@
     for (const r of $("legend").querySelectorAll(".lg")) r.classList.remove("active");
     if (renderer) renderer.refresh(); tellModel();
   };
-  window.addEventListener("resize", () => renderer && renderer.refresh());
   // ── Time slider (dynamic GEXF) ───────────────────────────────────────
   function setupTime() {
     const box = $("timebox"), chk = $("timechk"), slider = $("timeslider"), val = $("timeval");

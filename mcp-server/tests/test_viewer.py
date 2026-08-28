@@ -671,7 +671,8 @@ def test_app_html_declares_its_host_contract():
     html = build_app_html()
     for method in ("ui/initialize", "ui/notifications/initialized", "ui/notifications/tool-result",
                    "ui/notifications/host-context-changed", "ui/request-display-mode",
-                   "ui/update-model-context", "ui/message", "tools/call"):
+                   "ui/update-model-context", "ui/message", "tools/call",
+                   "ui/notifications/size-changed"):
         assert method in html, method
     # The page must be self-contained: vendored libraries inlined, no placeholders left.
     assert "__SIGMA_JS__" not in html and "__GRAPHOLOGY_JS__" not in html
