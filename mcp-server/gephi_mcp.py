@@ -32,6 +32,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gephi_mcp_viewer
 import text_network
+from stats_integrity import GraphFacts, caveats_for, mutates_graph, needs_graph_facts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gephi_mcp")
@@ -198,6 +199,10 @@ class GephiClient:
                       json_data: dict[str, Any] | None = None,
                       timeout: float | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
+        # Cached graph facts describe a particular graph. Any call that could change which graph
+        # we are looking at, or its shape, retires them before it runs.
+        if mutates_graph(method, endpoint):
+            invalidate_graph_facts()
         try:
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
                 response = await client.request(method=method, url=url, params=params, json=json_data)
@@ -1023,6 +1028,79 @@ async def gephi_set_layout_properties(algorithm: str, properties: dict[str, Any]
                                               "iterations": iterations}))
 
 
+# ─── Statistics integrity ────────────────────────────────────
+# Gephi's own statistics carry long-open defects the interface never surfaces (a resolution
+# parameter applied as the reciprocal of the convention it cites, a closeness measure normalised
+# whatever the checkbox said). gephi-ai reports those numbers into research claims, so every
+# statistic leaves through fmt_stat, which attaches what is known about the number it carries.
+
+_graph_facts: GraphFacts | None = None
+
+
+def invalidate_graph_facts() -> None:
+    """Forget cached facts about the graph. Called whenever the graph may have changed."""
+    global _graph_facts
+    _graph_facts = None
+
+
+def note_weights_vary(weights_vary: bool) -> None:
+    """Record whether this graph's edge weights vary, learned from work already done.
+
+    Establishing this needs the full GEXF export, which is far too expensive to run on every
+    statistic, so the statistics path leaves it unknown and the weight caveats stay silent. Any
+    code that has already parsed the graph can hand the answer over here instead.
+    """
+    global _graph_facts
+    current = _graph_facts or GraphFacts()
+    _graph_facts = GraphFacts(directed=current.directed, weights_vary=weights_vary)
+
+
+async def _fetch_graph_facts() -> GraphFacts:
+    """Establish the cheap facts a conditional caveat needs. Never raises.
+
+    Only `directed` is cheap enough to fetch on the statistics path; `weights_vary` needs the
+    full GEXF export and is left unknown here, which keeps the weight caveats quiet rather than
+    guessing. An unknown fact never satisfies a predicate.
+    """
+    global _graph_facts
+    if _graph_facts is not None and _graph_facts.directed is not None:
+        return _graph_facts
+    known_weights = _graph_facts.weights_vary if _graph_facts else None
+    directed = None
+    try:
+        stats = await gephi.request("GET", "/graph/stats")
+        if isinstance(stats, dict) and stats.get("success"):
+            gtype = str(stats.get("graph_type", "")).strip().lower()
+            if gtype in ("directed", "undirected"):
+                directed = gtype == "directed"
+    except Exception:
+        directed = None
+    _graph_facts = GraphFacts(directed=directed, weights_vary=known_weights)
+    return _graph_facts
+
+
+async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
+    """Format a statistic result, attaching any known defect that applies to it.
+
+    Adds a `caveats` key only when the list is non-empty, so a call with nothing to warn about is
+    byte-identical to what it returned before. Failure anywhere in this layer returns the
+    statistic unchanged: a bug here must never fail a measurement that otherwise succeeded.
+    """
+    try:
+        if not (isinstance(resp, dict) and resp.get("success", True)):
+            return fmt(resp)
+        facts = await _fetch_graph_facts() if needs_graph_facts(metric) else GraphFacts()
+        found = caveats_for(metric, params=params, facts=facts)
+        if found:
+            resp = {**resp, "caveats": [
+                {"id": c["id"], "severity": c["severity"], "says": c["says"],
+                 "issues": c["issues"], "verification": c["verification"]["status"]}
+                for c in found]}
+    except Exception:
+        pass
+    return fmt(resp)
+
+
 # ─── Statistics ──────────────────────────────────────────────
 
 @_tool(name="gephi_compute_modularity")
@@ -1031,7 +1109,10 @@ async def gephi_compute_modularity(resolution: float = 1.0) -> str:
 
     Higher resolution yields fewer, larger communities.
     """
-    return fmt(await gephi.request("POST", "/statistics/modularity", json_data={"resolution": resolution}))
+    return await fmt_stat("modularity",
+                          await gephi.request("POST", "/statistics/modularity",
+                                              json_data={"resolution": resolution}),
+                          resolution=resolution)
 
 async def _compute_profile(include_slow: bool = False) -> dict:
     """Compute the structural profile panel on the CURRENT workspace.
@@ -1052,6 +1133,9 @@ async def _compute_profile(include_slow: bool = False) -> dict:
 
     graph = parse_gexf(exported["content"], max_nodes=10**9)
     profile = structural_profile(graph)
+    # The profile establishes, in passing, the one fact the caveat layer cannot afford to fetch
+    # on the statistics path. Keeping it is what lets the edge-weight caveats ever fire.
+    note_weights_vary(bool(profile.get("weighted")))
 
     mod = await gephi.request("POST", "/statistics/modularity", json_data={})
     if mod.get("success"):
@@ -1152,7 +1236,7 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
 @_tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
     """Compute degree, in-degree, and out-degree for all nodes."""
-    return fmt(await gephi.request("POST", "/statistics/degree"))
+    return await fmt_stat("degree", await gephi.request("POST", "/statistics/degree"))
 
 @_tool(name="gephi_compute_betweenness")
 async def gephi_compute_betweenness() -> str:
@@ -1163,13 +1247,14 @@ async def gephi_compute_betweenness() -> str:
     with an extended timeout; on very large graphs (tens of thousands of nodes)
     expect a wait, and consider whether degree or PageRank answers the question more
     cheaply."""
-    return fmt(await gephi.request("POST", "/statistics/betweenness",
-                                   timeout=SLOW_REQUEST_TIMEOUT))
+    return await fmt_stat("betweenness",
+                          await gephi.request("POST", "/statistics/betweenness",
+                                              timeout=SLOW_REQUEST_TIMEOUT))
 
 @_tool(name="gephi_compute_pagerank")
 async def gephi_compute_pagerank() -> str:
     """Compute PageRank for all nodes. Stores 'pageranks' on nodes."""
-    return fmt(await gephi.request("POST", "/statistics/pagerank"))
+    return await fmt_stat("pagerank", await gephi.request("POST", "/statistics/pagerank"))
 
 @_tool(name="gephi_compute_connected_components")
 async def gephi_compute_connected_components() -> str:
@@ -1179,7 +1264,8 @@ async def gephi_compute_connected_components() -> str:
 @_tool(name="gephi_compute_clustering_coefficient")
 async def gephi_compute_clustering_coefficient() -> str:
     """Compute the clustering coefficient for all nodes. Stores 'clustering' on nodes."""
-    return fmt(await gephi.request("POST", "/statistics/clustering-coefficient"))
+    return await fmt_stat("clustering_coefficient",
+                          await gephi.request("POST", "/statistics/clustering-coefficient"))
 
 @_tool(name="gephi_compute_avg_path_length")
 async def gephi_compute_avg_path_length() -> str:
@@ -1187,8 +1273,9 @@ async def gephi_compute_avg_path_length() -> str:
 
     All-pairs shortest paths (O(n*m)), as slow as betweenness on large graphs; runs
     with an extended timeout."""
-    return fmt(await gephi.request("POST", "/statistics/avg-path-length",
-                                   timeout=SLOW_REQUEST_TIMEOUT))
+    return await fmt_stat("avg_path_length",
+                          await gephi.request("POST", "/statistics/avg-path-length",
+                                              timeout=SLOW_REQUEST_TIMEOUT))
 
 @_tool(name="gephi_compute_hits")
 async def gephi_compute_hits() -> str:
@@ -1198,7 +1285,7 @@ async def gephi_compute_hits() -> str:
 @_tool(name="gephi_compute_eigenvector")
 async def gephi_compute_eigenvector() -> str:
     """Compute eigenvector centrality. Stores 'eigencentrality' on nodes."""
-    return fmt(await gephi.request("POST", "/statistics/eigenvector"))
+    return await fmt_stat("eigenvector", await gephi.request("POST", "/statistics/eigenvector"))
 
 
 # ─── Filters ─────────────────────────────────────────────────
