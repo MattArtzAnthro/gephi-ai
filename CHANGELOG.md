@@ -4,6 +4,15 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased (MCP server)
+
+### Changed
+- **Three tool descriptions rewritten so their first sentence works as a search
+  key.** Hosts that load tools on demand (Claude Code) match on the opening
+  sentence; `gephi_export_screenshot` opened with a 180-character sentence,
+  and `gephi_query_nodes` / `gephi_query_edges` said only "with pagination"
+  without saying what the tools are for. Ships with the next server release.
+
 ## claude-plugin 1.10.1
 
 ### Changed

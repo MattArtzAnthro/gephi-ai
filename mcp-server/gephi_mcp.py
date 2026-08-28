@@ -564,7 +564,9 @@ async def gephi_bulk_remove_nodes(ids: list[str]) -> str:
 
 @_tool(name="gephi_query_nodes")
 async def gephi_query_nodes(limit: int = 100, offset: int = 0) -> str:
-    """Query nodes with pagination. Returns id, label, position, size, color, attributes."""
+    """List nodes with their attributes, positions, sizes, colors, and computed
+    metrics, paginated. Use it to read values (a centrality column, a community
+    id, a label) for many nodes at once; gephi_get_node reads one."""
     return fmt(await gephi.request("GET", "/graph/nodes", params={"limit": limit, "offset": offset}))
 
 @_tool(name="gephi_get_node")
@@ -640,7 +642,8 @@ async def gephi_set_edge_label(source: str, target: str, label: str) -> str:
 
 @_tool(name="gephi_query_edges")
 async def gephi_query_edges(limit: int = 100, offset: int = 0) -> str:
-    """Query edges with pagination. Returns source, target, weight, directed, attributes."""
+    """List edges with source, target, weight, direction, and attributes,
+    paginated. Use it to read relationship values for many edges at once."""
     return fmt(await gephi.request("GET", "/graph/edges", params={"limit": limit, "offset": offset}))
 
 
@@ -1467,9 +1470,9 @@ async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> 
 
 @_tool(name="gephi_export_screenshot")
 async def gephi_export_screenshot(file: str, scale: int = 2, transparent_background: bool = False) -> str:
-    """Export the LIVE Overview canvas exactly as it looks on screen right now —
-    selection highlighting, hover state, current camera framing — using Gephi's own
-    built-in screenshot feature. Use this instead of gephi_export_png whenever the
+    """Screenshot the live Gephi canvas as the analyst sees it, selection and
+    camera included. Captures selection highlighting, hover state, and current
+    camera framing through Gephi's own screenshot feature. Use this instead of gephi_export_png whenever the
     figure needs to show what the analyst is currently looking at, most importantly
     an active selection: gephi_export_png renders the graph's stored data through
     Gephi's Preview pipeline, which has no concept of selection at all and can only
