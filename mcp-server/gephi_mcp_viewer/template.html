@@ -59,7 +59,7 @@
              color: var(--color-text-primary); text-shadow: 0 0 4px var(--color-background-primary), 0 0 6px var(--color-background-primary),
              0 0 8px var(--color-background-primary), 0 0 10px var(--color-background-primary); }
   #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--color-text-secondary); }
-  /* Compact: the host kept the frame short (under 380px) despite our size request. */
+  /* Compact: the host kept the frame short (under 380px) despite the size request. */
   body.compact.with-legend #container, body.compact.with-legend #captions { right: 0; }
   body.legend-on #legend { display: block; }
   body.compact.legend-on #legend { top: auto; bottom: 6px; left: 8px; right: 8px; width: auto; max-height: none; padding: 3px 8px;
@@ -168,7 +168,7 @@
     const h = desiredHeight();
     if (h) { document.documentElement.style.height = `${h}px`; notify("ui/notifications/size-changed", { height: h }); }
     clearTimeout(sizeTimer);
-    sizeTimer = setTimeout(applyCompact, 400);       // the host had its chance; adapt to what we got
+    sizeTimer = setTimeout(applyCompact, 400);       // the host had its chance; adapt to the frame it gave
   }
   function applyCompact() {
     const compact = window.innerHeight < 380 && hostCtx.displayMode !== "fullscreen";
