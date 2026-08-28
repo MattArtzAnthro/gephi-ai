@@ -48,11 +48,28 @@ the previous version without noticing.
    git rm gephi-mcp-<old-version>.nbm
    ```
 
-5. **Publish the server to PyPI** (skip if the server did not change). The pin in
+5. **Verify the artifact before publishing it.**
+
+   ```bash
+   scripts/verify-artifact.sh
+   ```
+
+   The test suite reads the working tree; a release reads the built wheel. Anything living in the
+   gap between them — packaging rules, excluded files, data files a local run has rewritten — is
+   invisible to a green suite. This builds the wheel, inspects it, installs it into a throwaway
+   venv, and exercises it, then checks the documented tool count against the count the artifact
+   actually registers. It exits non-zero and names the problem rather than letting a bad build
+   reach PyPI, where a version cannot be unpublished.
+
+   It exists because 1.15.0 and 1.16.0 shipped one machine's probe verdicts to every user:
+   `caveats.json` is rewritten by a local probe run and the wheel was built afterwards. Every test
+   passed throughout.
+
+6. **Publish the server to PyPI** (skip if the server did not change). The pin in
    `claude-plugin/.mcp.json` resolves from PyPI, so an unpublished pin is dead on
    install for anyone who reinstalls.
 
-6. **Build the Claude Desktop bundle** (skip if the server did not change):
+7. **Build the Claude Desktop bundle** (skip if the server did not change):
 
    ```bash
    scripts/build-mcpb.sh          # version comes from mcpb/manifest.json
@@ -60,9 +77,9 @@ the previous version without noticing.
 
    `.mcpb` files are gitignored — they ship as release assets only.
 
-7. **Commit and push.**
+8. **Commit and push.**
 
-8. **Cut the GitHub release.** Tag is `v<server-version>`, and both artifacts
+9. **Cut the GitHub release.** Tag is `v<server-version>`, and both artifacts
    attach:
 
    ```bash
@@ -78,7 +95,7 @@ the previous version without noticing.
    told to update. Without the release they are pointed at a Releases page that
    does not have the file.
 
-9. **Update the local install** so your own machine is not running the old build:
+10. **Update the local install** so your own machine is not running the old build:
 
    ```bash
    claude plugin marketplace update gephi-ai
@@ -88,7 +105,7 @@ the previous version without noticing.
    Both commands are required — updating the marketplace clone alone leaves the
    installed plugin pinned to the old version.
 
-10. **Verify:**
+11. **Verify:**
 
     ```bash
     scripts/check-drift.sh
