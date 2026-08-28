@@ -432,6 +432,12 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, metric, a, b, higher, difference}` — `higher` is the id of the larger value (null on a tie); `difference` is `abs(a-b)`. Errors clearly if the metric column is absent from a node (compute that statistic first).
 - **Notes**: the deterministic answer to "is X more [central/connected] than Y". See references/claim-verification.md.
 
+### gephi_claim_record
+- **Method**: re-reads every cited node (`GET /graph/node/get/{id}`) and checks the cited values against the live graph; writes nothing to the graph
+- **Params**: `{claim: str, classification: str, verdict: "confirmed"|"refuted"|"cant_tell", metric?: str, nodes?: [id], values?: {id: number}, numbers?: {name: value}, caveat?: str, export?: path}`
+- **Returns**: a structured record (also as `structuredContent`): `{claim, classification, metric, verdict, verified, evidence: {nodes: [{id, label, value, cited}]}, numbers, caveat, checks: {nodes_checked, nodes_missing, value_mismatches}, caption, export?}`. `verified` is false when a cited node does not exist or a cited value differs from the live one; the verdict itself is never changed by the tool.
+- **Notes**: the receipt behind a verified claim. Call it after measuring, with the ids and numbers the verdict rests on; `caption` is one sentence ready for a figure caption or methods appendix, and `export` writes the record as JSON. See references/claim-verification.md.
+
 ## Filters
 
 ### gephi_filter_by_degree

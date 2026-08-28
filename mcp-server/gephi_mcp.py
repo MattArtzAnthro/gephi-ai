@@ -121,10 +121,18 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
     _freshness_cache["result"] = result
     return result
 
-# tools/list and resources/list are static for the life of a release: 105 schemas
+# tools/list and resources/list are static for the life of a release: 106 schemas
 # (~77k chars) that a host can cache instead of re-fetching per session.
+def _package_version() -> str:
+    try:
+        return importlib.metadata.version("gephi-mcp")
+    except importlib.metadata.PackageNotFoundError:  # running from a bare checkout
+        return "0.0.0"
+
+
 mcp = MCPServer(
     "gephi_mcp",
+    version=_package_version(),
     cache_hints={
         "tools/list": CacheHint(ttl_ms=3_600_000, scope="public"),
         "resources/list": CacheHint(ttl_ms=3_600_000, scope="public"),
@@ -148,6 +156,7 @@ _READ_ONLY = {
     "gephi_list_filters", "gephi_get_timeline", "gephi_column_value_frequencies",
     "gephi_detect_duplicates", "gephi_get_preview_settings", "gephi_get_perspective",
     "gephi_get_selection", "gephi_view_graph", "gephi_whatif", "gephi_compare_nodes",
+    "gephi_claim_record",
 }
 _DESTRUCTIVE = {
     "gephi_create_project", "gephi_open_project", "gephi_delete_workspace",
@@ -2253,6 +2262,115 @@ async def gephi_compare_nodes(id_a: str, id_b: str, metric: str) -> str:
     higher = None if va == vb else (id_a if va > vb else id_b)
     return fmt({"success": True, "metric": metric, "a": va, "b": vb,
                 "higher": higher, "difference": abs(va - vb)})
+
+
+_VERDICTS = {"confirmed": "confirmed", "refuted": "refuted", "cant_tell": "cannot tell"}
+
+
+@_tool(name="gephi_claim_record")
+async def gephi_claim_record(claim: str, classification: str, verdict: str,
+                             metric: str | None = None,
+                             nodes: list[str] | None = None,
+                             values: dict[str, float] | None = None,
+                             numbers: dict[str, Any] | None = None,
+                             caveat: str = "",
+                             export: str | None = None) -> CallToolResult:
+    """Record a verified claim with its receipts, checked against the live graph.
+
+    Call this once a claim has been measured and a verdict reached, passing the
+    node ids and numbers the verdict rests on. The tool re-reads every cited node
+    from Gephi and compares each cited value with the live value of `metric`, so
+    the record cannot restate numbers the graph does not hold. The result is a
+    structured record a person can read, cite, or hand to a reviewer: claim,
+    classification, metric, verdict, the evidence nodes with their labels and
+    live values, any other cited numbers, the checks, and a caption sentence.
+
+    classification: comparison | connectivity | centrality | robustness | grouping.
+    verdict: confirmed | refuted | cant_tell. The tool never changes the verdict;
+    `verified` reports only whether the receipts matched the graph. A cited node
+    that does not exist, or a cited value that differs from the live value, makes
+    `verified` false and is listed under `checks`.
+    values: {node_id: cited value of `metric`}. numbers: other cited figures
+    (a within-group edge share, a component count) kept as given.
+    export: optional path; writes the record as JSON for a methods appendix.
+    Read-only on the graph.
+    """
+    if verdict not in _VERDICTS:
+        return CallToolResult(
+            content=[TextContent(type="text", text=fmt({
+                "success": False,
+                "error": f"verdict must be one of {sorted(_VERDICTS)}, got {verdict!r}"}))],
+            is_error=True)
+    nodes = nodes or []
+    values = values or {}
+    evidence = []
+    missing: list[str] = []
+    mismatches: list[dict[str, Any]] = []
+    for nid in nodes:
+        r = await gephi.request("GET", f"/graph/node/get/{nid}")
+        if not r.get("success", True) or "node" not in r:
+            missing.append(nid)
+            continue
+        node = r["node"]
+        attrs = node.get("attributes") or {}
+        live = None
+        if metric is not None:
+            live = attrs.get(metric, node.get(metric))
+        entry: dict[str, Any] = {"id": nid, "label": node.get("label", nid)}
+        if metric is not None:
+            entry["value"] = live
+        if nid in values:
+            cited = values[nid]
+            entry["cited"] = cited
+            if not _close(cited, live):
+                mismatches.append({"id": nid, "cited": cited, "live": live})
+        evidence.append(entry)
+    for nid in values:
+        if nid not in nodes:
+            missing.append(nid)
+    verified = not missing and not mismatches
+    record: dict[str, Any] = {
+        "claim": claim, "classification": classification, "metric": metric,
+        "verdict": verdict, "verified": verified,
+        "evidence": {"nodes": evidence},
+        "numbers": numbers or {},
+        "caveat": caveat,
+        "checks": {"nodes_checked": len(nodes) - len([m for m in missing if m in nodes]),
+                   "nodes_missing": missing, "value_mismatches": mismatches},
+    }
+    record["caption"] = _claim_caption(record)
+    if export:
+        with open(os.path.expanduser(export), "w", encoding="utf-8") as fh:
+            json.dump(record, fh, indent=2)
+        record["export"] = export
+    text = record["caption"]
+    if not verified:
+        text += (" Receipts did not match the graph:"
+                 + (f" missing nodes {missing};" if missing else "")
+                 + (f" value mismatches {mismatches};" if mismatches else ""))
+    return CallToolResult(content=[TextContent(type="text", text=text)],
+                          structured_content=record)
+
+
+def _close(a: Any, b: Any) -> bool:
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return math.isclose(float(a), float(b), rel_tol=1e-6, abs_tol=1e-9)
+    return a == b
+
+
+def _claim_caption(rec: dict[str, Any]) -> str:
+    """One sentence a person can paste: claim, verdict, the numbers, the caveat."""
+    parts = [f"Claim: {rec['claim'].rstrip('.')}", f"Verdict: {_VERDICTS[rec['verdict']]}"]
+    if rec["metric"] and rec["evidence"]["nodes"]:
+        vals = ", ".join(f"{n['label']} = {n.get('value')}" for n in rec["evidence"]["nodes"])
+        parts.append(f"{rec['metric']}: {vals}")
+    if rec["numbers"]:
+        parts.append(", ".join(f"{k} = {v}" for k, v in rec["numbers"].items()))
+    if not rec["verified"]:
+        parts.append("receipts did not match the live graph")
+    if rec["caveat"]:
+        parts.append(f"Caveat: {rec['caveat'].rstrip('.')}")
+    return ". ".join(parts) + "."
 
 
 # ─── Import ──────────────────────────────────────────────────

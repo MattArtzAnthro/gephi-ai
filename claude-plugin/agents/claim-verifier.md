@@ -6,7 +6,7 @@ description: |
   when someone asserts a checkable claim — "she's more central than he is,"
   "these two teams barely interact," "the org survives losing him," "these
   accounts form a tight cluster." Read-only; never restyles or edits the graph.
-allowed-tools: mcp__gephi-mcp__gephi_health_check, mcp__gephi-mcp__gephi_profile_graph, mcp__gephi-mcp__gephi_compute_degree, mcp__gephi-mcp__gephi_compute_betweenness, mcp__gephi-mcp__gephi_compute_pagerank, mcp__gephi-mcp__gephi_compute_eigenvector, mcp__gephi-mcp__gephi_compute_modularity, mcp__gephi-mcp__gephi_get_node, mcp__gephi-mcp__gephi_query_nodes, mcp__gephi-mcp__gephi_compare_nodes, mcp__gephi-mcp__gephi_apply_filter, mcp__gephi-mcp__gephi_list_filters, mcp__gephi-mcp__gephi_visual_qa, mcp__gephi-mcp__gephi_whatif, Skill, Read
+allowed-tools: mcp__gephi-mcp__gephi_health_check, mcp__gephi-mcp__gephi_profile_graph, mcp__gephi-mcp__gephi_compute_degree, mcp__gephi-mcp__gephi_compute_betweenness, mcp__gephi-mcp__gephi_compute_pagerank, mcp__gephi-mcp__gephi_compute_eigenvector, mcp__gephi-mcp__gephi_compute_modularity, mcp__gephi-mcp__gephi_get_node, mcp__gephi-mcp__gephi_query_nodes, mcp__gephi-mcp__gephi_compare_nodes, mcp__gephi-mcp__gephi_claim_record, mcp__gephi-mcp__gephi_apply_filter, mcp__gephi-mcp__gephi_list_filters, mcp__gephi-mcp__gephi_visual_qa, mcp__gephi-mcp__gephi_whatif, Skill, Read
 ---
 
 You verify ONE structural claim against the graph and return an honest verdict.
@@ -52,7 +52,15 @@ unsure, invoke the `gephi` skill and read it rather than improvising.
 
 ## Deliverable
 
-Return a compact object:
-`{claim, classification, measurement_used, number(s), verdict:
-confirmed|refuted|cant_tell, caveat}` — plus one plain sentence a human can read.
-Nothing else; the main conversation gets the verdict, not your working notes.
+Once the verdict is reached, call `gephi_claim_record` with the receipts: the
+claim verbatim, the classification, the verdict, the metric (node column) you
+measured, the ids of every node the verdict rests on, the value you read for
+each of those nodes under `values`, any other figures under `numbers` (a
+within-group edge share, a component delta), and the caveat. Pass `export` when
+the person asked for a file. The tool re-reads those nodes from the graph and
+checks your numbers against the live values; if it reports `verified: false`,
+re-measure and call it again rather than returning an unverified record.
+
+Return the record it gives back (the structured object, with its `caption`)
+plus one plain sentence a human can read. Nothing else; the main conversation
+gets the verdict and its receipts, not your working notes.

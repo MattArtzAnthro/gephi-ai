@@ -4,7 +4,21 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased (MCP server)
+## MCP server 1.13.0 / claude-plugin 1.11.0
+
+### Added
+- **`gephi_claim_record`: every verified claim now comes with receipts checked
+  against the graph.** `/verify-claim` used to return a paragraph: the verdict,
+  a number, a caveat. Anyone asked to "show me" had nothing to show. The
+  claim-verifier agent now hands the server the claim, the metric, the verdict,
+  the node ids it cited, and the numbers it cited; the server re-reads those
+  nodes from Gephi, confirms they exist and that the cited values match the
+  live ones, and returns a structured record with the evidence nodes by label,
+  a one-sentence caption for a figure or methods appendix, and an optional JSON
+  export (`/verify-claim "<claim>" path.json`). A record whose numbers do not
+  match the graph is marked `verified: false` and says so; the verdict is never
+  altered by the tool. This is the structured form every host gets as text;
+  a clickable evidence view can render the same record later.
 
 ### Changed
 - **Three tool descriptions rewritten so their first sentence works as a search

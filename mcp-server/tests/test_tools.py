@@ -177,10 +177,10 @@ async def test_export_screenshot_overrides(rec):
     }
 
 
-def test_all_105_tools_registered():
+def test_all_106_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 105, f"expected 105 tools, found {len(names)}"
+    assert len(names) == 106, f"expected 106 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -633,3 +633,10 @@ async def test_get_timeline_is_a_get(rec):
     await out_of(gephi_mcp.gephi_get_timeline)
     assert rec.last["method"] == "GET"
     assert rec.last["endpoint"] == "/timeline"
+
+
+def test_server_reports_package_version():
+    """serverInfo.version on the wire must be the installed package version, not empty."""
+    import importlib.metadata
+    assert gephi_mcp.mcp.version == importlib.metadata.version("gephi-mcp")
+    assert gephi_mcp.mcp.version != ""
