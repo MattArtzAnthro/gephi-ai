@@ -45,20 +45,19 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 
 ### Added (claude-plugin)
 - **`/explore`**: the `/import-and-explore` flow for a graph that is already
-  open in Gephi, with no file path. Finding a path is the hard part for many
-  people; opening the file in Gephi first removes it.
+  open in Gephi. It takes no file path; open the file in Gephi first and run
+  the command on the current workspace.
 - **`/export-map`**, the new name of `/visualize`. The command exports; laying
   out and styling live in `/beautify` and `/analyze-network`, and the old name
   suggested otherwise. It now checks `gephi_visual_qa` first and, on an
   untouched graph, offers `/beautify` before exporting. `/visualize` remains as
   an alias for one release.
-- **`/community-detection` asks which kind of community first**: Louvain and
-  Leiden (both descriptive reductions of the observed edges; Leiden is more
-  robust and returns less even community sizes; needs the CWTS Leiden plugin),
-  against statistical inference (Peixoto's stochastic block model, which posits
-  a generative model and does not find communities in a random graph). The
-  last is not available in Gephi, and the command says so and points to
-  graph-tool rather than pretending. Leiden runs through `gephi_run_statistic`.
+- **`/community-detection` asks which method to run before running it**:
+  modularity optimization with Louvain (Gephi's built-in) or Leiden (through
+  the CWTS Leiden plugin, via `gephi_run_statistic`), or stochastic block
+  model inference. The last is not implemented in Gephi, so the command says
+  so and names graph-tool as the route instead of substituting a different
+  method silently.
 
 ## Java plugin 1.2.17 / claude-plugin 1.9.32
 

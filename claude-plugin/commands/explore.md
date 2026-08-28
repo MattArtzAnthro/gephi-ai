@@ -5,11 +5,10 @@ allowed-tools: mcp__gephi-mcp__*
 
 # Explore
 
-Run the initial exploration on whatever is open in Gephi right now. This is
-`/import-and-explore` without the import: open or build the network in Gephi
-first (File > Open, a data-laboratory import, or a prior session), then run this.
-Finding a file path is the hard part for many people; letting Gephi do the
-opening removes it.
+Run the initial exploration on the graph in the current Gephi workspace. This
+is `/import-and-explore` without the import step: open the file in Gephi first
+(File > Open, or a Data Laboratory import), then run this. No file path is
+needed.
 
 **Tell the user what you're doing at each step** — narrate briefly before each tool call.
 

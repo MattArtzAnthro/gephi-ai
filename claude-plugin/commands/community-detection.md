@@ -16,29 +16,28 @@ Run a complete community detection and visualization workflow on the current Gep
 
 2. **Graph info**: Call `gephi_get_project_info`. Tell the user the node/edge counts.
 
-3. **Ask which kind of community** (skip if `$ARGUMENTS` names an algorithm or
-   the user already said). One question, two real options and one honest note:
+3. **Ask which method** (skip if `$ARGUMENTS` names one or the user already
+   said). One question, with the trade-off stated plainly:
 
-   - **Louvain** (Gephi's built-in Modularity): a *descriptive* breakdown of how
-     the observed edges cluster. Fast, familiar, communities of fairly even size.
-     The default; fine for getting a discursive hold on the structure.
-   - **Leiden**: also descriptive, technically better (guarantees connected
-     communities, more robust to resolution), and it tends to return partitions
-     that are *less* even in size, which is more faithful but can be less
-     tractable (very small and very large communities are hard to use).
+   - **Louvain** (Gephi's built-in Modularity; Blondel et al. 2008): maximizes
+     modularity by greedy local moves. Fast and familiar; the default.
+   - **Leiden** (Traag, Waltman, and van Eck 2019): the same objective with a
+     refinement step that guarantees every community is internally connected
+     and converges more reliably. Its partitions can be more uneven in size.
      Requires the CWTS Leiden plugin in Gephi; check `gephi_list_statistics`
      for `"Leiden algorithm"` before offering it as available.
-   - **Statistical inference (Peixoto's stochastic block model)** posits a
-     generative model and finds the partition that best explains the observed
-     edges; it will *not* find communities in a random graph, where Louvain and
-     Leiden always will. It is not available in Gephi. If the user wants
-     communities in the sense of an underlying process rather than a
-     descriptive reduction, say so plainly and point to graph-tool
+   - **Stochastic block model inference** (Peixoto 2019): fits a generative
+     model of the edges and selects the partition that best explains them,
+     with model selection that returns a single block when the data support no
+     structure. Modularity maximization has no such check and returns a
+     partition for any graph, including a random one. SBM inference is not
+     implemented in Gephi; if the user wants it, say so and point to graph-tool
      (`minimize_blockmodel_dl`) outside this workflow.
 
-   Frame the choice as: do you want communities as the realization of an
-   underlying process (inference), or as a descriptive reduction of the edge
-   distribution (Louvain or Leiden)?
+   Frame the choice as: modularity maximization gives a partition that
+   describes how the observed edges cluster; SBM inference tests whether a
+   block structure is supported at all. Cite the papers in the caption
+   when the map is publication-bound.
 
 4. **Compute communities**:
    - Louvain: call `gephi_compute_modularity` with resolution `$ARGUMENTS`
