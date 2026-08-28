@@ -21,3 +21,6 @@ mcpb/server/lib/
 docs/
 *-draft.md
 *-draft.*
+
+# Probe verdicts are per-install and must never ship or be committed
+mcp-server/caveats.local.json

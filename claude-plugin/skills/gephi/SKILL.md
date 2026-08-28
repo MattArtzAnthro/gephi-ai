@@ -215,11 +215,18 @@ those plugins never covered.
 - `gephi_compute_clustering_coefficient` → creates `clustering`
 - `gephi_compute_avg_path_length` → avg path length, diameter
 - `gephi_compute_hits` → creates `authority`, `hub` (lowercase column names)
+- `gephi_community_stability(runs=20, resolution=1.0)` → run community detection repeatedly and report which groups hold up: distinct partitions seen, a 0-1 stability score per node, the nodes that never settled, and a consensus partition written to its own column. **Run this before calling communities a finding** — Gephi reports one partition as though it were the answer, and it is one draw
+- Statistics results may carry a `caveats` block naming a known Gephi defect that affects the number (e.g. the modularity resolution parameter is the reciprocal of the literature convention; centrality ignores edge weights). Read it out to the user rather than reporting the bare number
 
 ### Analysis & counterfactual
 - `gephi_profile_graph` → one-call quantitative picture (size, density, degree with Gini + assortativity, connectivity, weight distribution, modularity, clustering vs random expectation); run first — its flags name layout fixes (heavy-tailed weights → log-transform; disassortative → dissuade hubs)
 - `gephi_whatif(edits, include_slow=False)` → apply hypothetical edits (`remove_node`/`remove_nodes`/`add_edge`/`remove_edge`) to a throwaway workspace copy, diff the structural profile before/after, auto-clean the scratch copy; the real graph is never touched. For robustness/"what if we removed X" claims — see references/claim-verification.md
 - `gephi_compare_nodes(id_a, id_b, metric)` → deterministic two-node comparison on one metric (from attributes or a built-in field); errors if the metric isn't computed yet. For "is X more central than Y" claims — see references/claim-verification.md
+- `gephi_compare_workspaces(before, after, compare=None)` → what changed between two versions of the same network held in two workspaces (zero-based indices): nodes and edges added and removed, and which shared nodes grew or shrank on a numeric column. Warns when the two share no nodes, since that is usually a mismatched identifier rather than total turnover
+
+### Two-mode (bipartite) networks
+- `gephi_bipartite_layout(mode_column)` → lay the two modes out in separate columns. `mode_column` names the attribute separating the kinds of node; Gephi has no notion of a mode, so it must be told, and a column with more than two values is refused
+- `gephi_bipartite_projection(mode_column, keep)` → collapse to one mode, joining nodes that share a partner (weighted by how many), in a NEW workspace so the two-mode data survives. This is how two-mode data becomes a social network for analysis; Gephi cannot do it at all
 
 ### Appearance
 `gephi_color_by_partition`, `gephi_color_edges_by_partition` (color edges by a categorical edge column — relationship type/period/tier), `gephi_color_by_ranking`, `gephi_size_by_ranking`, `gephi_set_node_color`/`gephi_set_node_size`, `gephi_set_edge_color`, `gephi_edge_thickness_by_weight`, `gephi_batch_set_node_colors`, `gephi_reset_appearance`
@@ -240,7 +247,7 @@ those plugins never covered.
 `gephi_get_timeline` (read-only: is the graph dynamic, time bounds, dynamic columns, interval state) — reason over node/edge start/end values to narrate change over time. There is no programmatic time-window tool: driving Gephi's timeline from outside destabilizes its render thread; slice by time in the Gephi timeline UI directly if needed.
 
 ### Preview & Export
-`gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`, `gephi_export` (any format by name — VNA/Pajek/DL/spreadsheet/GDF/JSON, for UCINET/Pajek interchange), `gephi_view_graph` (interactive in-chat view, no `file` param)
+`gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`, `gephi_export` (any format by name — VNA/Pajek/DL/spreadsheet/GDF/JSON, for UCINET/Pajek interchange), `gephi_view_graph` (interactive in-chat view, no `file` param), `gephi_export_legend` (SVG key for the map — Gephi has never had a legend; it describes only mappings applied through these tools and refuses rather than guessing), `gephi_session_receipt` (how the figure was made: mappings, statistics and their settings, layout, versions — for a methods section)
 
 ### Import
 `gephi_import_file`, `gephi_import_gexf`/`gephi_import_graphml`/`gephi_import_csv`

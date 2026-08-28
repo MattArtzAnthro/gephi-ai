@@ -170,8 +170,12 @@ def test_entries_a_probe_could_not_reproduce_are_never_returned():
 
 
 @pytest.mark.parametrize("bad_facts", [None, GraphFacts(directed=None, weights_vary=None)])
-def test_conditioning_never_raises_on_missing_facts(bad_facts):
-    caveats_for("betweenness", params={}, facts=bad_facts)
+def test_conditioning_returns_only_unconditional_caveats_when_facts_are_missing(bad_facts):
+    """Unknown is not False. With nothing established, only the always-on entries may fire."""
+    found = caveats_for("betweenness", params={}, facts=bad_facts)
+
+    assert "gephi-557" not in ids(found), "a weight caveat needs weights to be known to vary"
+    assert all(c["applies_when"].get("always") for c in found)
 
 
 # ── Defects that cannot be probed through the API we have ──
