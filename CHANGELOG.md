@@ -4,6 +4,44 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.15.0 / claude-plugin 1.12.0
+
+### Added
+- **Statistics now carry what is known about them.** Several of Gephi's measures
+  have long-standing defects its interface never mentions: the modularity
+  resolution parameter is applied as the reciprocal of the convention in the
+  paper the dialogue cites, so a reported resolution does not mean what a reader
+  of that literature will assume, and the centrality measures do not use edge
+  weights. A result affected by a known defect now comes back with a note saying
+  so. Notes are conditioned on the call and the graph, so nothing appears on a
+  result it does not apply to, and a clean result is unchanged.
+- **The defect register verifies itself against your Gephi.** These defects were
+  reported against older releases, and an open issue is evidence that nobody
+  closed it rather than proof the bug survives. A note is asserted only once a
+  probe has reproduced the defect on the Gephi in front of you. Run the probes
+  with `GEPHI_PROBE=1` to record verdicts for your own install; a probe that
+  cannot measure records nothing and leaves the entry marked unverified.
+- **`gephi_community_stability`** runs community detection repeatedly and reports
+  which groups hold up: how many genuinely distinct partitions appeared, a
+  stability score per node, and the nodes whose membership never settled. Gephi
+  runs detection once and presents the partition as the answer; it is one draw.
+  The consensus partition is written to its own column, leaving the run you
+  already had intact.
+- **`gephi_export_legend`** writes an SVG key for the current map, naming the
+  column each visual channel encodes, its groups and their swatches, and the
+  range a size mapping spans. Swatch colours are read back from the graph,
+  because Gephi assigns a palette itself when none is given. It refuses when no
+  mapping has been applied through these tools rather than guessing.
+- **`gephi_session_receipt`** reports how the current figure was made — mappings,
+  statistics and their parameters, layout and its settings, and versions — in a
+  form that can be pasted into a methods section.
+- **Network-level centralization** in the structural profile, so two networks can
+  be compared rather than only nodes within one.
+
+### Note
+- The legend and the receipt describe what was applied through gephi-ai. Styling
+  done by hand in the Gephi window is not visible to them, and both say so.
+
 ## MCP server 1.14.3 / claude-plugin 1.11.5
 
 ### Fixed

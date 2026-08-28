@@ -1,7 +1,7 @@
 {
   "name": "gephi-network-analysis",
   "description": "AI-powered network analysis, visualization, and export using Gephi Desktop. Provides 106 MCP tools plus specialized agents for claim verification, layout iteration, structural analysis, and text-network construction.",
-  "version": "1.11.5",
+  "version": "1.12.0",
   "author": {
     "name": "Matt Artz",
     "url": "https://www.mattartz.me"
