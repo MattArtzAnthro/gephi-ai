@@ -4,6 +4,26 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.16.1 / claude-plugin 1.13.1
+
+### Fixed
+- **Probe verdicts no longer travel in the package.** A verdict says whether a
+  Gephi defect is present on one install. Recorded in the shipped register it
+  became a claim about every install: caveats a probe did not reproduce were
+  silenced for users whose Gephi was never tested, and caveats it did reproduce
+  carried the line "Reproduced on this Gephi" on machines nobody had touched.
+  Verdicts now go to `caveats.local.json` beside the register, which is merged
+  when present, gitignored, and excluded from the wheel. A fresh install reports
+  every entry as unverified, which is the truth until you run the probes.
+- **The tools added in 1.15.0 and 1.16.0 are now documented.** They were counted
+  in the totals but described nowhere, so an agent reading the skill or the tool
+  reference had no way to know they existed.
+
+### Added
+- Two documentation tripwires: every registered tool must appear in the tool
+  reference, and the README's category counts must sum to the number of tools
+  actually registered. Both fail the test suite rather than drifting quietly.
+
 ## MCP server 1.16.0 / claude-plugin 1.13.0
 
 ### Added
