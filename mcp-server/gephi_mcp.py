@@ -24,6 +24,7 @@ import math
 import os
 import re
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -32,6 +33,16 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gephi_mcp_viewer
 import text_network
+from community_stability import consensus
+from legend import legend_document
+from session_ledger import Ledger
+from stats_integrity import (
+    GraphFacts,
+    caveats_for,
+    mutates_graph,
+    needs_graph_facts,
+    replaces_graph,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gephi_mcp")
@@ -198,6 +209,12 @@ class GephiClient:
                       json_data: dict[str, Any] | None = None,
                       timeout: float | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
+        # Cached graph facts describe a particular graph. Any call that could change which graph
+        # we are looking at, or its shape, retires them before it runs.
+        if mutates_graph(method, endpoint):
+            invalidate_graph_facts()
+            if replaces_graph(method, endpoint):
+                LEDGER.reset()
         try:
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
                 response = await client.request(method=method, url=url, params=params, json=json_data)
@@ -705,6 +722,18 @@ async def gephi_set_edge_attributes(source: str, target: str, attributes: dict[s
 
 # ─── Appearance: Individual Styling ──────────────────────────
 
+def _fmt_styled(resp: dict[str, Any], operation: str, **detail: Any) -> str:
+    """Format a styling result, noting it in the ledger when Gephi accepted it.
+
+    Only a call the application actually applied belongs in the record: a refused one changed
+    nothing, and a legend describing it would name an encoding the map does not carry.
+    """
+    if isinstance(resp, dict) and resp.get("success"):
+        LEDGER.record(operation, **detail)
+    return fmt(resp)
+
+
+
 @_tool(name="gephi_set_node_color")
 async def gephi_set_node_color(id: str, r: int, g: int, b: int, a: int = 255) -> str:
     """Set the color of a single node. r/g/b/a are 0-255."""
@@ -748,8 +777,9 @@ async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | N
     "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}. With more than 8
     categories, color the 8 largest and set the rest to gray [153,153,153].
     """
-    return fmt(await gephi.request("POST", "/appearance/partition/color",
-                                   json_data=_body(column=column, colors=colors)))
+    return _fmt_styled(await gephi.request("POST", "/appearance/partition/color",
+                                           json_data=_body(column=column, colors=colors)),
+                       "color_by_partition", column=column)
 
 @_tool(name="gephi_color_edges_by_partition")
 async def gephi_color_edges_by_partition(column: str,
@@ -787,8 +817,11 @@ async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: flo
     Always do this before exporting or viewing — unsized nodes render as invisible
     specks. Degree with min 10, max 60 is a good default; scale up for large canvases.
     """
-    return fmt(await gephi.request("POST", "/appearance/ranking/size",
-                                   json_data={"column": column, "min_size": min_size, "max_size": max_size}))
+    return _fmt_styled(await gephi.request("POST", "/appearance/ranking/size",
+                                           json_data={"column": column, "min_size": min_size,
+                                                      "max_size": max_size}),
+                       "size_by_ranking", column=column,
+                       min_size=min_size, max_size=max_size)
 
 
 # ─── Layout ──────────────────────────────────────────────────
@@ -854,6 +887,9 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result = await gephi.request("POST", "/layout/run",
                                  json_data=_body(algorithm=algorithm, iterations=iterations,
                                                  properties=properties))
+    if isinstance(result, dict) and result.get("success"):
+        LEDGER.record("run_layout", algorithm=algorithm, iterations=iterations,
+                      **({"properties": properties} if properties else {}))
     if not sync or not result.get("success"):
         return fmt(result)
     # Poll until layout stops
@@ -1023,6 +1059,85 @@ async def gephi_set_layout_properties(algorithm: str, properties: dict[str, Any]
                                               "iterations": iterations}))
 
 
+# ─── Statistics integrity ────────────────────────────────────
+# Gephi's own statistics carry long-open defects the interface never surfaces (a resolution
+# parameter applied as the reciprocal of the convention it cites, a closeness measure normalised
+# whatever the checkbox said). gephi-ai reports those numbers into research claims, so every
+# statistic leaves through fmt_stat, which attaches what is known about the number it carries.
+
+_graph_facts: GraphFacts | None = None
+
+#: What this session applied to the current graph. A legend and a methods note both need it, and
+#: neither can be recovered from the graph afterwards: Gephi keeps the pixels, not the decision
+#: that produced them. Reset whenever the graph changes, since it describes one graph.
+LEDGER = Ledger()
+
+
+def invalidate_graph_facts() -> None:
+    """Forget cached facts about the graph. Called whenever the graph may have changed."""
+    global _graph_facts
+    _graph_facts = None
+
+
+def note_weights_vary(weights_vary: bool) -> None:
+    """Record whether this graph's edge weights vary, learned from work already done.
+
+    Establishing this needs the full GEXF export, which is far too expensive to run on every
+    statistic, so the statistics path leaves it unknown and the weight caveats stay silent. Any
+    code that has already parsed the graph can hand the answer over here instead.
+    """
+    global _graph_facts
+    current = _graph_facts or GraphFacts()
+    _graph_facts = GraphFacts(directed=current.directed, weights_vary=weights_vary)
+
+
+async def _fetch_graph_facts() -> GraphFacts:
+    """Establish the cheap facts a conditional caveat needs. Never raises.
+
+    Only `directed` is cheap enough to fetch on the statistics path; `weights_vary` needs the
+    full GEXF export and is left unknown here, which keeps the weight caveats quiet rather than
+    guessing. An unknown fact never satisfies a predicate.
+    """
+    global _graph_facts
+    if _graph_facts is not None and _graph_facts.directed is not None:
+        return _graph_facts
+    known_weights = _graph_facts.weights_vary if _graph_facts else None
+    directed = None
+    try:
+        stats = await gephi.request("GET", "/graph/stats")
+        if isinstance(stats, dict) and stats.get("success"):
+            gtype = str(stats.get("graph_type", "")).strip().lower()
+            if gtype in ("directed", "undirected"):
+                directed = gtype == "directed"
+    except Exception:
+        directed = None
+    _graph_facts = GraphFacts(directed=directed, weights_vary=known_weights)
+    return _graph_facts
+
+
+async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
+    """Format a statistic result, attaching any known defect that applies to it.
+
+    Adds a `caveats` key only when the list is non-empty, so a call with nothing to warn about is
+    byte-identical to what it returned before. Failure anywhere in this layer returns the
+    statistic unchanged: a bug here must never fail a measurement that otherwise succeeded.
+    """
+    try:
+        if not (isinstance(resp, dict) and resp.get("success", True)):
+            return fmt(resp)
+        LEDGER.record("statistic", metric=metric, params=dict(params))
+        facts = await _fetch_graph_facts() if needs_graph_facts(metric) else GraphFacts()
+        found = caveats_for(metric, params=params, facts=facts)
+        if found:
+            resp = {**resp, "caveats": [
+                {"id": c["id"], "severity": c["severity"], "says": c["says"],
+                 "issues": c["issues"], "verification": c["verification"]["status"]}
+                for c in found]}
+    except Exception:
+        pass
+    return fmt(resp)
+
+
 # ─── Statistics ──────────────────────────────────────────────
 
 @_tool(name="gephi_compute_modularity")
@@ -1031,7 +1146,96 @@ async def gephi_compute_modularity(resolution: float = 1.0) -> str:
 
     Higher resolution yields fewer, larger communities.
     """
-    return fmt(await gephi.request("POST", "/statistics/modularity", json_data={"resolution": resolution}))
+    return await fmt_stat("modularity",
+                          await gephi.request("POST", "/statistics/modularity",
+                                              json_data={"resolution": resolution}),
+                          resolution=resolution)
+
+#: Gephi titles the community column "Modularity Class" and gives it the id "modularity_class".
+#: Which of the two a GEXF parser surfaces varies, so the read-back matches on a normalised form
+#: rather than one exact spelling. Getting this wrong is silent: the lookup finds nothing, every
+#: partition comes back empty, and a graph that was never measured reports as perfectly stable.
+_PARTITION_KEYS = {"modularityclass", "modularity"}
+
+
+def _partition_value(attributes: dict[str, Any]) -> Any:
+    """The community id on a node, however this Gephi build spelled the column."""
+    for key, value in (attributes or {}).items():
+        if str(key).replace("_", "").replace(" ", "").lower() in _PARTITION_KEYS:
+            return value
+    return None
+
+
+@_tool(name="gephi_community_stability")
+async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
+                                    consensus_column: str = "consensus_community") -> str:
+    """Run community detection repeatedly and report which groups actually hold up.
+
+    Gephi reports one partition as though it were the answer. It is one draw: the same graph run
+    again can give different communities, and the result shifts with the order the tables were
+    imported and even after a layout has run. So a partition on its own cannot support a claim
+    that a group exists. This runs detection `runs` times and measures how often each pair of
+    nodes lands together.
+
+    Returns the number of genuinely distinct partitions seen (relabellings do not count as
+    different), a stability score per node, the least stable nodes by name, and a consensus
+    partition built from the pairs that agreed more often than not. A node's stability is the
+    average decisiveness of its co-membership relations: 1.0 means every relation came out the
+    same way every time, 0.5 means its membership is undetermined.
+
+    The consensus partition is written to its own column rather than overwriting
+    `modularity_class`, so the run you already had survives (gephi#2590).
+
+    Use this before describing communities as a finding. Answers gephi#2968, which Gephi closed
+    as not planned, so nothing else in this ecosystem can tell you whether your groups are real.
+    """
+    if runs < 2:
+        return fmt({"success": False,
+                    "error": ("runs must be at least 2: a single run is the thing you already "
+                              "have, and says nothing about whether it is reproducible.")})
+
+    from gephi_mcp_viewer import parse_gexf
+
+    partitions: list[dict[str, Any]] = []
+    for _ in range(runs):
+        mod = await gephi.request("POST", "/statistics/modularity",
+                                  json_data={"resolution": resolution})
+        if not (isinstance(mod, dict) and mod.get("success")):
+            return fmt(mod)
+        exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+        if not (isinstance(exported, dict) and exported.get("success")):
+            return fmt(exported)
+        graph = parse_gexf(exported["content"], max_nodes=10**9)
+        partition = {
+            n["key"]: value
+            for n in graph["nodes"]
+            if (value := _partition_value(n.get("attributes", {}))) is not None
+        }
+        if not partition:
+            return fmt({"success": False,
+                        "error": ("Ran community detection but could not read any partition back "
+                                  "from the graph. Gephi titles the column 'Modularity Class'; if "
+                                  "this build names it something else, the read-back needs "
+                                  "updating. Reporting nothing rather than an empty result, "
+                                  "because an empty result looks exactly like a stable one.")})
+        partitions.append(partition)
+
+    result: dict[str, Any] = {"success": True, "resolution": resolution}
+    result.update(consensus(partitions))
+
+    groups = result.get("consensus_groups") or []
+    if groups:
+        await gephi.request("POST", "/graph/columns/add",
+                            json_data={"name": consensus_column, "type": "integer",
+                                       "target": "node"})
+        updates = [{"id": node, "attributes": {consensus_column: index}}
+                   for index, group in enumerate(groups) for node in group]
+        await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": updates})
+        result["consensus_column"] = consensus_column
+        result["consensus_communities"] = len(groups)
+
+    return await fmt_stat("modularity", result, resolution=resolution)
+
 
 async def _compute_profile(include_slow: bool = False) -> dict:
     """Compute the structural profile panel on the CURRENT workspace.
@@ -1052,6 +1256,9 @@ async def _compute_profile(include_slow: bool = False) -> dict:
 
     graph = parse_gexf(exported["content"], max_nodes=10**9)
     profile = structural_profile(graph)
+    # The profile establishes, in passing, the one fact the caveat layer cannot afford to fetch
+    # on the statistics path. Keeping it is what lets the edge-weight caveats ever fire.
+    note_weights_vary(bool(profile.get("weighted")))
 
     mod = await gephi.request("POST", "/statistics/modularity", json_data={})
     if mod.get("success"):
@@ -1152,7 +1359,7 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
 @_tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
     """Compute degree, in-degree, and out-degree for all nodes."""
-    return fmt(await gephi.request("POST", "/statistics/degree"))
+    return await fmt_stat("degree", await gephi.request("POST", "/statistics/degree"))
 
 @_tool(name="gephi_compute_betweenness")
 async def gephi_compute_betweenness() -> str:
@@ -1163,13 +1370,14 @@ async def gephi_compute_betweenness() -> str:
     with an extended timeout; on very large graphs (tens of thousands of nodes)
     expect a wait, and consider whether degree or PageRank answers the question more
     cheaply."""
-    return fmt(await gephi.request("POST", "/statistics/betweenness",
-                                   timeout=SLOW_REQUEST_TIMEOUT))
+    return await fmt_stat("betweenness",
+                          await gephi.request("POST", "/statistics/betweenness",
+                                              timeout=SLOW_REQUEST_TIMEOUT))
 
 @_tool(name="gephi_compute_pagerank")
 async def gephi_compute_pagerank() -> str:
     """Compute PageRank for all nodes. Stores 'pageranks' on nodes."""
-    return fmt(await gephi.request("POST", "/statistics/pagerank"))
+    return await fmt_stat("pagerank", await gephi.request("POST", "/statistics/pagerank"))
 
 @_tool(name="gephi_compute_connected_components")
 async def gephi_compute_connected_components() -> str:
@@ -1179,7 +1387,8 @@ async def gephi_compute_connected_components() -> str:
 @_tool(name="gephi_compute_clustering_coefficient")
 async def gephi_compute_clustering_coefficient() -> str:
     """Compute the clustering coefficient for all nodes. Stores 'clustering' on nodes."""
-    return fmt(await gephi.request("POST", "/statistics/clustering-coefficient"))
+    return await fmt_stat("clustering_coefficient",
+                          await gephi.request("POST", "/statistics/clustering-coefficient"))
 
 @_tool(name="gephi_compute_avg_path_length")
 async def gephi_compute_avg_path_length() -> str:
@@ -1187,8 +1396,9 @@ async def gephi_compute_avg_path_length() -> str:
 
     All-pairs shortest paths (O(n*m)), as slow as betweenness on large graphs; runs
     with an extended timeout."""
-    return fmt(await gephi.request("POST", "/statistics/avg-path-length",
-                                   timeout=SLOW_REQUEST_TIMEOUT))
+    return await fmt_stat("avg_path_length",
+                          await gephi.request("POST", "/statistics/avg-path-length",
+                                              timeout=SLOW_REQUEST_TIMEOUT))
 
 @_tool(name="gephi_compute_hits")
 async def gephi_compute_hits() -> str:
@@ -1198,7 +1408,7 @@ async def gephi_compute_hits() -> str:
 @_tool(name="gephi_compute_eigenvector")
 async def gephi_compute_eigenvector() -> str:
     """Compute eigenvector centrality. Stores 'eigencentrality' on nodes."""
-    return fmt(await gephi.request("POST", "/statistics/eigenvector"))
+    return await fmt_stat("eigenvector", await gephi.request("POST", "/statistics/eigenvector"))
 
 
 # ─── Filters ─────────────────────────────────────────────────
@@ -1434,6 +1644,102 @@ async def gephi_set_preview_settings(settings: dict[str, Any]) -> str:
 
 
 # ─── Export ──────────────────────────────────────────────────
+
+async def _derive_partition_colours(column: str) -> dict[str, str] | None:
+    """Read the colour each group actually carries, from the graph rather than from assumption.
+
+    When no palette is passed, Gephi assigns one and never reports it back, so the mapping is
+    known but its colours are not. Reading them off the nodes is the only way a swatch can be
+    trusted; inventing one would produce a legend that confidently mislabels the map.
+    """
+    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    if not (isinstance(exported, dict) and exported.get("success") and exported.get("content")):
+        return None
+    from gephi_mcp_viewer import parse_gexf
+    graph = parse_gexf(exported["content"], max_nodes=10**9)
+    wanted = column.replace("_", "").replace(" ", "").lower()
+    groups: dict[str, str] = {}
+    for node in graph["nodes"]:
+        value = next((v for k, v in (node.get("attributes") or {}).items()
+                      if k.replace("_", "").replace(" ", "").lower() == wanted), None)
+        if value is None or str(value) in groups:
+            continue
+        match = re.match(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)", str(node.get("color") or ""))
+        if match:
+            r, g, b = (int(v) for v in match.groups())
+            groups[str(value)] = f"#{r:02x}{g:02x}{b:02x}"
+    return groups or None
+
+
+@_tool(name="gephi_export_legend")
+async def gephi_export_legend(file: str) -> str:
+    """Write a legend for the current map as SVG, so an export can be read without you present.
+
+    A Gephi export is coloured circles with no key. This draws the key from the mappings applied
+    in this session: which column each visual channel encodes, the groups and their swatches, and
+    the range a size mapping spans. Swatch colours are read back from the graph, because Gephi
+    assigns a palette itself when none is given and never reports which one.
+
+    Refuses when nothing was mapped through these tools. Styling done by hand in the Gephi window
+    is invisible here, and a legend guessed from an unknown appearance would be confidently wrong,
+    which is worse for a published figure than having no legend at all.
+
+    Pair it with a PNG or PDF export, or splice it into an SVG one. Answers gephi/gephi#511.
+    """
+    items = LEDGER.legend_items()
+    if not items:
+        return fmt({"success": False,
+                    "error": ("Nothing to put in a legend: no colour, size, or width mapping has "
+                              "been applied through these tools in this session. Anything styled "
+                              "by hand in the Gephi window is not visible here, so a legend would "
+                              "be a guess. Apply a mapping (gephi_color_by_partition, "
+                              "gephi_size_by_ranking) and try again.")})
+
+    resolved = []
+    for item in items:
+        if item.get("groups") or not (item["channel"].endswith("colour") and item.get("column")):
+            resolved.append(item)
+            continue
+        groups = await _derive_partition_colours(item["column"])
+        resolved.append({**item, "groups": groups} if groups else item)
+
+    document = legend_document(resolved)
+    try:
+        Path(file).write_text(document, encoding="utf-8")
+    except OSError as exc:
+        return fmt({"success": False, "error": f"Could not write {file}: {exc}"})
+    return fmt({"success": True, "file": file, "items": resolved})
+
+
+@_tool(name="gephi_session_receipt")
+async def gephi_session_receipt(file: str | None = None) -> str:
+    """Report how the current figure was made, ready to paste into a methods section.
+
+    Gephi does not record which layout ran with which settings, or which statistics produced which
+    columns, so six months later a figure cannot be explained or reproduced. This returns that
+    record: the visual mappings in force, the statistics run and the parameters they ran under,
+    the layout and its settings, and the plugin and server versions.
+
+    The record covers what went through these tools. Work done by hand in the Gephi window is not
+    visible here, and the receipt says so rather than letting silence read as completeness.
+    """
+    receipt: dict[str, Any] = {"success": True}
+    receipt.update(LEDGER.receipt())
+    health = await gephi.request("GET", "/health")
+    receipt["versions"] = {
+        "server": __version__,
+        "plugin": health.get("version") if isinstance(health, dict) else None,
+    }
+    if file:
+        try:
+            Path(file).write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+            receipt["file"] = file
+        except OSError as exc:
+            return fmt({"success": False, "error": f"Could not write {file}: {exc}"})
+    return fmt(receipt)
+
+
+
 
 @_tool(name="gephi_export_gexf")
 async def gephi_export_gexf(file: str | None = None) -> str:

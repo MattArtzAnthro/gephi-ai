@@ -1,0 +1,197 @@
+{
+  "schema": 1,
+  "note": "Known defects in Gephi's own statistics, surfaced alongside the numbers they affect. An entry is only asserted as live once a probe has reproduced it against a running Gephi; until then its status is 'unverified' and its text says so. Run the probe suite (tests/probes/) to update the verification blocks.",
+  "caveats": [
+    {
+      "id": "gephi-2034",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/2034"
+      ],
+      "metrics": [
+        "modularity"
+      ],
+      "applies_when": {
+        "param_not_default": {
+          "name": "resolution",
+          "default": 1.0
+        }
+      },
+      "severity": "reporting",
+      "says": "Gephi applies the modularity resolution parameter as the RECIPROCAL of the convention used in Blondel et al., the paper its own dialogue cites. A resolution reported from Gephi does not mean what a reader of that literature will take it to mean, and higher values here yield FEWER communities rather than more. The issue has been open since 2018 and concludes it cannot be changed without invalidating every value users have already recorded, so treat this as permanent. Reproduced on this Gephi on 2026-08-28.",
+      "reported_open_since": "2018-10-03",
+      "verification": {
+        "status": "reproduced",
+        "probe": "probe_gephi_2034",
+        "checked_on": "2026-08-28",
+        "evidence": "communities by resolution: {0.25: 8, 0.5: 8, 1.0: 8, 2.0: 4, 4.0: 4}; the convention expects the count to RISE with resolution, and here it goes 8 -> 4"
+      }
+    },
+    {
+      "id": "gephi-1872",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/1872"
+      ],
+      "metrics": [
+        "closeness",
+        "harmonic_closeness",
+        "avg_path_length"
+      ],
+      "applies_when": {
+        "always": true
+      },
+      "severity": "reporting",
+      "says": "Closeness centrality is normalised whether or not the normalisation checkbox was ticked, while betweenness respects the setting. Two measures from the same dialogue therefore behave differently, and a closeness value cannot be assumed to be on the scale you asked for. This one cannot be checked automatically from here, so it is reported as filed rather than confirmed.",
+      "reported_open_since": "2017-12-09",
+      "verification": {
+        "status": "not_probeable",
+        "why": "Cannot be probed through this API: confirming it needs the normalisation toggle off, and the statistics endpoint exposes no such parameter."
+      }
+    },
+    {
+      "id": "gephi-2191",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/2191"
+      ],
+      "metrics": [
+        "pagerank"
+      ],
+      "applies_when": {
+        "undirected": true
+      },
+      "severity": "wrong",
+      "says": "PageRank is reported to be computed incorrectly for undirected graphs, and this graph is undirected. Treat the values as unreliable for ranking until checked against an independent implementation. Not verified against your Gephi: run the probe suite to confirm it still holds.",
+      "reported_open_since": "2020-05-20",
+      "verification": {
+        "status": "unverified",
+        "why": "Deciding this needs an independent implementation of the measure to compare against, and a mismatch of conventions between the two would look identical to a fix. No probe is written rather than one that could give a false all-clear."
+      }
+    },
+    {
+      "id": "gephi-557",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/557",
+        "https://github.com/gephi/gephi/issues/1817"
+      ],
+      "metrics": [
+        "betweenness",
+        "closeness",
+        "harmonic_closeness",
+        "eigenvector"
+      ],
+      "applies_when": {
+        "weights_vary": true
+      },
+      "severity": "wrong",
+      "says": "This graph carries edge weights that vary, but Gephi's centrality measures are reported not to use them, so the result describes an unweighted version of your network. If the weights carry meaning, this number is not measuring what you think it measures. Open since 2012. Reproduced on this Gephi on 2026-08-28.",
+      "reported_open_since": "2012-03-14",
+      "verification": {
+        "status": "reproduced",
+        "probe": "probe_gephi_557",
+        "checked_on": "2026-08-28",
+        "evidence": "betweenness was identical after a 1000x weight change on the bridge"
+      }
+    },
+    {
+      "id": "gephi-modularity-unstable",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/2002",
+        "https://github.com/gephi/gephi/issues/2735",
+        "https://github.com/gephi/gephi/issues/2888"
+      ],
+      "metrics": [
+        "modularity"
+      ],
+      "applies_when": {
+        "always": true
+      },
+      "severity": "unstable",
+      "says": "This partition is one draw, not the answer. Gephi's community detection is reported to give different results between runs with randomisation switched off, to change with the order the node and edge tables were imported, and to change after a layout has been run, which should not touch a partition at all. Do not describe these communities as findings until you know they are stable: call gephi_community_stability to run detection repeatedly and report which groups hold up. Not verified against your Gephi: run the probe suite to confirm it still holds.",
+      "reported_open_since": "2018-08-01",
+      "verification": {
+        "status": "not_reproduced",
+        "probe": "probe_modularity_unstable",
+        "checked_on": "2026-08-28",
+        "evidence": "1 distinct partitions across 10 runs (Randomize defaults to Off, so identical runs are expected); communities before a layout = 2, after = 2"
+      }
+    },
+    {
+      "id": "gephi-2951",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/2951"
+      ],
+      "metrics": [
+        "closeness",
+        "harmonic_closeness"
+      ],
+      "applies_when": {
+        "always": true
+      },
+      "severity": "wrong",
+      "says": "Closeness centrality is reported to produce wrong results. The report is untriaged, so the conditions under which it goes wrong are not established. Not verified against your Gephi: run the probe suite to confirm it still holds.",
+      "reported_open_since": "2024-10-11",
+      "verification": {
+        "status": "unverified",
+        "why": "Deciding this needs an independent implementation of the measure to compare against, and a mismatch of conventions between the two would look identical to a fix. No probe is written rather than one that could give a false all-clear."
+      }
+    },
+    {
+      "id": "gephi-2145",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/2145"
+      ],
+      "metrics": [
+        "eigenvector"
+      ],
+      "applies_when": {
+        "always": true
+      },
+      "severity": "wrong",
+      "says": "Eigenvector centrality is reported not to be calculated properly. The report is untriaged. Check against an independent implementation before ranking on it. Not verified against your Gephi: run the probe suite to confirm it still holds.",
+      "reported_open_since": "2019-10-10",
+      "verification": {
+        "status": "unverified",
+        "why": "Deciding this needs an independent implementation of the measure to compare against, and a mismatch of conventions between the two would look identical to a fix. No probe is written rather than one that could give a false all-clear."
+      }
+    },
+    {
+      "id": "gephi-858",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/858"
+      ],
+      "metrics": [
+        "clustering_coefficient"
+      ],
+      "applies_when": {
+        "always": true
+      },
+      "severity": "wrong",
+      "says": "The average clustering coefficient is reported to be wrong. Open and untriaged since 2013. Not verified against your Gephi: run the probe suite to confirm it still holds.",
+      "reported_open_since": "2013-11-22",
+      "verification": {
+        "status": "not_reproduced",
+        "probe": "probe_gephi_858",
+        "checked_on": "2026-08-28",
+        "evidence": "an undirected triangle reported 1.0; every definition gives 1.0"
+      }
+    },
+    {
+      "id": "gephi-1784",
+      "issues": [
+        "https://github.com/gephi/gephi/issues/1784"
+      ],
+      "metrics": [
+        "betweenness"
+      ],
+      "applies_when": {
+        "always": true
+      },
+      "severity": "reporting",
+      "says": "Betweenness centrality from Gephi is reported to differ from NodeXL on the same graph, with no explanation recorded on the issue. If you are comparing figures with work done in another tool, the difference may be the tool rather than the data. This one cannot be checked automatically from here, so it is reported as filed rather than confirmed.",
+      "reported_open_since": "2017-09-16",
+      "verification": {
+        "status": "not_probeable",
+        "why": "Cannot be probed through this API: confirming it needs NodeXL, or another independent implementation, to compare against."
+      }
+    }
+  ]
+}

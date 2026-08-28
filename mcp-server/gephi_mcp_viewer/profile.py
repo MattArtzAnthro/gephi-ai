@@ -40,6 +40,24 @@ def _assortativity(edge_degree_pairs: list[tuple[int, int]]) -> float | None:
     return cov / var
 
 
+def freeman_degree_centralization(degrees: list[float], n: int) -> float | None:
+    """How concentrated degree is, against the most concentrated arrangement on n nodes.
+
+    Freeman's measure: the observed total departure from the maximum degree, over the departure
+    a star on the same number of nodes would give. 1.0 is a star, 0.0 is any graph where every
+    node has the same degree.
+
+    Returns None below three nodes, where the denominator is zero and the measure has no meaning.
+    Undefined is not the same as zero, and reporting 0.0 there would be a claim we cannot make.
+
+    Answers gephi#984, open since 2014.
+    """
+    if n < 3 or not degrees:
+        return None
+    d_max = max(degrees)
+    return sum(d_max - d for d in degrees) / ((n - 1) * (n - 2))
+
+
 def structural_profile(graph: dict) -> dict:
     """Degree, connectivity, and weight facts from a parse_gexf graph dict."""
     nodes = [n["key"] for n in graph["nodes"]]
@@ -108,6 +126,10 @@ def structural_profile(graph: dict) -> dict:
         "components": {
             "count": len(comp_sizes),
             "giant_share": round(comp_sizes[0] / n, 3) if n else 0.0,
+        },
+        "centralization": {
+            "degree": (round(dc, 3) if (dc := freeman_degree_centralization(degrees, n))
+                       is not None else None),
         },
         "isolates": isolates,
         "weighted": bool(weights) and len(set(weights)) > 1,
