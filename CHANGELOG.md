@@ -4,6 +4,17 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.14.3 / claude-plugin 1.11.5
+
+### Fixed
+- **Trackpad zoom in the in-chat view was far too sensitive.** sigma applies a
+  full zoom step (1.7x) to every wheel event, and a trackpad sends dozens of
+  small events per gesture, so a light two-finger scroll zoomed by orders of
+  magnitude. The view now handles the wheel itself: zoom scales with the
+  distance scrolled (a 120 px scroll is about 1.35x), is capped per event,
+  treats pinch a little stronger than scroll, and stays anchored at the
+  pointer.
+
 ## MCP server 1.14.2 / claude-plugin 1.11.4
 
 ### Fixed

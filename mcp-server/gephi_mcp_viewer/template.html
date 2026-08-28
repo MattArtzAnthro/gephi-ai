@@ -300,6 +300,7 @@
         return out;
       },
     });
+    installGentleWheelZoom();
     renderer.on("enterNode", ({ node }) => { hovered = node; renderer.refresh(); });
     renderer.on("leaveNode", () => { hovered = null; renderer.refresh(); });
     setupPanel();
@@ -311,6 +312,33 @@
     placeCaptions();
     requestFrameSize();
     tellModel();
+  }
+  // ── Wheel zoom that follows the gesture ──────────────────────────────
+  // sigma applies a full zoom step (x1.7) per wheel event. A trackpad sends
+  // dozens of small events per gesture, so a light scroll zoomed by orders of
+  // magnitude. This replaces it: zoom scales with the distance scrolled, is
+  // capped per event, and is anchored at the pointer. Pinch (ctrlKey) counts
+  // a little stronger than two-finger scroll.
+  function installGentleWheelZoom() {
+    const el = $("container");
+    if (el.dataset.wheel) return;
+    el.dataset.wheel = "1";
+    el.addEventListener("wheel", (e) => {
+      if (!renderer) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 16; else if (e.deltaMode === 2) dy *= 400;
+      const k = e.ctrlKey ? 0.012 : 0.0025;
+      const factor = Math.min(1.25, Math.max(0.8, Math.exp(dy * k)));
+      const cam = renderer.getCamera();
+      const st = cam.getState();
+      const newRatio = Math.min(16, Math.max(0.02, st.ratio * factor));
+      const rect = el.getBoundingClientRect();
+      const p = renderer.viewportToFramedGraph({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      const scale = newRatio / st.ratio;
+      cam.setState({ ratio: newRatio, x: p.x + (st.x - p.x) * scale, y: p.y + (st.y - p.y) * scale });
+    }, { capture: true, passive: false });
   }
   function updateMeta() {
     const meta = data.truncated
