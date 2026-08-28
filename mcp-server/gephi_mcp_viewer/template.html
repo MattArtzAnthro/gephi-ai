@@ -104,11 +104,13 @@
   let nextId = 1;
   const pending = new Map();
   let hostCtx = {};
-  function request(method, params) {
+  let hostCaps = {};
+  function request(method, params, timeoutMs) {
     return new Promise((resolve) => {
       const id = nextId++;
       pending.set(id, resolve);
       window.parent.postMessage({ jsonrpc: "2.0", id, method, params: params || {} }, "*");
+      if (timeoutMs) setTimeout(() => { if (pending.has(id)) { pending.delete(id); resolve({ isError: true, error: { message: "no answer from the host" } }); } }, timeoutMs);
     });
   }
   function notify(method, params) {
@@ -120,10 +122,13 @@
     if (m.id != null && pending.has(m.id)) {
       const p = pending.get(m.id); pending.delete(m.id);
       if (p.method === "ui/initialize") {
+        hostCaps = (m.result && m.result.hostCapabilities) || {};
         applyHostContext((m.result && m.result.hostContext) || {});
         notify("ui/notifications/initialized");
       }
-      p(m.result);
+      // A host that does not implement a method answers with a JSON-RPC error;
+      // surface it as a result the caller can test instead of a silent undefined.
+      p(m.error ? { isError: true, error: m.error } : m.result);
       return;
     }
     if (m.method === "ui/notifications/tool-result") {
@@ -335,12 +340,34 @@
     panel.style.display = "block";
     $("btn-ego").onclick = () => { setFocus([node, ...g.neighbors(node)]); renderer.refresh(); tellModel(`highlighted: "${a.label}" and its ${g.degree(node)} connections`); };
     $("btn-gephi").onclick = () => { request("tools/call", { name: "gephi_focus_view", arguments: { mode: "node", id: node, select: [node] } }); };
-    $("btn-ask").onclick = () => {
-      request("ui/message", { role: "user", content: { type: "text",
-        text: `In the current Gephi graph, tell me about the node "${a.label}" (id ${node}, degree ${g.degree(node)}): its structural role, which communities it connects, and its most important relationships.` } });
-      panel.style.display = "none";
-    };
+    $("btn-ask").onclick = () => askAbout(node, a.label, $("btn-ask"));
     tellModel(`selected node: "${a.label}" (id ${node}, degree ${g.degree(node)})`);
+  }
+  // "Ask about it": hand the question to the chat. ui/message is optional for
+  // hosts; when it is refused or unanswered, the question still reaches the
+  // model through the model context, and the text is copied so the person can
+  // paste it. The button always says what happened.
+  async function askAbout(node, label, btn) {
+    const question = `In the current Gephi graph, tell me about the node "${label}" (id ${node}, degree ${g.degree(node)}): its structural role, which communities it connects, and its most important relationships.`;
+    btn.disabled = true; btn.textContent = "Asking…";
+    const r = await request("ui/message", { role: "user", content: [{ type: "text", text: question }] }, 4000);
+    if (r && !r.isError) { btn.textContent = "Sent to chat"; setTimeout(() => { $("panel").style.display = "none"; }, 600); return; }
+    request("ui/update-model-context", { content: [{ type: "text",
+      text: `The person pressed "Ask about it" on node "${label}" (id ${node}) in the Gephi map. Their question: ${question}` }] });
+    let copied = false;
+    // Sandboxed frames may neither grant nor refuse clipboard access promptly; do not wait on it.
+    try {
+      await Promise.race([navigator.clipboard.writeText(question).then(() => { copied = true; }),
+                          new Promise((_, rej) => setTimeout(() => rej(new Error("clipboard timeout")), 800))]);
+    } catch (e) { /* clipboard blocked in this sandbox */ }
+    btn.disabled = false;
+    btn.textContent = copied ? "Copied, paste it in chat" : "Type your question in chat";
+    if (!copied) {
+      const note = document.createElement("div");
+      note.style.cssText = "margin-top:6px;font-size:12px;user-select:text;color:var(--color-text-secondary)";
+      note.textContent = question;
+      $("panel").appendChild(note);
+    }
   }
   function setupPanel() {
     renderer.on("clickNode", ({ node }) => openPanel(node));

@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "gephi-ai",
   "display_name": "Gephi AI (MCP)",
-  "version": "1.14.1",
+  "version": "1.14.2",
   "description": "Control Gephi with AI: 106 tools for network analysis plus an interactive in-chat graph viewer.",
   "long_description": "Connects Claude to Gephi Desktop through the Model Context Protocol: build, analyze, lay out, style, and export network graphs, run community detection and centrality, and render an interactive in-chat visualization (pan, zoom, cluster captions, time slider, ask-Claude-about-a-node). Requires Gephi Desktop with the Gephi AI (MCP) plugin installed and running (https://github.com/MattArtzAnthro/gephi-ai).",
   "author": {

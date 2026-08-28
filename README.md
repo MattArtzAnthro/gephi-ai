@@ -135,9 +135,35 @@ claude mcp add gephi-mcp -- uvx gephi-mcp
 
 </details>
 
-#### Other MCP clients
+#### OpenAI Codex CLI, Gemini CLI, and other MCP clients
 
-Point your client at `uvx gephi-mcp` using stdio transport. `uvx` fetches the
+The server is model-agnostic: a stdio MCP server with one launcher that works everywhere. Register it once:
+
+```bash
+codex mcp add gephi-mcp -- uvx gephi-mcp
+gemini mcp add -s user gephi-mcp uvx gephi-mcp
+```
+
+(Claude Code without the plugin: `claude mcp add gephi-mcp -- uvx gephi-mcp`.)
+
+These agents get all 106 tools. To give them the network-analysis guidance as well, copy the skill folder into your agent's skills directory:
+
+```bash
+git clone https://github.com/MattArtzAnthro/gephi-ai.git
+cp -r gephi-ai/claude-plugin/skills/gephi ~/.codex/skills/
+```
+
+| Agent | Skills directory |
+|:------|:-----------------|
+| Claude Code | install the plugin (skill, commands, and agents together) |
+| OpenAI Codex CLI | `~/.codex/skills/` |
+| Cursor | `~/.cursor/skills/` |
+| GitHub Copilot / VS Code | `~/.copilot/skills/` |
+| Shared project-level | `.agents/skills/` in your repository |
+
+The slash commands and subagents are Claude Code constructs; other agents get the skill and the tools. The repository also carries `AGENTS.md` and `GEMINI.md`, which those agents read on their own.
+
+Any other MCP client: point it at `uvx gephi-mcp` using stdio transport. `uvx` fetches the
 [`gephi-mcp` package from PyPI](https://pypi.org/project/gephi-mcp/) on first run and
 caches it. For a persistent named command, `pipx install gephi-mcp` also works.
 

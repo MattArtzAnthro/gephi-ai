@@ -4,6 +4,34 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.14.2 / claude-plugin 1.11.4
+
+### Fixed
+- **"Ask about it" in the in-chat view now always does something visible.** It
+  hands the question to the chat through the `ui/message` request, which a host
+  may decline or leave unanswered; the app ignored both, so the button appeared
+  dead in hosts that do not implement it. It now reports "Sent to chat" when the
+  host accepts, and otherwise puts the question into the model context, copies
+  it to the clipboard when the sandbox allows, and shows it in the panel so the
+  person can paste it. Host error responses are now surfaced to every request
+  rather than resolving as nothing.
+
+### Added
+- **Instructions and registration for other agents.** `AGENTS.md` and
+  `GEMINI.md` (identical) and `CLAUDE.md` at the repository root give coding
+  agents the fallback chain: use the `gephi_*` tools if present, otherwise
+  register `uvx gephi-mcp` (`claude mcp add`, `codex mcp add`,
+  `gemini mcp add -s user`), and in all cases Gephi Desktop must be running
+  with the plugin. The README gains the same commands and a table of skill
+  directories for Codex, Cursor, and Copilot, and the skill names tools by
+  their bare `gephi_*` names, with the Claude Code prefix mentioned once, so
+  its guidance reads correctly in any agent. Tests assert that the three
+  files exist, that `AGENTS.md` and `GEMINI.md` match, that the commands are
+  present, and that the skill prose carries no Claude-only prefix. The
+  registration commands for Codex and Gemini follow the forms used by the AI
+  Anthropology Toolkit; they were not run on this machine, which has neither
+  CLI installed.
+
 ## MCP server 1.14.1 / claude-plugin 1.11.3
 
 ### Fixed
