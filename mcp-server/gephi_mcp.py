@@ -32,6 +32,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gephi_mcp_viewer
 import text_network
+from community_stability import consensus
 from stats_integrity import GraphFacts, caveats_for, mutates_graph, needs_graph_facts
 
 logging.basicConfig(level=logging.INFO)
@@ -1113,6 +1114,92 @@ async def gephi_compute_modularity(resolution: float = 1.0) -> str:
                           await gephi.request("POST", "/statistics/modularity",
                                               json_data={"resolution": resolution}),
                           resolution=resolution)
+
+#: Gephi titles the community column "Modularity Class" and gives it the id "modularity_class".
+#: Which of the two a GEXF parser surfaces varies, so the read-back matches on a normalised form
+#: rather than one exact spelling. Getting this wrong is silent: the lookup finds nothing, every
+#: partition comes back empty, and a graph that was never measured reports as perfectly stable.
+_PARTITION_KEYS = {"modularityclass", "modularity"}
+
+
+def _partition_value(attributes: dict[str, Any]) -> Any:
+    """The community id on a node, however this Gephi build spelled the column."""
+    for key, value in (attributes or {}).items():
+        if str(key).replace("_", "").replace(" ", "").lower() in _PARTITION_KEYS:
+            return value
+    return None
+
+
+@_tool(name="gephi_community_stability")
+async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
+                                    consensus_column: str = "consensus_community") -> str:
+    """Run community detection repeatedly and report which groups actually hold up.
+
+    Gephi reports one partition as though it were the answer. It is one draw: the same graph run
+    again can give different communities, and the result shifts with the order the tables were
+    imported and even after a layout has run. So a partition on its own cannot support a claim
+    that a group exists. This runs detection `runs` times and measures how often each pair of
+    nodes lands together.
+
+    Returns the number of genuinely distinct partitions seen (relabellings do not count as
+    different), a stability score per node, the least stable nodes by name, and a consensus
+    partition built from the pairs that agreed more often than not. A node's stability is the
+    average decisiveness of its co-membership relations: 1.0 means every relation came out the
+    same way every time, 0.5 means its membership is undetermined.
+
+    The consensus partition is written to its own column rather than overwriting
+    `modularity_class`, so the run you already had survives (gephi#2590).
+
+    Use this before describing communities as a finding. Answers gephi#2968, which Gephi closed
+    as not planned, so nothing else in this ecosystem can tell you whether your groups are real.
+    """
+    if runs < 2:
+        return fmt({"success": False,
+                    "error": ("runs must be at least 2: a single run is the thing you already "
+                              "have, and says nothing about whether it is reproducible.")})
+
+    from gephi_mcp_viewer import parse_gexf
+
+    partitions: list[dict[str, Any]] = []
+    for _ in range(runs):
+        mod = await gephi.request("POST", "/statistics/modularity",
+                                  json_data={"resolution": resolution})
+        if not (isinstance(mod, dict) and mod.get("success")):
+            return fmt(mod)
+        exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+        if not (isinstance(exported, dict) and exported.get("success")):
+            return fmt(exported)
+        graph = parse_gexf(exported["content"], max_nodes=10**9)
+        partition = {
+            n["key"]: value
+            for n in graph["nodes"]
+            if (value := _partition_value(n.get("attributes", {}))) is not None
+        }
+        if not partition:
+            return fmt({"success": False,
+                        "error": ("Ran community detection but could not read any partition back "
+                                  "from the graph. Gephi titles the column 'Modularity Class'; if "
+                                  "this build names it something else, the read-back needs "
+                                  "updating. Reporting nothing rather than an empty result, "
+                                  "because an empty result looks exactly like a stable one.")})
+        partitions.append(partition)
+
+    result: dict[str, Any] = {"success": True, "resolution": resolution}
+    result.update(consensus(partitions))
+
+    groups = result.get("consensus_groups") or []
+    if groups:
+        await gephi.request("POST", "/graph/columns/add",
+                            json_data={"name": consensus_column, "type": "integer",
+                                       "target": "node"})
+        updates = [{"id": node, "attributes": {consensus_column: index}}
+                   for index, group in enumerate(groups) for node in group]
+        await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": updates})
+        result["consensus_column"] = consensus_column
+        result["consensus_communities"] = len(groups)
+
+    return await fmt_stat("modularity", result, resolution=resolution)
+
 
 async def _compute_profile(include_slow: bool = False) -> dict:
     """Compute the structural profile panel on the CURRENT workspace.

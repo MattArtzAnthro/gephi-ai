@@ -177,10 +177,10 @@ async def test_export_screenshot_overrides(rec):
     }
 
 
-def test_all_106_tools_registered():
+def test_all_107_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 106, f"expected 106 tools, found {len(names)}"
+    assert len(names) == 107, f"expected 107 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -192,7 +192,7 @@ def test_all_106_tools_registered():
         "gephi_detect_duplicates", "gephi_merge_nodes", "gephi_create_regex_column",
         "gephi_color_edges_by_partition", "gephi_export",
         "gephi_get_timeline", "gephi_snapshot", "gephi_undo",
-        "gephi_export_screenshot",
+        "gephi_export_screenshot", "gephi_community_stability",
     ):
         assert expected in names, f"{expected} not registered"
 
