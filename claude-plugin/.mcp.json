@@ -2,7 +2,7 @@
   "mcpServers": {
     "gephi-mcp": {
       "command": "uvx",
-      "args": ["--from", "gephi-mcp==1.15.0", "gephi-mcp"]
+      "args": ["--from", "gephi-mcp==1.16.0", "gephi-mcp"]
     }
   }
 }

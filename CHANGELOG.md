@@ -4,6 +4,30 @@ Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
 (`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.16.0 / claude-plugin 1.13.0
+
+### Added
+- **`gephi_compare_workspaces`** reports what changed between two versions of the
+  same network held in two workspaces: which nodes and edges arrived, which left,
+  and, when given a numeric column, which of the nodes present in both grew and
+  which shrank. Answering this in Gephi means exporting both sides and comparing
+  by hand. Two graphs sharing no nodes are reported as a likely identifier
+  mismatch rather than as total turnover, since that is far more often the cause.
+- **`gephi_bipartite_layout`** places each mode of a two-mode network in its own
+  column, so people-by-events or authors-by-concepts data reads as what it is
+  instead of as one undifferentiated cloud.
+- **`gephi_bipartite_projection`** collapses a two-mode network onto one mode,
+  joining nodes that share a partner and weighting by how many they share. This
+  is the standard way to analyse two-mode data as a social network and Gephi
+  cannot do it at all. The projection is built in a new workspace, so the
+  original survives alongside it.
+
+### Note
+- Gephi has no concept of a node's mode, so the column separating the two modes
+  is named by the caller. A column holding more than two values is refused rather
+  than guessed at, and an edge joining two nodes of the same mode is reported as
+  evidence the data is not bipartite rather than folded in silently.
+
 ## MCP server 1.15.0 / claude-plugin 1.12.0
 
 ### Added
