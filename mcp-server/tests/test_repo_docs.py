@@ -130,3 +130,28 @@ def test_every_surface_that_states_a_tool_count_states_the_same_one():
         f"only found {checked} tool-count claims across {len(surfaces)} surfaces; "
         "a surface stopped stating its count and would now drift unnoticed"
     )
+
+
+def test_no_skill_or_reference_names_a_tool_that_does_not_exist():
+    """The direction that is easy to skip, and where the bug was.
+
+    A tool-count tripwire and a "documented every registered tool" check both look like
+    coverage, and both are blind to the reverse: prose naming a tool that was never
+    registered. That is worse than an undocumented tool, because it sends the assistant
+    after something that cannot answer. `gephi_list_layouts` sat in the skill and the
+    layout guide through several releases; the real tool is `gephi_get_available_layouts`.
+    """
+    server = (REPO / "mcp-server" / "gephi_mcp.py").read_text(encoding="utf-8")
+    registered = set(re.findall(r'@_tool\(name="(gephi_[a-z0-9_]+)"', server))
+    assert registered, "found no @_tool registrations to compare against"
+
+    surfaces = list((REPO / "claude-plugin").rglob("*.md"))
+    assert surfaces, "found no Claude plugin markdown to check"
+
+    problems = {}
+    for path in surfaces:
+        named = set(re.findall(r"\bgephi_[a-z0-9_]+", path.read_text(encoding="utf-8")))
+        unknown = named - registered
+        if unknown:
+            problems[str(path.relative_to(REPO))] = sorted(unknown)
+    assert not problems, f"prose names tools that do not exist: {problems}"

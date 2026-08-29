@@ -1,8 +1,9 @@
 # Releasing gephi-ai
 
 Three tracks version independently: the **MCP server** (PyPI `gephi-mcp`), the
-**Gephi Java plugin** (`.nbm`), and the **Claude Code plugin** (marketplace).
-A release bumps whichever changed and publishes to every channel that serves it.
+**Gephi Java plugin** (`.nbm`), and the **assistant workflow packages** (Claude
+and Codex marketplaces, sharing one plugin version). A release bumps whichever
+changed and publishes to every channel that serves it.
 
 `scripts/check-drift.sh` is the guard — it catches the steps below that were
 skipped. This file is the how; run the script to find out what still needs doing.
@@ -22,12 +23,12 @@ the previous version without noticing.
    scripts/bump-version.sh [--server X] [--java Y] [--plugin Z]
    ```
 
-   Omit any track that did not change. This rewrites ~13 version strings across
-   11 files and verifies they agree. It does not touch the CHANGELOG or build
+   Omit any track that did not change. This rewrites the synchronized server,
+   Java, Claude, and Codex surfaces and verifies they agree. It does not touch the CHANGELOG or build
    anything.
 
 2. **Write the CHANGELOG entry** by hand, newest section at the top. Head it with
-   the tracks that moved, e.g. `## Java plugin 1.2.17 / claude-plugin 1.9.32`.
+   the tracks that moved, e.g. `## Java plugin 1.2.17 / workflow packages 1.9.32`.
 
 3. **Build and test the Java plugin** (skip if the plugin did not change):
 
@@ -66,8 +67,8 @@ the previous version without noticing.
    passed throughout.
 
 6. **Publish the server to PyPI** (skip if the server did not change). The pin in
-   `claude-plugin/.mcp.json` resolves from PyPI, so an unpublished pin is dead on
-   install for anyone who reinstalls.
+   Both plugin `.mcp.json` files resolve from PyPI, so an unpublished pin is dead
+   on install for anyone who reinstalls.
 
 7. **Build the Claude Desktop bundle** (skip if the server did not change):
 
@@ -125,6 +126,18 @@ the previous version without noticing.
    Both commands are required — updating the marketplace clone alone leaves the
    installed plugin pinned to the old version.
 
+   If the Codex marketplace is installed locally, refresh it and reinstall the
+   matching workflow package as well:
+
+   ```bash
+   codex plugin marketplace upgrade gephi-ai
+   codex plugin remove gephi-network-analysis@gephi-ai
+   codex plugin add gephi-network-analysis@gephi-ai
+   ```
+
+   Start a new task after reinstalling so Codex discovers the refreshed skills
+   and MCP registration together.
+
 11. **Verify:**
 
     ```bash
@@ -133,3 +146,25 @@ the previous version without noticing.
 
     Silence, or all `OK`, means every channel agrees. Anything else names the
     channel that is behind and the command that fixes it.
+
+12. **Exercise the plugins in a real host** (only when the plugin or the server changed).
+
+    The test suites check the package: manifests agree, versions are pinned, the
+    documented tools match the registered ones. They cannot check that a host actually
+    loads the thing, and that is a distinct failure. A Codex task has been observed
+    receiving the UI resource while none of the tools appeared, with a restart fixing
+    it, which no packaged test can see.
+
+    In a fresh task in each host, confirm:
+
+    - The MCP server initialises through the packaged `.mcp.json`.
+    - `tools/list` returns the documented number of tools, not a subset.
+    - `resources/list` includes `ui://gephi/graph-view`.
+    - `gephi_health_check` reaches Gephi Desktop and reports the expected plugin version.
+    - After fully quitting and reopening the host, a NEW task still sees both the tools
+      and the resource. First-run and second-run behaviour differ, so checking only one
+      proves only half.
+
+    Run it from the desktop application rather than an interactive shell. The shell
+    inherits a PATH the app does not, so a `uvx` entry point can work in one and fail in
+    the other, and the app is where users hit it.

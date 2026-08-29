@@ -51,6 +51,7 @@ if [ -n "$NEW_SERVER" ] && [ "$NEW_SERVER" != "$OLD_SERVER" ]; then
   echo "server  $OLD_SERVER -> $NEW_SERVER"
   sedi "s/^version = \"$OLD_SERVER\"/version = \"$NEW_SERVER\"/" mcp-server/pyproject.toml
   sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" claude-plugin/.mcp.json
+  sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" plugins/gephi-network-analysis/.mcp.json
   jset mcpb/manifest.json version "$NEW_SERVER"
   jset latest.json server "$NEW_SERVER"
 fi
@@ -66,8 +67,11 @@ fi
 if [ -n "$NEW_PLUGIN" ] && [ "$NEW_PLUGIN" != "$OLD_PLUGIN" ]; then
   echo "plugin  $OLD_PLUGIN -> $NEW_PLUGIN"
   jset claude-plugin/.claude-plugin/plugin.json version "$NEW_PLUGIN"
+  jset plugins/gephi-network-analysis/.codex-plugin/plugin.json version "$NEW_PLUGIN"
   sedi "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" claude-plugin/skills/gephi/SKILL.md
   sedi "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" claude-plugin/skills/gephi/SKILL.md
+  sedi "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" plugins/gephi-network-analysis/skills/gephi/SKILL.md
+  sedi "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" plugins/gephi-network-analysis/skills/gephi/SKILL.md
   jset latest.json plugin "$NEW_PLUGIN"
   # marketplace.json carries the plugin version in TWO fields
   python3 - "$NEW_PLUGIN" <<'PY'
@@ -88,6 +92,7 @@ fail=0
 check() { [ "$2" = "$3" ] || { echo "  MISMATCH $1: '$2' != '$3'"; fail=1; }; }
 echo "--- verify ---"
 check ".mcp.json pin"      "$(python3 -c "import json;print(json.load(open('claude-plugin/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
+check "Codex .mcp.json pin" "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
 check "mcpb manifest"      "$(python3 -c "import json;print(json.load(open('mcpb/manifest.json'))['version'])")" "$S"
 check "latest.json server" "$(python3 -c "import json;print(json.load(open('latest.json'))['server'])")" "$S"
 # /health reads its version from the module manifest, which nbm-maven-plugin generates from
@@ -102,6 +107,8 @@ fi
 check "README nbm"         "$(grep -oE 'gephi-ai-[0-9.]+\.nbm' README.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
 check "latest.json nbm"    "$(python3 -c "import json;print(json.load(open('latest.json'))['nbm'])")" "$J"
 check "SKILL version"      "$(grep -m1 'version:' claude-plugin/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
+check "Codex manifest"     "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.codex-plugin/plugin.json'))['version'])")" "$P"
+check "Codex SKILL"        "$(grep -m1 'version:' plugins/gephi-network-analysis/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
 check "latest.json plugin" "$(python3 -c "import json;print(json.load(open('latest.json'))['plugin'])")" "$P"
 check "marketplace.json"   "$(python3 -c "import json;print(json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'])")" "$P"
 [ "$fail" = 0 ] && echo "  OK  server=$S java=$J plugin=$P — all surfaces consistent" || { echo "  FAILED"; exit 1; }

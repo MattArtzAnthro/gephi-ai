@@ -3,9 +3,9 @@ name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
   this skill provides workflows and best practices for the 112 Gephi AI tools.
-  Triggered when the user mentions Gephi, network analysis, graph visualization,
-  community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
+  Trigger when the user mentions Gephi, network analysis, graph visualization,
+  community detection, social network analysis, graph metrics, or asks to build,
+  analyze, style, teach from, or export a network in Gephi.
 metadata:
   author: Matt Artz
   version: "1.14.0"
@@ -15,7 +15,7 @@ metadata:
 
 *Skill version 1.14.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
-You have access to 112 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__gephi-mcp__gephi_*`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 112 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; fully-qualified names may include a server namespace) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 
@@ -55,7 +55,7 @@ You have access to 112 MCP tools from the `gephi-mcp` server (tool names start w
 6. **Style** — color by partition, size by ranking. With community colors applied, tint edges by their source (`edge.color` set to `source`, `edge.opacity` 30-40) so edges carry community identity without noise. Exception: dense word co-occurrence graphs (text networks) — per-source edge coloring adds a second visual dimension on top of an already-high edge count and reads as busier, not clearer; use a flat neutral gray instead (see references/text-network-analysis.md).
 7. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"` (linLogMode true, gravity 0), then run `gephi_visual_qa` and export a small PNG to inspect; fix every warning and adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
 8. **Preview** — `gephi_set_preview_settings` for export appearance
-9. **Export** — size the canvas to the layout shape using `extent.suggested_export` from `gephi_visual_qa`, then `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation (pass `caption_column` for floating cluster captions; the app offers per-node ask-Claude, ego highlighting, in-place refresh, and a time slider on dynamic graphs); use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
+9. **Export** — size the canvas to the layout shape using `extent.suggested_export` from `gephi_visual_qa`, then `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. In hosts that support MCP Apps, prefer `gephi_view_graph` for interactive exploration — it renders an inline view with cluster captions, node questions, ego highlighting, refresh, and a time slider on dynamic graphs; use `gephi_export_png` for publication stills. When the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data instead of settling for a static PNG — reserve PNG for publication exports.
 
 ## Teaching Mode (watch-along sessions)
 
@@ -64,8 +64,8 @@ analysis), switch to narrated pacing: announce each step and what to watch for
 BEFORE doing it; use `gephi_focus_view` to direct their eyes (fit graph after
 import/layout, center+select a cluster before discussing it); run layouts in
 200-300 iteration chunks with narration between passes instead of one long blast;
-pause after each visible change and invite their observations. The /teach command
-codifies the full pattern. Watching the instrument operate is the pedagogy — never
+pause after each visible change and invite their observations. The companion
+`teach-with-gephi` skill codifies the full pattern. Watching the instrument operate is the pedagogy — never
 do anything the viewer can't follow.
 
 **The person can point back.** `gephi_get_selection` reads what they have selected
@@ -181,7 +181,7 @@ gephi-ai drives Gephi's plugin ecosystem, not just its built-ins (verified live)
 ## From Files to Networks (recipes)
 
 Any data the conversation can read becomes a graph — no importer plugin needed.
-With a file path (Claude Code / Cowork): `gephi_import_file` handles GEXF,
+With a local file path available to the host: `gephi_import_file` handles GEXF,
 GraphML, GML, CSV, DOT, Pajek. Without a path (attachment in chat, API data,
 pasted table): parse it yourself and batch `gephi_add_nodes` + `gephi_add_edges`
 (chunk a few hundred per call). Shapes:

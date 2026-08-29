@@ -1,0 +1,20 @@
+{
+  "name": "gephi-ai",
+  "interface": {
+    "displayName": "Gephi AI"
+  },
+  "plugins": [
+    {
+      "name": "gephi-network-analysis",
+      "source": {
+        "source": "local",
+        "path": "./plugins/gephi-network-analysis"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

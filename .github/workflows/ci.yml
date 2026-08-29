@@ -41,3 +41,16 @@ jobs:
       - name: Test
         working-directory: mcp-server
         run: python -m pytest -q
+
+  codex-plugin:
+    name: Codex plugin (manifest + parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install validator dependency
+        run: pip install PyYAML
+      - name: Validate package and Claude-to-Codex parity
+        run: python -m unittest discover -s plugins/gephi-network-analysis/tests -v

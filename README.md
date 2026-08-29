@@ -32,7 +32,8 @@ Built for researchers working across network science and AI.
 
 ## Architecture
 
-Three components connect your AI assistant to Gephi Desktop:
+Three runtime components connect your AI assistant to Gephi Desktop, with
+host-specific plugin packages adding guided workflows:
 
 ```
 Claude / AI Assistant
@@ -52,7 +53,8 @@ Claude / AI Assistant
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-ai-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
 | MCP Server | `mcp-server/` | Python server that exposes 112 Gephi tools via MCP |
-| Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
+| Claude Plugin | `claude-plugin/` | Skills, commands, agents, and hooks for Claude Code |
+| Codex Plugin | `plugins/gephi-network-analysis/` | Skills and bundled MCP registration for Codex |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
 
@@ -80,7 +82,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 - [Gephi Desktop](https://gephi.org/users/download/) 0.11.1+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (runs the MCP server; one-line install, manages Python for you)
-- [Claude Code](https://claude.ai/code) or [Claude Desktop](https://claude.ai/download) (for AI interaction)
+- [Claude Code](https://claude.ai/code), [Claude Desktop](https://claude.ai/download), or OpenAI Codex (for AI interaction)
 
 ### Step 1: Install the Gephi plugin
 
@@ -143,12 +145,35 @@ claude mcp add gephi-mcp -- uvx gephi-mcp
 
 </details>
 
-#### OpenAI Codex CLI, Gemini CLI, and other MCP clients
+#### OpenAI Codex (plugin package)
+
+The Codex package bundles the MCP registration, the complete Gephi reference
+skill, and focused workflow skills corresponding to every Claude slash command
+and custom agent:
+
+```bash
+codex plugin marketplace add MattArtzAnthro/gephi-ai --ref main
+codex plugin add gephi-network-analysis@gephi-ai
+```
+
+Start a new Codex task after installation so the plugin and its skills are
+discovered together. The source package is in `plugins/gephi-network-analysis/`
+and the repo marketplace is `.agents/plugins/marketplace.json`.
+
+<details>
+<summary>Codex with MCP tools only (no plugin workflows)</summary>
+
+```bash
+codex mcp add gephi-mcp -- uvx gephi-mcp
+```
+
+</details>
+
+#### Gemini CLI and other MCP clients
 
 The server is model-agnostic: a stdio MCP server with one launcher that works everywhere. Register it once:
 
 ```bash
-codex mcp add gephi-mcp -- uvx gephi-mcp
 gemini mcp add -s user gephi-mcp uvx gephi-mcp
 ```
 
@@ -164,12 +189,15 @@ cp -r gephi-ai/claude-plugin/skills/gephi ~/.codex/skills/
 | Agent | Skills directory |
 |:------|:-----------------|
 | Claude Code | install the plugin (skill, commands, and agents together) |
-| OpenAI Codex CLI | `~/.codex/skills/` |
+| OpenAI Codex | install the Codex plugin above; `~/.codex/skills/` also accepts the portable base skill |
 | Cursor | `~/.cursor/skills/` |
 | GitHub Copilot / VS Code | `~/.copilot/skills/` |
 | Shared project-level | `.agents/skills/` in your repository |
 
-The slash commands and subagents are Claude Code constructs; other agents get the skill and the tools. The repository also carries `AGENTS.md` and `GEMINI.md`, which those agents read on their own.
+The Codex plugin translates the slash-command and custom-agent procedures into
+ordinary triggerable skills. Other agents get the portable base skill and the
+tools. The repository also carries `AGENTS.md` and `GEMINI.md`, which those agents
+read on their own.
 
 Any other MCP client: point it at `uvx gephi-mcp` using stdio transport. `uvx` fetches the
 [`gephi-mcp` package from PyPI](https://pypi.org/project/gephi-mcp/) on first run and
@@ -222,16 +250,18 @@ is missing), run the update below once to catch up. Updating is safe to do anyti
 
 `gephi_health_check` reports both the Gephi plugin version and the MCP server version, and says whether they are up to date, so you can see at a glance what you are running.
 
-## What the Claude Code plugin adds
+## What the assistant plugins add
 
-The plugin (`claude-plugin/`) goes beyond raw MCP tools:
+Both host packages go beyond raw MCP tools. Claude uses slash commands, custom
+agents, and a health hook; Codex expresses the same procedures as focused skills
+and makes the health check the mandatory first workflow step.
 
 | Component | What it does |
 |-----------|-------------|
-| **Slash commands** | `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/export-map`, `/import-and-explore`, `/explore`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual` |
-| **Agents** | Subagents that run multi-step work in their own context and return just the result: `network-analyst` (structural interpretation), `claim-verifier` (independently checks one claim — confirmed / refuted / can't-tell, with the number), `layout-iterator` (runs the `/visualize` loop to a publication-ready map), `text-network-builder` (turns free text into a word co-occurrence network) |
-| **Gephi skill** | Teaches Claude network science workflows, visualization best practices, and known Gephi gotchas |
-| **Health-check hook** | Automatically verifies Gephi is running before graph-modifying operations |
+| **Guided workflows** | Analysis, communities, centrality, visualization, export, import/explore, claim verification, text networks, teaching, and counterfactuals |
+| **Specialized procedures** | Structural interpretation, independent claim verification, iterative layout QA, and tuned text-network construction |
+| **Gephi skill** | Teaches network-science workflows, visualization best practices, and known Gephi gotchas |
+| **Health gate** | Verifies Gephi is running before operational work begins |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
 ## Tools (112)
@@ -281,7 +311,8 @@ The plugin (`claude-plugin/`) goes beyond raw MCP tools:
 
 ## Documentation
 
-Reference guides are in `claude-plugin/skills/gephi/`:
+Reference guides are shared in `claude-plugin/skills/gephi/` and mirrored in
+`plugins/gephi-network-analysis/skills/gephi/` for the installable Codex package:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
 - **references/tool-reference.md** — Complete API reference for all 112 tools

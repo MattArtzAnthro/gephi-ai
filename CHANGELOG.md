@@ -1,8 +1,19 @@
 # Changelog
 
-Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
-(`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
-(`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
+Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
+(`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
+packages. Format follows [Keep a Changelog](https://keepachangelog.com).
+
+## Unreleased
+
+### Added
+- **A first-class Codex plugin package.** `plugins/gephi-network-analysis/`
+  bundles the pinned local MCP server, the complete Gephi reference skill, and
+  focused Codex skills replacing all eleven Claude slash commands and four custom
+  agents. `.agents/plugins/marketplace.json` makes the package installable from
+  this repository.
+- **Codex package validation.** CI checks manifest/marketplace consistency,
+  skill frontmatter, command-to-skill parity, and synchronized plugin/MCP versions.
 
 ## Java plugin 1.3.0 / MCP server 1.17.0 / claude-plugin 1.14.0
 

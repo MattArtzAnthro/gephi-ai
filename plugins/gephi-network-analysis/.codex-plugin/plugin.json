@@ -1,0 +1,38 @@
+{
+  "name": "gephi-network-analysis",
+  "version": "1.14.0",
+  "description": "AI-powered network analysis, visualization, and export using Gephi Desktop through 112 local MCP tools and guided workflows.",
+  "author": {
+    "name": "Matt Artz",
+    "url": "https://www.mattartz.me"
+  },
+  "homepage": "https://github.com/MattArtzAnthro/gephi-ai",
+  "repository": "https://github.com/MattArtzAnthro/gephi-ai",
+  "license": "Apache-2.0",
+  "keywords": [
+    "gephi",
+    "network-analysis",
+    "graph",
+    "visualization",
+    "social-network-analysis",
+    "community-detection",
+    "centrality"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Gephi Network Analysis",
+    "shortDescription": "Build, analyze, visualize, and export Gephi networks",
+    "longDescription": "Control a local Gephi Desktop session with 112 MCP tools and rigorous workflows for exploration, statistics, community detection, centrality, text networks, claim verification, layout iteration, teaching, and publication exports.",
+    "developerName": "Matt Artz",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://github.com/MattArtzAnthro/gephi-ai",
+    "defaultPrompt": [
+      "Explore the network currently open in Gephi.",
+      "Analyze this network and identify its key structural patterns.",
+      "Turn this text into a network and visualize it in Gephi."
+    ],
+    "brandColor": "#6A46A5"
+  },
+  "mcpServers": "./.mcp.json"
+}
