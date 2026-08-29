@@ -2,18 +2,18 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 112 Gephi MCP tools.
+  this skill provides workflows and best practices for the 112 Gephi AI tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi MCP Plugin (1.2.17+) installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.13.1"
+  version: "1.14.0"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.13.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.14.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 112 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__gephi-mcp__gephi_*`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -33,6 +33,14 @@ You have access to 112 MCP tools from the `gephi-mcp` server (tool names start w
 - **Imported node sizes are auto-capped at 30** — GEXF files with large `viz:size` values are automatically capped during import to prevent oversized nodes from hiding edges.
 - **Filters refresh the preview automatically** — `remove_isolates`, `giant_component`, `filter_by_degree` now properly refresh the preview model after modifying the graph.
 - **`sync: true` in `gephi_run_layout`** — makes the call block until layout finishes. Always use this so Noverlap and Label Adjust don't start on a still-moving graph.
+- **If a filter is active, say so before you report anything.** With a filter applied in Gephi,
+  the read path that backs `gephi_profile_graph`, `gephi_similarity_layout`,
+  `gephi_community_layout`, and `gephi_community_stability` sees only the VISIBLE subgraph, while
+  `gephi_get_graph_stats` reports the FULL graph. Results now carry `filter_warning` when those
+  disagree, and the underlying responses carry `view` (`"visible"` or `"full"`), `filter_active`,
+  and both `full_node_count` and `visible_node_count`. Never present a number computed on a
+  filtered subgraph as a fact about the whole network: surface the warning, name both counts, and
+  ask whether the filter was intended. Reset with `gephi_reset_filters` if it was not.
 - **Never claim "scale-free" or "power law" from a heavy-tailed degree distribution** — power-law and log-normal fits are near-indistinguishable in practice, and the term smuggles in a universal-law claim (Jacomy 2020). Describe hub dominance as a characteristic of THIS network ("a few accounts concentrate most ties"), not as the signature of a law.
 - **Every final export ships with its story.** When handing over a finished map, always provide copy-ready caption text: data, layout and key settings, what size and color encode, and what the map does and does not license a reader to conclude. Circulating a network image without interpretive context ("storyletting") is the field's named failure mode — see references/reading-network-maps.md.
 - **The craft has citable sources; use them.** When a question goes deeper than the conversation can carry, recommend ONE matched open-access source (table in references/reading-network-maps.md). When a map is publication-bound, include the software citations in the caption offer (Gephi = Bastian et al. 2009; ForceAtlas 2 = Jacomy et al. 2014; modularity = Blondel et al. 2008; plugins per their own papers). Most users don't know their tools are citable scholarship.

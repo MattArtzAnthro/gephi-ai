@@ -2,7 +2,7 @@
 
 This repository ships an MCP server (`gephi-mcp` on PyPI) that controls a
 running Gephi Desktop through a local HTTP API provided by the Gephi AI plugin
-(`gephi-mcp-<version>.nbm`), plus a portable skill that teaches network-analysis
+(`gephi-ai-<version>.nbm`), plus a portable skill that teaches network-analysis
 practice. The server exposes 112 tools whose names start with `gephi_`
 (Claude Code shows them as `mcp__gephi-mcp__gephi_*`).
 
@@ -77,7 +77,7 @@ claude plugin marketplace add MattArtzAnthro/gephi-ai
 claude plugin install gephi-network-analysis@gephi-ai
 ```
 
-Repository layout: `gephi-mcp-plugin/` (Java, the Gephi side), `mcp-server/`
+Repository layout: `gephi-ai-plugin/` (Java, the Gephi side), `mcp-server/`
 (Python, the MCP side; tests in `mcp-server/tests/`), `claude-plugin/` (skill,
 commands, agents). `RELEASING.md` is the release procedure and
 `scripts/check-drift.sh` reports which channel is behind.

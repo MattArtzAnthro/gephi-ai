@@ -88,3 +88,45 @@ def test_the_readme_category_counts_add_up_to_the_number_of_tools():
         f"category counts sum to {sum(int(n) for n in rows)} but the heading says {heading_count}")
     assert heading_count == len(_registered_tools()), (
         f"README says {heading_count} tools; {len(_registered_tools())} are registered")
+
+
+def test_every_surface_that_states_a_tool_count_states_the_same_one():
+    """A stale tool count is a claim about capability that a reader acts on.
+
+    The count lives on nine surfaces. It drifted once already: plugin.json said
+    106 while the other eight said 112, because the release sweep covered seven
+    files and nobody had counted the ones outside it. This test derives the truth
+    from the registrations and holds every surface to it, so the next surface that
+    lags fails here rather than misinforming an agent about what it can do.
+    """
+    import json
+
+    source = (REPO / "mcp-server" / "gephi_mcp.py").read_text(encoding="utf-8")
+    actual = source.count("@_tool(name=")
+    assert actual > 0, "could not count @_tool registrations"
+
+    surfaces = {
+        "README.md": _read("README.md"),
+        "CLAUDE.md": _read("CLAUDE.md"),
+        "AGENTS.md": _read("AGENTS.md"),
+        "GEMINI.md": _read("GEMINI.md"),
+        "mcp-server/README.md": _read("mcp-server/README.md"),
+        "mcpb/manifest.json": _read("mcpb/manifest.json"),
+        "claude-plugin/skills/gephi/SKILL.md": _read("claude-plugin/skills/gephi/SKILL.md"),
+        "claude-plugin/.claude-plugin/plugin.json": _read(
+            "claude-plugin/.claude-plugin/plugin.json"
+        ),
+    }
+
+    pattern = re.compile(r"\b(\d{2,4})\s+(?:MCP\s+)?tools\b")
+    checked = 0
+    for name, text in surfaces.items():
+        for found in pattern.findall(text):
+            checked += 1
+            assert int(found) == actual, (
+                f"{name} claims {found} tools; the server registers {actual}"
+            )
+    assert checked >= len(surfaces), (
+        f"only found {checked} tool-count claims across {len(surfaces)} surfaces; "
+        "a surface stopped stating its count and would now drift unnoticed"
+    )

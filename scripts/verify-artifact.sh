@@ -18,11 +18,34 @@ FAIL=0
 say() { printf '  %s\n' "$1"; }
 bad() { printf '  FAIL: %s\n' "$1"; FAIL=1; }
 
-echo "Building the wheel..."
+echo "Building the distributions..."
 rm -rf mcp-server/dist
-(cd mcp-server && uv build --wheel >/dev/null 2>&1)
+# Build BOTH. Checking only the wheel is how caveats.local.json reached PyPI in the
+# 1.16.1 sdist: the exclude was set on the wheel target alone, the wheel verified clean,
+# and the sdist shipped one machine's probe verdicts to every user. A release publishes
+# both artifacts, so verification has to read both.
+(cd mcp-server && uv build >/dev/null 2>&1)
 WHEEL=$(ls mcp-server/dist/*.whl)
+SDIST=$(ls mcp-server/dist/*.tar.gz)
 say "built $(basename "$WHEEL")"
+say "built $(basename "$SDIST")"
+
+python3 - "$SDIST" <<'PYSDIST' || FAIL=1
+import sys, tarfile
+names = tarfile.open(sys.argv[1]).getnames()
+ok = True
+if any(n.endswith("caveats.local.json") for n in names):
+    print("  FAIL: caveats.local.json is in the sdist — one machine's verdicts would ship to every user")
+    ok = False
+else:
+    print("  no local probe overlay in the sdist")
+if not any(n.endswith("caveats.json") and not n.endswith("caveats.local.json") for n in names):
+    print("  FAIL: caveats.json is MISSING from the sdist")
+    ok = False
+else:
+    print("  caveats.json is present in the sdist")
+sys.exit(0 if ok else 1)
+PYSDIST
 
 echo
 echo "Inspecting the artifact:"

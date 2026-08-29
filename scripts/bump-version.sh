@@ -35,7 +35,7 @@ done
 
 # Current versions from each track's source of truth.
 OLD_SERVER=$(grep -m1 '^version = ' mcp-server/pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-OLD_JAVA=$(grep -m1 '<version>' gephi-mcp-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+OLD_JAVA=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 OLD_PLUGIN=$(python3 -c "import json;print(json.load(open('claude-plugin/.claude-plugin/plugin.json'))['version'])")
 
 jset() { # jset <file> <key> <value>  (safe JSON field write)
@@ -57,11 +57,9 @@ fi
 
 if [ -n "$NEW_JAVA" ] && [ "$NEW_JAVA" != "$OLD_JAVA" ]; then
   echo "java    $OLD_JAVA -> $NEW_JAVA"
-  sedi "s|<version>$OLD_JAVA</version>|<version>$NEW_JAVA</version>|" gephi-mcp-plugin/pom.xml
-  sedi "s/\"version\", \"$OLD_JAVA\"/\"version\", \"$NEW_JAVA\"/" \
-    gephi-mcp-plugin/src/main/java/org/gephi/plugins/mcp/api/GephiAPIServer.java
-  sedi "s/gephi-mcp-$OLD_JAVA\.nbm/gephi-mcp-$NEW_JAVA.nbm/g" README.md
-  sedi "s/Gephi MCP Plugin ($OLD_JAVA+)/Gephi MCP Plugin ($NEW_JAVA+)/" claude-plugin/skills/gephi/SKILL.md
+  sedi "s|<version>$OLD_JAVA</version>|<version>$NEW_JAVA</version>|" gephi-ai-plugin/pom.xml
+  sedi "s/gephi-ai-$OLD_JAVA\.nbm/gephi-ai-$NEW_JAVA.nbm/g" README.md
+  sedi "s/Gephi AI Plugin ($OLD_JAVA+)/Gephi AI Plugin ($NEW_JAVA+)/" claude-plugin/skills/gephi/SKILL.md
   jset latest.json nbm "$NEW_JAVA"
 fi
 
@@ -84,7 +82,7 @@ fi
 
 # ---- verify every surface agrees ----
 S=$(grep -m1 '^version = ' mcp-server/pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-J=$(grep -m1 '<version>' gephi-mcp-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+J=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 P=$(python3 -c "import json;print(json.load(open('claude-plugin/.claude-plugin/plugin.json'))['version'])")
 fail=0
 check() { [ "$2" = "$3" ] || { echo "  MISMATCH $1: '$2' != '$3'"; fail=1; }; }
@@ -92,8 +90,16 @@ echo "--- verify ---"
 check ".mcp.json pin"      "$(python3 -c "import json;print(json.load(open('claude-plugin/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
 check "mcpb manifest"      "$(python3 -c "import json;print(json.load(open('mcpb/manifest.json'))['version'])")" "$S"
 check "latest.json server" "$(python3 -c "import json;print(json.load(open('latest.json'))['server'])")" "$S"
-check "health string"      "$(grep -oE '\"version\", \"[0-9.]+\"' gephi-mcp-plugin/src/main/java/org/gephi/plugins/mcp/api/GephiAPIServer.java | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
-check "README nbm"         "$(grep -oE 'gephi-mcp-[0-9.]+\.nbm' README.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
+# /health reads its version from the module manifest, which nbm-maven-plugin generates from
+# the POM, so there is nothing to sweep here. What must stay true is that nobody reintroduces
+# a literal — that is the drift this check used to chase.
+if grep -qE '"version", "[0-9]+\.[0-9]+\.[0-9]+"' gephi-ai-plugin/src/main/java/org/gephi/plugins/mcp/api/GephiAPIServer.java; then
+  echo "  HARDCODED version in GephiAPIServer.java; /health should call moduleVersion()"
+  fail=1
+else
+  echo "  OK  health version is read from the module manifest, not hardcoded"
+fi
+check "README nbm"         "$(grep -oE 'gephi-ai-[0-9.]+\.nbm' README.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
 check "latest.json nbm"    "$(python3 -c "import json;print(json.load(open('latest.json'))['nbm'])")" "$J"
 check "SKILL version"      "$(grep -m1 'version:' claude-plugin/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
 check "latest.json plugin" "$(python3 -c "import json;print(json.load(open('latest.json'))['plugin'])")" "$P"

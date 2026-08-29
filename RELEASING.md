@@ -32,7 +32,7 @@ the previous version without noticing.
 3. **Build and test the Java plugin** (skip if the plugin did not change):
 
    ```bash
-   mvn -f gephi-mcp-plugin/pom.xml clean package
+   mvn -f gephi-ai-plugin/pom.xml clean package
    ```
 
    `package` auto-deploys the jar into
@@ -44,8 +44,8 @@ the previous version without noticing.
    fallback, so it must match the build:
 
    ```bash
-   cp gephi-mcp-plugin/target/gephi-mcp-<java-version>.nbm .
-   git rm gephi-mcp-<old-version>.nbm
+   cp gephi-ai-plugin/target/gephi-ai-<java-version>.nbm .
+   git rm gephi-ai-<old-version>.nbm
    ```
 
 5. **Verify the artifact before publishing it.**
@@ -85,7 +85,7 @@ the previous version without noticing.
    ```bash
    gh release create v<server-version> \
      gephi-ai-<server-version>.mcpb \
-     gephi-mcp-<java-version>.nbm \
+     gephi-ai-<java-version>.nbm \
      --title "v<server-version> — <short theme>" \
      --notes-file <notes>
    ```

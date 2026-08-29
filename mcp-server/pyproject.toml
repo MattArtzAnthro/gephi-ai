@@ -1,6 +1,6 @@
 [project]
 name = "gephi-mcp"
-version = "1.16.1"
+version = "1.17.0"
 description = "MCP Server for controlling Gephi Desktop via remote API"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -49,10 +49,19 @@ gephi-mcp = "gephi_mcp:mcp.run"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Probe verdicts describe one install and must never be published as a claim about
+# every install. This exclude lives at the shared [tool.hatch.build] level, not on a
+# single target: it was set on the wheel alone, so the wheel was clean while the sdist
+# shipped the overlay off disk, and being gitignored does not keep a file out of an
+# sdist. Every target inherits it here.
+[tool.hatch.build]
+exclude = ["caveats.local.json"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["."]
-# Probe verdicts describe one install and must never be published as a claim
-# about every install.
+exclude = ["caveats.local.json"]
+
+[tool.hatch.build.targets.sdist]
 exclude = ["caveats.local.json"]
 
 [tool.ruff]

@@ -1,4 +1,4 @@
-# Gephi MCP Tool Reference
+# Gephi AI Tool Reference
 
 Complete catalog of all MCP tools for controlling Gephi Desktop.
 

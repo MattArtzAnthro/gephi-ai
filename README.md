@@ -50,16 +50,19 @@ Claude / AI Assistant
 
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
-| Gephi Plugin | `gephi-mcp-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
+| Gephi Plugin | `gephi-ai-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
 | MCP Server | `mcp-server/` | Python server that exposes 112 Gephi tools via MCP |
 | Claude Plugin | `claude-plugin/` | Skills, commands, agent, and hooks for Claude Code |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
 
-> **Security note:** the plugin's HTTP API binds to `127.0.0.1` only, validates the
-> request `Host` header (DNS-rebinding defense), and sends no CORS headers — it is
-> reachable only by local processes such as the MCP server, never by a web page.
-> It is not authenticated, so do not expose port 8080 beyond localhost.
+> **Security note:** the plugin's HTTP API binds to `127.0.0.1` only. It refuses any
+> request whose `Host` header is not a loopback address, which blocks DNS rebinding, and
+> any request carrying `Origin` or `Sec-Fetch-Site`, which blocks a page you are merely
+> visiting from driving Gephi with a cross-origin `fetch`. Browsers set those headers on
+> every request and page JavaScript cannot forge them; local clients send neither, which
+> is why a browser gets `403` and the MCP server does not. Beyond that it is not
+> authenticated, so any process running as you can use it. Do not expose port 8080.
 
 > **macOS note:** older plugin versions could wedge Gephi during sustained writes
 > against a large rendered graph (calls hang; only `gephi_health_check` answers).
@@ -83,11 +86,16 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-mcp-1.2.17.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-ai-1.3.0.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
-**Verify:** Open a browser to `http://127.0.0.1:8080/health` — you should see `{"success": true}`.
+**Verify:** in a terminal, run `curl http://127.0.0.1:8080/health`. You should see
+`"service": "Gephi AI API"` and `"status": "running"`. You can also open **Tools > Gephi AI
+Server** in Gephi, which shows the same state and lets you stop, start, or change the port.
+
+Opening that URL in a browser deliberately returns `403 Forbidden`. The API refuses browsers
+so that a page you happen to be visiting cannot drive Gephi; see the security note above.
 
 ### Step 2: Connect your AI assistant
 
@@ -207,6 +215,10 @@ is missing), run the update below once to catch up. Updating is safe to do anyti
 - **Switching connection methods:** remove the old one first (bundle: uninstall in Settings > Extensions; config file: delete the `gephi-mcp` block). Two methods at once means two servers and duplicated tools.
 - **Cowork:** Cowork keeps its own copy of plugins, separate from Claude Code — updating one does not update the other. If Cowork's commands look older than this README (for example, no `/teach`), ask Cowork itself to update the gephi-network-analysis plugin, then fully quit and reopen the app.
 - **Gephi plugin:** install the newest `.nbm` from Releases via Tools > Plugins > Downloaded and restart Gephi.
+  - **Upgrading from 1.2.x, one time only:** the plugin was renamed to Gephi AI and its module
+    identifier changed, so 1.3.0 installs alongside the old plugin instead of replacing it, and
+    both will try to bind port 8080. In Gephi, open **Tools > Plugins > Installed**, uninstall
+    **Gephi AI (MCP)**, restart, then install the new `.nbm`. Later updates replace normally.
 
 `gephi_health_check` reports both the Gephi plugin version and the MCP server version, and says whether they are up to date, so you can see at a glance what you are running.
 
@@ -287,8 +299,8 @@ Reference guides are in `claude-plugin/skills/gephi/`:
 Building the Gephi plugin from source requires JDK 11+ and Maven:
 
 ```bash
-cd gephi-mcp-plugin
-mvn clean package    # output: target/gephi-mcp-<version>.nbm, auto-deployed to Gephi's modules dir
+cd gephi-ai-plugin
+mvn clean package    # output: target/gephi-ai-<version>.nbm, auto-deployed to Gephi's modules dir
 ```
 
 **Fully quit and reopen Gephi after every rebuild, even mid-session.** Gephi lazily

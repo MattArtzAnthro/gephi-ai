@@ -1,8 +1,98 @@
 # Changelog
 
 Notable changes to **gephi-ai**. Versions apply together to the Gephi plugin
-(`gephi-mcp-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
+(`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude Code plugin
 (`claude-plugin/`). Format follows [Keep a Changelog](https://keepachangelog.com).
+
+## Java plugin 1.3.0 / MCP server 1.17.0 / claude-plugin 1.14.0
+
+The Gephi plugin is now named **Gephi AI**. The module identifier changed from
+`gephi-mcp` to `gephi-ai`, so this is a fresh install rather than an upgrade:
+remove the old "Gephi AI (MCP)" module before installing, or Gephi will load both
+and they will contend for the same port. Future updates upgrade normally. The
+PyPI package is unchanged and is still `gephi-mcp`.
+
+### Security
+- **A web page you visited could drive the API.** The only guard was the `Host`
+  header, which blocks DNS rebinding but not an ordinary cross-origin `fetch`:
+  the browser sends a loopback `Host`, a `text/plain` body is CORS-safelisted so
+  no preflight is issued, and although CORS hides the reply the side effect has
+  already happened. `POST /graph/clear` and the export endpoints, which write to
+  a caller-supplied path, were reachable that way. Requests carrying `Origin` or
+  `Sec-Fetch-Site` are now refused; browsers set both and page JavaScript can
+  forge neither, while local clients send neither.
+
+### Added
+- **A user interface.** Tools, Gephi AI Server shows whether the server is
+  running and on which URL, starts and stops it, and changes the port without
+  editing `gephi.conf`. A failed bind now raises a visible dialog instead of
+  dying silently in the log, which mattered because port 8080 is contested.
+- **Read and export views are now declared.** Responses carry `view`,
+  `filter_active`, and, when a filter is active, both the full and visible node
+  and edge counts. An optional `visible` parameter chooses the view; every
+  endpoint keeps the view it used before when the parameter is absent.
+
+### Fixed
+- **Stopping and restarting the server from the Tools menu broke every later layout.**
+  Stopping shut down the layout executor for good, and because the service is a singleton,
+  starting again handed back the same dead one. Every subsequent layout failed for the rest
+  of the session, reported only as "Layout already running".
+- **Importing a file silently rewrote the sizes in it.** Every imported node above size 30
+  was clamped to 30, so importing a GEXF and exporting it again changed the user's data
+  without asking. Capping is now opt-in through `max_node_size`, off by default, and the
+  reply reports how many nodes it changed.
+- **Importing ran entirely on the UI thread.** A large file froze Gephi, then exceeded the
+  15-second budget and told the caller the interface was unresponsive and to quit and reopen,
+  while the import was still running and went on to succeed. It runs on the calling thread now.
+- **The source distribution shipped one machine's probe verdicts.** `caveats.local.json`
+  was excluded from the wheel but not from the sdist, because the exclude was set on the
+  wheel target alone and being gitignored does not keep a file out of an sdist. The 1.16.1
+  sdist on PyPI carries it, which is the release that set out to fix exactly this for the
+  wheel. The exclude now applies to every build target, and `scripts/verify-artifact.sh`
+  builds and inspects the sdist as well as the wheel, since a release publishes both.
+- **Screenshot export left Gephi's own screenshot settings pointing at a deleted directory**,
+  with auto-save on, so the toolbar screenshot button silently saved nowhere. `ScreenshotController`
+  exposes no getters, so the previous values cannot be read back and restored; auto-save is
+  turned off and the directory pointed somewhere real instead, which returns the button to its
+  normal save-dialog behaviour.
+- **Eleven operations blocked the UI thread for up to 15 seconds** while polling
+  for the graph lock. Under contention the caller was told Gephi was wedged and
+  to restart it, when it was merely waiting; worse, the abandoned task completed
+  afterwards, so a client that retried applied a destructive operation twice.
+  These run on the calling thread now, as the graph model never required the UI
+  thread. A statistic, including its chart rendering, was on that thread too.
+- **Filters silently disagreed with statistics.** The inline GEXF export honours
+  the visible graph while `/graph/stats` reported the full one, so with a filter
+  active a tool could compute over 200 nodes and present them as 5,000. Both
+  ends now declare which view they used.
+- **A failed filter call still changed the graph.** The query was added before
+  the action was validated, so an invalid action returned an error having
+  already filtered the visible view.
+- **A filter reported the wrong result.** Counts were read before the view
+  finished swapping, so it claimed nothing had been removed when it had removed
+  half the graph. It now waits for the view to settle, and says so when it could
+  not.
+- **A layout that threw skipped `endAlgo()`**, where Gephi releases the graph
+  model and column observers, and `stopLayout` interrupted mid-iteration, which
+  can strand a read lock permanently. `layoutRunning` could also stick on,
+  refusing every later layout for the rest of the session.
+- **The export background colour was process-wide and permanent.** One call
+  supplying it tinted every later PNG export in every workspace, overriding
+  Gephi's own Preview panel. It is read from the preview model at export time.
+- **A statistic reported success having applied none of its parameters.** A
+  misspelled name is no longer indistinguishable from a correct run.
+- `DELETE /workspace/delete` documented a JSON body it could never read.
+- Console banner output and stack-trace printing removed from the installer; a
+  start/stop race could leave a server nothing could stop.
+
+### Changed
+- Per-request logging moved from INFO to FINE. A client polling `/health` filled the Gephi
+  log for a whole session. Start and stop stay at INFO.
+- `/health` reports the version from the module manifest rather than a literal, so it cannot
+  drift from the POM.
+- Click capture is installed at startup, so clicks made before an assistant
+  connects are recorded. It no longer switches the mouse to rectangle selection,
+  which would have changed the tool for every user on every launch.
 
 ## MCP server 1.16.1 / claude-plugin 1.13.1
 

@@ -91,13 +91,13 @@ else
     # The .nbm is the primary download path in README; a release without it
     # attached sends people to the repo-root fallback instead.
     if gh api "repos/{owner}/{repo}/releases/tags/v$LATEST_SERVER" \
-         --jq '.assets[].name' 2>/dev/null | grep -q "gephi-mcp-$LATEST_NBM.nbm"; then
-      ok "release v$LATEST_SERVER has gephi-mcp-$LATEST_NBM.nbm attached"
+         --jq '.assets[].name' 2>/dev/null | grep -q "gephi-ai-$LATEST_NBM.nbm"; then
+      ok "release v$LATEST_SERVER has gephi-ai-$LATEST_NBM.nbm attached"
     else
-      note "release v$LATEST_SERVER is missing asset gephi-mcp-$LATEST_NBM.nbm — README points users at the Releases page for it"
+      note "release v$LATEST_SERVER is missing asset gephi-ai-$LATEST_NBM.nbm — README points users at the Releases page for it"
     fi
   else
-    note "latest.json advertises server $LATEST_SERVER but there is no release v$LATEST_SERVER — health_check will tell users to update toward a download that does not exist (fix: gh release create v$LATEST_SERVER gephi-ai-$LATEST_SERVER.mcpb gephi-mcp-$LATEST_NBM.nbm ...)"
+    note "latest.json advertises server $LATEST_SERVER but there is no release v$LATEST_SERVER — health_check will tell users to update toward a download that does not exist (fix: gh release create v$LATEST_SERVER gephi-ai-$LATEST_SERVER.mcpb gephi-ai-$LATEST_NBM.nbm ...)"
   fi
 fi
 echo ""
@@ -108,19 +108,19 @@ echo ""
 # of this repository"). It went two releases stale (1.2.15 while README said
 # 1.2.17) because nothing checked it.
 echo "-- repo-root .nbm --"
-POM_VERSION=$(grep -m1 '<version>' gephi-mcp-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-ROOT_NBM_COUNT=$(ls -1 gephi-mcp-*.nbm 2>/dev/null | wc -l | tr -d ' ')
+POM_VERSION=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+ROOT_NBM_COUNT=$(ls -1 gephi-ai-*.nbm 2>/dev/null | wc -l | tr -d ' ')
 if [ -z "$POM_VERSION" ]; then
-  note "could not read version from gephi-mcp-plugin/pom.xml"
+  note "could not read version from gephi-ai-plugin/pom.xml"
 elif [ "$ROOT_NBM_COUNT" = "0" ]; then
-  note "no gephi-mcp-*.nbm at repo root, but README offers it as a download fallback"
+  note "no gephi-ai-*.nbm at repo root, but README offers it as a download fallback"
 elif [ "$ROOT_NBM_COUNT" != "1" ]; then
   note "$ROOT_NBM_COUNT .nbm files at repo root — there should be exactly one (the current build):"
-  ls -1 gephi-mcp-*.nbm | sed 's/^/      /'
-elif [ -f "gephi-mcp-$POM_VERSION.nbm" ]; then
-  ok "repo-root gephi-mcp-$POM_VERSION.nbm matches pom.xml"
+  ls -1 gephi-ai-*.nbm | sed 's/^/      /'
+elif [ -f "gephi-ai-$POM_VERSION.nbm" ]; then
+  ok "repo-root gephi-ai-$POM_VERSION.nbm matches pom.xml"
 else
-  note "repo-root $(ls -1 gephi-mcp-*.nbm) is stale — pom.xml is at $POM_VERSION (fix: mvn -f gephi-mcp-plugin/pom.xml clean package && cp gephi-mcp-plugin/target/gephi-mcp-$POM_VERSION.nbm . && git rm <old>)"
+  note "repo-root $(ls -1 gephi-ai-*.nbm) is stale — pom.xml is at $POM_VERSION (fix: mvn -f gephi-ai-plugin/pom.xml clean package && cp gephi-ai-plugin/target/gephi-ai-$POM_VERSION.nbm . && git rm <old>)"
 fi
 echo ""
 

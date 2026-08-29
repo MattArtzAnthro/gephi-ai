@@ -74,7 +74,11 @@ UNDO_PREFIX = "[undo] "
 
 # ── Version freshness (checked once per session in health_check) ──────────
 try:
-    __version__ = importlib.metadata.version("gephi-mcp")
+    # version() can RETURN None rather than raise when a site-packages directory holds
+    # more than one dist-info for this package (an orphaned one from an earlier install
+    # is enough). Treating a falsy return as "unknown" keeps a null out of the session
+    # receipt, which is meant to be pasted into a methods section.
+    __version__ = importlib.metadata.version("gephi-mcp") or None
 except Exception:  # running from source, not an installed dist
     __version__ = None  # source run: no version to compare, server-freshness check skips
 # One canonical version file on main; a raw file is not GitHub-API-rate-limited.
@@ -138,7 +142,8 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
 # (~77k chars) that a host can cache instead of re-fetching per session.
 def _package_version() -> str:
     try:
-        return importlib.metadata.version("gephi-mcp")
+        # See the note on __version__: this can return None instead of raising.
+        return importlib.metadata.version("gephi-mcp") or "0.0.0"
     except importlib.metadata.PackageNotFoundError:  # running from a bare checkout
         return "0.0.0"
 
@@ -826,6 +831,46 @@ async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: flo
                        min_size=min_size, max_size=max_size)
 
 
+# ─── Reading the graph ───────────────────────────────────────
+
+async def _export_gexf_inline() -> dict:
+    """Export the graph inline as GEXF, with the filter state made explicit.
+
+    This path exports the VISIBLE graph. When a filter is active in Gephi it
+    returns a subgraph, while ``/graph/stats`` reports the full graph, and until
+    the plugin declared the difference every tool built on this call could reason
+    over a subset while believing it had the whole network.
+
+    The plugin now returns ``view``, ``filter_active``, and both node and edge
+    counts. This is the single place that reads them, so every caller reports the
+    discrepancy the same way and none can quietly drift out of step.
+    """
+    exported = await gephi.request(
+        "POST", "/export/gexf", json_data={"inline": True}
+    )
+    if not isinstance(exported, dict):
+        return exported
+    if exported.get("filter_active") and exported.get("view") == "visible":
+        full_n = exported.get("full_node_count")
+        vis_n = exported.get("visible_node_count")
+        if isinstance(full_n, int) and isinstance(vis_n, int) and full_n != vis_n:
+            exported["filter_warning"] = (
+                f"A filter is active in Gephi. This result was computed from the "
+                f"{vis_n} visible nodes, not the {full_n} nodes in the full graph. "
+                f"Reset the filter first if you meant to analyse the whole network."
+            )
+    return exported
+
+
+def _carry_filter_warning(source: Any, result: Any) -> Any:
+    """Propagate a filter warning from an inline export onto a tool's own result."""
+    if isinstance(source, dict) and isinstance(result, dict):
+        warning = source.get("filter_warning")
+        if warning:
+            result.setdefault("filter_warning", warning)
+    return result
+
+
 # ─── Layout ──────────────────────────────────────────────────
 
 async def _check_layout_positions() -> dict | None:
@@ -836,7 +881,7 @@ async def _check_layout_positions() -> dict | None:
     success. Returns an explosion report dict, or None when positions are sane
     or the check itself can't run (never blocks the layout result).
     """
-    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    exported = await _export_gexf_inline()
     if not exported.get("success") or "content" not in exported:
         return None
     try:
@@ -939,7 +984,7 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
     from gephi_mcp_viewer import parse_gexf
     from gephi_mcp_viewer.similarity import compute_similarity_positions
 
-    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    exported = await _export_gexf_inline()
     if not exported.get("success"):
         return fmt(exported)
     try:
@@ -961,9 +1006,9 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
                 break
             await asyncio.sleep(0.5)
     await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
-    return fmt({"success": True, "layout": "similarity", "projection_used": method,
+    return fmt(_carry_filter_warning(exported, {"success": True, "layout": "similarity", "projection_used": method,
                 "nodes_positioned": len(positions),
-                "reading_note": "proximity = similar structural role, not direct connection"})
+                "reading_note": "proximity = similar structural role, not direct connection"}))
 
 @_tool(name="gephi_community_layout")
 async def gephi_community_layout(partition_column: str = "Modularity Class",
@@ -999,7 +1044,7 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
     from gephi_mcp_viewer import parse_gexf
     from gephi_mcp_viewer.community_layout import compute_community_positions, separation_score
 
-    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    exported = await _export_gexf_inline()
     if not exported.get("success"):
         return fmt(exported)
     graph = parse_gexf(exported["content"], max_nodes=10**9)
@@ -1025,12 +1070,12 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
             await asyncio.sleep(0.5)
     await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
     after = separation_score(graph, positions, partition_column)
-    return fmt({"success": True, "layout": "community-discs", **info,
+    return fmt(_carry_filter_warning(exported, {"success": True, "layout": "community-discs", **info,
                 "nodes_positioned": len(positions),
                 "separation_before": before, "separation_after": after,
                 "reading_note": ("grouping and within-disc distances come from "
                                  "the data; disc placement is arranged for "
-                                 "legibility and means nothing")})
+                                 "legibility and means nothing")}))
 
 @_tool(name="gephi_stop_layout")
 async def gephi_stop_layout() -> str:
@@ -1204,7 +1249,7 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
                                   json_data={"resolution": resolution})
         if not (isinstance(mod, dict) and mod.get("success")):
             return fmt(mod)
-        exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+        exported = await _export_gexf_inline()
         if not (isinstance(exported, dict) and exported.get("success")):
             return fmt(exported)
         graph = parse_gexf(exported["content"], max_nodes=10**9)
@@ -1250,7 +1295,7 @@ async def _compute_profile(include_slow: bool = False) -> dict:
     profile dict has no "success" key, so callers test
     `profile.get("success", True)` to tell them apart.
     """
-    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    exported = await _export_gexf_inline()
     if not exported.get("success"):
         return exported
     from gephi_mcp_viewer import parse_gexf
@@ -1280,7 +1325,7 @@ async def _compute_profile(include_slow: bool = False) -> dict:
         dist = await gephi.request("POST", "/statistics/avg-path-length", json_data={})
         if dist.get("success"):
             profile["distance"] = {k: dist[k] for k in ("avg_path_length", "diameter", "radius") if k in dist}
-    return profile
+    return _carry_filter_warning(exported, profile)
 
 
 @_tool(name="gephi_profile_graph")
@@ -1654,7 +1699,7 @@ async def _derive_partition_colours(column: str) -> dict[str, str] | None:
     known but its colours are not. Reading them off the nodes is the only way a swatch can be
     trusted; inventing one would produce a legend that confidently mislabels the map.
     """
-    exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+    exported = await _export_gexf_inline()
     if not (isinstance(exported, dict) and exported.get("success") and exported.get("content")):
         return None
     from gephi_mcp_viewer import parse_gexf
@@ -1729,7 +1774,9 @@ async def gephi_session_receipt(file: str | None = None) -> str:
     receipt.update(LEDGER.receipt())
     health = await gephi.request("GET", "/health")
     receipt["versions"] = {
-        "server": __version__,
+        # Never null: a receipt is provenance, and a blank version reads as though the
+        # question was never asked rather than as though the answer was unavailable.
+        "server": __version__ or "unknown (not an installed distribution)",
         "plugin": health.get("version") if isinstance(health, dict) else None,
     }
     if file:
@@ -2397,7 +2444,7 @@ async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
         if not (isinstance(switched, dict) and switched.get("success")):
             return None
     try:
-        exported = await gephi.request("POST", "/export/gexf", json_data={"inline": True})
+        exported = await _export_gexf_inline()
         if not (isinstance(exported, dict) and exported.get("success") and exported.get("content")):
             return None
         from gephi_mcp_viewer import parse_gexf
@@ -2863,7 +2910,7 @@ async def gephi_import_csv(file: str) -> str:
     return fmt(await gephi.request("POST", "/import/csv", json_data={"file": file}))
 
 @_tool(name="gephi_import_file")
-async def gephi_import_file(file: str) -> str:
+async def gephi_import_file(file: str, max_node_size: float | None = None) -> str:
     """Import a graph from any supported format (GEXF, GraphML, GML, CSV, DOT, Pajek, ...).
 
     Auto-detected by extension. Imported node sizes are capped at 30 so a viz:size
@@ -2878,8 +2925,16 @@ async def gephi_import_file(file: str) -> str:
     value); rows-as-entities with attributes -> nodes with attributes, then
     edges from a relationship column or attribute similarity; RDF triples ->
     subject/object as nodes, predicate as edge label.
+
+    `max_node_size` caps imported node sizes. Leave it unset and the file's own sizes are
+    kept, so an import followed by an export round-trips unchanged. Set it (30 is a sensible
+    value) when a GEXF carries `viz:size` values large enough that a few nodes cover the
+    whole map; the reply then reports how many nodes were changed.
     """
-    return fmt(await gephi.request("POST", "/import/file", json_data={"file": file}))
+    body: dict[str, Any] = {"file": file}
+    if max_node_size is not None:
+        body["max_node_size"] = max_node_size
+    return fmt(await gephi.request("POST", "/import/file", json_data=body))
 
 
 # ==================== Main Entry Point ====================

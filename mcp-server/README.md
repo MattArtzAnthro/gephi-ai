@@ -5,7 +5,7 @@ to a running [Gephi Desktop](https://gephi.org) instance, exposing **112 tools**
 construction, statistics, community detection, layout, styling, filtering, and
 publication-ready export.
 
-It translates MCP tool calls into HTTP requests against the Gephi MCP plugin's local API
+It translates MCP tool calls into HTTP requests against the Gephi AI plugin's local API
 (`http://127.0.0.1:8080`). Each tool has a typed signature, so clients receive a precise
 per-field JSON schema rather than an opaque blob.
 
@@ -28,7 +28,7 @@ that venv's `PATH`, and MCP clients launched outside your shell won't find it.
 
 ## Use
 
-The Gephi MCP plugin must be installed and Gephi Desktop running first. Then point any MCP
+The Gephi AI plugin must be installed and Gephi Desktop running first. Then point any MCP
 client at the `gephi-mcp` command, e.g. for Claude Desktop:
 
 ```json
