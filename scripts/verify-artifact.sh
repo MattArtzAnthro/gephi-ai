@@ -146,6 +146,13 @@ rm -rf "$(dirname "$VENV")"
 echo
 if [ "$FAIL" -ne 0 ]; then
   echo "ARTIFACT VERIFICATION FAILED — do not publish."
+  rm -f "$(git rev-parse --show-toplevel)/.artifact-verified"
   exit 1
 fi
+
+# Stamp the marker the publish gate looks for. Nothing else creates it, so without this the
+# gate is a nag that anyone clears by hand, which teaches people to clear it reflexively.
+# Written only on success, and removed above on failure, so its presence means something.
+touch "$(git rev-parse --show-toplevel)/.artifact-verified"
+
 echo "Artifact verification passed."

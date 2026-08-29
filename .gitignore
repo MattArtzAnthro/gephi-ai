@@ -24,3 +24,4 @@ docs/
 
 # Probe verdicts are per-install and must never ship or be committed
 mcp-server/caveats.local.json
+.artifact-verified
