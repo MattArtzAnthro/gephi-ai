@@ -15,13 +15,14 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **Codex package validation.** CI checks manifest/marketplace consistency,
   skill frontmatter, command-to-skill parity, and synchronized plugin/MCP versions.
 
-### Fixed
-- **claude-plugin 1.14.1: the Gephi skill named a layout tool that does not
-  exist.** `SKILL.md` and `references/layout-guide.md` told the model to call
-  `gephi_list_layouts`; the tool is `gephi_get_available_layouts`. Any attempt to
-  list layouts from the skill's instructions failed. The correction shipped under
-  the unchanged version 1.14.0, so two different contents were installable under
-  one version number; this releases it as 1.14.1 so installs are distinguishable.
+## claude-plugin 1.14.1
+
+The Gephi skill named a layout tool that does not exist. `SKILL.md` and
+`references/layout-guide.md` told the model to call `gephi_list_layouts`; the
+tool is `gephi_get_available_layouts`, so listing layouts from the skill's
+instructions failed. The correction had shipped under the unchanged version
+1.14.0, leaving two different contents installable under one version number.
+This releases it as 1.14.1 so the two are distinguishable.
 
 ## Java plugin 1.3.0 / MCP server 1.17.0 / claude-plugin 1.14.0
 
