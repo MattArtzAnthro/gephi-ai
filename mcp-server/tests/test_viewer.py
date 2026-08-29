@@ -488,7 +488,8 @@ def test_similarity_ring_geometry_is_meaningful():
     from gephi_mcp_viewer.similarity import compute_similarity_positions
     positions, _ = compute_similarity_positions(_ring_graph(12), projection="spectral")
     pos = {p["id"]: (p["x"], p["y"]) for p in positions}
-    d = lambda a, b: math.dist(pos[a], pos[b])
+    def d(a, b):
+        return math.dist(pos[a], pos[b])
     assert d("n0", "n1") < d("n0", "n6")
 
 

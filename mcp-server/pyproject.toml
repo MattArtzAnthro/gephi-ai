@@ -68,6 +68,14 @@ exclude = ["caveats.local.json"]
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint.per-file-ignores]
+# Linear algebra keeps its conventional single-capital names. A is an adjacency matrix,
+# L a Laplacian, R a radius: lowercasing them to satisfy a naming rule would make the
+# code harder to check against the papers it implements, which is the wrong trade.
+"gephi_mcp_viewer/similarity.py" = ["N803", "N806"]
+"gephi_mcp_viewer/community_layout.py" = ["N806"]
+"tests/live_smoke_test.py" = ["N806"]
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]

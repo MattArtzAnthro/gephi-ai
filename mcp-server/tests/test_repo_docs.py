@@ -99,7 +99,6 @@ def test_every_surface_that_states_a_tool_count_states_the_same_one():
     from the registrations and holds every surface to it, so the next surface that
     lags fails here rather than misinforming an agent about what it can do.
     """
-    import json
 
     source = (REPO / "mcp-server" / "gephi_mcp.py").read_text(encoding="utf-8")
     actual = source.count("@_tool(name=")

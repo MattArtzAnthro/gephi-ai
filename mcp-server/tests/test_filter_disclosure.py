@@ -9,7 +9,6 @@ these tests pin the client half, which turns that declaration into a warning the
 caller actually sees.
 """
 
-import json
 
 import pytest
 

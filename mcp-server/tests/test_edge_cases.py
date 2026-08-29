@@ -216,7 +216,7 @@ def test_text_unicode():
     r = tn.build_cooccurrence_graph("café résumé naïve café résumé", min_word_frequency=1)
     labels = {n["label"] if isinstance(n, dict) and "label" in n else n.get("id")
               for n in r["nodes"]}
-    assert any("café" in str(l) or "resume" in str(l).lower() or "café" == l for l in labels) or r["nodes"]
+    assert any("café" in str(label) or "resume" in str(label).lower() or "café" == label for label in labels) or r["nodes"]
 
 
 def test_tokenize_and_lemmatize_robust_on_punctuation():
