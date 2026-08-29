@@ -71,13 +71,33 @@ the previous version without noticing.
 
 7. **Build the Claude Desktop bundle** (skip if the server did not change):
 
+   `scripts/build-mcpb.sh` installs `gephi-mcp==<version>` from PyPI through pip, so pip
+   has to be able to resolve that version before this step can run. Checking with
+   `curl -s https://pypi.org/simple/gephi-mcp/ | grep gephi_mcp-<version>-py3` is
+   necessary but not sufficient: that check can pass while pip still cannot install the
+   version, because pip and curl can land on different PyPI CDN edges and the one pip
+   hits can lag behind. Poll with pip itself and wait for it to succeed before building:
+
+   ```bash
+   pip download --no-cache-dir gephi-mcp==<version>
+   ```
+
    ```bash
    scripts/build-mcpb.sh          # version comes from mcpb/manifest.json
    ```
 
    `.mcpb` files are gitignored — they ship as release assets only.
 
-8. **Commit and push.**
+8. **Commit and push.** A push that changes `.github/workflows/ci.yml` requires the
+   `workflow` scope. Git routes GitHub credentials through the `gh` CLI by default, and
+   that token carries only `gist, read:org, repo`, so a push touching a workflow file is
+   rejected. This shows up most often on a force-push, where a rewritten history carries
+   the workflow file through along with everything else. A second macOS keychain item
+   holds the fix: `GitHub - https://api.github.com` under account `MattArtzAnthro`,
+   scoped `repo, user, workflow`. Use that token instead of the `gh` default for any push
+   touching a workflow file, and supply it through a credential helper that reads the
+   keychain at push time. Never put the token in a URL, a file, or `git config`, where it
+   stays findable after the fact.
 
 9. **Cut the GitHub release.** Tag is `v<server-version>`, and both artifacts
    attach:
