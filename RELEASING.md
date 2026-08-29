@@ -100,6 +100,18 @@ the previous version without noticing.
    keychain at push time. Never put the token in a URL, a file, or `git config`, where it
    stays findable after the fact.
 
+   ```bash
+   git -c credential.helper= \
+       -c credential.helper='!f() { echo "username=MattArtzAnthro"; echo "password=$(security find-generic-password -s "GitHub - https://api.github.com" -a MattArtzAnthro -w)"; }; f' \
+       push origin main
+   ```
+
+   The empty `-c credential.helper=` is not decoration and the push fails without it.
+   Passing a helper with `-c` ADDS to the chain rather than replacing it, so the inherited
+   `osxkeychain` entry is consulted first, hands over the cached token that lacks the scope,
+   and the push is rejected a second time with the same message. Resetting the list to empty
+   first is what makes the new helper the only one asked.
+
 9. **Cut the GitHub release.** Tag is `v<server-version>`, and both artifacts
    attach:
 
