@@ -36,7 +36,7 @@ done
 # Current versions from each track's source of truth.
 OLD_SERVER=$(grep -m1 '^version = ' mcp-server/pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 OLD_JAVA=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-OLD_PLUGIN=$(python3 -c "import json;print(json.load(open('claude-plugin/.claude-plugin/plugin.json'))['version'])")
+OLD_PLUGIN=$(python3 -c "import json;print(json.load(open('plugins/claude-code/.claude-plugin/plugin.json'))['version'])")
 
 jset() { # jset <file> <key> <value>  (safe JSON field write)
   python3 - "$1" "$2" "$3" <<'PY'
@@ -50,7 +50,7 @@ PY
 if [ -n "$NEW_SERVER" ] && [ "$NEW_SERVER" != "$OLD_SERVER" ]; then
   echo "server  $OLD_SERVER -> $NEW_SERVER"
   sedi "s/^version = \"$OLD_SERVER\"/version = \"$NEW_SERVER\"/" mcp-server/pyproject.toml
-  sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" claude-plugin/.mcp.json
+  sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" plugins/claude-code/.mcp.json
   sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" plugins/gephi-network-analysis/.mcp.json
   jset mcpb/manifest.json version "$NEW_SERVER"
   jset latest.json server "$NEW_SERVER"
@@ -60,16 +60,16 @@ if [ -n "$NEW_JAVA" ] && [ "$NEW_JAVA" != "$OLD_JAVA" ]; then
   echo "java    $OLD_JAVA -> $NEW_JAVA"
   sedi "s|<version>$OLD_JAVA</version>|<version>$NEW_JAVA</version>|" gephi-ai-plugin/pom.xml
   sedi "s/gephi-ai-$OLD_JAVA\.nbm/gephi-ai-$NEW_JAVA.nbm/g" README.md
-  sedi "s/Gephi AI Plugin ($OLD_JAVA+)/Gephi AI Plugin ($NEW_JAVA+)/" claude-plugin/skills/gephi/SKILL.md
+  sedi "s/Gephi AI Plugin ($OLD_JAVA+)/Gephi AI Plugin ($NEW_JAVA+)/" plugins/claude-code/skills/gephi/SKILL.md
   jset latest.json nbm "$NEW_JAVA"
 fi
 
 if [ -n "$NEW_PLUGIN" ] && [ "$NEW_PLUGIN" != "$OLD_PLUGIN" ]; then
   echo "plugin  $OLD_PLUGIN -> $NEW_PLUGIN"
-  jset claude-plugin/.claude-plugin/plugin.json version "$NEW_PLUGIN"
+  jset plugins/claude-code/.claude-plugin/plugin.json version "$NEW_PLUGIN"
   jset plugins/gephi-network-analysis/.codex-plugin/plugin.json version "$NEW_PLUGIN"
-  sedi "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" claude-plugin/skills/gephi/SKILL.md
-  sedi "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" claude-plugin/skills/gephi/SKILL.md
+  sedi "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" plugins/claude-code/skills/gephi/SKILL.md
+  sedi "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" plugins/claude-code/skills/gephi/SKILL.md
   sedi "s/version: \"$OLD_PLUGIN\"/version: \"$NEW_PLUGIN\"/" plugins/gephi-network-analysis/skills/gephi/SKILL.md
   sedi "s/Skill version $OLD_PLUGIN/Skill version $NEW_PLUGIN/" plugins/gephi-network-analysis/skills/gephi/SKILL.md
   jset latest.json plugin "$NEW_PLUGIN"
@@ -87,11 +87,11 @@ fi
 # ---- verify every surface agrees ----
 S=$(grep -m1 '^version = ' mcp-server/pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 J=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-P=$(python3 -c "import json;print(json.load(open('claude-plugin/.claude-plugin/plugin.json'))['version'])")
+P=$(python3 -c "import json;print(json.load(open('plugins/claude-code/.claude-plugin/plugin.json'))['version'])")
 fail=0
 check() { [ "$2" = "$3" ] || { echo "  MISMATCH $1: '$2' != '$3'"; fail=1; }; }
 echo "--- verify ---"
-check ".mcp.json pin"      "$(python3 -c "import json;print(json.load(open('claude-plugin/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
+check ".mcp.json pin"      "$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
 check "Codex .mcp.json pin" "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
 check "mcpb manifest"      "$(python3 -c "import json;print(json.load(open('mcpb/manifest.json'))['version'])")" "$S"
 check "latest.json server" "$(python3 -c "import json;print(json.load(open('latest.json'))['server'])")" "$S"
@@ -106,7 +106,7 @@ else
 fi
 check "README nbm"         "$(grep -oE 'gephi-ai-[0-9.]+\.nbm' README.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
 check "latest.json nbm"    "$(python3 -c "import json;print(json.load(open('latest.json'))['nbm'])")" "$J"
-check "SKILL version"      "$(grep -m1 'version:' claude-plugin/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
+check "SKILL version"      "$(grep -m1 'version:' plugins/claude-code/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
 check "Codex manifest"     "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.codex-plugin/plugin.json'))['version'])")" "$P"
 check "Codex SKILL"        "$(grep -m1 'version:' plugins/gephi-network-analysis/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
 check "latest.json plugin" "$(python3 -c "import json;print(json.load(open('latest.json'))['plugin'])")" "$P"

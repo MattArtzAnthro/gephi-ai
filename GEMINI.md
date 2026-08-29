@@ -35,7 +35,7 @@ this chain:
 
 ## The skill
 
-`claude-plugin/skills/gephi/` is a self-contained skill folder (`SKILL.md` plus
+`plugins/claude-code/skills/gephi/` is a self-contained skill folder (`SKILL.md` plus
 `references/`): tool reference, layout guide, statistics guide, filtering,
 claim verification, text networks, and how to read a network map. It is
 written for any agent that reads the portable skill format. Install it by

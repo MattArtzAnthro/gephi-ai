@@ -57,9 +57,9 @@ echo ""
 
 # ---- 2. PyPI vs the pinned version (the "dead on install" hazard) ----
 echo "-- PyPI publish gap --"
-PINNED=$(python3 -c "import json;print(json.load(open('claude-plugin/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])" 2>/dev/null)
+PINNED=$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])" 2>/dev/null)
 if [ -z "$PINNED" ]; then
-  note "could not read pinned version from claude-plugin/.mcp.json"
+  note "could not read pinned version from plugins/claude-code/.mcp.json"
 else
   HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/gephi-mcp/$PINNED/json" 2>/dev/null)
   if [ "$HTTP_CODE" = "200" ]; then
@@ -102,25 +102,20 @@ else
 fi
 echo ""
 
-# ---- 4. repo-root .nbm vs the built plugin version ----
+# ---- 4. no .nbm at the repo root ----
 #
-# README offers the repo root as a download fallback ("also available at the root
-# of this repository"). It went two releases stale (1.2.15 while README said
-# 1.2.17) because nothing checked it.
+# There used to be a copy of the built plugin here, offered by the README as a download
+# fallback. It went two releases stale (1.2.15 while the README said 1.2.17) because a
+# committed binary has no reason to stay in step with anything. The GitHub release is the
+# single download path now, so the check is inverted: finding one here means someone
+# reintroduced a copy that will drift the same way.
 echo "-- repo-root .nbm --"
-POM_VERSION=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 ROOT_NBM_COUNT=$(ls -1 gephi-ai-*.nbm 2>/dev/null | wc -l | tr -d ' ')
-if [ -z "$POM_VERSION" ]; then
-  note "could not read version from gephi-ai-plugin/pom.xml"
-elif [ "$ROOT_NBM_COUNT" = "0" ]; then
-  note "no gephi-ai-*.nbm at repo root, but README offers it as a download fallback"
-elif [ "$ROOT_NBM_COUNT" != "1" ]; then
-  note "$ROOT_NBM_COUNT .nbm files at repo root — there should be exactly one (the current build):"
-  ls -1 gephi-ai-*.nbm | sed 's/^/      /'
-elif [ -f "gephi-ai-$POM_VERSION.nbm" ]; then
-  ok "repo-root gephi-ai-$POM_VERSION.nbm matches pom.xml"
+if [ "$ROOT_NBM_COUNT" = "0" ]; then
+  ok "no .nbm at the repo root; releases are the single download path"
 else
-  note "repo-root $(ls -1 gephi-ai-*.nbm) is stale — pom.xml is at $POM_VERSION (fix: mvn -f gephi-ai-plugin/pom.xml clean package && cp gephi-ai-plugin/target/gephi-ai-$POM_VERSION.nbm . && git rm <old>)"
+  note "$ROOT_NBM_COUNT .nbm at the repo root. Binaries here go stale and stay in git history forever — attach it to the GitHub release instead:"
+  ls -1 gephi-ai-*.nbm | sed 's/^/      /'
 fi
 echo ""
 

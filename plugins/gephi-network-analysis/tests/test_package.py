@@ -70,14 +70,14 @@ class CodexPluginPackageTests(unittest.TestCase):
 
     def test_plugin_versions_are_synchronized(self):
         codex = load_json(MANIFEST)["version"]
-        claude = load_json(REPO_ROOT / "claude-plugin/.claude-plugin/plugin.json")["version"]
+        claude = load_json(REPO_ROOT / "plugins/claude-code/.claude-plugin/plugin.json")["version"]
         latest = load_json(REPO_ROOT / "latest.json")["plugin"]
         self.assertEqual(codex, claude)
         self.assertEqual(codex, latest)
 
     def test_mcp_pins_are_synchronized(self):
         codex = load_json(PLUGIN_ROOT / ".mcp.json")["mcpServers"]["gephi-mcp"]["args"]
-        claude = load_json(REPO_ROOT / "claude-plugin/.mcp.json")["mcpServers"]["gephi-mcp"]["args"]
+        claude = load_json(REPO_ROOT / "plugins/claude-code/.mcp.json")["mcpServers"]["gephi-mcp"]["args"]
         self.assertEqual(codex, claude)
         pinned = codex[1].split("==", 1)[1]
         pyproject = (REPO_ROOT / "mcp-server/pyproject.toml").read_text(encoding="utf-8")
@@ -86,7 +86,7 @@ class CodexPluginPackageTests(unittest.TestCase):
 
     def test_every_claude_command_has_a_codex_skill(self):
         claude_commands = {
-            path.stem for path in (REPO_ROOT / "claude-plugin/commands").glob("*.md")
+            path.stem for path in (REPO_ROOT / "plugins/claude-code/commands").glob("*.md")
         }
         self.assertEqual(claude_commands, set(COMMAND_TO_SKILL))
         for skill in COMMAND_TO_SKILL.values():
@@ -94,7 +94,7 @@ class CodexPluginPackageTests(unittest.TestCase):
 
     def test_every_claude_agent_procedure_is_folded_into_a_skill(self):
         claude_agents = {
-            path.stem for path in (REPO_ROOT / "claude-plugin/agents").glob("*.md")
+            path.stem for path in (REPO_ROOT / "plugins/claude-code/agents").glob("*.md")
         }
         self.assertEqual(claude_agents, set(AGENT_TO_SKILL))
         for skill in AGENT_TO_SKILL.values():
@@ -123,7 +123,7 @@ class CodexPluginPackageTests(unittest.TestCase):
     }
 
     def _reference_pairs(self):
-        source_dir = REPO_ROOT / "claude-plugin/skills/gephi/references"
+        source_dir = REPO_ROOT / "plugins/claude-code/skills/gephi/references"
         bundled_dir = PLUGIN_ROOT / "skills/gephi/references"
         return source_dir, bundled_dir
 
@@ -159,7 +159,7 @@ class CodexPluginPackageTests(unittest.TestCase):
                 self.assertEqual(a, b, f"{name} documents different tools in the two plugins: {sorted(a ^ b)}")
 
     def test_both_skill_files_document_the_same_tools(self):
-        a = set(re.findall(r"\bgephi_[a-z0-9_]+", (REPO_ROOT / "claude-plugin/skills/gephi/SKILL.md").read_text(encoding="utf-8")))
+        a = set(re.findall(r"\bgephi_[a-z0-9_]+", (REPO_ROOT / "plugins/claude-code/skills/gephi/SKILL.md").read_text(encoding="utf-8")))
         b = set(re.findall(r"\bgephi_[a-z0-9_]+", (PLUGIN_ROOT / "skills/gephi/SKILL.md").read_text(encoding="utf-8")))
         self.assertEqual(a, b, f"the two SKILL.md files reference different tools: {sorted(a ^ b)}")
 

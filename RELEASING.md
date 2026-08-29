@@ -41,13 +41,9 @@ the previous version without noticing.
    load it. Verify the fix against a running Gephi before shipping — the unit
    tests do not exercise the live MCP path.
 
-4. **Refresh the repo-root `.nbm`.** README offers the repo root as a download
-   fallback, so it must match the build:
-
-   ```bash
-   cp gephi-ai-plugin/target/gephi-ai-<java-version>.nbm .
-   git rm gephi-ai-<old-version>.nbm
-   ```
+4. **Do not commit the built `.nbm`.** It attaches to the GitHub release in step 9,
+   which is the single download path. A copy at the repo root went two releases stale
+   once, and a binary committed here stays in git history for good.
 
 5. **Verify the artifact before publishing it.**
 

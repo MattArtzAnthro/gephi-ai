@@ -53,7 +53,7 @@ Claude / AI Assistant
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-ai-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
 | MCP Server | `mcp-server/` | Python server that exposes 112 Gephi tools via MCP |
-| Claude Plugin | `claude-plugin/` | Skills, commands, agents, and hooks for Claude Code |
+| Claude Plugin | `plugins/claude-code/` | Skills, commands, agents, and hooks for Claude Code |
 | Codex Plugin | `plugins/gephi-network-analysis/` | Skills and bundled MCP registration for Codex |
 
 Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
@@ -88,7 +88,7 @@ Install the Gephi plugin plus your AI client's connection — the Claude Code pl
 
 This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
 
-1. Download `gephi-ai-1.3.0.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) (also available at the root of this repository).
+1. Download `gephi-ai-1.3.0.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases).
 2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
 3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
 
@@ -183,7 +183,7 @@ These agents get all 112 tools. To give them the network-analysis guidance as we
 
 ```bash
 git clone https://github.com/MattArtzAnthro/gephi-ai.git
-cp -r gephi-ai/claude-plugin/skills/gephi ~/.codex/skills/
+cp -r gephi-ai/plugins/claude-code/skills/gephi ~/.codex/skills/
 ```
 
 | Agent | Skills directory |
@@ -311,7 +311,7 @@ and makes the health check the mandatory first workflow step.
 
 ## Documentation
 
-Reference guides are shared in `claude-plugin/skills/gephi/` and mirrored in
+Reference guides are shared in `plugins/claude-code/skills/gephi/` and mirrored in
 `plugins/gephi-network-analysis/skills/gephi/` for the installable Codex package:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas

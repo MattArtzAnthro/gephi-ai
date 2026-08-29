@@ -35,7 +35,7 @@ this chain:
 
 ## The skill
 
-`claude-plugin/skills/gephi/` is a self-contained skill folder (`SKILL.md` plus
+`plugins/claude-code/skills/gephi/` is a self-contained skill folder (`SKILL.md` plus
 `references/`): tool reference, layout guide, statistics guide, filtering,
 claim verification, text networks, and how to read a network map. It is
 written for any agent that reads the portable skill format. Install it by
@@ -78,6 +78,6 @@ claude plugin install gephi-network-analysis@gephi-ai
 ```
 
 Repository layout: `gephi-ai-plugin/` (Java, the Gephi side), `mcp-server/`
-(Python, the MCP side; tests in `mcp-server/tests/`), `claude-plugin/` (skill,
+(Python, the MCP side; tests in `mcp-server/tests/`), `plugins/claude-code/` (skill,
 commands, agents). `RELEASING.md` is the release procedure and
 `scripts/check-drift.sh` reports which channel is behind.

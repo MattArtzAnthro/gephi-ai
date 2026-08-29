@@ -46,7 +46,7 @@ def test_readme_carries_the_registration_commands_and_skill_directories():
 def test_skill_prose_does_not_hardcode_the_claude_tool_prefix():
     """Other agents see the tools as gephi_*; the Claude Code prefix belongs in
     allowed-tools frontmatter and hooks, not in the guidance the model reads."""
-    skill = REPO / "claude-plugin" / "skills" / "gephi" / "SKILL.md"
+    skill = REPO / "plugins" / "claude-code" / "skills" / "gephi" / "SKILL.md"
     body = skill.read_text(encoding="utf-8").split("---", 2)[2]
     stray = [ln for ln in body.splitlines()
              if "mcp__gephi-mcp__" in ln and "Claude Code shows them as" not in ln]
@@ -66,7 +66,7 @@ def test_every_registered_tool_is_documented_in_the_tool_reference():
     This repo's primary reader is a coding agent, so an undocumented tool is not a cosmetic gap:
     it is a capability nobody can find. Counts in prose rot quietly; this fails loudly instead.
     """
-    reference = _read("claude-plugin/skills/gephi/references/tool-reference.md")
+    reference = _read("plugins/claude-code/skills/gephi/references/tool-reference.md")
 
     undocumented = sorted(t for t in _registered_tools() if t not in reference)
 
@@ -111,9 +111,9 @@ def test_every_surface_that_states_a_tool_count_states_the_same_one():
         "GEMINI.md": _read("GEMINI.md"),
         "mcp-server/README.md": _read("mcp-server/README.md"),
         "mcpb/manifest.json": _read("mcpb/manifest.json"),
-        "claude-plugin/skills/gephi/SKILL.md": _read("claude-plugin/skills/gephi/SKILL.md"),
-        "claude-plugin/.claude-plugin/plugin.json": _read(
-            "claude-plugin/.claude-plugin/plugin.json"
+        "plugins/claude-code/skills/gephi/SKILL.md": _read("plugins/claude-code/skills/gephi/SKILL.md"),
+        "plugins/claude-code/.claude-plugin/plugin.json": _read(
+            "plugins/claude-code/.claude-plugin/plugin.json"
         ),
     }
 
@@ -144,7 +144,7 @@ def test_no_skill_or_reference_names_a_tool_that_does_not_exist():
     registered = set(re.findall(r'@_tool\(name="(gephi_[a-z0-9_]+)"', server))
     assert registered, "found no @_tool registrations to compare against"
 
-    surfaces = list((REPO / "claude-plugin").rglob("*.md"))
+    surfaces = list((REPO / "plugins" / "claude-code").rglob("*.md"))
     assert surfaces, "found no Claude plugin markdown to check"
 
     problems = {}

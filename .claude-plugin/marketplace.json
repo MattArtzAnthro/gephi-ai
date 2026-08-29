@@ -9,7 +9,7 @@
     {
       "name": "gephi-network-analysis",
       "version": "1.14.0",
-      "source": "./claude-plugin"
+      "source": "./plugins/claude-code"
     }
   ]
 }

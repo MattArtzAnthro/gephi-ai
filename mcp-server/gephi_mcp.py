@@ -10,7 +10,7 @@ per tool (field names, types, and which are optional) rather than an opaque blob
 Claude Code Skill:
     This server is paired with a Claude Code skill that provides workflows,
     best practices, and visualization guidelines for using these tools.
-    See: claude-plugin/skills/gephi/SKILL.md
+    See: plugins/claude-code/skills/gephi/SKILL.md
 
 Developed by Matt Artz (https://www.mattartz.me)
 """

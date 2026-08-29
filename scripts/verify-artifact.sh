@@ -132,7 +132,7 @@ PY
 echo
 echo "Checking the documented tool count against the artifact:"
 COUNT=$("$VENV/bin/python" -c "import gephi_mcp; print(len({t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}))")
-for f in README.md CLAUDE.md AGENTS.md GEMINI.md mcp-server/README.md claude-plugin/skills/gephi/SKILL.md plugins/gephi-network-analysis/skills/gephi/SKILL.md mcpb/manifest.json; do
+for f in README.md CLAUDE.md AGENTS.md GEMINI.md mcp-server/README.md plugins/claude-code/skills/gephi/SKILL.md plugins/gephi-network-analysis/skills/gephi/SKILL.md mcpb/manifest.json; do
   if grep -qE "[0-9]+ (tools|Gephi tools|Gephi MCP tools|MCP tools)" "$f" 2>/dev/null; then
     if grep -qE "\b$COUNT (tools|Gephi tools|Gephi MCP tools|MCP tools)" "$f"; then
       say "$f agrees ($COUNT)"

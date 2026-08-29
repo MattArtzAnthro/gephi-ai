@@ -1,6 +1,6 @@
 # Gephi Network Analysis for Codex
 
-This package is the Codex/OpenAI counterpart to `claude-plugin/`. It keeps the
+This package is the Codex/OpenAI counterpart to `plugins/claude-code/`. It keeps the
 same Gephi MCP server and network-analysis guidance while translating
 Claude-only commands, custom agents, and hooks into Codex-native plugin pieces.
 
