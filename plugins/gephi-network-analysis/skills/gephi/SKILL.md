@@ -2,20 +2,20 @@
 name: gephi
 description: |
   When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 112 Gephi AI tools.
+  this skill provides workflows and best practices for the 113 Gephi AI tools.
   Trigger when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, graph metrics, or asks to build,
   analyze, style, teach from, or export a network in Gephi.
 metadata:
   author: Matt Artz
-  version: "1.14.1"
+  version: "1.15.0"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.14.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.15.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
-You have access to 112 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; fully-qualified names may include a server namespace) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+You have access to 113 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; fully-qualified names may include a server namespace) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
 ## Communication
 

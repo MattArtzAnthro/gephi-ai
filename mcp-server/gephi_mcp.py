@@ -1758,6 +1758,200 @@ async def gephi_export_legend(file: str) -> str:
     return fmt({"success": True, "file": file, "items": resolved})
 
 
+@_tool(name="gephi_export_figure")
+async def gephi_export_figure(
+    file: str,
+    title: str,
+    subtitle: str | None = None,
+    partition_column: str | None = None,
+    extra_channels: list[dict] | None = None,
+    notes: list[str] | None = None,
+    detail_column: str | None = None,
+    width: int = 2400,
+    height: int = 2400,
+) -> str:
+    """Write the map and its legend as one figure, as a PDF and a PNG at 300 dpi.
+
+    gephi_export_png writes a map with no key and gephi_export_legend writes a key with no
+    map; joining them has been left to whoever is driving, so the caveats that make a figure
+    honest get remembered or not. This does the joining and keeps them attached.
+
+    What it will not do is invent the parts only you can supply. `title` is a claim about the
+    world and `notes` are the reading rules a stranger needs ("disc placement means nothing",
+    "absent from the harvest is not the same as silent"); both are written down, never
+    generated. That is the same refusal gephi_export_legend already makes about swatches.
+
+    Colour and size come from the mappings made through these tools. `partition_column` also
+    reads the colour each group actually carries off the graph, so a reopened project or a
+    palette Gephi chose itself still gets a correct key.
+
+    `extra_channels` carries a channel this server does not own, such as a shape mapping added
+    by a plugin. Give it {"channel": "shape", "column": "...", "items": [{"label": ...,
+    "glyph": "circle|square|triangle|diamond|star|pentagon|hexagon|cross", "note": ...,
+    "stat": ...}]}. Naming a glyph rather than a plugin keeps this coupled to nothing.
+
+    `detail_column` adds a second page of magnified crops, one per value of that column, cut
+    at the export's own resolution. The mapping from graph coordinates to pixels is derived
+    from the image and then checked against it; if the check fails the page is dropped and the
+    result says so, because a crop that is subtly misaligned still looks plausible.
+    """
+    import figure as _figure
+    from PIL import Image as _Image
+    from gephi_mcp_viewer import parse_gexf
+
+    base = Path(file)
+    if base.suffix.lower() in (".pdf", ".png"):
+        base = base.with_suffix("")
+    notes = list(notes or [])
+    warnings: list[str] = []
+
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = Path(tmp) / "map.png"
+        exported = await gephi.request("POST", "/export/png",
+                                       json_data={"file": str(raw), "width": width,
+                                                  "height": height})
+        if not (isinstance(exported, dict) and exported.get("success")):
+            return fmt({"success": False, "error": "Map export failed", "detail": exported})
+        if not raw.exists():
+            return fmt({"success": False,
+                        "error": f"Gephi reported success but wrote no file at {raw}"})
+        map_image = _Image.open(raw)
+        map_image.load()
+
+    # One read of the graph serves the swatches, the diagnostics and the crops.
+    graph = None
+    gexf = await _export_gexf_inline()
+    if isinstance(gexf, dict) and gexf.get("success") and gexf.get("content"):
+        graph = parse_gexf(gexf["content"], max_nodes=10**9)
+
+    def colours_for(column: str) -> dict[str, str] | None:
+        if not graph:
+            return None
+        wanted = column.replace("_", "").replace(" ", "").lower()
+        found: dict[str, str] = {}
+        for node in graph["nodes"]:
+            value = next((v for k, v in (node.get("attributes") or {}).items()
+                          if k.replace("_", "").replace(" ", "").lower() == wanted), None)
+            if value is None or str(value) in found:
+                continue
+            match = re.match(r"rgb\((\d+),\s*(\d+),\s*(\d+)\)", str(node.get("color") or ""))
+            if match:
+                r, g, b = (int(v) for v in match.groups())
+                found[str(value)] = f"#{r:02x}{g:02x}{b:02x}"
+        return found or None
+
+    channels: list[dict] = []
+    for item in LEDGER.legend_items():
+        entry = dict(item)
+        if (entry["channel"].endswith("colour") and entry.get("column")
+                and not entry.get("groups")):
+            derived = colours_for(entry["column"])
+            if derived:
+                entry["groups"] = derived
+        channels.append(entry)
+
+    if partition_column:
+        derived = colours_for(partition_column)
+        if derived:
+            known = next((c for c in channels if c.get("column") == partition_column), None)
+            if known is not None:
+                known["groups"] = derived
+            else:
+                channels.insert(0, {"channel": "node colour", "column": partition_column,
+                                    "groups": derived})
+        else:
+            warnings.append(
+                f"No colours could be read back for '{partition_column}'; the column may not "
+                "exist or its nodes may be uncoloured. The legend omits that channel rather "
+                "than guessing one.")
+
+    for extra in (extra_channels or []):
+        for item in extra.get("items") or []:
+            glyph = str(item.get("glyph", "circle")).lower()
+            if glyph not in _figure.GLYPHS:
+                return fmt({"success": False,
+                            "error": f"Unknown glyph {glyph!r} in extra_channels; expected one "
+                                     f"of {', '.join(_figure.GLYPHS)}"})
+        channels.append(extra)
+
+    if not channels:
+        return fmt({"success": False,
+                    "error": ("Nothing to put in a legend: no colour or size mapping has been "
+                              "applied through these tools, no partition_column was given to "
+                              "read colours back from the graph, and no extra_channels were "
+                              "declared. A figure with an empty key is worse than none.")})
+
+    # The composer draws whatever Gephi currently renders, so an unstyled map
+    # becomes an unreadable figure without complaint. Run the same diagnostics
+    # gephi_visual_qa runs and hand back what they say.
+    if graph:
+        try:
+            diagnosis = gephi_mcp_viewer.analyze_graph(graph, partition_column=partition_column)
+            for problem in diagnosis.get("warnings") or []:
+                warnings.append(f"map: {problem}")
+        except Exception as exc:  # diagnostics must never block the figure
+            logging.getLogger(__name__).debug("figure diagnostics failed: %s", exc)
+
+    pages = [_figure.compose(map_image, title, subtitle, channels, notes)]
+
+    if detail_column:
+        page, problem = _detail_page(map_image, graph, detail_column)
+        if page is not None:
+            pages.append(page)
+        else:
+            warnings.append(problem)
+
+    try:
+        written = _figure.write(pages, base)
+    except OSError as exc:
+        return fmt({"success": False, "error": f"Could not write {base}: {exc}"})
+
+    result = {"success": True, **written,
+              "channels": [{k: v for k, v in c.items() if k != "palette"} for c in channels],
+              "notes": notes}
+    if warnings:
+        result["warnings"] = warnings
+    if not notes:
+        result["reminder"] = ("No notes were given. A figure that leaves its reading rules "
+                              "unstated invites the reader to over-read it; pass `notes` with "
+                              "what the layout does and does not mean.")
+    return fmt(result)
+
+
+def _detail_page(map_image: Any, graph: dict | None, column: str):
+    """Build the magnified-crops page, or explain why it cannot be trusted."""
+    import figure as _figure
+
+    if not graph:
+        return None, "Detail page skipped: the graph could not be read back to locate groups."
+    nodes = graph["nodes"]
+
+    to_pixel = _figure.position_transform(nodes, _figure.content_box(map_image))
+    if to_pixel is None:
+        return None, "Detail page skipped: node positions have no extent to map onto the image."
+
+    hit = _figure.transform_hit_rate(map_image, nodes, to_pixel)
+    if hit < 0.5:
+        return None, (f"Detail page skipped: only {hit:.0%} of sampled nodes landed on drawn "
+                      "pixels, so the crop boxes could not be trusted. A misaligned crop still "
+                      "looks plausible, which is why it is dropped rather than shipped.")
+
+    wanted = column.replace("_", "").replace(" ", "").lower()
+    resolved = next((k for node in nodes for k in (node.get("attributes") or {})
+                     if k.replace("_", "").replace(" ", "").lower() == wanted), None)
+    if resolved is None:
+        return None, f"Detail page skipped: no node column named '{column}'."
+
+    boxes = _figure.group_boxes(nodes, resolved, to_pixel)
+    if not boxes:
+        return None, f"Detail page skipped: column '{column}' held no values."
+    boxes = dict(sorted(boxes.items(),
+                        key=lambda kv: -((kv[1][2] - kv[1][0]) * (kv[1][3] - kv[1][1])))[:6])
+    return _figure.detail_page(
+        map_image, boxes, f"Detail: {column}",
+        "Same map, magnified at the export's own resolution."), ""
+
+
 @_tool(name="gephi_session_receipt")
 async def gephi_session_receipt(file: str | None = None) -> str:
     """Report how the current figure was made, ready to paste into a methods section.

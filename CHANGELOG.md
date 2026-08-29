@@ -4,9 +4,24 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.18.0 / claude-plugin 1.15.0
 
 ### Added
+- **`gephi_export_figure`.** Exports the map, builds the key, and writes both as
+  one figure: a PDF and a PNG at 300 dpi. Joining a Gephi export to its legend
+  had been left to whoever was driving, so the caveats that make a figure honest
+  were remembered or not. `partition_column` reads each group's colour back off
+  the graph, so a reopened project or a palette Gephi chose itself still gets a
+  correct key; `extra_channels` carries a channel this server does not own (a
+  plugin's shape mapping, say) by naming a glyph rather than a plugin, so it
+  couples to nothing; `detail_column` adds a page of magnified crops whose
+  graph-to-pixel transform is checked against the image and dropped with a
+  warning if it cannot be trusted. `title` and `notes` are never generated, and
+  the result reminds the caller when no reading rules were supplied. It runs the
+  same diagnostics as `gephi_visual_qa` and reports them, because the composer
+  draws whatever Gephi currently renders and an unstyled map would otherwise
+  become an unreadable figure without complaint.
+
 - **A first-class Codex plugin package.** `plugins/gephi-network-analysis/`
   bundles the pinned local MCP server, the complete Gephi reference skill, and
   focused Codex skills replacing all eleven Claude slash commands and four custom
@@ -14,6 +29,8 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   this repository.
 - **Codex package validation.** CI checks manifest/marketplace consistency,
   skill frontmatter, command-to-skill parity, and synchronized plugin/MCP versions.
+
+
 
 ## claude-plugin 1.14.1
 

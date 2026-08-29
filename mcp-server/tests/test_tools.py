@@ -177,10 +177,10 @@ async def test_export_screenshot_overrides(rec):
     }
 
 
-def test_all_112_tools_registered():
+def test_all_113_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 112, f"expected 112 tools, found {len(names)}"
+    assert len(names) == 113, f"expected 113 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",

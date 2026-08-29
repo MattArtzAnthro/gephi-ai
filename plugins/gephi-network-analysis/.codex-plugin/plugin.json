@@ -1,7 +1,7 @@
 {
   "name": "gephi-network-analysis",
-  "version": "1.14.1",
-  "description": "AI-powered network analysis, visualization, and export using Gephi Desktop through 112 local MCP tools and guided workflows.",
+  "version": "1.15.0",
+  "description": "AI-powered network analysis, visualization, and export using Gephi Desktop through 113 local MCP tools and guided workflows.",
   "author": {
     "name": "Matt Artz",
     "url": "https://www.mattartz.me"
@@ -22,7 +22,7 @@
   "interface": {
     "displayName": "Gephi Network Analysis",
     "shortDescription": "Build, analyze, visualize, and export Gephi networks",
-    "longDescription": "Control a local Gephi Desktop session with 112 MCP tools and rigorous workflows for exploration, statistics, community detection, centrality, text networks, claim verification, layout iteration, teaching, and publication exports.",
+    "longDescription": "Control a local Gephi Desktop session with 113 MCP tools and rigorous workflows for exploration, statistics, community detection, centrality, text networks, claim verification, layout iteration, teaching, and publication exports.",
     "developerName": "Matt Artz",
     "category": "Developer Tools",
     "capabilities": [

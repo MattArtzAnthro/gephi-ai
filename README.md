@@ -17,7 +17,7 @@ Built for researchers working across network science and AI.
 <details>
 <summary>Full feature list</summary>
 
-- 112 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- 113 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
 - Layout quality is measured, not eyeballed: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separated and frames exports around the main cloud (ignoring runaway outlier nodes), and numerically exploded layouts are caught automatically instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
@@ -179,7 +179,7 @@ gemini mcp add -s user gephi-mcp uvx gephi-mcp
 
 (Claude Code without the plugin: `claude mcp add gephi-mcp -- uvx gephi-mcp`.)
 
-These agents get all 112 tools. To give them the network-analysis guidance as well, copy the skill folder into your agent's skills directory:
+These agents get all 113 tools. To give them the network-analysis guidance as well, copy the skill folder into your agent's skills directory:
 
 ```bash
 git clone https://github.com/MattArtzAnthro/gephi-ai.git
@@ -264,7 +264,7 @@ and makes the health check the mandatory first workflow step.
 | **Health gate** | Verifies Gephi is running before operational work begins |
 | **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
 
-## Tools (112)
+## Tools (113)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -275,7 +275,7 @@ and makes the health check the mandatory first workflow step.
 | Appearance | 11 | `gephi_color_by_partition`, `gephi_color_edges_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
 | Filtering | 10 | `gephi_filter_by_degree`, `gephi_extract_backbone`, `gephi_list_filters`, `gephi_apply_filter` (any filter, by name) |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
-| Preview & Export | 13 | `gephi_export_png`, `gephi_export_screenshot` (live selection-aware canvas capture), `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph`, `gephi_export_legend`, `gephi_session_receipt` (how the figure was made) |
+| Preview & Export | 14 | `gephi_export_png`, `gephi_export_screenshot` (live selection-aware canvas capture), `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph`, `gephi_export_legend`, `gephi_export_figure` (map and key as one PDF), `gephi_session_receipt` (how the figure was made) |
 | Data Laboratory | 4 | `gephi_column_value_frequencies`, `gephi_detect_duplicates`, `gephi_merge_nodes`, `gephi_create_regex_column` |
 | Timeline | 1 | `gephi_get_timeline` (dynamic-graph state, read-only) |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
@@ -315,7 +315,7 @@ Reference guides are shared in `plugins/claude-code/skills/gephi/` and mirrored 
 `plugins/gephi-network-analysis/skills/gephi/` for the installable Codex package:
 
 - **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 112 tools
+- **references/tool-reference.md** — Complete API reference for all 113 tools
 - **references/layout-guide.md** — Layout algorithm selection and parameter tuning
 - **references/statistics-guide.md** — Statistics interpretation guide
 

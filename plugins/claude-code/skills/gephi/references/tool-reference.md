@@ -623,6 +623,12 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, file, items}` or `{success: false, error}` when nothing has been mapped.
 - **Notes**: answers gephi/gephi#511 — Gephi has never shipped a legend. It describes only what was applied through these tools; styling done by hand in the Gephi window is invisible to it, so it REFUSES rather than guessing. A legend guessed from an unknown appearance is worse in a published figure than no legend. Pair it with a PNG or PDF export.
 
+### gephi_export_figure
+- **Method**: exports the map, builds the key, and writes both as one figure — a PDF and a PNG at 300 dpi. Colour and size come from the mappings made through these tools; `partition_column` additionally reads each group's colour back off the graph, so a reopened project or a palette Gephi chose itself still gets a correct key.
+- **Params**: `{file: str, title: str, subtitle?: str, partition_column?: str, extra_channels?: list, notes?: list[str], detail_column?: str, width?: int, height?: int}`.
+- **Returns**: `{success, png, pdf, pages, channels, notes, warnings?}`.
+- **Notes**: `title` and `notes` are claims about the world and are never generated — the same refusal `gephi_export_legend` makes about swatches. `extra_channels` carries a channel this server does not own (a plugin's shape mapping, say) as `{channel, column, items: [{label, glyph, note?, stat?}]}` where `glyph` is one of circle, square, triangle, diamond, star, pentagon, hexagon, cross; naming a glyph rather than a plugin keeps it coupled to nothing. `detail_column` adds a second page of magnified crops, one per value; the graph-to-pixel transform is derived from the image and then CHECKED against it, and the page is dropped with a warning if under half the sampled nodes land on drawn pixels, because a misaligned crop still looks plausible.
+
 ### gephi_session_receipt
 - **Method**: reports the mappings in force, the statistics run and their parameters, the layout and its settings, and the plugin and server versions.
 - **Params**: `{file?: str}` — writes JSON when given a path.
