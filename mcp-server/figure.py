@@ -16,8 +16,9 @@ Nothing here talks to Gephi, so it can be tested without one.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 

@@ -1797,8 +1797,9 @@ async def gephi_export_figure(
     from the image and then checked against it; if the check fails the page is dropped and the
     result says so, because a crop that is subtly misaligned still looks plausible.
     """
-    import figure as _figure
     from PIL import Image as _Image
+
+    import figure as _figure
     from gephi_mcp_viewer import parse_gexf
 
     base = Path(file)
