@@ -2,5 +2,5 @@
   "server": "1.18.0",
   "nbm": "1.3.0",
   "plugin": "1.15.0",
-  "_comment": "Canonical latest-version marker read by gephi_health_check. Bump on every release (part of RELEASING.md). server = PyPI gephi-mcp, nbm = Gephi Java plugin, plugin = Claude and Codex workflow packages."
+  "_comment": "Canonical latest-version marker read by gephi_health_check. Bump on every release (part of RELEASING.md). server = PyPI gephi-ai, nbm = Gephi Java plugin, plugin = Claude and Codex workflow packages."
 }

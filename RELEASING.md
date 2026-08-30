@@ -1,6 +1,6 @@
 # Releasing gephi-ai
 
-Three tracks version independently: the **MCP server** (PyPI `gephi-mcp`), the
+Three tracks version independently: the **MCP server** (PyPI `gephi-ai`), the
 **Gephi Java plugin** (`.nbm`), and the **assistant workflow packages** (Claude
 and Codex marketplaces, sharing one plugin version). A release bumps whichever
 changed and publishes to every channel that serves it.
@@ -11,7 +11,7 @@ skipped. This file is the how; run the script to find out what still needs doing
 ## Order matters
 
 PyPI first, then the release. `scripts/build-mcpb.sh` installs
-`gephi-mcp==<version>` **from PyPI**, so the bundle cannot be built until the
+`gephi-ai==<version>` **from PyPI**, so the bundle cannot be built until the
 server is published. Publishing the server last means building the bundle from
 the previous version without noticing.
 
@@ -68,15 +68,15 @@ the previous version without noticing.
 
 7. **Build the Claude Desktop bundle** (skip if the server did not change):
 
-   `scripts/build-mcpb.sh` installs `gephi-mcp==<version>` from PyPI through pip, so pip
+   `scripts/build-mcpb.sh` installs `gephi-ai==<version>` from PyPI through pip, so pip
    has to be able to resolve that version before this step can run. Checking with
-   `curl -s https://pypi.org/simple/gephi-mcp/ | grep gephi_mcp-<version>-py3` is
+   `curl -s https://pypi.org/simple/gephi-ai/ | grep gephi_ai-<version>-py3` is
    necessary but not sufficient: that check can pass while pip still cannot install the
    version, because pip and curl can land on different PyPI CDN edges and the one pip
    hits can lag behind. Poll with pip itself and wait for it to succeed before building:
 
    ```bash
-   pip download --no-cache-dir gephi-mcp==<version>
+   pip download --no-cache-dir gephi-ai==<version>
    ```
 
    ```bash

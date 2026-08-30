@@ -50,8 +50,8 @@ PY
 if [ -n "$NEW_SERVER" ] && [ "$NEW_SERVER" != "$OLD_SERVER" ]; then
   echo "server  $OLD_SERVER -> $NEW_SERVER"
   sedi "s/^version = \"$OLD_SERVER\"/version = \"$NEW_SERVER\"/" mcp-server/pyproject.toml
-  sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" plugins/claude-code/.mcp.json
-  sedi "s/gephi-mcp==$OLD_SERVER/gephi-mcp==$NEW_SERVER/" plugins/gephi-network-analysis/.mcp.json
+  sedi "s/gephi-ai==$OLD_SERVER/gephi-ai==$NEW_SERVER/" plugins/claude-code/.mcp.json
+  sedi "s/gephi-ai==$OLD_SERVER/gephi-ai==$NEW_SERVER/" plugins/gephi-network-analysis/.mcp.json
   jset mcpb/manifest.json version "$NEW_SERVER"
   jset latest.json server "$NEW_SERVER"
 fi

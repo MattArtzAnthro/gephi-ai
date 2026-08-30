@@ -8,10 +8,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
+# The server NAME stays `gephi-mcp` (it sets the tool prefix `mcp__gephi-mcp__` and
+# every allowlist that matches it); the PACKAGE the launcher resolves is `gephi-ai`.
+# The two senses are easy to conflate in a sweep, so both are pinned here.
 REGISTRATIONS = (
-    "claude mcp add gephi-mcp -- uvx gephi-mcp",
-    "codex mcp add gephi-mcp -- uvx gephi-mcp",
-    "gemini mcp add -s user gephi-mcp uvx gephi-mcp",
+    "claude mcp add gephi-mcp -- uvx gephi-ai",
+    "codex mcp add gephi-mcp -- uvx gephi-ai",
+    "gemini mcp add -s user gephi-mcp uvx gephi-ai",
 )
 
 

@@ -638,5 +638,5 @@ async def test_get_timeline_is_a_get(rec):
 def test_server_reports_package_version():
     """serverInfo.version on the wire must be the installed package version, not empty."""
     import importlib.metadata
-    assert gephi_mcp.mcp.version == importlib.metadata.version("gephi-mcp")
+    assert gephi_mcp.mcp.version == importlib.metadata.version("gephi-ai")
     assert gephi_mcp.mcp.version != ""

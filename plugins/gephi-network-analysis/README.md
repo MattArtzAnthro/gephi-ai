@@ -7,7 +7,7 @@ Claude-only commands, custom agents, and hooks into Codex-native plugin pieces.
 ## What is included
 
 - `.codex-plugin/plugin.json` — Codex plugin manifest
-- `.mcp.json` — local `uvx gephi-mcp` server registration, pinned to the same
+- `.mcp.json` — local `uvx gephi-ai` server registration, pinned to the same
   release used by the Claude plugin
 - `skills/gephi/` — the complete network-analysis skill and reference library
 - focused workflow skills replacing every Claude slash command
@@ -27,7 +27,7 @@ that does not expose or proxy the unauthenticated local Gephi API.
 2. The Gephi AI Desktop plugin 1.3.0 or newer installed and running.
 3. `uv`/`uvx` available on the system path.
 
-The plugin launches `gephi-mcp==1.17.0`. Every operational skill calls
+The plugin launches the `gephi-ai` release pinned in `.mcp.json`. Every operational skill calls
 `gephi_health_check` first and stops cleanly when Gephi is unavailable. This
 replaces the Claude `PreToolUse` hook without depending on an unsupported host
 lifecycle callback.

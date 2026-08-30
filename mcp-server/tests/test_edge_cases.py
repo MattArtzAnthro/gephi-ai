@@ -236,7 +236,7 @@ def test_extract_backbone_empty_and_small():
 def test_semver_and_is_behind():
     import gephi_mcp as g
     assert g._semver("1.9.10") == (1, 9, 10)
-    assert g._semver("gephi-mcp==1.2.15") == (1, 2, 15)
+    assert g._semver("gephi-ai==1.2.15") == (1, 2, 15)
     # numeric compare, not string (1.9.10 is newer than 1.9.9)
     assert g._is_behind("1.9.9", "1.9.10") is True
     assert g._is_behind("1.9.20", "1.9.20") is False

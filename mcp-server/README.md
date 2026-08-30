@@ -1,4 +1,4 @@
-# gephi-mcp
+# gephi-ai
 
 MCP server that bridges any [Model Context Protocol](https://modelcontextprotocol.io) client
 to a running [Gephi Desktop](https://gephi.org) instance, exposing **113 tools** for graph
@@ -17,22 +17,22 @@ see the top-level repository for the Gephi plugin, the Claude Code plugin, and f
 No install needed with [uv](https://docs.astral.sh/uv/) — point your MCP client at:
 
 ```bash
-uvx gephi-mcp
+uvx gephi-ai
 ```
 
-`uvx` fetches [`gephi-mcp` from PyPI](https://pypi.org/project/gephi-mcp/) on first run
-and caches it. For a persistent `gephi-mcp` command on your `PATH` instead, use
-`pipx install gephi-mcp` (or `pipx install .` from this directory). Avoid plain
+`uvx` fetches [`gephi-ai` from PyPI](https://pypi.org/project/gephi-ai/) on first run
+and caches it. For a persistent `gephi-ai` command on your `PATH` instead, use
+`pipx install gephi-ai` (or `pipx install .` from this directory). Avoid plain
 `pip install -e .` inside a virtual environment: the command is then only visible on
 that venv's `PATH`, and MCP clients launched outside your shell won't find it.
 
 ## Use
 
 The Gephi AI plugin must be installed and Gephi Desktop running first. Then point any MCP
-client at the `gephi-mcp` command, e.g. for Claude Desktop:
+client at the `gephi-ai` command, e.g. for Claude Desktop:
 
 ```json
-{ "mcpServers": { "gephi-mcp": { "command": "uvx", "args": ["gephi-mcp"] } } }
+{ "mcpServers": { "gephi-mcp": { "command": "uvx", "args": ["gephi-ai"] } } }
 ```
 
 ## Configuration

@@ -1,4 +1,4 @@
-"""MCPB entry point: run the bundled gephi-mcp server (stdio)."""
+"""MCPB entry point: run the bundled gephi-ai server (stdio)."""
 import os
 import sys
 

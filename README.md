@@ -101,6 +101,13 @@ so that a page you happen to be visiting cannot drive Gephi; see the security no
 
 ### Step 2: Connect your AI assistant
 
+> **Renamed on PyPI.** The server is published as **`gephi-ai`**. It was
+> previously `gephi-mcp`, which stays installable at 1.18.0 so existing setups
+> keep working but receives no further releases. If your config says
+> `uvx gephi-mcp`, change the package to `gephi-ai` to keep getting updates. The
+> server name itself is unchanged, so tool names and permissions stay as they are.
+
+
 #### Claude Desktop (fastest start)
 
 Download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it — Claude Desktop installs the server with all dependencies bundled. No terminal, no config file. (Requires Python 3.10+ on your system, which modern macOS provides.)
@@ -117,7 +124,7 @@ Add to your MCP configuration (`claude_desktop_config.json`):
   "mcpServers": {
     "gephi-mcp": {
       "command": "uvx",
-      "args": ["gephi-mcp"]
+      "args": ["gephi-ai"]
     }
   }
 }
@@ -140,7 +147,7 @@ The plugin bundles and runs the MCP server itself (via uv), and adds the slash c
 <summary>Claude Code with MCP tools only (no skills or commands)</summary>
 
 ```bash
-claude mcp add gephi-mcp -- uvx gephi-mcp
+claude mcp add gephi-mcp -- uvx gephi-ai
 ```
 
 </details>
@@ -164,7 +171,7 @@ and the repo marketplace is `.agents/plugins/marketplace.json`.
 <summary>Codex with MCP tools only (no plugin workflows)</summary>
 
 ```bash
-codex mcp add gephi-mcp -- uvx gephi-mcp
+codex mcp add gephi-mcp -- uvx gephi-ai
 ```
 
 </details>
@@ -174,10 +181,10 @@ codex mcp add gephi-mcp -- uvx gephi-mcp
 The server is model-agnostic: a stdio MCP server with one launcher that works everywhere. Register it once:
 
 ```bash
-gemini mcp add -s user gephi-mcp uvx gephi-mcp
+gemini mcp add -s user gephi-mcp uvx gephi-ai
 ```
 
-(Claude Code without the plugin: `claude mcp add gephi-mcp -- uvx gephi-mcp`.)
+(Claude Code without the plugin: `claude mcp add gephi-mcp -- uvx gephi-ai`.)
 
 These agents get all 113 tools. To give them the network-analysis guidance as well, copy the skill folder into your agent's skills directory:
 
@@ -199,24 +206,24 @@ ordinary triggerable skills. Other agents get the portable base skill and the
 tools. The repository also carries `AGENTS.md` and `GEMINI.md`, which those agents
 read on their own.
 
-Any other MCP client: point it at `uvx gephi-mcp` using stdio transport. `uvx` fetches the
-[`gephi-mcp` package from PyPI](https://pypi.org/project/gephi-mcp/) on first run and
-caches it. For a persistent named command, `pipx install gephi-mcp` also works.
+Any other MCP client: point it at `uvx gephi-ai` using stdio transport. `uvx` fetches the
+[`gephi-ai` package from PyPI](https://pypi.org/project/gephi-ai/) on first run and
+caches it. For a persistent named command, `pipx install gephi-ai` also works.
 
 <details>
 <summary>Troubleshooting: "Executable not found in $PATH"</summary>
 
 Avoid installing with pip inside a project virtual environment. Inside an
-activated `.venv` the `gephi-mcp` command only exists on that venv's `PATH`, and MCP
+activated `.venv` the `gephi-ai` command only exists on that venv's `PATH`, and MCP
 clients launch servers outside your shell — the server fails with "Executable not
-found in $PATH" even though `which gephi-mcp` succeeds. Use `uvx`/`pipx`, or point
+found in $PATH" even though `which gephi-ai` succeeds. Use `uvx`/`pipx`, or point
 your MCP config at the venv executable's absolute path.
 
 </details>
 
 ### Step 3: Verify
 
-First confirm the MCP server actually connected. In Claude Code, run `/mcp` — `gephi-mcp` should be listed as **connected**. (In Claude Desktop, check that the tools appear in the tools menu.) If it shows a failure like "Executable not found in $PATH", the launcher (`uv`/`uvx` or `gephi-mcp`) isn't on the global `PATH` — see the notes in Step 2.
+First confirm the MCP server actually connected. In Claude Code, run `/mcp` — `gephi-mcp` should be listed as **connected**. (In Claude Desktop, check that the tools appear in the tools menu.) If it shows a failure like "Executable not found in $PATH", the launcher (`uv`/`uvx` or `gephi-ai`) isn't on the global `PATH` — see the notes in Step 2.
 
 Then, with Gephi running, ask your assistant:
 

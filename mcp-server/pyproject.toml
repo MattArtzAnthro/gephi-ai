@@ -1,5 +1,5 @@
 [project]
-name = "gephi-mcp"
+name = "gephi-ai"
 version = "1.18.0"
 description = "MCP Server for controlling Gephi Desktop via remote API"
 readme = "README.md"
@@ -44,7 +44,7 @@ dev = [
 ]
 
 [project.scripts]
-gephi-mcp = "gephi_mcp:mcp.run"
+gephi-ai = "gephi_mcp:mcp.run"
 
 [build-system]
 requires = ["hatchling"]
@@ -61,6 +61,10 @@ exclude = ["caveats.local.json"]
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 exclude = ["caveats.local.json"]
+# Flat layout: the modules sit at the project root, not under a package directory. An
+# editable install has to put that root on sys.path explicitly, or `import gephi_mcp`
+# resolves only when the shell is already in this directory and fails everywhere else.
+dev-mode-dirs = ["."]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["caveats.local.json"]

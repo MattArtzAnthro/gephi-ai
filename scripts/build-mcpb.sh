@@ -4,8 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION="${1:-$(python3 -c "import json; print(json.load(open('mcpb/manifest.json'))['version'])")}"
-echo "Bundling gephi-mcp==${VERSION} from PyPI"
+echo "Bundling gephi-ai==${VERSION} from PyPI"
 rm -rf mcpb/server/lib
-python3 -m pip install --quiet --target mcpb/server/lib "gephi-mcp==${VERSION}"
+python3 -m pip install --quiet --target mcpb/server/lib "gephi-ai==${VERSION}"
 npx -y @anthropic-ai/mcpb pack mcpb "gephi-ai-${VERSION}.mcpb"
 echo "Built gephi-ai-${VERSION}.mcpb"

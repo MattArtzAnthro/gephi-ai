@@ -61,11 +61,11 @@ PINNED=$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.
 if [ -z "$PINNED" ]; then
   note "could not read pinned version from plugins/claude-code/.mcp.json"
 else
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/gephi-mcp/$PINNED/json" 2>/dev/null)
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/gephi-ai/$PINNED/json" 2>/dev/null)
   if [ "$HTTP_CODE" = "200" ]; then
-    ok "pinned gephi-mcp==$PINNED is published on PyPI"
+    ok "pinned gephi-ai==$PINNED is published on PyPI"
   else
-    note "DEAD ON INSTALL: .mcp.json pins gephi-mcp==$PINNED but PyPI does not have it yet (HTTP $HTTP_CODE) — publish before anyone reinstalls/updates"
+    note "DEAD ON INSTALL: .mcp.json pins gephi-ai==$PINNED but PyPI does not have it yet (HTTP $HTTP_CODE) — publish before anyone reinstalls/updates"
   fi
 fi
 echo ""

@@ -287,7 +287,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gephi-mcp"
+name = "gephi-ai"
 version = "1.18.0"
 source = { editable = "." }
 dependencies = [

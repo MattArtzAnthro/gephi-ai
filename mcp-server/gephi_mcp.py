@@ -78,7 +78,9 @@ try:
     # more than one dist-info for this package (an orphaned one from an earlier install
     # is enough). Treating a falsy return as "unknown" keeps a null out of the session
     # receipt, which is meant to be pasted into a methods section.
-    __version__ = importlib.metadata.version("gephi-mcp") or None
+    # The distribution is "gephi-ai"; it was "gephi-mcp" before the rename. The import
+    # module stays gephi_mcp, so do not "correct" this back to match the module name.
+    __version__ = importlib.metadata.version("gephi-ai") or None
 except Exception:  # running from source, not an installed dist
     __version__ = None  # source run: no version to compare, server-freshness check skips
 # One canonical version file on main; a raw file is not GitHub-API-rate-limited.
@@ -143,7 +145,7 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
 def _package_version() -> str:
     try:
         # See the note on __version__: this can return None instead of raising.
-        return importlib.metadata.version("gephi-mcp") or "0.0.0"
+        return importlib.metadata.version("gephi-ai") or "0.0.0"
     except importlib.metadata.PackageNotFoundError:  # running from a bare checkout
         return "0.0.0"
 

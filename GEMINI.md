@@ -1,6 +1,6 @@
 # Gephi AI — Instructions for AI Coding Agents
 
-This repository ships an MCP server (`gephi-mcp` on PyPI) that controls a
+This repository ships an MCP server (`gephi-ai` on PyPI) that controls a
 running Gephi Desktop through a local HTTP API provided by the Gephi AI plugin
 (`gephi-ai-<version>.nbm`), plus a portable skill that teaches network-analysis
 practice. The server exposes 113 tools whose names start with `gephi_`
@@ -21,13 +21,13 @@ this chain:
    registration syntax differs.
 
    ```bash
-   claude mcp add gephi-mcp -- uvx gephi-mcp
-   codex mcp add gephi-mcp -- uvx gephi-mcp
-   gemini mcp add -s user gephi-mcp uvx gephi-mcp
+   claude mcp add gephi-mcp -- uvx gephi-ai
+   codex mcp add gephi-mcp -- uvx gephi-ai
+   gemini mcp add -s user gephi-mcp uvx gephi-ai
    ```
 
-   `uvx` fetches the current `gephi-mcp` release from PyPI on first run and
-   caches it. Any other MCP client: point it at `uvx gephi-mcp` over stdio.
+   `uvx` fetches the current `gephi-ai` release from PyPI on first run and
+   caches it. Any other MCP client: point it at `uvx gephi-ai` over stdio.
 
 3. **No MCP at all**: there is no fallback. The server talks to Gephi Desktop
    on `127.0.0.1:8080`, so it has to run on the machine where Gephi runs.

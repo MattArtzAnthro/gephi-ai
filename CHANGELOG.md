@@ -4,6 +4,21 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Packaging: PyPI project renamed to `gephi-ai`
+
+### Changed
+- The MCP server is published on PyPI as `gephi-ai`. Install with `uvx gephi-ai`.
+  1.18.0 is the same code as `gephi-mcp` 1.18.0.
+- The MCP server name is unchanged. Tools stay `mcp__gephi-mcp__gephi_*` and existing
+  permission allowlists keep matching.
+- `gephi-mcp` stays installable at 1.18.0 and receives no further releases. Switch the
+  package name to keep getting updates.
+
+### Fixed
+- The server read its own version under the old distribution name and reported `0.0.0`.
+- The editable install did not place the project root on `sys.path`, so `pip install -e`
+  resolved imports only from inside `mcp-server/`.
+
 ## MCP server 1.18.0 / claude-plugin 1.15.0
 
 ### Added
