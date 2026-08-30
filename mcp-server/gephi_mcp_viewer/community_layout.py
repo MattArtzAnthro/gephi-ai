@@ -42,6 +42,11 @@ def _radial_fan(members, adj, indeg, size_of):
         if m not in depth:
             depth[m] = 1
             parent[m] = root
+            # Must join `order` too. Every structure below (kids, leaves, by_depth) is built
+            # by iterating it, and three sites index leaves[] directly. On a directed graph
+            # the BFS routinely fails to reach every member, so this branch is the norm, not
+            # the exception, and omitting the append raised KeyError.
+            order.append(m)
 
     kids = {}
     for v, p in parent.items():

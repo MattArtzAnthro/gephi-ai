@@ -1274,14 +1274,24 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
 
     groups = result.get("consensus_groups") or []
     if groups:
-        await gephi.request("POST", "/graph/columns/add",
-                            json_data={"name": consensus_column, "type": "integer",
-                                       "target": "node"})
+        added = await gephi.request("POST", "/graph/columns/add",
+                                    json_data={"name": consensus_column, "type": "integer",
+                                               "target": "node"})
         updates = [{"id": node, "attributes": {consensus_column: index}}
                    for index, group in enumerate(groups) for node in group]
-        await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": updates})
-        result["consensus_column"] = consensus_column
-        result["consensus_communities"] = len(groups)
+        written = await gephi.request("POST", "/graph/nodes/attributes",
+                                      json_data={"updates": updates})
+        # Both responses used to be discarded, so a failed write was reported as a successful
+        # one and the caller was told a column existed that did not. Report what happened.
+        if added.get("success", True) and written.get("success", True):
+            result["consensus_column"] = consensus_column
+            result["consensus_communities"] = len(groups)
+        else:
+            result["consensus_column"] = None
+            result["consensus_write_failed"] = (
+                "The consensus partition was computed but could not be written to the graph. "
+                "The stability numbers above are unaffected; the column is absent.")
+            result["consensus_write_detail"] = added if not added.get("success", True) else written
 
     return await fmt_stat("modularity", result, resolution=resolution)
 
@@ -2888,6 +2898,12 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
     run stops, no diff is produced, and the failure is reported — the scratch
     copy is still cleaned up.
     """
+    # This tool duplicates a workspace, works on the copy, deletes it, and returns. Every one
+    # of those calls hits /workspace/, which resets the ledger — correct for a real change of
+    # graph, wrong here, because the caller is handed back the same graph with the same styling.
+    # Without this the counterfactual silently empties the methods record for the figure being
+    # prepared, and the next export ships with an incomplete legend.
+    ledger_entries = list(LEDGER.entries)
     ws_list = await gephi.request("GET", "/workspace/list")
     if not ws_list.get("success", True):
         return fmt(ws_list)
@@ -2926,6 +2942,9 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
                                "diff": _diff_profiles(before, after)}
     finally:
         cleanup = await _cleanup_scratch(scratch_id, orig_id)
+        # The caller is back on their own graph with their own styling, so the record that
+        # described it is valid again. Restored last, after every /workspace/ call has run.
+        LEDGER.entries = ledger_entries
 
     outcome["cleanup"] = cleanup
     return fmt(outcome)
