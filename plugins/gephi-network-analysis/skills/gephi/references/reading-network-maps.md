@@ -116,7 +116,7 @@ source (most are open access):
 | A gentler first primer on visual network analysis | Venturini, Jacomy, and Pereira 2015, "Visual Network Analysis" (working paper) |
 | What ForceAtlas 2 actually does, its parameters | Jacomy et al. 2014, "ForceAtlas2" (PLoS ONE, open access) |
 | Whether their network is "scale-free", power laws | Jacomy 2020, "Epistemic Clashes in Network Science" (Big Data & Society, open access) |
-| One-click tools, defaults, why the craft makes them decide | Jacomy and Munk 2022, "Interfering with the Black-Box-Tradeoff Model: Gephisto" (Convergence) |
+| One-click tools, defaults, why the craft makes them decide | Jacomy and Munk 2024, "Interfering with the black-box-tradeoff model: Gephisto, a one-click Gephi for critical technical practice" (Convergence 30(1)) |
 | Sharing maps responsibly, why context must travel with images | Jacomy and Jokubauskaitė 2022, "Unblackboxing Gephi" (HAL preprint) |
 | The deep dive on everything above | Jacomy 2021, "Situating Visual Network Analysis" (PhD dissertation, online) |
 

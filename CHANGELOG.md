@@ -4,6 +4,31 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.18.1
+
+### Fixed
+- **`gephi_community_stability` reported a failed write as a successful one.** It issued
+  the two calls that write the consensus partition and checked neither response, so when
+  the write path was unavailable it still returned `consensus_column` and
+  `consensus_communities` while the column existed on no node. It now reports
+  `consensus_write_failed` with the detail instead. The stability numbers were never
+  affected.
+- **`gephi_whatif` erased the session's methods record.** It duplicates a workspace, edits
+  the copy, deletes it, and returns, and those workspace calls trip the rule that clears the
+  styling record when the graph changes. The caller comes back to the same graph, so the
+  record is now saved and restored around the run. Left unfixed, running a counterfactual
+  emptied `gephi_session_receipt` and the next figure exported with an incomplete legend.
+- **`gephi_community_layout` raised an error on directed graphs.** Community members the
+  breadth-first walk cannot reach were added to the traversal's depth and parent maps but
+  not to its ordering, which every later step is built from. On a directed graph that branch
+  is the norm rather than the exception, so the layout the graph profile recommends for
+  tree-like networks could not run on them.
+
+### Changed
+- The README's component table said the server exposes 112 tools; it exposes 113.
+- The reading-network-maps reference dated the Gephisto paper 2022 with a shortened title.
+  Corrected to 2024, the version of record, with the full title.
+
 ## Packaging: PyPI project renamed to `gephi-ai`
 
 ### Changed

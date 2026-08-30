@@ -52,7 +52,7 @@ Claude / AI Assistant
 | Component | Directory | What it does |
 |-----------|-----------|-------------|
 | Gephi Plugin | `gephi-ai-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 112 Gephi tools via MCP |
+| MCP Server | `mcp-server/` | Python server that exposes 113 Gephi tools via MCP |
 | Claude Plugin | `plugins/claude-code/` | Skills, commands, agents, and hooks for Claude Code |
 | Codex Plugin | `plugins/gephi-network-analysis/` | Skills and bundled MCP registration for Codex |
 
