@@ -14,7 +14,10 @@ __pycache__/
 mcp-server/dist/
 
 # MCPB build artifacts
-mcpb/server/lib/
+# Match the " 2"/" 3" copies Finder leaves behind as well as lib/ itself;
+# the plain rule missed "mcpb/server/lib 3/" and left 19 vendored files
+# staged for the next "git add ." in a public repo.
+mcpb/server/lib*/
 *.mcpb
 
 # Local drafts and internal notes — never publish (LinkedIn posts, papers, scratch)
