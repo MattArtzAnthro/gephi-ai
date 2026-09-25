@@ -663,3 +663,43 @@ async def test_a_snapshot_never_treats_a_pre_existing_workspace_as_the_copy(monk
     assert out["success"] is False
     assert _renamed(state) == []
     assert state["deleted"] == []
+
+
+# ── whatif validates the reported copy before editing or deleting it ────────
+
+
+async def test_whatif_never_treats_the_original_as_the_copy(monkeypatch):
+    # The duplicate reports the ORIGINAL's id as the copy. If whatif trusted that, it would
+    # edit and then delete the person's own workspace.
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+
+    def duplicate():
+        state["duplicate"]()  # a real copy (id 2) is made and made current
+        return {"success": True, "workspace_id": 1}  # but the original's id is reported
+
+    faults["/workspace/duplicate"] = duplicate
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert out["success"] is False
+    assert state["deleted"] == [], "nothing may be deleted when the copy cannot be identified"
+    assert any(w["id"] == 1 for w in state["ws"]), "the original workspace was deleted"
+
+
+async def test_whatif_never_treats_a_pre_existing_workspace_as_the_copy(monkeypatch):
+    # The duplicate reports the id of an unrelated workspace that existed before it ran.
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    state["ws"].append({"id": 5, "name": "Other", "current": False, "node_count": 5})
+
+    def duplicate():
+        state["duplicate"]()  # a real copy (id 2) is made and made current
+        return {"success": True, "workspace_id": 5}  # but a pre-existing id is reported
+
+    faults["/workspace/duplicate"] = duplicate
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert out["success"] is False
+    assert state["deleted"] == [], "nothing may be deleted when the copy cannot be identified"
+    assert any(w["id"] == 1 for w in state["ws"]), "the original workspace was deleted"
+    assert any(w["id"] == 5 for w in state["ws"]), "an unrelated pre-existing workspace was deleted"

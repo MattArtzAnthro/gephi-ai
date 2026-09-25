@@ -3112,7 +3112,19 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
                     dup = {**dup, "error": str(dup.get("error", "duplicate failed"))
                            + found["note"]}
                 return fmt(dup)
-            scratch_id = dup.get("workspace_id")
+            reported = dup.get("workspace_id")
+            wss_after = await _workspaces()
+            scratch_id = (_new_copy_id(before_ids, wss_after, orig_id, reported)
+                          if wss_after is not None else None)
+            if scratch_id is None:
+                # The duplicate claims success, but the copy it reports cannot be told apart
+                # from a workspace that was already there. Editing or deleting it would risk
+                # the person's own graph, so neither happens; only what is known is reported.
+                found = await _discard_new_copy(before_ids, orig, reported)
+                on_original = found["on_original"]
+                return fmt({"success": False,
+                            "error": "could not identify the duplicate's copy, so nothing was "
+                                     "edited or removed" + found["note"]})
 
             outcome: dict[str, Any]
             try:
