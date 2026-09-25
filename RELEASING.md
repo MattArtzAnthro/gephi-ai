@@ -63,14 +63,16 @@ have yet, so it fails to install until PyPI catches up.
    `caveats.json` is rewritten by a local probe run and the wheel was built afterwards. Every test
    passed throughout.
 
-6. **Publish the server to PyPI** (skip if the server did not change). The pin in
-   Both plugin `.mcp.json` files resolve from PyPI, so an unpublished pin is dead
-   on install for anyone who reinstalls.
+6. **Publish the server to PyPI** (skip if the server did not change). Both plugin
+   `.mcp.json` files pin the server version and resolve it from PyPI, so an unpublished pin
+   fails on install for anyone who reinstalls.
 
 7. **Build the Claude Desktop bundle** (skip if the server did not change):
 
-   `scripts/build-mcpb.sh` does not install anything; it only packs `mcpb/` after
-   checking that `mcpb/pyproject.toml` pins `gephi-ai==<version>`. Claude Desktop
+   `scripts/build-mcpb.sh` checks that `mcpb/pyproject.toml` pins `gephi-ai==<version>`,
+   locks the bundle's dependencies into `mcpb/uv.lock` with `uv lock`, and packs `mcpb/`
+   with the lock inside. The lock step needs uv on PATH and needs `gephi-ai==<version>` to
+   resolve from PyPI, so the build fails until it does. Claude Desktop
    is what installs `gephi-ai==<version>` from PyPI, and it does that on the
    user's machine when they install the bundle. So pip has to be able to resolve
    that version before the bundle is safe to release, or installs fail for
