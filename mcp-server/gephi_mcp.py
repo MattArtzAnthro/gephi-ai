@@ -684,7 +684,8 @@ async def _discard_late_copy(before_ids: set[Any], orig: dict[str, Any]) -> dict
                 return {"on_original": _is_current(wss, orig_id),
                         "note": _NOT_THE_COPY + may_appear}
         if new:
-            found = await _discard_new_copy(before_ids, orig, new[0] if len(new) == 1 else None)
+            found = await _discard_new_copy(before_ids, orig, new[0] if len(new) == 1 else None,
+                                            late=True)
             if found.get("removed"):
                 found = {**found, "note": "; the duplicate finished in Gephi after the timeout, "
                                           "and its copy was removed" + found["note"]}

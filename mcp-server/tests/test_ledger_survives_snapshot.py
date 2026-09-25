@@ -933,3 +933,35 @@ async def test_a_call_cancelled_after_a_hand_made_workspace_appears_leaves_it(
     assert state["deleted"] == []
     assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True), (9, False)]
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_two_hand_made_workspaces_then_one_closed_leaves_the_other(monkeypatch, entry):
+    # Two workspaces made by hand appear on the second poll, so none is removed. One is closed
+    # before the cleanup lists again, which leaves a single new workspace. It still does not look
+    # like the copy, so it stays.
+    track = {"timed_out": False, "lists_after": 0}
+
+    def duplicate():
+        track["timed_out"] = True
+        raise httpx.ReadTimeout("timed out")
+
+    def listing():
+        if track["timed_out"]:
+            track["lists_after"] += 1
+            if track["lists_after"] == 2:
+                state["ws"] += [{"id": 41, "name": "Study A", "current": False, "node_count": 5},
+                                {"id": 42, "name": "Study B", "current": False, "node_count": 0}]
+            elif track["lists_after"] == 3:
+                state["ws"] = [w for w in state["ws"] if w["id"] != 41]
+        return None
+
+    state = install_fake_gephi(monkeypatch, faults={"/workspace/duplicate": duplicate,
+                                                    "/workspace/list": listing})
+    _fast_polls(monkeypatch, grace=5)
+    _record_layout()
+    out = json.loads(await asyncio.wait_for(ENTRIES[entry](), 2))
+    assert out["success"] is False
+    assert state["deleted"] == []
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True), (42, False)]
+    assert "does not look like the copy" in out["error"]
