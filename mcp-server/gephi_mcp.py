@@ -65,6 +65,11 @@ SLOW_REQUEST_TIMEOUT = float(os.environ.get("GEPHI_SLOW_TIMEOUT", "600.0"))
 # Upper bound on removing a workspace copy and switching back after a call is cancelled or
 # fails. The cleanup is a few quick workspace calls, so one ordinary request timeout covers it.
 CLEANUP_TIMEOUT = REQUEST_TIMEOUT
+# A workspace duplicate that timed out on the client side can still finish in Gephi later. The
+# workspace list is then checked every DUPLICATE_POLL_INTERVAL seconds, for up to DUPLICATE_GRACE
+# seconds, so a copy that appears late is removed instead of left behind.
+DUPLICATE_GRACE = float(os.environ.get("GEPHI_DUPLICATE_GRACE", "30"))
+DUPLICATE_POLL_INTERVAL = 1.0
 
 # ── Undo snapshots ─────────────────────────────────────────────────────────
 # A rolling one-level undo: before each destructive tool runs, the current
@@ -279,6 +284,14 @@ def _workspace_bookkeeping():
         _WORKSPACE_BOOKKEEPING.reset(token)
 
 
+TIMEOUT_ERROR = "Request timed out. The operation may still be running in Gephi."
+
+
+def _timed_out(response: dict[str, Any]) -> bool:
+    """True when GephiClient.request gave up waiting, so the call may still finish in Gephi."""
+    return response.get("success") is False and response.get("error") == TIMEOUT_ERROR
+
+
 class GephiClient:
     def __init__(self, base_url: str = GEPHI_API_URL):
         self.base_url = base_url.rstrip("/")
@@ -304,7 +317,7 @@ class GephiClient:
         except httpx.ConnectError:
             return {"success": False, "error": f"Cannot connect to Gephi at {self.base_url}. Ensure Gephi is running with the MCP plugin installed."}
         except httpx.TimeoutException:
-            return {"success": False, "error": "Request timed out. The operation may still be running in Gephi."}
+            return {"success": False, "error": TIMEOUT_ERROR}
         except httpx.HTTPStatusError as e:
             try:
                 return e.response.json()
@@ -529,6 +542,7 @@ async def _discard_new_copy_unshielded(before_ids: set[Any], orig: dict[str, Any
         return {"on_original": on_original, "note": note}
     cleanup = await _cleanup_scratch(copy_id, orig_id)
     on_original = orig_id is not None and cleanup["returned_to_workspace_id"] == orig_id
+    removed = cleanup["scratch_deleted"]
     unconfirmed = "which workspace is now current could not be confirmed"
     if cleanup["scratch_deleted"]:
         note = "" if on_original else "; the copy was removed, but " + unconfirmed
@@ -539,7 +553,38 @@ async def _discard_new_copy_unshielded(before_ids: set[Any], orig: dict[str, Any
     if others:
         note += (f"; {_count(len(others), 'other new workspace')} appeared and "
                  f"{'was' if len(others) == 1 else 'were'} left; close any copy by hand")
-    return {"on_original": on_original, "note": note}
+    return {"on_original": on_original, "note": note, "removed": removed}
+
+
+async def _discard_late_copy(before_ids: set[Any], orig: dict[str, Any]) -> dict[str, Any]:
+    """After a duplicate timed out, wait for the copy it may still make, then remove it.
+
+    The workspace list is checked at once and then every DUPLICATE_POLL_INTERVAL seconds for up
+    to DUPLICATE_GRACE seconds. As soon as a new workspace appears, _discard_new_copy removes it
+    by id, or removes nothing when more than one appeared. A cancellation stops the polling and
+    goes on to the caller, whose cleanup runs once. Returns what _discard_new_copy returns."""
+    deadline = anyio.current_time() + DUPLICATE_GRACE
+    while True:
+        wss = await _workspaces()
+        if wss is not None and _new_ids(before_ids, wss):
+            found = await _discard_new_copy(before_ids, orig, None)
+            if found.get("removed"):
+                found = {**found, "note": "; the duplicate finished in Gephi after the timeout, "
+                                          "and its copy was removed" + found["note"]}
+            return found
+        remaining = deadline - anyio.current_time()
+        if remaining <= 0:
+            break
+        await anyio.sleep(min(DUPLICATE_POLL_INTERVAL, remaining))
+    orig_id = orig.get("id")
+    on_original = wss is not None and orig_id is not None and any(
+        w.get("current") and w.get("id") == orig_id for w in wss)
+    seen = ("no copy appeared" if wss is not None
+            else "the workspace list could not be read")
+    return {"on_original": on_original,
+            "note": f"; {seen} within {DUPLICATE_GRACE:g} s, but the duplicate may still finish "
+                    f'in Gephi, so a copy named like "{orig.get("name")} copy" may still appear '
+                    "in Gephi's tab bar; close it by hand"}
 
 
 def _count(n: int, noun: str) -> str:
@@ -550,7 +595,10 @@ async def _abandon_snapshot_copy(reason: str, before_ids: set[Any], cur: dict[st
                                  dup: dict[str, Any]) -> dict[str, Any]:
     """Report a failed snapshot after removing any copy and returning to the original. If the
     return cannot be confirmed, the methods record no longer describes the graph on screen."""
-    found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"))
+    if _timed_out(dup):
+        found = await _discard_late_copy(before_ids, cur)
+    else:
+        found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"))
     if not found["on_original"]:
         LEDGER.reset()
     return {"ok": False, "reason": str(reason) + found["note"]}
@@ -3152,8 +3200,17 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
                 raise
             if not dup.get("success", True):
                 # A duplicate that failed on the client side, such as a timeout, can still
-                # have completed in Gephi, so look for a copy to remove.
-                found = await _discard_new_copy(before_ids, orig, dup.get("workspace_id"))
+                # have completed in Gephi, so look for a copy to remove. After a timeout the
+                # copy may appear later, so the list is polled for a while.
+                if _timed_out(dup):
+                    try:
+                        found = await _discard_late_copy(before_ids, orig)
+                    except BaseException:
+                        found = await _discard_new_copy(before_ids, orig, None)
+                        on_original = found["on_original"]
+                        raise
+                else:
+                    found = await _discard_new_copy(before_ids, orig, dup.get("workspace_id"))
                 on_original = found["on_original"]
                 if found["note"]:
                     dup = {**dup, "error": str(dup.get("error", "duplicate failed"))

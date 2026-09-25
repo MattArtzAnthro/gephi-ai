@@ -526,13 +526,15 @@ async def test_a_snapshot_whose_duplicate_times_out_leaves_several_copies_and_sa
 
 
 async def test_a_snapshot_whose_duplicate_times_out_and_list_fails_says_so(monkeypatch):
-    faults = {"/workspace/list": [None, {"success": False, "error": "busy"}]}
+    # The list answers before the duplicate, then keeps failing through the whole grace period.
+    faults = {"/workspace/list": [None] + [{"success": False, "error": "busy"}] * 1000}
     state = install_fake_gephi(monkeypatch, faults=faults)
     faults["/workspace/duplicate"] = _duplicate_then_time_out(state)
+    _fast_polls(monkeypatch, grace=0.05)
     _record_layout()
-    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    out = json.loads(await asyncio.wait_for(gephi_mcp.gephi_snapshot(label="x"), 2))
     assert out["success"] is False
-    assert "may remain" in out["error"] and "close it by hand" in out["error"]
+    assert "may still appear" in out["error"] and "close it by hand" in out["error"]
     assert state["deleted"] == []
 
 
@@ -584,7 +586,7 @@ async def test_a_snapshot_never_renames_a_workspace_other_than_the_reported_copy
     state = install_fake_gephi(monkeypatch, faults=faults)
 
     def duplicate():
-        reply = state["duplicate"](switch=False)
+        reply = state["duplicate"]()
         state["duplicate"]()
         return reply
 
@@ -652,7 +654,7 @@ async def test_a_snapshot_never_treats_a_pre_existing_workspace_as_the_copy(monk
     state["ws"].append({"id": 5, "name": "Other", "current": False, "node_count": 5})
 
     def duplicate():
-        state["duplicate"](switch=False)
+        state["duplicate"]()
         for w in state["ws"]:
             w["current"] = w["id"] == 5
         return {"success": True, "workspace_id": 5}
@@ -703,3 +705,138 @@ async def test_whatif_never_treats_a_pre_existing_workspace_as_the_copy(monkeypa
     assert state["deleted"] == [], "nothing may be deleted when the copy cannot be identified"
     assert any(w["id"] == 1 for w in state["ws"]), "the original workspace was deleted"
     assert any(w["id"] == 5 for w in state["ws"]), "an unrelated pre-existing workspace was deleted"
+
+
+# ── A duplicate that timed out can still finish in Gephi later ──
+# After a timeout the workspace list is polled for a while; a copy that appears is removed by
+# its id. Every other failure is checked once, as before.
+
+WHATIF_ENTRY = "whatif"
+ENTRIES = {
+    "snapshot": lambda: gephi_mcp.gephi_snapshot(label="x"),
+    WHATIF_ENTRY: lambda: gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]),
+}
+
+
+def _fast_polls(monkeypatch, grace):
+    # No raising=False: a renamed constant must fail here, not quietly set a new attribute.
+    monkeypatch.setattr(gephi_mcp, "DUPLICATE_POLL_INTERVAL", 0.001)
+    monkeypatch.setattr(gephi_mcp, "DUPLICATE_GRACE", grace)
+
+
+def _late_copy(monkeypatch, on_poll=None, copies=1):
+    """A duplicate that times out on the client side and makes nothing at first. On list call
+    number `on_poll` after the timeout, `copies` copies appear in Gephi. track["polls"] counts
+    the list calls made after the timeout."""
+    track = {"timed_out": False, "polls": 0}
+    faults = {}
+
+    def duplicate():
+        track["timed_out"] = True
+        raise httpx.ReadTimeout("timed out")
+
+    def listing():
+        if track["timed_out"]:
+            track["polls"] += 1
+            if track["polls"] == on_poll:
+                for _ in range(copies):
+                    state["duplicate"]()
+        return None
+
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults.update({"/workspace/duplicate": duplicate, "/workspace/list": listing})
+    return state, track
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_a_copy_that_appears_after_the_timeout_is_removed(monkeypatch, entry):
+    state, track = _late_copy(monkeypatch, on_poll=3)
+    _fast_polls(monkeypatch, grace=5)
+    _record_layout()
+    out = json.loads(await asyncio.wait_for(ENTRIES[entry](), 2))
+    assert out["success"] is False
+    assert "its copy was removed" in out["error"]
+    _assert_back_on_the_original_with_no_copy(state)
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_a_copy_that_never_appears_is_reported_and_nothing_is_deleted(monkeypatch, entry):
+    state, track = _late_copy(monkeypatch, on_poll=None)
+    _fast_polls(monkeypatch, grace=0.05)
+    _record_layout()
+    # Bounded: polling that ignored the grace period would never return.
+    out = json.loads(await asyncio.wait_for(ENTRIES[entry](), 2))
+    assert out["success"] is False
+    assert "may still appear" in out["error"] and "close it by hand" in out["error"]
+    assert track["polls"] > 1, "the list was checked once, not polled"
+    assert state["deleted"] == []
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True)]
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_two_copies_that_appear_after_the_timeout_are_both_left(monkeypatch, entry):
+    state, track = _late_copy(monkeypatch, on_poll=2, copies=2)
+    _fast_polls(monkeypatch, grace=5)
+    _record_layout()
+    out = json.loads(await asyncio.wait_for(ENTRIES[entry](), 2))
+    assert out["success"] is False
+    assert "2 new workspaces appeared" in out["error"] and "none was removed" in out["error"]
+    assert state["deleted"] == []
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_a_duplicate_that_fails_without_a_timeout_is_checked_once(monkeypatch, entry):
+    track = {"failed": False, "lists_after": 0}
+
+    def duplicate():
+        track["failed"] = True
+        return {"success": False, "error": "duplicate refused"}
+
+    def listing():
+        track["lists_after"] += track["failed"]
+        return None
+
+    install_fake_gephi(monkeypatch, faults={"/workspace/duplicate": duplicate,
+                                            "/workspace/list": listing})
+    _fast_polls(monkeypatch, grace=0.05)
+    out = json.loads(await asyncio.wait_for(ENTRIES[entry](), 2))
+    assert out["success"] is False
+    assert track["lists_after"] == 1
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+async def test_a_call_cancelled_while_polling_stops_and_removes_the_copy(monkeypatch, entry):
+    holder = {}
+    track = {"timed_out": False, "lists_after": 0}
+    cancel = _hang_and_cancel(holder)
+
+    def duplicate():
+        track["timed_out"] = True
+        raise httpx.ReadTimeout("timed out")
+
+    async def list_gate():
+        if track["timed_out"]:
+            track["lists_after"] += 1
+            if track["lists_after"] == 2:
+                # The copy lands in Gephi while the second poll is out, and the call is
+                # cancelled before that poll answers.
+                state["duplicate"]()
+                await cancel()
+
+    state = install_fake_gephi(monkeypatch, faults={"/workspace/duplicate": duplicate},
+                               gates={"/workspace/list": list_gate})
+    _fast_polls(monkeypatch, grace=5)
+    # The cleanup is shielded from cancellation, so this bound, not the one in
+    # _run_cancellable, is what ends a cleanup that hangs.
+    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 1)
+    _record_layout()
+    caught = await _run_cancellable(holder, ENTRIES[entry])
+    assert caught is True
+    _assert_back_on_the_original_with_no_copy(state)
+    # No poll followed the cancelled one. The cleanup ran once: one list to find the copy, two
+    # in the switch-and-delete, and one delete.
+    assert track["lists_after"] == 2 + 3
+    assert [p for _, p, _, _ in state["calls"]].count("/workspace/delete") == 1
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
