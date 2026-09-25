@@ -896,3 +896,40 @@ async def test_a_timed_out_snapshot_message_has_no_stray_period(monkeypatch):
     assert ".;" not in out["error"]
     assert out["error"].startswith("Request timed out. The operation may still be running in "
                                    "Gephi; the duplicate finished")
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+@pytest.mark.parametrize("workspace", [
+    {"id": 9, "name": "My new study", "current": False, "node_count": 0},
+    {"id": 9, "name": "My new study", "current": False, "node_count": 5},
+    {"id": 9, "name": "Copy of W", "current": False, "node_count": 0},
+], ids=["empty", "other-name", "other-node-count"])
+async def test_a_call_cancelled_after_a_hand_made_workspace_appears_leaves_it(
+        monkeypatch, entry, workspace):
+    # The cleanup after a cancel applies the same look check as the poll: a workspace a person
+    # made while the server waited for the copy is not the copy.
+    holder = {}
+    track = {"timed_out": False, "lists_after": 0}
+    cancel = _hang_and_cancel(holder)
+
+    def duplicate():
+        track["timed_out"] = True
+        raise httpx.ReadTimeout("timed out")
+
+    async def list_gate():
+        if track["timed_out"]:
+            track["lists_after"] += 1
+            if track["lists_after"] == 2:
+                state["ws"].append(dict(workspace))
+                await cancel()
+
+    state = install_fake_gephi(monkeypatch, faults={"/workspace/duplicate": duplicate},
+                               gates={"/workspace/list": list_gate})
+    _fast_polls(monkeypatch, grace=5)
+    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 1)
+    _record_layout()
+    caught = await _run_cancellable(holder, ENTRIES[entry])
+    assert caught is True
+    assert state["deleted"] == []
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True), (9, False)]
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"

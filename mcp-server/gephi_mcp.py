@@ -486,7 +486,8 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
     except BaseException:
         # Cancelled, or failed unexpectedly, while a copy may exist. Remove it before the
         # exception goes on, so the person is not left on a copy.
-        found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"))
+        found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"),
+                                        late=_timed_out(dup))
         if not found["on_original"]:
             LEDGER.reset()
         raise
@@ -584,6 +585,9 @@ def _copy_name(orig: dict[str, Any]) -> str:
     return _COPY_NAME_FORMS[0].format(orig.get("name"))
 
 
+_NOT_THE_COPY = "; a new workspace appeared that does not look like the copy; it was left, and "
+
+
 def _looks_like_copy(w: dict[str, Any], orig: dict[str, Any]) -> bool:
     """True when a workspace carries the name Gephi gives a copy of `orig`, and the same node
     count when both counts are known."""
@@ -600,17 +604,19 @@ def _with_note(text: Any, note: str) -> str:
 
 
 async def _discard_new_copy(before_ids: set[Any], orig: dict[str, Any],
-                            reported: Any) -> dict[str, Any]:
+                            reported: Any, late: bool = False) -> dict[str, Any]:
     """Remove the copy a duplicate made and return to the original workspace.
 
     The copy is deleted only by its own id, and only when that id is not the original's. When
-    the copy cannot be told apart, nothing is deleted and the note says so. Returns
+    the copy cannot be told apart, nothing is deleted and the note says so. `late` is for a
+    duplicate that timed out: with no reported id, the one new workspace is removed only when it
+    also looks like the copy, since a person may have made it by hand meanwhile. Returns
     {"on_original": bool, "note": str}, where on_original is True only when the person is
     confirmed back on the original workspace."""
     may_remain = (f'a copy named like "{_copy_name(orig)}" may remain in Gephi\'s tab '
                   "bar; close it by hand")
     found = await _shielded(_discard_new_copy_unshielded, before_ids, orig, reported,
-                            may_remain)
+                            may_remain, late)
     if found is None:
         return {"on_original": False,
                 "note": "; the cleanup did not finish in time, so " + may_remain}
@@ -618,13 +624,19 @@ async def _discard_new_copy(before_ids: set[Any], orig: dict[str, Any],
 
 
 async def _discard_new_copy_unshielded(before_ids: set[Any], orig: dict[str, Any],
-                                       reported: Any, may_remain: str) -> dict[str, Any]:
+                                       reported: Any, may_remain: str,
+                                       late: bool = False) -> dict[str, Any]:
     orig_id = orig.get("id")
     wss = await _workspaces()
     if wss is None:
         return {"on_original": False,
                 "note": "; the workspace list was unavailable, so " + may_remain}
     new = _new_ids(before_ids, wss)
+    if late and reported is None and len(new) == 1:
+        candidate = next(w for w in wss if w.get("id") == new[0])
+        if not _looks_like_copy(candidate, orig):
+            return {"on_original": _is_current(wss, orig_id),
+                    "note": _NOT_THE_COPY + may_remain}
     copy_id = _new_copy_id(before_ids, wss, orig_id, reported)
     if copy_id is None:
         on_original = orig_id is not None and any(
@@ -670,8 +682,7 @@ async def _discard_late_copy(before_ids: set[Any], orig: dict[str, Any]) -> dict
             candidate = next(w for w in wss if w.get("id") == new[0])
             if not _looks_like_copy(candidate, orig):
                 return {"on_original": _is_current(wss, orig_id),
-                        "note": "; a new workspace appeared that does not look like the copy; it "
-                                "was left, and " + may_appear}
+                        "note": _NOT_THE_COPY + may_appear}
         if new:
             found = await _discard_new_copy(before_ids, orig, new[0] if len(new) == 1 else None)
             if found.get("removed"):
@@ -3313,7 +3324,7 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
                     try:
                         found = await _discard_late_copy(before_ids, orig)
                     except BaseException:
-                        found = await _discard_new_copy(before_ids, orig, None)
+                        found = await _discard_new_copy(before_ids, orig, None, late=True)
                         on_original = found["on_original"]
                         raise
                 else:
