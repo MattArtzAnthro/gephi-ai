@@ -165,6 +165,12 @@ def test_bundle_uses_the_uv_runtime():
     assert manifest["manifest_version"] == "0.4"
     assert manifest["server"]["type"] == "uv"
     assert manifest["server"]["entry_point"] == "src/server.py"
+    # Claude Desktop starts the server with exactly this command.
+    assert manifest["server"]["mcp_config"] == {
+        "command": "uv",
+        "args": ["run", "--directory", "${__dirname}", manifest["server"]["entry_point"]],
+    }
+    assert (REPO / "mcpb" / manifest["server"]["entry_point"]).is_file()
     assert not (REPO / "mcpb" / "server").exists(), "vendored libraries must be gone"
 
 

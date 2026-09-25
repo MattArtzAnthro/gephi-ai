@@ -36,6 +36,9 @@ BUMP_FILES = [
     ".claude-plugin/marketplace.json",
 ]
 
+# The mcpb packer the build runs, pinned so every build packs the same way.
+MCPB_VERSION = "2.1.2"
+
 BUILD_FILES = [
     "scripts/build-mcpb.sh",
     "mcpb/manifest.json",
@@ -131,7 +134,7 @@ def test_build_mcpb_locks_the_bundle_before_packing(tmp_path):
     calls = log.read_text().splitlines()
     assert calls == [
         "uv lock --directory mcpb",
-        f"npx -y @anthropic-ai/mcpb pack mcpb dist/gephi-ai-{version}.mcpb",
+        f"npx -y @anthropic-ai/mcpb@{MCPB_VERSION} pack mcpb dist/gephi-ai-{version}.mcpb",
     ]
 
 
@@ -194,18 +197,17 @@ def _pypi_reachable():
 
 
 def test_real_build_ships_the_locked_bundle(tmp_path):
-    """Packs a temp copy with the real uv and npx; set GEPHI_AI_REQUIRE_REAL_BUILD to fail, not skip."""
-    required = bool(os.environ.get("GEPHI_AI_REQUIRE_REAL_BUILD"))
+    """Packs a temp copy with the real uv and npx, which reach PyPI and npm, so it runs only
+    when GEPHI_AI_REQUIRE_REAL_BUILD is set; then anything that stops it is a failure."""
+    if not os.environ.get("GEPHI_AI_REQUIRE_REAL_BUILD"):
+        pytest.skip("uses the network; set GEPHI_AI_REQUIRE_REAL_BUILD=1 to run it")
     missing = [t for t in ("bash", "uv", "npx") if shutil.which(t) is None]
-    reason = None
     if os.name == "nt":
-        reason = "the release scripts run on macOS and Linux"
-    elif missing:
-        reason = f"{', '.join(missing)} not on PATH"
-    elif not _pypi_reachable():
-        reason = "PyPI is unreachable"
-    if reason:
-        (pytest.fail if required else pytest.skip)(reason)
+        pytest.fail("the release scripts run on macOS and Linux")
+    if missing:
+        pytest.fail(f"{', '.join(missing)} not on PATH")
+    if not _pypi_reachable():
+        pytest.fail("PyPI is unreachable")
 
     _copy_tree(BUILD_FILES + ["mcpb/.mcpbignore", "mcpb/src/server.py"], tmp_path)
     version = _pinned_version()

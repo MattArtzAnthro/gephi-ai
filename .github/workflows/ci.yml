@@ -29,7 +29,7 @@ jobs:
       matrix:
         # 3.10 is the requires-python floor; 3.14 is what a fresh Desktop bundle install
         # resolves today.
-        python-version: ['3.10', '3.11', '3.13', '3.14']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,16 +59,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - name: Smoke-test the bundle over stdio
-        # The test launches the bundle with uv, as Claude Desktop does, so uv must be on PATH
-        # here or the test skips.
-        run: uv run --directory mcp-server --extra dev python -m pytest -q tests/test_bundle_smoke.py
+        # The test launches the bundle with the manifest's uv command, as Claude Desktop does.
+        # The variable turns a missing uv from a skip into a failure on every runner.
+        env:
+          GEPHI_AI_REQUIRE_BUNDLE_SMOKE: '1'
+        run: uv run --directory mcp-server --extra dev python -m pytest -q -rs tests/test_bundle_smoke.py
       - uses: actions/setup-node@v4
         if: runner.os == 'Linux'
         with:
           node-version: '20'
       - name: Build the bundle for real and check what it ships
-        # Runs scripts/build-mcpb.sh with real uv and npx in a temp copy. The variable turns a
-        # skip into a failure, so this runner always exercises the build.
+        # Runs scripts/build-mcpb.sh with real uv and npx in a temp copy. The test reaches the
+        # network, so it runs only when the variable is set, and then it fails rather than skips.
         if: runner.os == 'Linux'
         env:
           GEPHI_AI_REQUIRE_REAL_BUILD: '1'
