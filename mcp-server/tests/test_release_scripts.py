@@ -219,3 +219,30 @@ def test_real_build_ships_the_locked_bundle(tmp_path):
         lock = z.read("uv.lock").decode()
     assert names == {"manifest.json", "pyproject.toml", "src/server.py", "uv.lock"}
     assert f'name = "gephi-ai"\nversion = "{version}"' in lock
+
+
+def test_mcpbignore_has_no_stale_server_line():
+    assert "server/" not in _ignore_patterns()
+
+
+def test_manifest_is_in_bump_format():
+    raw = (REPO / "mcpb/manifest.json").read_text()
+    assert raw == json.dumps(json.loads(raw), indent=2) + "\n"
+
+
+def test_bump_changes_only_the_manifest_version_line(tmp_path):
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    old = (tmp_path / "mcpb/manifest.json").read_text().splitlines()
+    major, minor, patch = _server_version().split(".")
+    new_version = f"{major}.{minor}.{int(patch) + 1}"
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh", "--server", new_version],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stdout + run.stderr
+
+    new = (tmp_path / "mcpb/manifest.json").read_text().splitlines()
+    assert set(old) - set(new) == {f'  "version": "{_server_version()}",'}
+    assert set(new) - set(old) == {f'  "version": "{new_version}",'}
+    assert len(old) == len(new)
