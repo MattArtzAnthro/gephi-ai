@@ -110,7 +110,7 @@ so that a page you happen to be visiting cannot drive Gephi; see the security no
 
 #### Claude Desktop (fastest start)
 
-Download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it — Claude Desktop installs Python, the server and its dependencies itself, so there is nothing else to install. The first launch needs an internet connection and can take a minute. No terminal, no config file. Tested with Claude Desktop 1.40609.0.
+Download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it; Claude Desktop installs Python, the server and its dependencies itself, so there is nothing else to install. The first launch needs an internet connection and can take a minute. No terminal, no config file. Tested with Claude Desktop 1.40609.0.
 
 > Use ONE connection method per app. If you previously added `gephi-mcp` to `claude_desktop_config.json` by hand, remove that entry before installing the bundle — otherwise Claude Desktop runs two copies of the server and every tool appears twice.
 

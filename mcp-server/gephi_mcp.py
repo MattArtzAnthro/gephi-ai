@@ -3346,8 +3346,8 @@ async def gephi_import_csv(file: str) -> str:
 async def gephi_import_file(file: str, max_node_size: float | None = None) -> str:
     """Import a graph from any supported format (GEXF, GraphML, GML, CSV, DOT, Pajek, ...).
 
-    Auto-detected by extension. Imported node sizes are capped at 30 so a viz:size
-    from the source can't render nodes enormous; re-size with gephi_size_by_ranking.
+    Auto-detected by extension. If the imported graph looks collapsed into a small
+    cluster, the file's coordinates are very small; run a layout.
 
     No file path? (e.g. the user attached a spreadsheet/CSV/JSON/RDF in chat):
     parse the content yourself and build the graph with gephi_add_nodes +
