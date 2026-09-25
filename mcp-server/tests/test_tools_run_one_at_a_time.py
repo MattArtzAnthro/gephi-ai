@@ -326,3 +326,85 @@ async def test_a_locked_tool_awaited_directly_leaves_the_lock_marker_clear(monke
     await asyncio.wait_for(gephi_mcp.gephi_set_node_color(id="a", r=1, g=2, b=3), 5)
     assert gephi_mcp._HOLDS_TOOL_LOCK.get() is False
     await _two_changes_one_after_another(monkeypatch)
+
+
+async def test_a_read_during_compare_workspaces_waits_and_reads_the_original(monkeypatch):
+    # gephi_compare_workspaces switches Gephi to each workspace it reads and back again, so a
+    # read sent meanwhile could see the other workspace.
+    on_other, release = asyncio.Event(), asyncio.Event()
+    state = {}
+
+    async def hold_while_on_the_other():
+        if any(w["current"] and w["id"] == 7 for w in state["ws"]):
+            on_other.set()
+            await release.wait()
+
+    state.update(install_fake_gephi(monkeypatch, gates={"/export/gexf": hold_while_on_the_other}))
+    state["ws"].append({"id": 7, "name": "Other", "current": False, "node_count": 5})
+
+    async def run():
+        compare = asyncio.ensure_future(gephi_mcp.gephi_compare_workspaces(before=0, after=1))
+        await on_other.wait()
+        read = asyncio.ensure_future(gephi_mcp.gephi_get_graph_stats())
+        await _spin()
+        read_early = "/graph/stats" in _paths(state)
+        release.set()
+        return read_early, await compare, await read
+
+    try:
+        read_early, _, stats = await asyncio.wait_for(run(), 5)
+    finally:
+        release.set()
+    assert not read_early, "the read reached Gephi while the compare was on the other workspace"
+    assert json.loads(stats)["workspace_id"] == 1
+
+
+RECEIPTS = {
+    "gephi_session_receipt": (lambda: gephi_mcp.gephi_session_receipt(), "/health"),
+    "gephi_claim_record": (lambda: gephi_mcp.gephi_claim_record(
+        claim="a is central", classification="centrality", verdict="confirmed",
+        nodes=["a"]), "/graph/node/get/a"),
+}
+
+
+@pytest.mark.parametrize("tool", RECEIPTS)
+async def test_a_receipt_is_not_held_back_by_a_graph_change(monkeypatch, tool):
+    # These only read from Gephi, so a long layout or statistic must not queue them.
+    started, release = asyncio.Event(), asyncio.Event()
+    state = install_fake_gephi(monkeypatch,
+                               gates={"/appearance/node/color": _held(started, release)})
+    call, path = RECEIPTS[tool]
+    change = asyncio.ensure_future(gephi_mcp.gephi_set_node_color(id="a", r=1, g=2, b=3))
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        await asyncio.wait_for(call(), 1)
+    finally:
+        release.set()
+        await asyncio.wait_for(change, 5)
+    assert path in _paths(state)
+
+
+@pytest.mark.parametrize("tool", RECEIPTS)
+async def test_a_receipt_waits_during_a_whatif(monkeypatch, tool):
+    editing, release = asyncio.Event(), asyncio.Event()
+    state = install_fake_gephi(monkeypatch, gates={"/graph/node/a": _held(editing, release)})
+    call, path = RECEIPTS[tool]
+
+    async def run():
+        whatif = asyncio.ensure_future(gephi_mcp.gephi_whatif(edits=REMOVE_A))
+        await editing.wait()
+        receipt = asyncio.ensure_future(call())
+        await _spin()
+        sent_early = path in _paths(state)
+        release.set()
+        await whatif
+        await receipt
+        return sent_early
+
+    try:
+        sent_early = await asyncio.wait_for(run(), 5)
+    finally:
+        release.set()
+    assert not sent_early, "the receipt read Gephi while the what-if was on its scratch copy"
+    assert _paths(state).index(path) > max(
+        i for i, p in enumerate(_paths(state)) if p == "/workspace/delete")

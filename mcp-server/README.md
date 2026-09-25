@@ -43,7 +43,7 @@ client at the `gephi-ai` command, e.g. for Claude Desktop:
 | `GEPHI_REQUEST_TIMEOUT` | `60.0` | Per-request timeout (seconds) |
 | `GEPHI_DUPLICATE_GRACE` | `30` | Seconds to keep checking for a workspace copy after a duplicate timed out, so a copy Gephi makes late is still removed |
 
-Graph-changing tools run one at a time within one server process, so parallel tool calls from a host cannot interleave their changes. Read-only tools wait until a what-if finishes, then read the original graph; this includes any time the what-if spends on slow metrics or waiting for a late copy. A what-if also waits for reads already in progress before it starts. After a workspace duplicate times out, the server may keep checking for the late copy for up to `GEPHI_DUPLICATE_GRACE` seconds before it answers.
+Graph-changing tools run one at a time within one server process, so parallel tool calls from a host cannot interleave their changes. `gephi_profile_graph` waits in that same queue, because it writes statistic columns, and so do the exports and `gephi_visual_qa`, so an image never comes from a workspace copy. Read-only tools do not wait for graph changes, and `gephi_session_receipt` and `gephi_claim_record` behave like read-only tools. Read-only tools wait until a what-if finishes, then read the original graph; this includes any time the what-if spends on slow metrics or waiting for a late copy. `gephi_compare_workspaces` also holds back reads while it runs, because it switches between the two workspaces. A what-if or a compare waits for reads already in progress before it starts. After a workspace duplicate times out, the server may keep checking for the late copy for up to `GEPHI_DUPLICATE_GRACE` seconds before it answers.
 
 ## Development
 

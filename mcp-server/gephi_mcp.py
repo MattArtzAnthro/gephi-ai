@@ -218,14 +218,20 @@ def _annotations_for(name: str) -> ToolAnnotations:
 # time under one tool lock. So do gephi_whatif and gephi_profile_graph, which are annotated
 # read-only because the person's graph ends as it was, but which switch workspaces or write
 # statistics columns. Read-only tools never take the tool lock, so a long layout never holds
-# them up. Only a what-if holds them back: it closes a read gate for its whole call, so a read
-# never sees the scratch copy. A tool function called from inside another one runs straight
-# through, since its caller already holds the lock. gephi_stop_layout takes neither the lock nor
-# the gate: it has to reach Gephi while a sync layout holds the lock. asyncio primitives belong to
-# the event loop they are first used in, so each running loop gets its own lock and gate.
+# them up. So do gephi_session_receipt and gephi_claim_record, which only read from Gephi but are
+# not annotated read-only because they can write a local file. Exports and gephi_visual_qa stay on
+# the lock although they change nothing, because an image exported while a snapshot is on its
+# copy could show the copy. Only the tools that switch workspaces (a what-if and
+# gephi_compare_workspaces) hold reads back: they close a read gate for their whole call, so a
+# read never sees another workspace. A tool function called from inside another one runs
+# straight through, since its caller already holds the lock. gephi_stop_layout takes neither the
+# lock nor the gate: it has to reach Gephi while a sync layout holds the lock. asyncio primitives
+# belong to the event loop they are first used in, so each running loop gets its own lock and
+# gate.
 _RUNS_ALONE_ANYWAY = {"gephi_whatif", "gephi_profile_graph"}
+_READS_DESPITE_ANNOTATION = {"gephi_session_receipt", "gephi_claim_record"}
 _NEVER_WAITS = {"gephi_stop_layout"}
-_HOLDS_BACK_READS = {"gephi_whatif"}
+_HOLDS_BACK_READS = {"gephi_whatif", "gephi_compare_workspaces"}
 _TOOL_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
     weakref.WeakKeyDictionary())
 _READ_GATES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, _ReadGate]" = (
@@ -235,6 +241,8 @@ _HOLDS_TOOL_LOCK: contextvars.ContextVar[bool] = contextvars.ContextVar(
 
 
 def _runs_alone(name: str) -> bool:
+    if name in _READS_DESPITE_ANNOTATION:
+        return False
     return name not in _READ_ONLY or name in _RUNS_ALONE_ANYWAY
 
 
