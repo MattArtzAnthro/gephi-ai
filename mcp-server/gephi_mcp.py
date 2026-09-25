@@ -372,8 +372,18 @@ async def _name_snapshot_copy(op: str, cur: dict[str, Any], before_ids: set[Any]
         # _abandon_snapshot_copy lists the workspaces again, which is the one retry.
         return await _abandon_snapshot_copy("workspace list unavailable after duplicate",
                                             before_ids, cur, dup)
-    copy_i = next((i for i, w in enumerate(wss)
-                   if w.get("current") and w.get("id") != cur.get("id")), None)
+    reported = dup.get("workspace_id")
+    if reported is not None:
+        # The plugin's /workspace/duplicate reports the copy's id and opens the copy, so the
+        # copy is the workspace with that id and it must now be current. If it is not, some
+        # other workspace changed, and nothing else may be renamed in its place.
+        copy_i = next((i for i, w in enumerate(wss)
+                       if w.get("id") == reported and w.get("current")
+                       and reported != cur.get("id")), None)
+    else:
+        # No id reported: take the workspace the duplicate switched to.
+        copy_i = next((i for i, w in enumerate(wss)
+                       if w.get("current") and w.get("id") != cur.get("id")), None)
     if copy_i is None:
         return await _abandon_snapshot_copy("duplicate did not switch to the copy",
                                             before_ids, cur, dup)
@@ -399,11 +409,12 @@ def _new_copy_id(before_ids: set[Any], after: list[dict[str, Any]], orig_id: Any
                  reported: Any) -> Any:
     """The id of the copy a duplicate made, or None when it cannot be told for certain.
 
-    Uses the id the duplicate reported when that workspace is in the list, otherwise the one
-    workspace that was not there before. Never returns the original's id."""
-    ids_after = {w.get("id") for w in after}
-    if reported is not None and reported != orig_id and reported in ids_after:
-        return reported
+    The plugin reports the copy's id, and when it does, only that workspace is the copy. The
+    one workspace that was not there before is used only when no id was reported. Never
+    returns the original's id."""
+    if reported is not None:
+        ids_after = {w.get("id") for w in after}
+        return reported if reported != orig_id and reported in ids_after else None
     new = _new_ids(before_ids, after)
     if len(new) == 1 and new[0] != orig_id:
         return new[0]
@@ -462,18 +473,27 @@ async def _discard_new_copy_unshielded(before_ids: set[Any], orig: dict[str, Any
         on_original = orig_id is not None and any(
             w.get("current") and w.get("id") == orig_id for w in wss)
         note = ""
-        if len(new) > 1:
-            note = (f"; {len(new)} new workspaces appeared and none could be told to be the "
-                    "copy, so none was removed; close the extra copies by hand")
+        if new:
+            note = (f"; {_count(len(new), 'new workspace')} appeared and none could be told "
+                    "to be the copy, so none was removed; close any copy by hand")
         return {"on_original": on_original, "note": note}
     cleanup = await _cleanup_scratch(copy_id, orig_id)
     on_original = orig_id is not None and cleanup["returned_to_workspace_id"] == orig_id
-    note = ""
-    if not cleanup["scratch_deleted"]:
-        note += "; a copy of the workspace was left in Gephi's tab bar"
-    if not on_original:
-        note += "; the copy is still the current workspace"
+    unconfirmed = "which workspace is now current could not be confirmed"
+    if cleanup["scratch_deleted"]:
+        note = "" if on_original else "; the copy was removed, but " + unconfirmed
+    else:
+        note = "; a copy of the workspace was left in Gephi's tab bar"
+        note += "; close it by hand" if on_original else ", and " + unconfirmed
+    others = [i for i in new if i != copy_id]
+    if others:
+        note += (f"; {_count(len(others), 'other new workspace')} appeared and "
+                 f"{'was' if len(others) == 1 else 'were'} left; close any copy by hand")
     return {"on_original": on_original, "note": note}
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}" + ("" if n == 1 else "s")
 
 
 async def _abandon_snapshot_copy(reason: str, before_ids: set[Any], cur: dict[str, Any],

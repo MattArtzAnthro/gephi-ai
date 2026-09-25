@@ -146,7 +146,9 @@ async def test_a_graph_replaced_during_a_snapshot_still_resets_the_record(monkey
         await gephi_mcp.gephi.request("POST", "/graph/clear")
         clear_done.set()
 
-    snap, _ = await asyncio.gather(gephi_mcp.gephi_snapshot(label="x"), clear_mid_snapshot())
+    # Bounded, so a regression that deadlocks the two tasks fails instead of hanging.
+    snap, _ = await asyncio.wait_for(
+        asyncio.gather(gephi_mcp.gephi_snapshot(label="x"), clear_mid_snapshot()), 5)
     assert json.loads(snap)["success"] is True
     assert gephi_mcp.LEDGER.receipt()["layout"] is None, "the snapshot restored a stale record"
 
@@ -167,8 +169,8 @@ async def test_a_graph_replaced_during_whatif_still_resets_the_record(monkeypatc
         await gephi_mcp.gephi.request("POST", "/graph/clear")
         clear_done.set()
 
-    out, _ = await asyncio.gather(
-        gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]), clear_mid_whatif())
+    out, _ = await asyncio.wait_for(asyncio.gather(
+        gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]), clear_mid_whatif()), 5)
     assert json.loads(out)["cleanup"]["returned_to_workspace_id"] == 1
     assert gephi_mcp.LEDGER.receipt()["layout"] is None, "whatif restored a stale record"
 
@@ -492,3 +494,77 @@ async def test_whatif_resets_the_record_when_its_cleanup_raises(monkeypatch):
         await asyncio.wait_for(
             gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]), 5)
     assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+
+# ── The snapshot copy is the workspace whose id Gephi reports ────────────────
+
+
+def _renamed(state):
+    return [c for c in state["calls"] if c[1] == "/workspace/rename"]
+
+
+async def test_a_snapshot_never_renames_a_workspace_other_than_the_reported_copy(monkeypatch):
+    # The duplicate reports copy 2, but workspace 3 is the one that became current.
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+
+    def duplicate():
+        reply = state["duplicate"](switch=False)
+        state["duplicate"]()
+        return reply
+
+    faults["/workspace/duplicate"] = duplicate
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert _renamed(state) == [], "a workspace other than the reported copy was renamed"
+    assert state["deleted"] == [2]  # the reported copy, by its id
+    assert "1 other new workspace" in out["error"]
+
+
+async def test_a_snapshot_whose_reported_copy_is_missing_touches_nothing(monkeypatch):
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+
+    def duplicate():
+        state["duplicate"]()
+        return {"success": True, "workspace_id": 99}
+
+    faults["/workspace/duplicate"] = duplicate
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert _renamed(state) == []
+    assert state["deleted"] == []
+    assert "1 new workspace appeared" in out["error"]
+
+
+# ── The failure message says what is known ───────────────────────────────────
+
+
+async def test_a_removed_copy_with_an_unconfirmed_switch_back_says_so(monkeypatch):
+    state = install_fake_gephi(monkeypatch, faults={"/workspace/switch": [
+        {"success": False, "error": "switch refused"}, {"success": False, "error": "again"}]})
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert state["deleted"] == [2]
+    assert "the copy was removed" in out["error"]
+    assert "which workspace is now current could not be confirmed" in out["error"]
+    assert "still the current workspace" not in out["error"]
+    # Not confirmed back on the original, so the record is not trusted.
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+async def test_a_copy_that_could_not_be_deleted_is_reported_as_left(monkeypatch):
+    state = install_fake_gephi(monkeypatch, faults={
+        "/workspace/rename": {"success": False, "error": "rename refused"},
+        "/workspace/delete": {"success": False, "error": "delete refused"}})
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert "a copy of the workspace was left in Gephi's tab bar" in out["error"]
+    assert "could not be confirmed" not in out["error"]
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True), (2, False)]
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
