@@ -18,6 +18,7 @@ Developed by Matt Artz (https://www.mattartz.me)
 import asyncio
 import contextlib
 import contextvars
+import functools
 import importlib.metadata
 import json
 import logging
@@ -25,6 +26,7 @@ import math
 import os
 import re
 import tempfile
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -205,10 +207,55 @@ def _annotations_for(name: str) -> ToolAnnotations:
     )
 
 
+# Hosts send tool calls in parallel, and every call drives the same Gephi. The undo snapshot and
+# gephi_whatif switch to a copy of the workspace while they work, so a change sent in between
+# would land on a copy that is then deleted. Tools that change the graph, and gephi_whatif, so
+# run one at a time under one lock. Read-only tools never take it. A tool function that calls
+# another tool function already holds the lock, so the inner call runs without taking it again.
+# asyncio.Lock belongs to the event loop it is first used in, so each running loop gets its own.
+_WORKSPACE_SWITCHING = {"gephi_whatif"}
+_TOOL_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    weakref.WeakKeyDictionary())
+_HOLDS_TOOL_LOCK: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "gephi_holds_tool_lock", default=False)
+
+
+def _runs_alone(name: str) -> bool:
+    return name not in _READ_ONLY or name in _WORKSPACE_SWITCHING
+
+
+def _tool_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _TOOL_LOCKS.get(loop)
+    if lock is None:
+        lock = _TOOL_LOCKS[loop] = asyncio.Lock()
+    return lock
+
+
+def _one_at_a_time(fn):
+    """Run the tool while holding the tool lock. functools.wraps keeps the signature and
+    docstring, which the SDK reads to build the tool's listing."""
+    @functools.wraps(fn)
+    async def run_alone(*args: Any, **kwargs: Any) -> Any:
+        if _HOLDS_TOOL_LOCK.get():
+            return await fn(*args, **kwargs)
+        async with _tool_lock():
+            token = _HOLDS_TOOL_LOCK.set(True)
+            try:
+                return await fn(*args, **kwargs)
+            finally:
+                _HOLDS_TOOL_LOCK.reset(token)
+    return run_alone
+
+
 def _tool(name: str, **kwargs: Any):
-    """mcp.tool() with the annotation table applied. Every tool registers through
-    this so a new tool cannot ship unclassified."""
-    return mcp.tool(name=name, annotations=_annotations_for(name), **kwargs)
+    """mcp.tool() with the annotation table applied, and with the tool lock for every tool that
+    must run alone. Every tool registers through this so a new tool cannot ship unclassified."""
+    register = mcp.tool(name=name, annotations=_annotations_for(name), **kwargs)
+
+    def decorator(fn):
+        return register(_one_at_a_time(fn) if _runs_alone(name) else fn)
+    return decorator
 
 
 # ==================== HTTP Client ====================
