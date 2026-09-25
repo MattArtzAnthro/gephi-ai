@@ -41,6 +41,9 @@ BUILD_FILES = [
 
 
 def _need(tool):
+    if os.name == "nt":
+        pytest.skip("the release scripts run on macOS and Linux; WSL bash cannot see "
+                    "Windows temp paths")
     if shutil.which(tool) is None:
         pytest.skip(f"{tool} is not on PATH")
 
