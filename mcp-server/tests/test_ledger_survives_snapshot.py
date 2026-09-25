@@ -151,16 +151,27 @@ async def test_whatif_keeps_every_ledger_attribute(monkeypatch):
 
 
 async def test_a_snapshot_that_fails_midway_keeps_the_record(monkeypatch):
-    # GephiClient.request turns a connection error into an error dict, so the snapshot carries
-    # on past the failed rename. /workspace/duplicate has already reset the record by then.
-    install_fake_gephi(monkeypatch, faults={
+    # GephiClient.request turns a connection error into an error dict. /workspace/duplicate has
+    # already reset the record by the time the rename fails.
+    state = install_fake_gephi(monkeypatch, faults={
         "/workspace/rename": httpx.ConnectError("connection refused")})
     _record_layout()
     out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
-    # Today the failed rename is not reported: the snapshot says it succeeded. The record is
-    # what this test guards; if the rename failure starts being reported, update this line.
-    assert out["success"] is True
+    # An unnamed copy is not an undo point gephi_undo can find, so no undo is claimed.
+    assert out["success"] is False
+    assert "could not name the undo copy" in out["error"]
+    # The unnamed copy is removed and the person is back on their own workspace.
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True)]
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_a_destructive_tool_reports_no_undo_when_the_rename_fails(monkeypatch):
+    install_fake_gephi(monkeypatch, faults={
+        "/workspace/rename": {"success": False, "error": "rename refused"}})
+    monkeypatch.setattr(gephi_mcp, "AUTO_SNAPSHOT", True)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_filter_by_degree(min=2))
+    assert out["undo_available"] is False
 
 
 async def test_a_snapshot_interrupted_midway_keeps_the_record(monkeypatch):
@@ -171,3 +182,13 @@ async def test_a_snapshot_interrupted_midway_keeps_the_record(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await gephi_mcp.gephi_snapshot(label="x")
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_whatif_drops_the_record_when_the_workspace_has_no_id(monkeypatch):
+    # Without an id the switch back cannot be confirmed, so the record is not put back.
+    state = install_fake_gephi(monkeypatch, faults={
+        "/workspace/switch": {"success": False, "error": "switch refused"}})
+    del state["ws"][0]["id"]
+    _record_layout()
+    await gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}])
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None

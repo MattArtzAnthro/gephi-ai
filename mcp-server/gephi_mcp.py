@@ -331,8 +331,18 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
     if copy_i is None:
         return {"ok": False, "reason": "duplicate did not switch to the copy"}
     snap_name = f"{UNDO_PREFIX}{cur['name']} (before {op})"
-    await gephi.request("POST", "/workspace/rename",
-                        json_data={"index": copy_i, "name": snap_name})
+    rn = await gephi.request("POST", "/workspace/rename",
+                             json_data={"index": copy_i, "name": snap_name})
+    if not rn.get("success", False):
+        # A copy without the "[undo] " name is not an undo point gephi_undo can find, so this
+        # is a failed snapshot. Switch back and remove the unnamed copy rather than leave it.
+        reason = f"could not name the undo copy ({rn.get('error', 'rename failed')})"
+        cleanup = await _cleanup_scratch(wss[copy_i].get("id"), cur.get("id"))
+        if not cleanup["scratch_deleted"]:
+            reason += "; an unnamed copy of the workspace was left in Gephi's tab bar"
+        if cleanup["returned_to_workspace_id"] != cur.get("id"):
+            reason += "; the copy is still the current workspace"
+        return {"ok": False, "reason": reason}
     orig_i = _index_of(wss, cur.get("id"))
     sw = await gephi.request("POST", "/workspace/switch", json_data={"index": orig_i})
     if not sw.get("success", False):
@@ -2960,7 +2970,7 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
         # described it is valid again. Restored last, after every /workspace/ call has run. If
         # the switch back failed, they are left on the edited scratch copy, and the record would
         # describe a graph they are no longer looking at, so it stays reset.
-        if cleanup.get("returned_to_workspace_id") == orig_id:
+        if orig_id is not None and cleanup.get("returned_to_workspace_id") == orig_id:
             LEDGER.restore(ledger_state)
 
     outcome["cleanup"] = cleanup
