@@ -33,9 +33,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.openide.util.Lookup;
 
 /**
- * Importing a GEXF file keeps the positions, sizes and colors the file carries.
+ * Importing a GEXF or GraphML file keeps the positions, sizes and colors the file carries.
  *
- * <p>This runs Gephi's real import path in a plain JVM: the GEXF importer, the import
+ * <p>This runs Gephi's real import path in a plain JVM: the GEXF and GraphML importers, the import
  * container, and the default processor, all found through Lookup. Gephi's containers
  * auto-scale by default, which recenters every node and rescales sizes into 4 to 100, so
  * a graph exported and imported again came back with different positions and sizes.
@@ -56,7 +56,18 @@ class ImportRoundTripTest {
     void importKeepsTheFilePositionsSizesAndColors(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("styled.gexf");
         Files.write(file, gexf().getBytes(StandardCharsets.UTF_8));
+        assertImportKeepsTheFileLayout(file);
+    }
 
+    /** GraphML carries the same layout as node data keys, and must come back unchanged too. */
+    @Test
+    void graphmlImportKeepsTheFilePositionsSizesAndColors(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("styled.graphml");
+        Files.write(file, graphml().getBytes(StandardCharsets.UTF_8));
+        assertImportKeepsTheFileLayout(file);
+    }
+
+    private static void assertImportKeepsTheFileLayout(Path file) throws Exception {
         ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
         assertNotNull(pc, "a ProjectController must be registered for the import to run");
         pc.newProject();
@@ -120,6 +131,37 @@ class ImportRoundTripTest {
             positions.add(n.x() + "," + n.y());
         }
         assertEquals(3, positions.size(), "nodes must not share one position");
+    }
+
+    /** The keys Gephi's GraphML importer reads as position, size and color: x, y, size, r, g, b. */
+    private static String graphml() {
+        StringBuilder s = new StringBuilder();
+        s.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+            .append("<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\">\n");
+        for (String[] key : new String[][] {
+                {"x", "float"}, {"y", "float"}, {"size", "float"},
+                {"r", "int"}, {"g", "int"}, {"b", "int"}}) {
+            s.append(String.format(java.util.Locale.ROOT,
+                "  <key id=\"%s\" for=\"node\" attr.name=\"%s\" attr.type=\"%s\"/>%n",
+                key[0], key[0], key[1]));
+        }
+        s.append("  <graph id=\"G\" edgedefault=\"undirected\">\n");
+        for (Object[] row : NODES) {
+            s.append(String.format(java.util.Locale.ROOT,
+                "    <node id=\"%s\">%n"
+                    + "      <data key=\"x\">%s</data>%n"
+                    + "      <data key=\"y\">%s</data>%n"
+                    + "      <data key=\"size\">%s</data>%n"
+                    + "      <data key=\"r\">%d</data>%n"
+                    + "      <data key=\"g\">%d</data>%n"
+                    + "      <data key=\"b\">%d</data>%n"
+                    + "    </node>%n",
+                row[0], row[1], row[2], row[3], row[4], row[5], row[6]));
+        }
+        s.append("    <edge id=\"0\" source=\"a\" target=\"b\"/>\n")
+            .append("  </graph>\n")
+            .append("</graphml>\n");
+        return s.toString();
     }
 
     private static String gexf() {
