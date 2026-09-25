@@ -28,6 +28,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import anyio
 import httpx
 from mcp.server import CacheHint, MCPServer
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
@@ -59,6 +60,9 @@ REQUEST_TIMEOUT = float(os.environ.get("GEPHI_REQUEST_TIMEOUT", "60.0"))
 # run well past the default timeout — the computation is fine, the client just
 # needs to wait longer. These tools pass SLOW_REQUEST_TIMEOUT explicitly.
 SLOW_REQUEST_TIMEOUT = float(os.environ.get("GEPHI_SLOW_TIMEOUT", "600.0"))
+# Upper bound on removing a workspace copy and switching back after a call is cancelled or
+# fails. The cleanup is a few quick workspace calls, so one ordinary request timeout covers it.
+CLEANUP_TIMEOUT = REQUEST_TIMEOUT
 
 # ── Undo snapshots ─────────────────────────────────────────────────────────
 # A rolling one-level undo: before each destructive tool runs, the current
@@ -340,28 +344,39 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
     cur_i = _index_of(wss, cur.get("id"))
     if cur_i is None:
         return {"ok": False, "reason": "current workspace disappeared mid-snapshot"}
-    before_dup = wss
-    dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": cur_i})
-    if not dup.get("success", False):
-        return {"ok": False, "reason": dup.get("error", "duplicate failed")}
+    before_ids = {w.get("id") for w in wss}
+    dup: dict[str, Any] = {}
+    try:
+        dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": cur_i})
+        if not dup.get("success", False):
+            # A duplicate that failed on the client side, such as a timeout, can still have
+            # completed in Gephi, so look for a copy to remove.
+            return await _abandon_snapshot_copy(dup.get("error", "duplicate failed"),
+                                                before_ids, cur, dup)
+        return await _name_snapshot_copy(op, cur, before_ids, dup)
+    except BaseException:
+        # Cancelled, or failed unexpectedly, while a copy may exist. Remove it before the
+        # exception goes on, so the person is not left on a copy.
+        found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"))
+        if not found["on_original"]:
+            LEDGER.reset()
+        raise
 
-    # From here on a copy exists, so every failure removes it before reporting.
+
+async def _name_snapshot_copy(op: str, cur: dict[str, Any], before_ids: set[Any],
+                              dup: dict[str, Any]) -> dict[str, Any]:
+    """Name the copy a successful duplicate made as the undo snapshot and switch back to the
+    original. A copy exists from here on, so every failure removes it before reporting."""
     wss = await _workspaces()
     if wss is None:
-        reason = "workspace list unavailable after duplicate"
-        wss = await _workspaces()  # one retry, to find the copy and remove it
-        if wss is None:
-            return {"ok": False, "reason": reason + f'; a copy of the workspace, named like '
-                    f'"{cur.get("name")} copy", may remain in Gephi\'s tab bar; close it by hand'}
-        return await _abandon_snapshot_copy(
-            reason, _new_copy_id(before_dup, wss, cur.get("id"), dup), cur)
+        # _abandon_snapshot_copy lists the workspaces again, which is the one retry.
+        return await _abandon_snapshot_copy("workspace list unavailable after duplicate",
+                                            before_ids, cur, dup)
     copy_i = next((i for i, w in enumerate(wss)
                    if w.get("current") and w.get("id") != cur.get("id")), None)
     if copy_i is None:
-        return await _abandon_snapshot_copy(
-            "duplicate did not switch to the copy",
-            _new_copy_id(before_dup, wss, cur.get("id"), dup), cur)
-    copy_id = wss[copy_i].get("id")
+        return await _abandon_snapshot_copy("duplicate did not switch to the copy",
+                                            before_ids, cur, dup)
     snap_name = f"{UNDO_PREFIX}{cur['name']} (before {op})"
     rn = await gephi.request("POST", "/workspace/rename",
                              json_data={"index": copy_i, "name": snap_name})
@@ -369,49 +384,106 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
         # A copy without the "[undo] " name is not an undo point gephi_undo can find, so this
         # is a failed snapshot. Switch back and remove the unnamed copy rather than leave it.
         return await _abandon_snapshot_copy(
-            f"could not name the undo copy ({rn.get('error', 'rename failed')})", copy_id, cur)
+            f"could not name the undo copy ({rn.get('error', 'rename failed')})",
+            before_ids, cur, dup)
     orig_i = _index_of(wss, cur.get("id"))
     sw = await gephi.request("POST", "/workspace/switch", json_data={"index": orig_i})
     if not sw.get("success", False):
         # The person would be left on the copy, so the snapshot is abandoned, not kept.
-        return await _abandon_snapshot_copy(
-            "could not switch back to the original workspace", copy_id, cur)
+        return await _abandon_snapshot_copy("could not switch back to the original workspace",
+                                            before_ids, cur, dup)
     return {"ok": True, "snapshot": snap_name}
 
 
-def _new_copy_id(before: list[dict[str, Any]], after: list[dict[str, Any]], orig_id: Any,
-                 dup: dict[str, Any]) -> Any:
+def _new_copy_id(before_ids: set[Any], after: list[dict[str, Any]], orig_id: Any,
+                 reported: Any) -> Any:
     """The id of the copy a duplicate made, or None when it cannot be told for certain.
 
     Uses the id the duplicate reported when that workspace is in the list, otherwise the one
     workspace that was not there before. Never returns the original's id."""
     ids_after = {w.get("id") for w in after}
-    reported = dup.get("workspace_id")
     if reported is not None and reported != orig_id and reported in ids_after:
         return reported
-    ids_before = {w.get("id") for w in before}
-    new = [w.get("id") for w in after
-           if w.get("id") is not None and w.get("id") not in ids_before]
+    new = _new_ids(before_ids, after)
     if len(new) == 1 and new[0] != orig_id:
         return new[0]
     return None
 
 
-async def _abandon_snapshot_copy(reason: str, copy_id: Any,
-                                 cur: dict[str, Any]) -> dict[str, Any]:
-    """Report a failed snapshot after putting the person back on their workspace and removing
-    the copy, which is deleted only by its own id and never when that id is the original's."""
-    orig_id = cur.get("id")
-    if copy_id is None or copy_id == orig_id:
-        return {"ok": False, "reason": reason + "; the copy could not be identified, so a copy "
-                f'named like "{cur.get("name")} copy" may remain in Gephi\'s tab bar; '
-                "close it by hand"}
+def _new_ids(before_ids: set[Any], after: list[dict[str, Any]]) -> list[Any]:
+    return [w.get("id") for w in after
+            if w.get("id") is not None and w.get("id") not in before_ids]
+
+
+async def _shielded(fn, *args):
+    """Run a cleanup to the end even while the calling task is being cancelled, bounded by
+    CLEANUP_TIMEOUT. Returns its result, or None when the bound ran out.
+
+    The MCP SDK cancels a tool call through an anyio cancel scope, and that cancellation is
+    level-triggered: every later await in the call is cancelled too. An anyio shielded scope
+    lets the cleanup's own awaits run in this task, so its result can still decide what
+    happens next. asyncio.shield would keep the cleanup running but give this task no way to
+    wait for its result, because the wait itself would be cancelled."""
+    result = None
+    with anyio.CancelScope(shield=True):
+        with anyio.move_on_after(CLEANUP_TIMEOUT):
+            result = await fn(*args)
+    return result
+
+
+async def _discard_new_copy(before_ids: set[Any], orig: dict[str, Any],
+                            reported: Any) -> dict[str, Any]:
+    """Remove the copy a duplicate made and return to the original workspace.
+
+    The copy is deleted only by its own id, and only when that id is not the original's. When
+    the copy cannot be told apart, nothing is deleted and the note says so. Returns
+    {"on_original": bool, "note": str}, where on_original is True only when the person is
+    confirmed back on the original workspace."""
+    may_remain = (f'a copy named like "{orig.get("name")} copy" may remain in Gephi\'s tab '
+                  "bar; close it by hand")
+    found = await _shielded(_discard_new_copy_unshielded, before_ids, orig, reported,
+                            may_remain)
+    if found is None:
+        return {"on_original": False,
+                "note": "; the cleanup did not finish in time, so " + may_remain}
+    return found
+
+
+async def _discard_new_copy_unshielded(before_ids: set[Any], orig: dict[str, Any],
+                                       reported: Any, may_remain: str) -> dict[str, Any]:
+    orig_id = orig.get("id")
+    wss = await _workspaces()
+    if wss is None:
+        return {"on_original": False,
+                "note": "; the workspace list was unavailable, so " + may_remain}
+    new = _new_ids(before_ids, wss)
+    copy_id = _new_copy_id(before_ids, wss, orig_id, reported)
+    if copy_id is None:
+        on_original = orig_id is not None and any(
+            w.get("current") and w.get("id") == orig_id for w in wss)
+        note = ""
+        if len(new) > 1:
+            note = (f"; {len(new)} new workspaces appeared and none could be told to be the "
+                    "copy, so none was removed; close the extra copies by hand")
+        return {"on_original": on_original, "note": note}
     cleanup = await _cleanup_scratch(copy_id, orig_id)
+    on_original = orig_id is not None and cleanup["returned_to_workspace_id"] == orig_id
+    note = ""
     if not cleanup["scratch_deleted"]:
-        reason += "; a copy of the workspace was left in Gephi's tab bar"
-    if cleanup["returned_to_workspace_id"] != orig_id:
-        reason += "; the copy is still the current workspace"
-    return {"ok": False, "reason": reason}
+        note += "; a copy of the workspace was left in Gephi's tab bar"
+    if not on_original:
+        note += "; the copy is still the current workspace"
+    return {"on_original": on_original, "note": note}
+
+
+async def _abandon_snapshot_copy(reason: str, before_ids: set[Any], cur: dict[str, Any],
+                                 dup: dict[str, Any]) -> dict[str, Any]:
+    """Report a failed snapshot after removing any copy and returning to the original. If the
+    return cannot be confirmed, the methods record no longer describes the graph on screen."""
+    found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"))
+    if not found["on_original"]:
+        LEDGER.reset()
+    return {"ok": False, "reason": str(reason) + found["note"]}
 
 
 async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any]:
@@ -2995,40 +3067,65 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
                         "error": "No current workspace to run a counterfactual on."})
         orig_id = orig.get("id")
         orig_index = workspaces.index(orig)
+        before_ids = {w.get("id") for w in workspaces}
 
-        dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": orig_index})
-        if not dup.get("success", True):
-            # Nothing was copied, so the caller is still on their own graph.
-            return fmt(dup)
-        scratch_id = dup.get("workspace_id")
-
-        outcome: dict[str, Any]
+        # The record is reset unless the person is confirmed back on their own workspace. That
+        # is the default, so a cancellation or an unexpected error resets it too.
+        on_original = False
         try:
-            before = await _compute_profile(include_slow)
-            if not before.get("success", True):
-                outcome = {"success": False, "stage": "baseline_profile", "detail": before}
-            else:
-                failed = None
-                for i, edit in enumerate(edits):
-                    er = await _apply_edit(edit)
-                    if not er.get("success", True):
-                        failed = {"success": False, "stage": "edit", "index": i, "edit": edit,
-                                  "detail": er}
-                        break
-                if failed:
-                    outcome = failed
+            try:
+                dup = await gephi.request("POST", "/workspace/duplicate",
+                                          json_data={"index": orig_index})
+            except BaseException:
+                found = await _discard_new_copy(before_ids, orig, None)
+                on_original = found["on_original"]
+                raise
+            if not dup.get("success", True):
+                # A duplicate that failed on the client side, such as a timeout, can still
+                # have completed in Gephi, so look for a copy to remove.
+                found = await _discard_new_copy(before_ids, orig, dup.get("workspace_id"))
+                on_original = found["on_original"]
+                if found["note"]:
+                    dup = {**dup, "error": str(dup.get("error", "duplicate failed"))
+                           + found["note"]}
+                return fmt(dup)
+            scratch_id = dup.get("workspace_id")
+
+            outcome: dict[str, Any]
+            try:
+                before = await _compute_profile(include_slow)
+                if not before.get("success", True):
+                    outcome = {"success": False, "stage": "baseline_profile", "detail": before}
                 else:
-                    after = await _compute_profile(include_slow)
-                    if not after.get("success", True):
-                        outcome = {"success": False, "stage": "after_profile", "detail": after}
+                    failed = None
+                    for i, edit in enumerate(edits):
+                        er = await _apply_edit(edit)
+                        if not er.get("success", True):
+                            failed = {"success": False, "stage": "edit", "index": i,
+                                      "edit": edit, "detail": er}
+                            break
+                    if failed:
+                        outcome = failed
                     else:
-                        outcome = {"success": True, "edits_applied": edits,
-                                   "diff": _diff_profiles(before, after)}
+                        after = await _compute_profile(include_slow)
+                        if not after.get("success", True):
+                            outcome = {"success": False, "stage": "after_profile",
+                                       "detail": after}
+                        else:
+                            outcome = {"success": True, "edits_applied": edits,
+                                       "diff": _diff_profiles(before, after)}
+            finally:
+                # Shielded, so a cancelled call still removes the copy and switches back.
+                cleanup = await _shielded(_cleanup_scratch, scratch_id, orig_id)
+                if cleanup is None:
+                    cleanup = {"scratch_deleted": False, "returned_to_workspace_id": None,
+                               "error": "the cleanup did not finish in time"}
+                on_original = (orig_id is not None
+                               and cleanup.get("returned_to_workspace_id") == orig_id)
         finally:
-            cleanup = await _cleanup_scratch(scratch_id, orig_id)
-            # If the switch back failed, the caller is left on the edited scratch copy, and the
-            # record would describe a graph they are no longer looking at, so it is reset.
-            if orig_id is None or cleanup.get("returned_to_workspace_id") != orig_id:
+            # If the person is left on the edited scratch copy, or it cannot be confirmed that
+            # they are not, the record would describe a graph they are not looking at.
+            if not on_original:
                 LEDGER.reset()
 
     outcome["cleanup"] = cleanup

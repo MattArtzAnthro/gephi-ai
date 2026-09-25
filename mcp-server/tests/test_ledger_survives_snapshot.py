@@ -4,6 +4,7 @@ that caused the bug lives inside GephiClient.request itself."""
 import asyncio
 import json
 
+import anyio
 import httpx
 import pytest
 
@@ -28,12 +29,25 @@ def install_fake_gephi(monkeypatch, faults=None, gates=None):
     one-shot answers for successive calls, where None means answer normally, and a callable is
     called for the answer. `gates` maps a
     path to a coroutine function awaited before that call is answered, so a test can hold a
-    call open while another task runs. Every call is kept in state["calls"], and the id of
-    every deleted workspace in state["deleted"]."""
+    call open while another task runs. Every call yields to the event loop first, as a real
+    request does. Every call is kept in state["calls"], and the id of every deleted workspace
+    in state["deleted"]. state["duplicate"]() performs a duplicate, for faults that complete
+    it in Gephi and then fail on the client side."""
     faults = {} if faults is None else faults
     gates = gates or {}
     state = {"ws": [{"id": 1, "name": "W", "current": True, "node_count": 5}], "next_id": 2,
              "calls": [], "deleted": []}
+
+    def duplicate(switch=True):
+        if switch:
+            for w in state["ws"]:
+                w["current"] = False
+        wid = state["next_id"]
+        state["next_id"] += 1
+        state["ws"].append({"id": wid, "name": "W copy", "current": switch, "node_count": 5})
+        return {"success": True, "workspace_id": wid}
+
+    state["duplicate"] = duplicate
 
     def answer(method, path, params, body):
         if path in faults:
@@ -49,12 +63,7 @@ def install_fake_gephi(monkeypatch, faults=None, gates=None):
         if path == "/workspace/list":
             return {"success": True, "workspaces": [dict(w) for w in state["ws"]]}
         if path == "/workspace/duplicate":
-            for w in state["ws"]:
-                w["current"] = False
-            wid = state["next_id"]
-            state["next_id"] += 1
-            state["ws"].append({"id": wid, "name": "W copy", "current": True, "node_count": 5})
-            return {"success": True, "workspace_id": wid}
+            return duplicate()
         if path == "/workspace/rename":
             state["ws"][body["index"]]["name"] = body["name"]
             return {"success": True}
@@ -71,6 +80,7 @@ def install_fake_gephi(monkeypatch, faults=None, gates=None):
         return {"success": True, "removed": 1}
 
     async def fake_request(self, method, url, params=None, json=None, **kwargs):
+        await asyncio.sleep(0)
         path = httpx.URL(url).path
         state["calls"].append((method, path, dict(params or {}), dict(json or {})))
         if path in gates:
@@ -345,3 +355,140 @@ async def test_a_snapshot_never_deletes_when_no_new_workspace_appears(monkeypatc
     assert out["success"] is False
     assert state["deleted"] == []
     assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True)]
+
+
+# ── Cancellation and client-side failures leave no copy and no stale record ──
+# The MCP SDK cancels a tool call through an anyio cancel scope. That cancellation is
+# level-triggered: every later await in the scope is cancelled too, unless it is shielded.
+
+
+def _hang_and_cancel(holder):
+    async def gate():
+        holder["scope"].cancel()
+        await asyncio.Event().wait()
+    return gate
+
+
+async def _run_cancellable(holder, coro_fn):
+    async def run():
+        with anyio.CancelScope() as scope:
+            holder["scope"] = scope
+            await coro_fn()
+        return scope.cancelled_caught
+    return await asyncio.wait_for(run(), 5)
+
+
+async def test_whatif_cancelled_mid_edit_returns_to_the_original_and_removes_the_copy(
+        monkeypatch):
+    holder = {}
+    state = install_fake_gephi(monkeypatch, gates={"/graph/node/a": _hang_and_cancel(holder)})
+    _record_layout()
+    caught = await _run_cancellable(
+        holder, lambda: gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert caught is True
+    _assert_back_on_the_original_with_no_copy(state)
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_whatif_cancelled_when_cleanup_cannot_finish_resets_the_record(monkeypatch):
+    holder = {}
+
+    async def hang():
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 0.05, raising=False)
+    install_fake_gephi(monkeypatch, gates={"/graph/node/a": _hang_and_cancel(holder),
+                                           "/workspace/switch": hang})
+    _record_layout()
+    await _run_cancellable(
+        holder, lambda: gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    # The person may still be on the edited copy, so the record cannot be trusted.
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+async def test_a_snapshot_cancelled_midway_returns_to_the_original_and_removes_the_copy(
+        monkeypatch):
+    holder = {}
+    state = install_fake_gephi(monkeypatch, gates={"/workspace/rename": _hang_and_cancel(holder)})
+    _record_layout()
+    caught = await _run_cancellable(holder, lambda: gephi_mcp.gephi_snapshot(label="x"))
+    assert caught is True
+    _assert_back_on_the_original_with_no_copy(state)
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+def _duplicate_then_time_out(state, copies=1):
+    """A duplicate that completes in Gephi but times out on the client side."""
+    def fault():
+        for _ in range(copies):
+            state["duplicate"]()
+        raise httpx.ReadTimeout("timed out")
+    return fault
+
+
+async def test_a_snapshot_whose_duplicate_times_out_but_completes_removes_the_copy(monkeypatch):
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults["/workspace/duplicate"] = _duplicate_then_time_out(state)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert "timed out" in out["error"]
+    _assert_back_on_the_original_with_no_copy(state)
+
+
+async def test_a_snapshot_whose_duplicate_times_out_leaves_several_copies_and_says_so(
+        monkeypatch):
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults["/workspace/duplicate"] = _duplicate_then_time_out(state, copies=2)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert "2 new workspaces appeared" in out["error"]
+    assert state["deleted"] == []
+
+
+async def test_a_snapshot_whose_duplicate_times_out_and_list_fails_says_so(monkeypatch):
+    faults = {"/workspace/list": [None, {"success": False, "error": "busy"}]}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults["/workspace/duplicate"] = _duplicate_then_time_out(state)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert "may remain" in out["error"] and "close it by hand" in out["error"]
+    assert state["deleted"] == []
+
+
+async def test_whatif_whose_duplicate_times_out_but_completes_removes_the_copy(monkeypatch):
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults["/workspace/duplicate"] = _duplicate_then_time_out(state)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert out["success"] is False
+    _assert_back_on_the_original_with_no_copy(state)
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_whatif_whose_duplicate_times_out_leaves_several_copies_and_says_so(monkeypatch):
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults["/workspace/duplicate"] = _duplicate_then_time_out(state, copies=2)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert out["success"] is False
+    assert "2 new workspaces appeared" in out["error"]
+    assert state["deleted"] == []
+    # The duplicate left the person on a copy, so the record no longer describes the screen.
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+async def test_whatif_resets_the_record_when_its_cleanup_raises(monkeypatch):
+    # The reset is the default: a cleanup that raises part way cannot confirm the return.
+    install_fake_gephi(monkeypatch, faults={"/workspace/switch": asyncio.CancelledError()})
+    _record_layout()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(
+            gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]), 5)
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None
