@@ -288,7 +288,7 @@ def _original_name(snapshot_name: str) -> str:
     return base
 
 
-async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any]:
+async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dict[str, Any]:
     """Duplicate the current workspace into the rolling '[undo] ...' snapshot.
 
     Returns {"ok": True, "snapshot": name} or {"ok": False, "reason": ...}.
@@ -338,6 +338,17 @@ async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any
     if not sw.get("success", False):
         return {"ok": False, "reason": "could not switch back to the original workspace"}
     return {"ok": True, "snapshot": snap_name}
+
+
+async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any]:
+    """Take the rolling undo snapshot without losing the methods record. The snapshot's
+    workspace calls look like a graph change to GephiClient.request, but the graph the person
+    is looking at is unchanged."""
+    saved = LEDGER.state()
+    try:
+        return await _snapshot_current_unguarded(op, enforce_cap)
+    finally:
+        LEDGER.restore(saved)
 
 
 async def _auto_snapshot(op: str) -> bool:
@@ -2903,7 +2914,7 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
     # graph, wrong here, because the caller is handed back the same graph with the same styling.
     # Without this the counterfactual silently empties the methods record for the figure being
     # prepared, and the next export ships with an incomplete legend.
-    ledger_entries = list(LEDGER.entries)
+    ledger_state = LEDGER.state()
     ws_list = await gephi.request("GET", "/workspace/list")
     if not ws_list.get("success", True):
         return fmt(ws_list)
@@ -2944,7 +2955,7 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
         cleanup = await _cleanup_scratch(scratch_id, orig_id)
         # The caller is back on their own graph with their own styling, so the record that
         # described it is valid again. Restored last, after every /workspace/ call has run.
-        LEDGER.entries = ledger_entries
+        LEDGER.restore(ledger_state)
 
     outcome["cleanup"] = cleanup
     return fmt(outcome)
