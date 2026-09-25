@@ -1,6 +1,6 @@
 # Gephi AI
 
-AI-powered network analysis through [Gephi](https://gephi.org) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Build, analyze, style, and export publication-ready network visualizations by talking to your AI assistant.
+Control [Gephi](https://gephi.org) by talking to your AI assistant. Build, analyze, style, and export publication-ready network maps through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io).
 
 Built for researchers working across network science and AI.
 
@@ -8,116 +8,77 @@ Built for researchers working across network science and AI.
 
 ## What you get
 
-**Your AI assistant drives Gephi.** Say what you want in plain language and the assistant builds, analyzes, styles, and exports publication-ready network maps.
+**Your AI assistant drives Gephi.** Say what you want in plain language and the assistant builds, analyzes, styles, and exports the map.
 
-**It's a conversation, not a command line.** The assistant explains what it's doing, checks its own maps before showing them, and teaches you to read what you're seeing. You can point back: select nodes in the Gephi window and ask "what did I select?"
+**It is a conversation, not a command line.** The assistant explains what it is doing, checks its own maps before showing them, and teaches you to read what you see. You can point back: select nodes in Gephi and ask "what did I select?"
 
-**Any data, any MCP client.** Network files import directly; spreadsheets and other data become networks conversationally. Works with Claude Code, Claude Desktop, or any MCP-compatible assistant.
+**Any data, any MCP client.** Network files import directly, and spreadsheets and other data become networks conversationally. Works with Claude Code, Claude Desktop, OpenAI Codex, Gemini CLI, or any MCP client.
 
 <details>
 <summary>Full feature list</summary>
 
 - 113 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
-- One-level undo: destructive operations snapshot the workspace automatically, so `gephi_undo` brings the graph back
-- Layout quality is measured, not eyeballed: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separated and frames exports around the main cloud (ignoring runaway outlier nodes), and numerically exploded layouts are caught automatically instead of exported
-- Interactive network view inside the chat (pan, zoom, hover, click a node to ask about it)
-- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/export-map`, `/import-and-explore`, `/explore`, `/verify-claim`, `/text-network`, `/teach`, `/counterfactual`
-- Specialized agents that run multi-step work in their own context and hand back just the result: independent claim verification, layout iteration, structural analysis, and text-network construction
-- Two extra layouts beyond Gephi's own: by role played in the network, and by community (best for reply and retweet networks)
-- Reads your selection in the Gephi window, so "what did I select?" just works
+- One-level undo: destructive operations snapshot the workspace first, so `gephi_undo` brings the graph back
+- Measured layout quality: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separate, and numerically exploded layouts are caught instead of exported
+- Interactive network view inside the chat (pan, zoom, hover, and click a node to ask about it)
+- Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/export-map`, `/import-and-explore`, `/explore`, `/verify-claim`, `/text-network`, `/teach`, and `/counterfactual`
+- Specialized agents for claim verification, layout iteration, structural analysis, and text networks
+- Two extra layouts beyond Gephi's own: by role in the network, and by community
+- Reads your selection in the Gephi window
 - Drives any layout or metric plugin installed from the Gephi plugin portal
-- Imports GEXF, GraphML, GML, CSV, DOT, and Pajek; turns spreadsheets and other files into networks conversationally
+- Imports GEXF, GraphML, GML, CSV, DOT, and Pajek
 
 </details>
 
-## Architecture
+## Install
 
-Three runtime components connect your AI assistant to Gephi Desktop, with
-host-specific plugin packages adding guided workflows:
+You need [Gephi Desktop](https://gephi.org) 0.11.1 or newer and an AI assistant. Most clients also need [uv](https://docs.astral.sh/uv/getting-started/installation/), which runs the server and manages Python for you; Claude Desktop brings its own.
 
-```
-Claude / AI Assistant
-        │
-   MCP Protocol (stdio)
-        │
-   MCP Server (Python)          ← Translates MCP tool calls to HTTP
-        │
-   HTTP API (localhost:8080)
-        │
-   Gephi Plugin (Java)          ← Runs inside Gephi Desktop
-        │
-   Gephi Desktop                ← Must be running first
-```
-
-| Component | Directory | What it does |
-|-----------|-----------|-------------|
-| Gephi Plugin | `gephi-ai-plugin/` | Java module that adds an HTTP API to Gephi Desktop |
-| MCP Server | `mcp-server/` | Python server that exposes 113 Gephi tools via MCP |
-| Claude Plugin | `plugins/claude-code/` | Skills, commands, agents, and hooks for Claude Code |
-| Codex Plugin | `plugins/gephi-network-analysis/` | Skills and bundled MCP registration for Codex |
-
-Install the Gephi plugin plus your AI client's connection — the Claude Code plugin bundles the MCP server, so most users install just two things. Gephi Desktop must be running before using any tools.
-
-> **Security note:** the plugin's HTTP API binds to `127.0.0.1` only. It refuses any
-> request whose `Host` header is not a loopback address, which blocks DNS rebinding, and
-> any request carrying `Origin` or `Sec-Fetch-Site`, which blocks a page you are merely
-> visiting from driving Gephi with a cross-origin `fetch`. Browsers set those headers on
-> every request and page JavaScript cannot forge them; local clients send neither, which
-> is why a browser gets `403` and the MCP server does not. Beyond that it is not
-> authenticated, so any process running as you can use it. Do not expose port 8080.
-
-> **macOS note:** older plugin versions could wedge Gephi during sustained writes
-> against a large rendered graph (calls hang; only `gephi_health_check` answers).
-> Plugin 1.2.0 fixes the two causes on our side: writes now pause the renderer via
-> Gephi's own viz-engine API, and a read-lock leak in the query endpoints (the main
-> culprit) is closed. All lock waits are bounded, so a genuinely wedged Gephi returns
-> an immediate "fully quit and reopen Gephi" error instead of hanging, and
-> `gephi_health_check` exposes lock probes (`graph_lock`, `graph_lock_stats`) that
-> detect the condition. If you ever see persistent "Graph is busy" errors, restart
-> Gephi — and make sure you are on plugin 1.2.2 or newer.
-
-## Setup
-
-### Prerequisites
-
-- [Gephi Desktop](https://gephi.org/users/download/) 0.11.1+
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (runs the MCP server; one-line install, manages Python for you)
-- [Claude Code](https://claude.ai/code), [Claude Desktop](https://claude.ai/download), or OpenAI Codex (for AI interaction)
-
-### Step 1: Install the Gephi plugin
-
-This adds the HTTP API server inside Gephi Desktop. No build tools needed — download the pre-built plugin:
+### 1. Add the plugin to Gephi
 
 1. Download `gephi-ai-1.3.0.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases).
-2. In Gephi: **Tools → Plugins → Downloaded → Add Plugins** — select the `.nbm` file, then click **Install**.
-3. Restart Gephi. The plugin starts automatically and listens on `http://127.0.0.1:8080`.
+2. In Gephi, open **Tools > Plugins > Downloaded > Add Plugins**, select the file, and click **Install**.
+3. Restart Gephi. **Tools > Gephi AI Server** shows that the plugin is running.
 
-**Verify:** in a terminal, run `curl http://127.0.0.1:8080/health`. You should see
-`"service": "Gephi AI API"` and `"status": "running"`. You can also open **Tools > Gephi AI
-Server** in Gephi, which shows the same state and lets you stop, start, or change the port.
+### 2. Connect your assistant
 
-Opening that URL in a browser deliberately returns `403 Forbidden`. The API refuses browsers
-so that a page you happen to be visiting cannot drive Gephi; see the security note above.
+Use one connection method per app. Two at once means two servers and every tool listed twice.
 
-### Step 2: Connect your AI assistant
+**Claude Code** (recommended: adds the slash commands, agents, and skills):
 
-> **Renamed on PyPI.** The server is published as **`gephi-ai`**. It was
-> previously `gephi-mcp`, which stays installable at 1.18.0 so existing setups
-> keep working but receives no further releases. If your config says
-> `uvx gephi-mcp`, change the package to `gephi-ai` to keep getting updates. The
-> server name itself is unchanged, so tool names and permissions stay as they are.
+```bash
+claude plugin marketplace add MattArtzAnthro/gephi-ai
+claude plugin install gephi-network-analysis@gephi-ai
+```
 
+**Claude Desktop:** download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it. Claude Desktop installs Python, the server, and its dependencies itself. The first launch needs an internet connection and can take a minute. Tested with Claude Desktop 1.40609.0.
 
-#### Claude Desktop (fastest start)
+**OpenAI Codex** (adds the same workflows as skills):
 
-Download `gephi-ai-<version>.mcpb` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and double-click it; Claude Desktop installs Python, the server and its dependencies itself, so there is nothing else to install. The first launch needs an internet connection and can take a minute. No terminal, no config file. Tested with Claude Desktop 1.40609.0.
+```bash
+codex plugin marketplace add MattArtzAnthro/gephi-ai --ref main
+codex plugin add gephi-network-analysis@gephi-ai
+```
 
-> Use ONE connection method per app. If you previously added `gephi-mcp` to `claude_desktop_config.json` by hand, remove that entry before installing the bundle — otherwise Claude Desktop runs two copies of the server and every tool appears twice.
+Start a new Codex task after installing.
+
+**Gemini CLI:**
+
+```bash
+gemini mcp add -s user gephi-mcp uvx gephi-ai
+```
+
+**Any other MCP client:** run `uvx gephi-ai` over stdio.
 
 <details>
-<summary>Alternative: Claude Desktop via config file</summary>
+<summary>Tools only, without the skills and commands</summary>
 
-Add to your MCP configuration (`claude_desktop_config.json`):
+```bash
+claude mcp add gephi-mcp -- uvx gephi-ai
+codex mcp add gephi-mcp -- uvx gephi-ai
+```
+
+Claude Desktop through its config file (`claude_desktop_config.json`):
 
 ```json
 {
@@ -132,61 +93,10 @@ Add to your MCP configuration (`claude_desktop_config.json`):
 
 </details>
 
-#### Claude Code (most capable)
-
-```bash
-claude plugin marketplace add MattArtzAnthro/gephi-ai
-claude plugin install gephi-network-analysis@gephi-ai
-```
-
-(Or run the same two commands as `/plugin marketplace add …` and `/plugin install …` inside a Claude Code session.)
-
-The plugin bundles and runs the MCP server itself (via uv), and adds the slash commands, the network analyst agent, and the skills that teach Claude network science best practices. If you use Claude Code, this is the recommended setup.
-
 <details>
-<summary>Claude Code with MCP tools only (no skills or commands)</summary>
+<summary>Network-analysis guidance for other agents</summary>
 
-```bash
-claude mcp add gephi-mcp -- uvx gephi-ai
-```
-
-</details>
-
-#### OpenAI Codex (plugin package)
-
-The Codex package bundles the MCP registration, the complete Gephi reference
-skill, and focused workflow skills corresponding to every Claude slash command
-and custom agent:
-
-```bash
-codex plugin marketplace add MattArtzAnthro/gephi-ai --ref main
-codex plugin add gephi-network-analysis@gephi-ai
-```
-
-Start a new Codex task after installation so the plugin and its skills are
-discovered together. The source package is in `plugins/gephi-network-analysis/`
-and the repo marketplace is `.agents/plugins/marketplace.json`.
-
-<details>
-<summary>Codex with MCP tools only (no plugin workflows)</summary>
-
-```bash
-codex mcp add gephi-mcp -- uvx gephi-ai
-```
-
-</details>
-
-#### Gemini CLI and other MCP clients
-
-The server is model-agnostic: a stdio MCP server with one launcher that works everywhere. Register it once:
-
-```bash
-gemini mcp add -s user gephi-mcp uvx gephi-ai
-```
-
-(Claude Code without the plugin: `claude mcp add gephi-mcp -- uvx gephi-ai`.)
-
-These agents get all 113 tools. To give them the network-analysis guidance as well, copy the skill folder into your agent's skills directory:
+Copy the skill folder into your agent's skills directory:
 
 ```bash
 git clone https://github.com/MattArtzAnthro/gephi-ai.git
@@ -195,81 +105,47 @@ cp -r gephi-ai/plugins/claude-code/skills/gephi ~/.codex/skills/
 
 | Agent | Skills directory |
 |:------|:-----------------|
-| Claude Code | install the plugin (skill, commands, and agents together) |
-| OpenAI Codex | install the Codex plugin above; `~/.codex/skills/` also accepts the portable base skill |
+| OpenAI Codex | `~/.codex/skills/` (or install the Codex plugin above) |
 | Cursor | `~/.cursor/skills/` |
 | GitHub Copilot / VS Code | `~/.copilot/skills/` |
-| Shared project-level | `.agents/skills/` in your repository |
+| Any agent, per project | `.agents/skills/` in your repository |
 
-The Codex plugin translates the slash-command and custom-agent procedures into
-ordinary triggerable skills. Other agents get the portable base skill and the
-tools. The repository also carries `AGENTS.md` and `GEMINI.md`, which those agents
-read on their own.
-
-Any other MCP client: point it at `uvx gephi-ai` using stdio transport. `uvx` fetches the
-[`gephi-ai` package from PyPI](https://pypi.org/project/gephi-ai/) on first run and
-caches it. For a persistent named command, `pipx install gephi-ai` also works.
-
-<details>
-<summary>Troubleshooting: "Executable not found in $PATH"</summary>
-
-Avoid installing with pip inside a project virtual environment. Inside an
-activated `.venv` the `gephi-ai` command only exists on that venv's `PATH`, and MCP
-clients launch servers outside your shell — the server fails with "Executable not
-found in $PATH" even though `which gephi-ai` succeeds. Use `uvx`/`pipx`, or point
-your MCP config at the venv executable's absolute path.
+The repository also carries `AGENTS.md` and `GEMINI.md`, which those agents read on their own.
 
 </details>
 
-### Step 3: Verify
+### 3. Check that it works
 
-First confirm the MCP server actually connected. In Claude Code, run `/mcp` — `gephi-mcp` should be listed as **connected**. (In Claude Desktop, check that the tools appear in the tools menu.) If it shows a failure like "Executable not found in $PATH", the launcher (`uv`/`uvx` or `gephi-ai`) isn't on the global `PATH` — see the notes in Step 2.
-
-Then, with Gephi running, ask your assistant:
-
-> "Check if Gephi is running"
-
-It should call `gephi_health_check` and confirm the connection. In Claude Code, try:
-
-```
-/gephi-network-analysis:import-and-explore path/to/your/graph.gexf
-```
+With Gephi open, ask your assistant: **"Check if Gephi is running."** It should call `gephi_health_check` and confirm the connection, including whether your plugin and server are up to date.
 
 ## Updating
 
-gephi-ai improves often, so keep it current. Most fixes and new tools arrive through
-updates. The health check tells you once per session when your install is behind the
-latest release and shows the matching update step, but that notice only appears on
-recent versions, so if you installed a while ago (or an older command like `/teach`
-is missing), run the update below once to catch up. Updating is safe to do anytime.
+The health check tells you once per session when something is out of date.
 
 - **Claude Code:** `claude plugin update gephi-network-analysis@gephi-ai`, then start a new session.
-- **If `/mcp` shows `Failed to reconnect to plugin:gephi-network-analysis:gephi-mcp: -32000`** on server 1.11.0 or older, that is the MCP SDK 2.0 break (issue #5); updating to 1.12.0 or newer is the fix, no pin needed.
-- **Claude Desktop (one-click bundle):** download the newest `.mcpb` from Releases and double-click it again.
-- **Claude Desktop (config file):** nothing to do — the `uvx` entry fetches the latest release each time you fully quit and reopen Claude Desktop.
-- **Switching connection methods:** remove the old one first (bundle: uninstall in Settings > Extensions; config file: delete the `gephi-mcp` block). Two methods at once means two servers and duplicated tools.
-- **Cowork:** Cowork keeps its own copy of plugins, separate from Claude Code — updating one does not update the other. If Cowork's commands look older than this README (for example, no `/teach`), ask Cowork itself to update the gephi-network-analysis plugin, then fully quit and reopen the app.
-- **Gephi plugin:** install the newest `.nbm` from Releases via Tools > Plugins > Downloaded and restart Gephi.
-  - **Upgrading from 1.2.x, one time only:** the plugin was renamed to Gephi AI and its module
-    identifier changed, so 1.3.0 installs alongside the old plugin instead of replacing it, and
-    both will try to bind port 8080. In Gephi, open **Tools > Plugins > Installed**, uninstall
-    **Gephi AI (MCP)**, restart, then install the new `.nbm`. Later updates replace normally.
+- **Claude Desktop bundle:** download the newest `.mcpb` from Releases and double-click it.
+- **Config file or `uvx` setups:** nothing to do; `uvx` fetches the latest release when the app restarts.
+- **Gephi plugin:** install the newest `.nbm` through **Tools > Plugins > Downloaded** and restart Gephi.
 
-`gephi_health_check` reports both the Gephi plugin version and the MCP server version, and says whether they are up to date, so you can see at a glance what you are running.
+<details>
+<summary>Upgrade notes</summary>
 
-## What the assistant plugins add
+- **From plugin 1.2.x (one time):** the plugin was renamed to Gephi AI, so the new version installs alongside the old one and both try to use port 8080. In **Tools > Plugins > Installed**, uninstall **Gephi AI (MCP)**, restart Gephi, then install the new `.nbm`.
+- **From the `gephi-mcp` package:** the server is now published as `gephi-ai`. If your config says `uvx gephi-mcp`, change it to `uvx gephi-ai` to keep getting updates. Tool names do not change.
+- **Cowork** keeps its own copy of plugins. Ask Cowork to update gephi-network-analysis, then fully quit and reopen the app.
 
-Both host packages go beyond raw MCP tools. Claude uses slash commands, custom
-agents, and a health hook; Codex expresses the same procedures as focused skills
-and makes the health check the mandatory first workflow step.
+</details>
 
-| Component | What it does |
-|-----------|-------------|
-| **Guided workflows** | Analysis, communities, centrality, visualization, export, import/explore, claim verification, text networks, teaching, and counterfactuals |
-| **Specialized procedures** | Structural interpretation, independent claim verification, iterative layout QA, and tuned text-network construction |
-| **Gephi skill** | Teaches network-science workflows, visualization best practices, and known Gephi gotchas |
-| **Health gate** | Verifies Gephi is running before operational work begins |
-| **Reference guides** | Tool reference, layout guide, and statistics interpretation guide |
+## Troubleshooting
+
+- **"Executable not found in $PATH":** the app cannot find `uvx` or `gephi-ai`. Install with `uvx` or `pipx` rather than inside a project virtual environment, or point your config at the executable's full path.
+- **Every tool appears twice:** two connection methods are active. Remove one (bundle: **Settings > Extensions**; config file: delete the `gephi-mcp` block).
+- **"Graph is busy" keeps appearing:** fully quit and reopen Gephi.
+- **Opening `http://127.0.0.1:8080` in a browser returns `403`:** this is intended. The API refuses browsers so that a web page cannot drive Gephi. `curl http://127.0.0.1:8080/health` shows whether the plugin is running.
+
+## Security
+
+The plugin's API listens on `127.0.0.1` only and refuses requests from browsers and from non-local host names. It has no authentication, so any program running under your account can use it. Do not expose port 8080.
 
 ## Tools (113)
 
@@ -282,90 +158,52 @@ and makes the health check the mandatory first workflow step.
 | Appearance | 11 | `gephi_color_by_partition`, `gephi_color_edges_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
 | Filtering | 10 | `gephi_filter_by_degree`, `gephi_extract_backbone`, `gephi_list_filters`, `gephi_apply_filter` (any filter, by name) |
 | Attributes | 5 | `gephi_get_columns`, `gephi_set_node_attributes` |
-| Preview & Export | 14 | `gephi_export_png`, `gephi_export_screenshot` (live selection-aware canvas capture), `gephi_export_gexf`, `gephi_export` (VNA/Pajek/DL/…), `gephi_view_graph`, `gephi_export_legend`, `gephi_export_figure` (map and key as one PDF), `gephi_session_receipt` (how the figure was made) |
+| Preview & Export | 14 | `gephi_export_png`, `gephi_export_screenshot` (live canvas capture), `gephi_export_gexf`, `gephi_export` (VNA, Pajek, DL, and more), `gephi_view_graph`, `gephi_export_legend`, `gephi_export_figure` (map and key as one PDF), `gephi_session_receipt` (how the figure was made) |
 | Data Laboratory | 4 | `gephi_column_value_frequencies`, `gephi_detect_duplicates`, `gephi_merge_nodes`, `gephi_create_regex_column` |
 | Timeline | 1 | `gephi_get_timeline` (dynamic-graph state, read-only) |
 | Import | 4 | `gephi_import_file`, `gephi_import_gexf` |
 | Health & Diagnostics | 3 | `gephi_health_check`, `gephi_visual_qa`, `gephi_profile_graph` |
 | View / Camera / Perspective | 4 | `gephi_focus_view`, `gephi_set_selection_mode`, `gephi_get_perspective`, `gephi_switch_perspective` |
 
-## Example workflows
+The full reference, layout guide, and statistics guide live in [`plugins/claude-code/skills/gephi/`](plugins/claude-code/skills/gephi/).
 
-### Community detection
-
-```
-1. gephi_create_project
-2. gephi_import_file                  (your GEXF, GraphML, or CSV)
-3. gephi_compute_degree
-4. gephi_compute_modularity           (resolution: 1.0)
-5. gephi_color_by_partition           (column: modularity_class)
-6. gephi_size_by_ranking              (column: degree)
-7. gephi_run_layout                   (ForceAtlas 2, 1000 iterations)
-8. gephi_export_png                   (3840x2160 for publication)
-```
-
-### Centrality analysis
+## How it works
 
 ```
-1. Import or build graph
-2. gephi_compute_betweenness
-3. gephi_compute_pagerank
-4. gephi_run_layout                   (ForceAtlas 2)
-5. gephi_color_by_ranking             (column: betweenesscentrality)
-6. gephi_size_by_ranking              (column: pageranks)
-7. gephi_query_nodes                  (find top-ranked nodes)
+AI assistant  →  MCP server (Python)  →  HTTP on 127.0.0.1:8080  →  Gephi plugin (Java)  →  Gephi Desktop
 ```
 
-## Documentation
-
-Reference guides are shared in `plugins/claude-code/skills/gephi/` and mirrored in
-`plugins/gephi-network-analysis/skills/gephi/` for the installable Codex package:
-
-- **SKILL.md** — Workflow patterns, best practices, and critical gotchas
-- **references/tool-reference.md** — Complete API reference for all 113 tools
-- **references/layout-guide.md** — Layout algorithm selection and parameter tuning
-- **references/statistics-guide.md** — Statistics interpretation guide
-
-## Tech stack
-
-- **Gephi Plugin**: Java 11, NetBeans Platform, NanoHTTPD, Gson
-- **MCP Server**: Python 3.10+, MCP Python SDK 2.x (`MCPServer`, 2026-07-28 protocol with the 2025-era handshake still served), httpx, Pydantic, defusedxml; vendored sigma.js + graphology for the in-chat viewer
-- **Target**: Gephi 0.11.1, NetBeans RELEASE290
+| Component | Directory |
+|-----------|-----------|
+| Gephi plugin | `gephi-ai-plugin/` |
+| MCP server | `mcp-server/` |
+| Claude Code plugin | `plugins/claude-code/` |
+| Codex plugin | `plugins/gephi-network-analysis/` |
+| Claude Desktop bundle | `mcpb/` |
 
 ## Development
 
-Building the Gephi plugin from source requires JDK 11+ and Maven:
+The Gephi plugin needs JDK 11 or newer and Maven:
 
 ```bash
 cd gephi-ai-plugin
-mvn clean package    # output: target/gephi-ai-<version>.nbm, auto-deployed to Gephi's modules dir
+mvn clean package    # builds target/gephi-ai-<version>.nbm and copies it into Gephi's modules folder
 ```
 
-**Fully quit and reopen Gephi after every rebuild, even mid-session.** Gephi lazily
-loads plugin classes on first use; overwriting the jar file on disk while Gephi is
-still running an earlier build corrupts the classloader's view of any class not yet
-loaded, and the resulting crash (a raw dropped connection, no error message) can be
-hard to trace back to the real cause.
+Fully quit and reopen Gephi after every rebuild. Replacing the plugin while Gephi runs can crash it without a clear error.
 
-The MCP server is a standard Python package under `mcp-server/` (`pytest` for tests,
-`ruff` for linting).
-
-## Attribution
-
-If you use or adapt this project in your work, please credit:
-
-> Built with gephi-ai (Matt Artz, 2025–2026) — https://github.com/MattArtzAnthro/gephi-ai
+The MCP server is a standard Python package in `mcp-server/`, tested with `pytest` and linted with `ruff`. Release steps are in [RELEASING.md](RELEASING.md).
 
 ## Citation
 
-If you use this toolkit in your academic research, please cite:
-
 > Artz, Matt. 2025. Gephi AI. Software. Zenodo. https://doi.org/10.5281/zenodo.18673386
+
+If you adapt this project, please credit "gephi-ai (Matt Artz, 2025–2026), https://github.com/MattArtzAnthro/gephi-ai".
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
 
 ## Author
 
-**Matt Artz** — [mattartz.me](https://www.mattartz.me) | [ORCID](https://orcid.org/0000-0002-3822-1429)
+**Matt Artz**, [mattartz.me](https://www.mattartz.me) | [ORCID](https://orcid.org/0000-0002-3822-1429)
