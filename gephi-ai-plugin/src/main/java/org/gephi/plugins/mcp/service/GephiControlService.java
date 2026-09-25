@@ -2814,8 +2814,8 @@ public class GephiControlService {
                 // 4 to 100, and scales positions by the same ratio (clamped to +/-5000).
                 // That silently rewrites the viz:position and viz:size values the file
                 // carries, so an export followed by an import did not round-trip. Files
-                // without positions are unaffected: the container still spreads them at
-                // random when it closes, whether or not auto-scale is on.
+                // without positions still get spread out at random when the container
+                // closes; their own sizes are now kept as written.
                 c.getLoader().setAutoScale(false);
 
                 Workspace importedWs = ic.process(c, processor, ws);
