@@ -198,8 +198,8 @@ def _pypi_reachable():
 
 def test_real_build_ships_the_locked_bundle(tmp_path):
     """Packs a temp copy with the real uv and npx, which reach PyPI and npm, so it runs only
-    when GEPHI_AI_REQUIRE_REAL_BUILD is set; then anything that stops it is a failure."""
-    if not os.environ.get("GEPHI_AI_REQUIRE_REAL_BUILD"):
+    when GEPHI_AI_REQUIRE_REAL_BUILD=1; then anything that stops it is a failure."""
+    if os.environ.get("GEPHI_AI_REQUIRE_REAL_BUILD") != "1":
         pytest.skip("uses the network; set GEPHI_AI_REQUIRE_REAL_BUILD=1 to run it")
     missing = [t for t in ("bash", "uv", "npx") if shutil.which(t) is None]
     if os.name == "nt":

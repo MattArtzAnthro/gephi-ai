@@ -3,7 +3,7 @@
 The server is launched with the manifest's own mcp_config, as Claude Desktop launches it. The
 bundle pins a released gephi-ai, which may not be on PyPI yet on an unreleased branch, so the
 test injects --no-project --with <this checkout's server> into that command; nothing else about
-the command changes. Set GEPHI_AI_REQUIRE_BUNDLE_SMOKE to fail, not skip, when uv is missing.
+the command changes. Set GEPHI_AI_REQUIRE_BUNDLE_SMOKE=1 to fail, not skip, when uv is missing.
 """
 import json
 import os
@@ -42,7 +42,8 @@ async def test_bundle_entry_point_serves_every_tool():
     executable = shutil.which(command)
     if executable is None:
         reason = f"{command} is not on PATH; the Desktop bundle runs on the uv runtime"
-        (pytest.fail if os.environ.get("GEPHI_AI_REQUIRE_BUNDLE_SMOKE") else pytest.skip)(reason)
+        required = os.environ.get("GEPHI_AI_REQUIRE_BUNDLE_SMOKE") == "1"
+        (pytest.fail if required else pytest.skip)(reason)
     params = StdioServerParameters(
         command=executable,
         args=_with_this_checkout(args),

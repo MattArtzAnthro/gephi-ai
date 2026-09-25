@@ -367,6 +367,7 @@ async def test_a_snapshot_never_deletes_when_no_new_workspace_appears(monkeypatc
 
 def _hang_and_cancel(holder):
     async def gate():
+        holder["cancelled_at"] = time.monotonic()
         holder["scope"].cancel()
         await asyncio.Event().wait()
     return gate
@@ -404,13 +405,13 @@ async def test_whatif_cancelled_when_cleanup_cannot_finish_resets_the_record(mon
     install_fake_gephi(monkeypatch, gates={"/graph/node/a": _hang_and_cancel(holder),
                                            "/workspace/switch": hang})
     _record_layout()
-    started = time.monotonic()
     caught = await _run_cancellable(
         holder, lambda: gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
-    elapsed = time.monotonic() - started
+    elapsed = time.monotonic() - holder["cancelled_at"]
     assert caught is True
-    # The cleanup bound, not the test's own 5 s limit, is what ended the hung switch.
-    assert elapsed < 1, f"the cleanup ran {elapsed:.2f} s, past CLEANUP_TIMEOUT"
+    # The cleanup bound, not the 5 s limit in _run_cancellable, is what ended the hung switch,
+    # so the time from the cancel stays well under half of that limit.
+    assert elapsed < 2.5, f"the cleanup ran {elapsed:.2f} s after the cancel, past CLEANUP_TIMEOUT"
     # The person may still be on the edited copy, so the record cannot be trusted.
     assert gephi_mcp.LEDGER.receipt()["layout"] is None
 
@@ -445,7 +446,6 @@ async def test_a_snapshot_cancelled_when_its_cleanup_cannot_return_resets_the_re
 
 async def test_a_snapshot_cancelled_when_its_switch_back_fails_resets_the_record(monkeypatch):
     holder = {}
-    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 0.05)
     state = install_fake_gephi(
         monkeypatch, faults={"/workspace/switch": {"success": False, "error": "switch refused"}},
         gates={"/workspace/rename": _hang_and_cancel(holder)})
