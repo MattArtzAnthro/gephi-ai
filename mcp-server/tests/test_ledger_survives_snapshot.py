@@ -3,6 +3,7 @@ record must survive it. The fake sits under GephiClient.request (at httpx), beca
 that caused the bug lives inside GephiClient.request itself."""
 import asyncio
 import json
+import time
 
 import anyio
 import httpx
@@ -398,12 +399,18 @@ async def test_whatif_cancelled_when_cleanup_cannot_finish_resets_the_record(mon
     async def hang():
         await asyncio.Event().wait()
 
-    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 0.05, raising=False)
+    # No raising=False: a renamed constant must fail here, not quietly set a new attribute.
+    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 0.05)
     install_fake_gephi(monkeypatch, gates={"/graph/node/a": _hang_and_cancel(holder),
                                            "/workspace/switch": hang})
     _record_layout()
-    await _run_cancellable(
+    started = time.monotonic()
+    caught = await _run_cancellable(
         holder, lambda: gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    elapsed = time.monotonic() - started
+    assert caught is True
+    # The cleanup bound, not the test's own 5 s limit, is what ended the hung switch.
+    assert elapsed < 1, f"the cleanup ran {elapsed:.2f} s, past CLEANUP_TIMEOUT"
     # The person may still be on the edited copy, so the record cannot be trusted.
     assert gephi_mcp.LEDGER.receipt()["layout"] is None
 
@@ -417,6 +424,73 @@ async def test_a_snapshot_cancelled_midway_returns_to_the_original_and_removes_t
     assert caught is True
     _assert_back_on_the_original_with_no_copy(state)
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def _hang():
+    await asyncio.Event().wait()
+
+
+async def test_a_snapshot_cancelled_when_its_cleanup_cannot_return_resets_the_record(
+        monkeypatch):
+    holder = {}
+    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 0.05)
+    install_fake_gephi(monkeypatch, gates={"/workspace/rename": _hang_and_cancel(holder),
+                                           "/workspace/switch": _hang})
+    _record_layout()
+    caught = await _run_cancellable(holder, lambda: gephi_mcp.gephi_snapshot(label="x"))
+    assert caught is True
+    # The switch back never answered, so the person may still be on the copy.
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+async def test_a_snapshot_cancelled_when_its_switch_back_fails_resets_the_record(monkeypatch):
+    holder = {}
+    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 0.05)
+    state = install_fake_gephi(
+        monkeypatch, faults={"/workspace/switch": {"success": False, "error": "switch refused"}},
+        gates={"/workspace/rename": _hang_and_cancel(holder)})
+    _record_layout()
+    caught = await _run_cancellable(holder, lambda: gephi_mcp.gephi_snapshot(label="x"))
+    assert caught is True
+    assert state["deleted"] == [2]  # the copy is still removed by its id
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+def _duplicate_then_cancel(holder):
+    """A duplicate that completes in Gephi, after which the call is cancelled and never
+    answers, so whatif does not learn the copy's id."""
+    async def gate():
+        holder["state"]["duplicate"]()
+        holder["scope"].cancel()
+        await asyncio.Event().wait()
+    return gate
+
+
+async def test_whatif_cancelled_during_the_duplicate_removes_the_copy(monkeypatch):
+    holder = {}
+    holder["state"] = state = install_fake_gephi(
+        monkeypatch, gates={"/workspace/duplicate": _duplicate_then_cancel(holder)})
+    _record_layout()
+    caught = await _run_cancellable(
+        holder, lambda: gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert caught is True
+    _assert_back_on_the_original_with_no_copy(state)
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_whatif_cancelled_during_the_duplicate_without_a_return_resets_the_record(
+        monkeypatch):
+    holder = {}
+    monkeypatch.setattr(gephi_mcp, "CLEANUP_TIMEOUT", 0.05)
+    holder["state"] = install_fake_gephi(
+        monkeypatch, gates={"/workspace/duplicate": _duplicate_then_cancel(holder),
+                            "/workspace/switch": _hang})
+    _record_layout()
+    caught = await _run_cancellable(
+        holder, lambda: gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert caught is True
+    # The duplicate left the person on the copy and the switch back never answered.
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None
 
 
 def _duplicate_then_time_out(state, copies=1):

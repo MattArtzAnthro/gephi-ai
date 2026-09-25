@@ -9,7 +9,6 @@ is precisely the shape the graph profile steers a caller toward the community la
 import pytest
 
 from gephi_mcp_viewer.community_layout import compute_community_positions
-from session_ledger import Ledger
 
 
 def _directed_star_with_unreachable_member():
@@ -62,30 +61,6 @@ def test_community_layout_gives_every_member_a_finite_position():
         key, x, y = entry["id"], entry["x"], entry["y"]
         assert x == x and y == y, f"{key} has a NaN coordinate"
         assert abs(x) != float("inf") and abs(y) != float("inf"), f"{key} ran to infinity"
-
-
-def test_a_ledger_can_be_carried_across_a_workspace_round_trip():
-    """gephi_whatif duplicates a workspace, edits the copy, deletes it, and returns.
-
-    Each of those calls would reset the ledger, which is right for a real change of graph and
-    wrong here: the caller is handed back the same graph with the same styling. The record is
-    kept by running the calls as workspace bookkeeping (see test_ledger_survives_snapshot.py).
-    This checks the model side: entries carried across a reset still produce the legend.
-    """
-    ledger = Ledger()
-    ledger.record("color_by_partition", column="circle")
-    ledger.record("size_by_ranking", column="degree", range=[30.0, 260.0])
-    saved = list(ledger.entries)
-    assert len(ledger.legend_items()) == 2
-
-    ledger.reset()  # what the workspace churn does
-    assert ledger.legend_items() == []
-
-    ledger.entries = saved
-
-    items = ledger.legend_items()
-    assert len(items) == 2
-    assert {i["column"] for i in items} == {"circle", "degree"}
 
 
 @pytest.mark.parametrize("failing", ["add", "write"])
