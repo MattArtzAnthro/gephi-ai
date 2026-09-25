@@ -17,6 +17,7 @@ Developed by Matt Artz (https://www.mattartz.me)
 
 import asyncio
 import contextlib
+import contextvars
 import importlib.metadata
 import json
 import logging
@@ -208,6 +209,25 @@ def _tool(name: str, **kwargs: Any):
 
 # ==================== HTTP Client ====================
 
+#: Set while this task makes workspace calls that are bookkeeping rather than a change of the
+#: graph the person sees: the undo snapshot's duplicate and rename, and gephi_whatif's scratch
+#: copy. GephiClient.request skips the methods-record reset while it is set. A context variable
+#: belongs to one asyncio task, so a genuine graph replacement running in another tool call at
+#: the same time still resets the record.
+_WORKSPACE_BOOKKEEPING: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "gephi_workspace_bookkeeping", default=False)
+
+
+@contextlib.contextmanager
+def _workspace_bookkeeping():
+    """Mark the calls made inside this block, in this task only, as workspace bookkeeping."""
+    token = _WORKSPACE_BOOKKEEPING.set(True)
+    try:
+        yield
+    finally:
+        _WORKSPACE_BOOKKEEPING.reset(token)
+
+
 class GephiClient:
     def __init__(self, base_url: str = GEPHI_API_URL):
         self.base_url = base_url.rstrip("/")
@@ -219,10 +239,11 @@ class GephiClient:
                       timeout: float | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         # Cached graph facts describe a particular graph. Any call that could change which graph
-        # we are looking at, or its shape, retires them before it runs.
+        # we are looking at, or its shape, retires them before it runs. The methods record is
+        # reset only for a real change of graph, not for this task's workspace bookkeeping.
         if mutates_graph(method, endpoint):
             invalidate_graph_facts()
-            if replaces_graph(method, endpoint):
+            if replaces_graph(method, endpoint) and not _WORKSPACE_BOOKKEEPING.get():
                 LEDGER.reset()
         try:
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
@@ -353,12 +374,9 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
 async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any]:
     """Take the rolling undo snapshot without losing the methods record. The snapshot's
     workspace calls look like a graph change to GephiClient.request, but the graph the person
-    is looking at is unchanged."""
-    saved = LEDGER.state()
-    try:
+    is looking at is unchanged, so they run as bookkeeping and never reset the record."""
+    with _workspace_bookkeeping():
         return await _snapshot_current_unguarded(op, enforce_cap)
-    finally:
-        LEDGER.restore(saved)
 
 
 async def _auto_snapshot(op: str) -> bool:
@@ -2920,58 +2938,55 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
     copy is still cleaned up.
     """
     # This tool duplicates a workspace, works on the copy, deletes it, and returns. Every one
-    # of those calls hits /workspace/, which resets the ledger — correct for a real change of
-    # graph, wrong here, because the caller is handed back the same graph with the same styling.
-    # Without this the counterfactual silently empties the methods record for the figure being
-    # prepared, and the next export ships with an incomplete legend.
-    ledger_state = LEDGER.state()
-    ws_list = await gephi.request("GET", "/workspace/list")
-    if not ws_list.get("success", True):
-        return fmt(ws_list)
-    workspaces = ws_list.get("workspaces", [])
-    orig = next((w for w in workspaces if w.get("current")), None)
-    if orig is None:
-        return fmt({"success": False, "error": "No current workspace to run a counterfactual on."})
-    orig_id = orig.get("id")
-    orig_index = workspaces.index(orig)
+    # of those calls hits /workspace/, which would reset the methods record. That is right for a
+    # real change of graph and wrong here, because the caller is handed back the same graph with
+    # the same styling. So the calls run as bookkeeping and leave the record alone.
+    with _workspace_bookkeeping():
+        ws_list = await gephi.request("GET", "/workspace/list")
+        if not ws_list.get("success", True):
+            return fmt(ws_list)
+        workspaces = ws_list.get("workspaces", [])
+        orig = next((w for w in workspaces if w.get("current")), None)
+        if orig is None:
+            return fmt({"success": False,
+                        "error": "No current workspace to run a counterfactual on."})
+        orig_id = orig.get("id")
+        orig_index = workspaces.index(orig)
 
-    dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": orig_index})
-    if not dup.get("success", True):
-        # Nothing was copied, so the caller is still on their own graph, but the request
-        # itself reset the record. Put it back before reporting the failure.
-        LEDGER.restore(ledger_state)
-        return fmt(dup)
-    scratch_id = dup.get("workspace_id")
+        dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": orig_index})
+        if not dup.get("success", True):
+            # Nothing was copied, so the caller is still on their own graph.
+            return fmt(dup)
+        scratch_id = dup.get("workspace_id")
 
-    outcome: dict[str, Any]
-    try:
-        before = await _compute_profile(include_slow)
-        if not before.get("success", True):
-            outcome = {"success": False, "stage": "baseline_profile", "detail": before}
-        else:
-            failed = None
-            for i, edit in enumerate(edits):
-                er = await _apply_edit(edit)
-                if not er.get("success", True):
-                    failed = {"success": False, "stage": "edit", "index": i, "edit": edit, "detail": er}
-                    break
-            if failed:
-                outcome = failed
+        outcome: dict[str, Any]
+        try:
+            before = await _compute_profile(include_slow)
+            if not before.get("success", True):
+                outcome = {"success": False, "stage": "baseline_profile", "detail": before}
             else:
-                after = await _compute_profile(include_slow)
-                if not after.get("success", True):
-                    outcome = {"success": False, "stage": "after_profile", "detail": after}
+                failed = None
+                for i, edit in enumerate(edits):
+                    er = await _apply_edit(edit)
+                    if not er.get("success", True):
+                        failed = {"success": False, "stage": "edit", "index": i, "edit": edit,
+                                  "detail": er}
+                        break
+                if failed:
+                    outcome = failed
                 else:
-                    outcome = {"success": True, "edits_applied": edits,
-                               "diff": _diff_profiles(before, after)}
-    finally:
-        cleanup = await _cleanup_scratch(scratch_id, orig_id)
-        # Once the caller is back on their own graph with their own styling, the record that
-        # described it is valid again. Restored last, after every /workspace/ call has run. If
-        # the switch back failed, they are left on the edited scratch copy, and the record would
-        # describe a graph they are no longer looking at, so it stays reset.
-        if orig_id is not None and cleanup.get("returned_to_workspace_id") == orig_id:
-            LEDGER.restore(ledger_state)
+                    after = await _compute_profile(include_slow)
+                    if not after.get("success", True):
+                        outcome = {"success": False, "stage": "after_profile", "detail": after}
+                    else:
+                        outcome = {"success": True, "edits_applied": edits,
+                                   "diff": _diff_profiles(before, after)}
+        finally:
+            cleanup = await _cleanup_scratch(scratch_id, orig_id)
+            # If the switch back failed, the caller is left on the edited scratch copy, and the
+            # record would describe a graph they are no longer looking at, so it is reset.
+            if orig_id is None or cleanup.get("returned_to_workspace_id") != orig_id:
+                LEDGER.reset()
 
     outcome["cleanup"] = cleanup
     return fmt(outcome)

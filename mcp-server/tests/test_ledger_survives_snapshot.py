@@ -22,18 +22,27 @@ GEXF = (
 )
 
 
-def install_fake_gephi(monkeypatch, faults=None):
+def install_fake_gephi(monkeypatch, faults=None, gates=None):
     """Fake Gephi at the httpx layer. `faults` maps an endpoint path to the JSON body it
-    should answer with instead, or to an exception it should raise."""
+    should answer with instead, or to an exception it should raise. A list is a queue of
+    one-shot answers for successive calls, where None means answer normally. `gates` maps a
+    path to a coroutine function awaited before that call is answered, so a test can hold a
+    call open while another task runs. Every call is kept in state["calls"], and the id of
+    every deleted workspace in state["deleted"]."""
     faults = faults or {}
-    state = {"ws": [{"id": 1, "name": "W", "current": True, "node_count": 5}], "next_id": 2}
+    gates = gates or {}
+    state = {"ws": [{"id": 1, "name": "W", "current": True, "node_count": 5}], "next_id": 2,
+             "calls": [], "deleted": []}
 
     def answer(method, path, params, body):
         if path in faults:
             fault = faults[path]
+            if isinstance(fault, list):
+                fault = fault.pop(0) if fault else None
             if isinstance(fault, BaseException):
                 raise fault
-            return fault
+            if fault is not None:
+                return fault
         if path == "/workspace/list":
             return {"success": True, "workspaces": [dict(w) for w in state["ws"]]}
         if path == "/workspace/duplicate":
@@ -51,6 +60,7 @@ def install_fake_gephi(monkeypatch, faults=None):
                 w["current"] = i == body["index"]
             return {"success": True}
         if path == "/workspace/delete":
+            state["deleted"].append(state["ws"][int(params["index"])].get("id"))
             del state["ws"][int(params["index"])]
             return {"success": True}
         if path == "/export/gexf":
@@ -59,6 +69,9 @@ def install_fake_gephi(monkeypatch, faults=None):
 
     async def fake_request(self, method, url, params=None, json=None, **kwargs):
         path = httpx.URL(url).path
+        state["calls"].append((method, path, dict(params or {}), dict(json or {})))
+        if path in gates:
+            await gates[path]()
         return httpx.Response(200, json=answer(method, path, params or {}, json or {}),
                               request=httpx.Request(method, url))
 
@@ -85,16 +98,76 @@ async def test_a_real_graph_change_still_resets(monkeypatch):
     assert gephi_mcp.LEDGER.receipt()["layout"] is None
 
 
-def test_state_round_trips_every_attribute():
-    led = Ledger()
-    led.record("run_layout", algorithm="X", iterations=1)
-    led.extra = {"a": 1}
-    saved = led.state()
-    led.reset()
-    led.extra = None
-    led.restore(saved)
-    assert led.receipt()["layout"]["algorithm"] == "X"
-    assert led.extra == {"a": 1}
+async def test_a_snapshot_keeps_every_ledger_attribute(monkeypatch):
+    # A ledger attribute that a reset clears, standing in for any field added after `entries`.
+    def reset(self):
+        self.entries = []
+        self.extra = None
+
+    monkeypatch.setattr(Ledger, "reset", reset)
+    monkeypatch.setattr(gephi_mcp.LEDGER, "extra", None, raising=False)
+    install_fake_gephi(monkeypatch)
+    _record_layout()
+    gephi_mcp.LEDGER.extra = {"a": 1}
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is True
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+    assert gephi_mcp.LEDGER.extra == {"a": 1}, "the snapshot kept entries but not the rest"
+
+
+async def test_a_graph_replaced_during_a_snapshot_still_resets_the_record(monkeypatch):
+    # Tool calls run concurrently. A genuine graph replacement that lands while a snapshot is
+    # between its workspace calls must leave the record reset: it describes the old graph.
+    duplicate_started = asyncio.Event()
+    clear_done = asyncio.Event()
+
+    async def hold_duplicate():
+        duplicate_started.set()
+        await clear_done.wait()
+
+    install_fake_gephi(monkeypatch, gates={"/workspace/duplicate": hold_duplicate})
+    _record_layout()
+
+    async def clear_mid_snapshot():
+        await duplicate_started.wait()
+        await gephi_mcp.gephi.request("POST", "/graph/clear")
+        clear_done.set()
+
+    snap, _ = await asyncio.gather(gephi_mcp.gephi_snapshot(label="x"), clear_mid_snapshot())
+    assert json.loads(snap)["success"] is True
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None, "the snapshot restored a stale record"
+
+
+async def test_a_graph_replaced_during_whatif_still_resets_the_record(monkeypatch):
+    duplicate_started = asyncio.Event()
+    clear_done = asyncio.Event()
+
+    async def hold_duplicate():
+        duplicate_started.set()
+        await clear_done.wait()
+
+    install_fake_gephi(monkeypatch, gates={"/workspace/duplicate": hold_duplicate})
+    _record_layout()
+
+    async def clear_mid_whatif():
+        await duplicate_started.wait()
+        await gephi_mcp.gephi.request("POST", "/graph/clear")
+        clear_done.set()
+
+    out, _ = await asyncio.gather(
+        gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]), clear_mid_whatif())
+    assert json.loads(out)["cleanup"]["returned_to_workspace_id"] == 1
+    assert gephi_mcp.LEDGER.receipt()["layout"] is None, "whatif restored a stale record"
+
+
+async def test_bookkeeping_still_retires_cached_graph_facts(monkeypatch):
+    # Only the record reset is skipped during a snapshot; cached graph facts still go.
+    install_fake_gephi(monkeypatch)
+    _record_layout()
+    monkeypatch.setattr(gephi_mcp, "_graph_facts", gephi_mcp.GraphFacts())
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is True
+    assert gephi_mcp._graph_facts is None
 
 
 def _record_layout():
@@ -147,12 +220,12 @@ async def test_whatif_keeps_every_ledger_attribute(monkeypatch):
     assert out["success"] is True
     assert out["cleanup"]["returned_to_workspace_id"] == 1
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
-    assert gephi_mcp.LEDGER.extra == {"a": 1}, "whatif restored entries but not the rest"
+    assert gephi_mcp.LEDGER.extra == {"a": 1}, "whatif kept entries but not the rest"
 
 
 async def test_a_snapshot_that_fails_midway_keeps_the_record(monkeypatch):
-    # GephiClient.request turns a connection error into an error dict. /workspace/duplicate has
-    # already reset the record by the time the rename fails.
+    # GephiClient.request turns a connection error into an error dict. The snapshot has already
+    # made its /workspace/duplicate call by the time the rename fails.
     state = install_fake_gephi(monkeypatch, faults={
         "/workspace/rename": httpx.ConnectError("connection refused")})
     _record_layout()
@@ -176,12 +249,13 @@ async def test_a_destructive_tool_reports_no_undo_when_the_rename_fails(monkeypa
 
 async def test_a_snapshot_interrupted_midway_keeps_the_record(monkeypatch):
     # A cancellation is not caught by GephiClient.request, so it escapes the snapshot after
-    # /workspace/duplicate has reset the record. The restore still has to run.
+    # /workspace/duplicate has run. The bookkeeping mark must still be cleared on the way out.
     install_fake_gephi(monkeypatch, faults={"/workspace/rename": asyncio.CancelledError()})
     _record_layout()
     with pytest.raises(asyncio.CancelledError):
         await gephi_mcp.gephi_snapshot(label="x")
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+    assert gephi_mcp._WORKSPACE_BOOKKEEPING.get() is False
 
 
 async def test_whatif_drops_the_record_when_the_workspace_has_no_id(monkeypatch):

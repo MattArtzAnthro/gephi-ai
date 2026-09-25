@@ -67,10 +67,10 @@ def test_community_layout_gives_every_member_a_finite_position():
 def test_a_ledger_can_be_carried_across_a_workspace_round_trip():
     """gephi_whatif duplicates a workspace, edits the copy, deletes it, and returns.
 
-    Every one of those calls resets the ledger, which is right for a real change of graph and
-    wrong here: the caller is handed back the same graph with the same styling. Without the
-    save and restore, running a counterfactual emptied the methods record for the figure being
-    prepared, and the next export shipped with an incomplete legend.
+    Each of those calls would reset the ledger, which is right for a real change of graph and
+    wrong here: the caller is handed back the same graph with the same styling. The record is
+    kept by running the calls as workspace bookkeeping (see test_ledger_survives_snapshot.py).
+    This checks the model side: entries carried across a reset still produce the legend.
     """
     ledger = Ledger()
     ledger.record("color_by_partition", column="circle")
@@ -81,7 +81,7 @@ def test_a_ledger_can_be_carried_across_a_workspace_round_trip():
     ledger.reset()  # what the workspace churn does
     assert ledger.legend_items() == []
 
-    ledger.entries = saved  # what gephi_whatif now does in its finally block
+    ledger.entries = saved
 
     items = ledger.legend_items()
     assert len(items) == 2

@@ -17,7 +17,6 @@ invisible to it, and the receipt says so rather than letting silence read as com
 
 from __future__ import annotations
 
-import copy
 from typing import Any
 
 #: Operations that encode a variable in a visual channel, and so belong in a legend.
@@ -90,12 +89,3 @@ class Ledger:
             "layout": layout,
             "scope": SCOPE_NOTE,
         }
-
-    def state(self) -> dict[str, Any]:
-        """Everything the ledger holds, copied, so a caller can put it back after calls that
-        look like a graph change but are not (an undo snapshot, a what-if run)."""
-        return copy.deepcopy(vars(self))
-
-    def restore(self, state: dict[str, Any]) -> None:
-        for key, value in copy.deepcopy(state).items():
-            setattr(self, key, value)
