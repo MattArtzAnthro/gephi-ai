@@ -22,13 +22,19 @@ jobs:
         run: mvn -B test
 
   mcp-server:
-    name: MCP server (pytest + ruff)
+    name: MCP server (pytest + ruff, Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the requires-python floor; 3.14 is what a fresh Desktop bundle install
+        # resolves today.
+        python-version: ['3.10', '3.11', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         working-directory: mcp-server
         # Editable install so pyproject.toml stays the single source of truth for
@@ -41,6 +47,21 @@ jobs:
       - name: Test
         working-directory: mcp-server
         run: python -m pytest -q
+
+  desktop-bundle:
+    name: Desktop bundle entry point (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Smoke-test the bundle over stdio
+        # The test launches the bundle with uv, as Claude Desktop does, so uv must be on PATH
+        # here or the test skips.
+        run: uv run --directory mcp-server --extra dev python -m pytest -q tests/test_bundle_smoke.py
 
   codex-plugin:
     name: Codex plugin (manifest + parity)
