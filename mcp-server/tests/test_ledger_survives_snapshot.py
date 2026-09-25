@@ -39,13 +39,18 @@ def install_fake_gephi(monkeypatch, faults=None, gates=None):
     state = {"ws": [{"id": 1, "name": "W", "current": True, "node_count": 5}], "next_id": 2,
              "calls": [], "deleted": []}
 
-    def duplicate(switch=True):
+    def duplicate(switch=True, index=None):
+        # Named as Gephi names a copy ("Copy of <name>"), with the source's node count. The
+        # source is the workspace at `index`, or the current one.
+        source = (state["ws"][index] if index is not None
+                  else next((w for w in state["ws"] if w["current"]), state["ws"][0]))
         if switch:
             for w in state["ws"]:
                 w["current"] = False
         wid = state["next_id"]
         state["next_id"] += 1
-        state["ws"].append({"id": wid, "name": "W copy", "current": switch, "node_count": 5})
+        state["ws"].append({"id": wid, "name": f"Copy of {source['name']}", "current": switch,
+                            "node_count": source.get("node_count")})
         return {"success": True, "workspace_id": wid}
 
     state["duplicate"] = duplicate
@@ -64,7 +69,7 @@ def install_fake_gephi(monkeypatch, faults=None, gates=None):
         if path == "/workspace/list":
             return {"success": True, "workspaces": [dict(w) for w in state["ws"]]}
         if path == "/workspace/duplicate":
-            return duplicate()
+            return duplicate(index=body.get("index"))
         if path == "/workspace/rename":
             state["ws"][body["index"]]["name"] = body["name"]
             return {"success": True}
@@ -321,7 +326,7 @@ async def test_a_snapshot_whose_list_fails_twice_says_a_copy_may_remain(monkeypa
     _record_layout()
     out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
     assert out["success"] is False
-    assert '"W copy"' in out["error"] and "close it by hand" in out["error"]
+    assert '"Copy of W"' in out["error"] and "close it by hand" in out["error"]
     # Without a list the copy cannot be told apart from the original, so nothing is deleted.
     assert state["deleted"] == []
     assert not any(m == "DELETE" for m, *_ in state["calls"])
@@ -332,7 +337,7 @@ def _duplicate_without_switching(state):
     def fault():
         wid = state["next_id"]
         state["next_id"] += 1
-        state["ws"].append({"id": wid, "name": "W copy", "current": False, "node_count": 5})
+        state["ws"].append({"id": wid, "name": "Copy of W", "current": False, "node_count": 5})
         return {"success": True}  # no workspace_id, so the copy must be found in the list
     return fault
 
@@ -724,10 +729,11 @@ def _fast_polls(monkeypatch, grace):
     monkeypatch.setattr(gephi_mcp, "DUPLICATE_GRACE", grace)
 
 
-def _late_copy(monkeypatch, on_poll=None, copies=1):
+def _late_copy(monkeypatch, on_poll=None, copies=1, appears=None):
     """A duplicate that times out on the client side and makes nothing at first. On list call
-    number `on_poll` after the timeout, `copies` copies appear in Gephi. track["polls"] counts
-    the list calls made after the timeout."""
+    number `on_poll` after the timeout, `copies` copies appear in Gephi, or, when `appears` is
+    given, that workspace appears instead. track["polls"] counts the list calls made after the
+    timeout."""
     track = {"timed_out": False, "polls": 0}
     faults = {}
 
@@ -738,7 +744,9 @@ def _late_copy(monkeypatch, on_poll=None, copies=1):
     def listing():
         if track["timed_out"]:
             track["polls"] += 1
-            if track["polls"] == on_poll:
+            if track["polls"] == on_poll and appears is not None:
+                state["ws"].append(dict(appears))
+            elif track["polls"] == on_poll:
                 for _ in range(copies):
                     state["duplicate"]()
         return None
@@ -840,3 +848,24 @@ async def test_a_call_cancelled_while_polling_stops_and_removes_the_copy(monkeyp
     assert track["lists_after"] == 2 + 3
     assert [p for _, p, _, _ in state["calls"]].count("/workspace/delete") == 1
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
+@pytest.mark.parametrize("workspace", [
+    {"id": 9, "name": "My new study", "current": False, "node_count": 0},
+    {"id": 9, "name": "My new study", "current": False, "node_count": 5},
+    {"id": 9, "name": "Copy of W", "current": False, "node_count": 0},
+], ids=["empty", "other-name", "other-node-count"])
+async def test_a_workspace_made_by_hand_after_the_timeout_is_left(monkeypatch, entry, workspace):
+    # A person made a workspace while the server waited for the copy. It is the one new
+    # workspace, but it does not look like the copy, so it is not deleted.
+    state, track = _late_copy(monkeypatch, on_poll=2, appears=workspace)
+    _fast_polls(monkeypatch, grace=5)
+    _record_layout()
+    out = json.loads(await asyncio.wait_for(ENTRIES[entry](), 2))
+    assert out["success"] is False
+    assert "does not look like the copy; it was left" in out["error"]
+    assert state["deleted"] == []
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True), (9, False)]
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+

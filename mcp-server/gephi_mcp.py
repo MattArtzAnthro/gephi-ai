@@ -505,6 +505,25 @@ async def _shielded(fn, *args):
     return result
 
 
+# Gephi names a duplicated workspace from its "Workspace.duplicated.name" message, which is
+# "Copy of {0}" in English and translated in these locales (ProjectAPI Bundle*.properties).
+_COPY_NAME_FORMS = ("Copy of {}", "Copiar de {}", "Copy de {}", "{} m\u00e1solata", "Copia di {}",
+                    "{}\uc758 \ubcf5\uc0ac\ubcf8", "\u041a\u043e\u043f\u0456\u044f {}")
+
+
+def _copy_name(orig: dict[str, Any]) -> str:
+    return _COPY_NAME_FORMS[0].format(orig.get("name"))
+
+
+def _looks_like_copy(w: dict[str, Any], orig: dict[str, Any]) -> bool:
+    """True when a workspace carries the name Gephi gives a copy of `orig`, and the same node
+    count when both counts are known."""
+    if w.get("name") not in {form.format(orig.get("name")) for form in _COPY_NAME_FORMS}:
+        return False
+    counts = (w.get("node_count"), orig.get("node_count"))
+    return None in counts or counts[0] == counts[1]
+
+
 async def _discard_new_copy(before_ids: set[Any], orig: dict[str, Any],
                             reported: Any) -> dict[str, Any]:
     """Remove the copy a duplicate made and return to the original workspace.
@@ -513,7 +532,7 @@ async def _discard_new_copy(before_ids: set[Any], orig: dict[str, Any],
     the copy cannot be told apart, nothing is deleted and the note says so. Returns
     {"on_original": bool, "note": str}, where on_original is True only when the person is
     confirmed back on the original workspace."""
-    may_remain = (f'a copy named like "{orig.get("name")} copy" may remain in Gephi\'s tab '
+    may_remain = (f'a copy named like "{_copy_name(orig)}" may remain in Gephi\'s tab '
                   "bar; close it by hand")
     found = await _shielded(_discard_new_copy_unshielded, before_ids, orig, reported,
                             may_remain)
@@ -561,13 +580,25 @@ async def _discard_late_copy(before_ids: set[Any], orig: dict[str, Any]) -> dict
 
     The workspace list is checked at once and then every DUPLICATE_POLL_INTERVAL seconds for up
     to DUPLICATE_GRACE seconds. As soon as a new workspace appears, _discard_new_copy removes it
-    by id, or removes nothing when more than one appeared. A cancellation stops the polling and
-    goes on to the caller, whose cleanup runs once. Returns what _discard_new_copy returns."""
+    by id, but only when it is the one new workspace and it looks like the copy (name and node
+    count), because a person may have made a workspace by hand meanwhile. A cancellation stops
+    the polling and goes on to the caller, whose cleanup runs once. Returns what
+    _discard_new_copy returns."""
+    orig_id = orig.get("id")
+    may_appear = (f'a copy named like "{_copy_name(orig)}" may still appear in Gephi\'s tab bar; '
+                  "close it by hand")
     deadline = anyio.current_time() + DUPLICATE_GRACE
     while True:
         wss = await _workspaces()
-        if wss is not None and _new_ids(before_ids, wss):
-            found = await _discard_new_copy(before_ids, orig, None)
+        new = _new_ids(before_ids, wss) if wss is not None else []
+        if len(new) == 1:
+            candidate = next(w for w in wss if w.get("id") == new[0])
+            if not _looks_like_copy(candidate, orig):
+                return {"on_original": _is_current(wss, orig_id),
+                        "note": "; a new workspace appeared that does not look like the copy; it "
+                                "was left, and " + may_appear}
+        if new:
+            found = await _discard_new_copy(before_ids, orig, new[0] if len(new) == 1 else None)
             if found.get("removed"):
                 found = {**found, "note": "; the duplicate finished in Gephi after the timeout, "
                                           "and its copy was removed" + found["note"]}
@@ -576,15 +607,16 @@ async def _discard_late_copy(before_ids: set[Any], orig: dict[str, Any]) -> dict
         if remaining <= 0:
             break
         await anyio.sleep(min(DUPLICATE_POLL_INTERVAL, remaining))
-    orig_id = orig.get("id")
-    on_original = wss is not None and orig_id is not None and any(
-        w.get("current") and w.get("id") == orig_id for w in wss)
     seen = ("no copy appeared" if wss is not None
             else "the workspace list could not be read")
-    return {"on_original": on_original,
+    return {"on_original": wss is not None and _is_current(wss, orig_id),
             "note": f"; {seen} within {DUPLICATE_GRACE:g} s, but the duplicate may still finish "
-                    f'in Gephi, so a copy named like "{orig.get("name")} copy" may still appear '
-                    "in Gephi's tab bar; close it by hand"}
+                    "in Gephi, so " + may_appear}
+
+
+def _is_current(wss: list[dict[str, Any]], workspace_id: Any) -> bool:
+    return workspace_id is not None and any(
+        w.get("current") and w.get("id") == workspace_id for w in wss)
 
 
 def _count(n: int, noun: str) -> str:
