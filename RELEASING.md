@@ -10,10 +10,11 @@ skipped. This file is the how; run the script to find out what still needs doing
 
 ## Order matters
 
-PyPI first, then the release. `scripts/build-mcpb.sh` installs
-`gephi-ai==<version>` **from PyPI**, so the bundle cannot be built until the
-server is published. Publishing the server last means building the bundle from
-the previous version without noticing.
+PyPI first, then the release. The bundle no longer carries the server:
+`mcpb/pyproject.toml` pins `gephi-ai==<version>`, and Claude Desktop installs
+that version from PyPI itself when someone installs the bundle. Publishing the
+server last means releasing a bundle that points at a version PyPI does not
+have yet, so it fails to install until PyPI catches up.
 
 ## Steps
 
@@ -68,8 +69,12 @@ the previous version without noticing.
 
 7. **Build the Claude Desktop bundle** (skip if the server did not change):
 
-   `scripts/build-mcpb.sh` installs `gephi-ai==<version>` from PyPI through pip, so pip
-   has to be able to resolve that version before this step can run. Checking with
+   `scripts/build-mcpb.sh` does not install anything; it only packs `mcpb/` after
+   checking that `mcpb/pyproject.toml` pins `gephi-ai==<version>`. Claude Desktop
+   is what installs `gephi-ai==<version>` from PyPI, and it does that on the
+   user's machine when they install the bundle. So pip has to be able to resolve
+   that version before the bundle is safe to release, or installs fail for
+   anyone who grabs it early. Checking with
    `curl -s https://pypi.org/simple/gephi-ai/ | grep gephi_ai-<version>-py3` is
    necessary but not sufficient: that check can pass while pip still cannot install the
    version, because pip and curl can land on different PyPI CDN edges and the one pip
@@ -113,7 +118,7 @@ the previous version without noticing.
 
    ```bash
    gh release create v<server-version> \
-     gephi-ai-<server-version>.mcpb \
+     dist/gephi-ai-<server-version>.mcpb \
      gephi-ai-<java-version>.nbm \
      --title "v<server-version> — <short theme>" \
      --notes-file <notes>
