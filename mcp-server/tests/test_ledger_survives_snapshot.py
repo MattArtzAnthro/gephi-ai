@@ -83,6 +83,10 @@ def install_fake_gephi(monkeypatch, faults=None, gates=None):
             return {"success": True}
         if path == "/export/gexf":
             return {"success": True, "content": GEXF}
+        if path == "/graph/stats":
+            # Answers from whichever workspace is current, so a read shows which graph it saw.
+            return {"success": True,
+                    "workspace_id": next((w["id"] for w in state["ws"] if w["current"]), None)}
         return {"success": True, "removed": 1}
 
     async def fake_request(self, method, url, params=None, json=None, **kwargs):

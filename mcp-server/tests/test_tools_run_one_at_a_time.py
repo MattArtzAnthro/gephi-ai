@@ -69,20 +69,123 @@ async def test_a_graph_change_during_a_whatif_waits_until_it_has_switched_back(m
     assert [w["id"] for w in state["ws"]] == [1]
 
 
-async def test_a_read_only_call_during_a_whatif_runs_at_once(monkeypatch):
+async def test_a_read_during_a_whatif_waits_and_reads_the_original(monkeypatch):
     editing, release = asyncio.Event(), asyncio.Event()
-    install_fake_gephi(monkeypatch, gates={"/graph/node/a": _held(editing, release)})
+    state = install_fake_gephi(monkeypatch, gates={"/graph/node/a": _held(editing, release)})
 
-    whatif = asyncio.ensure_future(gephi_mcp.gephi_whatif(edits=REMOVE_A))
+    async def run():
+        whatif = asyncio.ensure_future(gephi_mcp.gephi_whatif(edits=REMOVE_A))
+        await editing.wait()
+        read = asyncio.ensure_future(gephi_mcp.gephi_get_graph_stats())
+        await _spin()
+        read_early = "/graph/stats" in _paths(state)
+        release.set()
+        return read_early, await whatif, await read
+
     try:
-        await asyncio.wait_for(editing.wait(), 5)
-        # The what-if is held mid-edit until this read returns, so a read that waited for the
-        # what-if would never return; the bound turns that into a failure, not a hang.
+        read_early, _, stats = await asyncio.wait_for(run(), 5)
+    finally:
+        release.set()
+    assert not read_early, "the read reached Gephi while the what-if was on its scratch copy"
+    paths = _paths(state)
+    read_at = max(i for i, p in enumerate(paths) if p == "/graph/stats")
+    assert read_at > max(i for i, p in enumerate(paths) if p == "/workspace/delete")
+    assert json.loads(stats)["workspace_id"] == 1
+
+
+async def test_a_read_during_a_graph_change_is_not_held_back(monkeypatch):
+    started, release = asyncio.Event(), asyncio.Event()
+    install_fake_gephi(monkeypatch, gates={"/appearance/node/color": _held(started, release)})
+    change = asyncio.ensure_future(gephi_mcp.gephi_set_node_color(id="a", r=1, g=2, b=3))
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        # The change is held open until this read returns, so a read that waited for it would
+        # never return; the bound turns that into a failure, not a hang.
         stats = await asyncio.wait_for(gephi_mcp.gephi_get_graph_stats(), 1)
     finally:
         release.set()
-        await asyncio.wait_for(whatif, 5)
-    assert json.loads(stats)["success"] is True
+        await asyncio.wait_for(change, 5)
+    assert json.loads(stats)["workspace_id"] == 1
+
+
+async def test_two_reads_run_together(monkeypatch):
+    # Each read's request is held until both reads have sent theirs, so reads that ran one at a
+    # time would never finish.
+    both_in = asyncio.Event()
+    arrived = []
+
+    async def wait_for_the_other():
+        arrived.append(1)
+        if len(arrived) == 2:
+            both_in.set()
+        await both_in.wait()
+
+    install_fake_gephi(monkeypatch, gates={"/graph/stats": wait_for_the_other})
+    a, b = await asyncio.wait_for(asyncio.gather(
+        gephi_mcp.gephi_get_graph_stats(), gephi_mcp.gephi_get_graph_stats()), 1)
+    assert json.loads(a)["success"] is True and json.loads(b)["success"] is True
+
+
+async def test_a_read_tool_called_inside_a_whatif_does_not_wait_on_the_gate(monkeypatch):
+    # Stand-ins registered under the real names, so _tool gives them the real wrappers.
+    server = MCPServer("nested-read")
+    monkeypatch.setattr(gephi_mcp, "mcp", server)
+
+    @gephi_mcp._tool(name="gephi_get_graph_stats")
+    async def read() -> str:
+        return "read"
+
+    @gephi_mcp._tool(name="gephi_whatif")
+    async def whatif() -> str:
+        assert not gephi_mcp._read_gate().open.is_set(), "the what-if did not close the gate"
+        return "whatif+" + await read()
+
+    result = await asyncio.wait_for(server.call_tool("gephi_whatif", {}), 1)
+    assert result.content[0].text == "whatif+read"
+    assert gephi_mcp._read_gate().open.is_set()
+
+
+async def test_a_whatif_cancelled_while_waiting_for_reads_reopens_the_gate(monkeypatch):
+    started, release = asyncio.Event(), asyncio.Event()
+    state = install_fake_gephi(monkeypatch, gates={"/graph/stats": _held(started, release)})
+    first = asyncio.ensure_future(gephi_mcp.gephi_get_graph_stats())
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        whatif = asyncio.ensure_future(gephi_mcp.gephi_whatif(edits=REMOVE_A))
+        await _spin()
+        assert "/workspace/list" not in _paths(state), "the what-if did not wait for the read"
+        whatif.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(whatif, 5)
+        # A later read is not held back by a gate the cancelled what-if left closed.
+        await asyncio.wait_for(gephi_mcp.gephi_get_node(id="a"), 1)
+    finally:
+        release.set()
+        await asyncio.wait_for(first, 5)
+
+
+async def test_profile_graph_waits_for_a_graph_change(monkeypatch):
+    # It writes statistics columns, so it runs alone although it is annotated read-only.
+    started, release = asyncio.Event(), asyncio.Event()
+    state = install_fake_gephi(monkeypatch, gates={"/appearance/node/color": _held(started, release)})
+
+    async def run():
+        change = asyncio.ensure_future(gephi_mcp.gephi_set_node_color(id="a", r=1, g=2, b=3))
+        await started.wait()
+        sent = len(state["calls"])
+        profile = asyncio.ensure_future(gephi_mcp.gephi_profile_graph())
+        await _spin()
+        sent_early = len(state["calls"]) > sent
+        release.set()
+        await change
+        await profile
+        return sent_early
+
+    try:
+        sent_early = await asyncio.wait_for(run(), 5)
+    finally:
+        release.set()
+    assert not sent_early, "gephi_profile_graph reached Gephi while a graph change was running"
 
 
 async def _two_changes_one_after_another(monkeypatch):
@@ -178,9 +281,10 @@ async def test_serializing_keeps_every_tool_listing_as_it_was():
             wrapped.add(t.name)
         before.add_tool(original, name=t.name, title=t.title, annotations=t.annotations,
                         icons=t.icons, meta=t.meta)
-    assert wrapped == {t.name for t in registered if gephi_mcp._runs_alone(t.name)}
-    assert "gephi_whatif" in wrapped and "gephi_set_node_color" in wrapped
-    assert "gephi_get_graph_stats" not in wrapped
+    assert wrapped == {t.name for t in registered}
+    alone = {t.name for t in registered if gephi_mcp._runs_alone(t.name)}
+    assert {"gephi_whatif", "gephi_profile_graph", "gephi_set_node_color"} <= alone
+    assert "gephi_get_graph_stats" not in alone
     listed = {t.name: t.model_dump(mode="json", by_alias=True)
               for t in await gephi_mcp.mcp.list_tools()}
     expected = {t.name: t.model_dump(mode="json", by_alias=True)

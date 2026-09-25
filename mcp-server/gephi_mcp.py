@@ -214,19 +214,59 @@ def _annotations_for(name: str) -> ToolAnnotations:
 
 # Hosts send tool calls in parallel, and every call drives the same Gephi. The undo snapshot and
 # gephi_whatif switch to a copy of the workspace while they work, so a change sent in between
-# would land on a copy that is then deleted. Tools that change the graph, and gephi_whatif, so
-# run one at a time under one lock. Read-only tools never take it. A tool function that calls
-# another tool function already holds the lock, so the inner call runs without taking it again.
-# asyncio.Lock belongs to the event loop it is first used in, so each running loop gets its own.
-_WORKSPACE_SWITCHING = {"gephi_whatif"}
+# would land on a copy that is then deleted. Tools that change the graph therefore run one at a
+# time under one tool lock. So do gephi_whatif and gephi_profile_graph, which are annotated
+# read-only because the person's graph ends as it was, but which switch workspaces or write
+# statistics columns. Read-only tools never take the tool lock, so a long layout never holds
+# them up. Only a what-if holds them back: it closes a read gate for its whole call, so a read
+# never sees the scratch copy. A tool function called from inside another one runs straight
+# through, since its caller already holds the lock. asyncio primitives belong to the event loop
+# they are first used in, so each running loop gets its own lock and gate.
+_RUNS_ALONE_ANYWAY = {"gephi_whatif", "gephi_profile_graph"}
+_HOLDS_BACK_READS = {"gephi_whatif"}
 _TOOL_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
+    weakref.WeakKeyDictionary())
+_READ_GATES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, _ReadGate]" = (
     weakref.WeakKeyDictionary())
 _HOLDS_TOOL_LOCK: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "gephi_holds_tool_lock", default=False)
 
 
 def _runs_alone(name: str) -> bool:
-    return name not in _READ_ONLY or name in _WORKSPACE_SWITCHING
+    return name not in _READ_ONLY or name in _RUNS_ALONE_ANYWAY
+
+
+class _ReadGate:
+    """Reads pass together while the gate is open; a what-if closes it and waits for the reads
+    already inside. Leaving never awaits, so a cancelled read cannot stay counted."""
+
+    def __init__(self) -> None:
+        self.readers = 0
+        self.open = asyncio.Event()
+        self.open.set()
+        self.idle = asyncio.Event()
+        self.idle.set()
+
+    async def read(self, fn, *args: Any, **kwargs: Any) -> Any:
+        while not self.open.is_set():
+            await self.open.wait()
+        self.readers += 1
+        self.idle.clear()
+        try:
+            return await fn(*args, **kwargs)
+        finally:
+            self.readers -= 1
+            if self.readers == 0:
+                self.idle.set()
+
+    async def hold(self, fn, *args: Any, **kwargs: Any) -> Any:
+        self.open.clear()
+        try:
+            while self.readers:
+                await self.idle.wait()
+            return await fn(*args, **kwargs)
+        finally:
+            self.open.set()
 
 
 def _tool_lock() -> asyncio.Lock:
@@ -237,9 +277,18 @@ def _tool_lock() -> asyncio.Lock:
     return lock
 
 
-def _one_at_a_time(fn):
-    """Run the tool while holding the tool lock. functools.wraps keeps the signature and
-    docstring, which the SDK reads to build the tool's listing."""
+def _read_gate() -> _ReadGate:
+    loop = asyncio.get_running_loop()
+    gate = _READ_GATES.get(loop)
+    if gate is None:
+        gate = _READ_GATES[loop] = _ReadGate()
+    return gate
+
+
+def _one_at_a_time(fn, holds_back_reads: bool = False):
+    """Run the tool while holding the tool lock, and with the read gate closed when it is a
+    what-if. functools.wraps keeps the signature and docstring, which the SDK reads to build the
+    tool's listing."""
     @functools.wraps(fn)
     async def run_alone(*args: Any, **kwargs: Any) -> Any:
         if _HOLDS_TOOL_LOCK.get():
@@ -247,19 +296,35 @@ def _one_at_a_time(fn):
         async with _tool_lock():
             token = _HOLDS_TOOL_LOCK.set(True)
             try:
+                if holds_back_reads:
+                    return await _read_gate().hold(fn, *args, **kwargs)
                 return await fn(*args, **kwargs)
             finally:
                 _HOLDS_TOOL_LOCK.reset(token)
     return run_alone
 
 
+def _through_read_gate(fn):
+    """Run a read-only tool through the read gate. Called from inside a tool that holds the
+    tool lock, it runs straight through, since that caller may be the what-if holding the gate."""
+    @functools.wraps(fn)
+    async def read(*args: Any, **kwargs: Any) -> Any:
+        if _HOLDS_TOOL_LOCK.get():
+            return await fn(*args, **kwargs)
+        return await _read_gate().read(fn, *args, **kwargs)
+    return read
+
+
 def _tool(name: str, **kwargs: Any):
-    """mcp.tool() with the annotation table applied, and with the tool lock for every tool that
-    must run alone. Every tool registers through this so a new tool cannot ship unclassified."""
+    """mcp.tool() with the annotation table applied, the tool lock for every tool that must run
+    alone, and the read gate for the rest. Every tool registers through this so a new tool
+    cannot ship unclassified."""
     register = mcp.tool(name=name, annotations=_annotations_for(name), **kwargs)
 
     def decorator(fn):
-        return register(_one_at_a_time(fn) if _runs_alone(name) else fn)
+        if _runs_alone(name):
+            return register(_one_at_a_time(fn, holds_back_reads=name in _HOLDS_BACK_READS))
+        return register(_through_read_gate(fn))
     return decorator
 
 
