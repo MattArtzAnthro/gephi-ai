@@ -543,8 +543,23 @@ async def test_a_snapshot_whose_duplicate_times_out_and_list_fails_says_so(monke
     _record_layout()
     out = json.loads(await asyncio.wait_for(gephi_mcp.gephi_snapshot(label="x"), 2))
     assert out["success"] is False
+    assert "could not be read" in out["error"]
     assert "may still appear" in out["error"] and "close it by hand" in out["error"]
     assert state["deleted"] == []
+
+
+async def test_a_snapshot_whose_list_fails_once_after_the_timeout_still_removes_the_copy(
+        monkeypatch):
+    # The duplicate finished in Gephi; the first poll fails, the second finds the copy.
+    faults = {"/workspace/list": [None, {"success": False, "error": "busy"}]}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults["/workspace/duplicate"] = _duplicate_then_time_out(state)
+    _fast_polls(monkeypatch, grace=5)
+    _record_layout()
+    out = json.loads(await asyncio.wait_for(gephi_mcp.gephi_snapshot(label="x"), 2))
+    assert out["success"] is False
+    assert "its copy was removed" in out["error"]
+    _assert_back_on_the_original_with_no_copy(state)
 
 
 async def test_whatif_whose_duplicate_times_out_but_completes_removes_the_copy(monkeypatch):
@@ -595,7 +610,7 @@ async def test_a_snapshot_never_renames_a_workspace_other_than_the_reported_copy
     state = install_fake_gephi(monkeypatch, faults=faults)
 
     def duplicate():
-        reply = state["duplicate"]()
+        reply = state["duplicate"](switch=False)
         state["duplicate"]()
         return reply
 
@@ -663,7 +678,7 @@ async def test_a_snapshot_never_treats_a_pre_existing_workspace_as_the_copy(monk
     state["ws"].append({"id": 5, "name": "Other", "current": False, "node_count": 5})
 
     def duplicate():
-        state["duplicate"]()
+        state["duplicate"](switch=False)
         for w in state["ws"]:
             w["current"] = w["id"] == 5
         return {"success": True, "workspace_id": 5}
@@ -873,3 +888,11 @@ async def test_a_workspace_made_by_hand_after_the_timeout_is_left(monkeypatch, e
     assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True), (9, False)]
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
 
+
+async def test_a_timed_out_snapshot_message_has_no_stray_period(monkeypatch):
+    state, track = _late_copy(monkeypatch, on_poll=1)
+    _fast_polls(monkeypatch, grace=5)
+    out = json.loads(await asyncio.wait_for(gephi_mcp.gephi_snapshot(label="x"), 2))
+    assert ".;" not in out["error"]
+    assert out["error"].startswith("Request timed out. The operation may still be running in "
+                                   "Gephi; the duplicate finished")

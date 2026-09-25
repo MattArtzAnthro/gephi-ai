@@ -41,6 +41,9 @@ client at the `gephi-ai` command, e.g. for Claude Desktop:
 |---|---|---|
 | `GEPHI_API_URL` | `http://127.0.0.1:8080` | Gephi plugin HTTP API base URL |
 | `GEPHI_REQUEST_TIMEOUT` | `60.0` | Per-request timeout (seconds) |
+| `GEPHI_DUPLICATE_GRACE` | `30` | Seconds to keep checking for a workspace copy after a duplicate timed out, so a copy Gephi makes late is still removed |
+
+Graph-changing tools run one at a time within one server process, so parallel tool calls from a host cannot interleave their changes. While a what-if runs on its scratch copy, read-only tools wait briefly and then read the original graph. After a workspace duplicate times out, the server may keep checking for the late copy for up to `GEPHI_DUPLICATE_GRACE` seconds before it answers.
 
 ## Development
 

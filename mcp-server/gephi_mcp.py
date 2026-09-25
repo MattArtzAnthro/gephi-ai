@@ -220,9 +220,11 @@ def _annotations_for(name: str) -> ToolAnnotations:
 # statistics columns. Read-only tools never take the tool lock, so a long layout never holds
 # them up. Only a what-if holds them back: it closes a read gate for its whole call, so a read
 # never sees the scratch copy. A tool function called from inside another one runs straight
-# through, since its caller already holds the lock. asyncio primitives belong to the event loop
-# they are first used in, so each running loop gets its own lock and gate.
+# through, since its caller already holds the lock. gephi_stop_layout takes neither the lock nor
+# the gate: it has to reach Gephi while a sync layout holds the lock. asyncio primitives belong to
+# the event loop they are first used in, so each running loop gets its own lock and gate.
 _RUNS_ALONE_ANYWAY = {"gephi_whatif", "gephi_profile_graph"}
+_NEVER_WAITS = {"gephi_stop_layout"}
 _HOLDS_BACK_READS = {"gephi_whatif"}
 _TOOL_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
     weakref.WeakKeyDictionary())
@@ -322,6 +324,8 @@ def _tool(name: str, **kwargs: Any):
     register = mcp.tool(name=name, annotations=_annotations_for(name), **kwargs)
 
     def decorator(fn):
+        if name in _NEVER_WAITS:
+            return register(fn)
         if _runs_alone(name):
             return register(_one_at_a_time(fn, holds_back_reads=name in _HOLDS_BACK_READS))
         return register(_through_read_gate(fn))
@@ -589,6 +593,12 @@ def _looks_like_copy(w: dict[str, Any], orig: dict[str, Any]) -> bool:
     return None in counts or counts[0] == counts[1]
 
 
+def _with_note(text: Any, note: str) -> str:
+    """Join a message and a note that starts with "; ", without leaving ".;" between them."""
+    text = str(text)
+    return text.rstrip(".") + note if note else text
+
+
 async def _discard_new_copy(before_ids: set[Any], orig: dict[str, Any],
                             reported: Any) -> dict[str, Any]:
     """Remove the copy a duplicate made and return to the original workspace.
@@ -698,7 +708,7 @@ async def _abandon_snapshot_copy(reason: str, before_ids: set[Any], cur: dict[st
         found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"))
     if not found["on_original"]:
         LEDGER.reset()
-    return {"ok": False, "reason": str(reason) + found["note"]}
+    return {"ok": False, "reason": _with_note(reason, found["note"])}
 
 
 async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any]:
@@ -3310,8 +3320,8 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
                     found = await _discard_new_copy(before_ids, orig, dup.get("workspace_id"))
                 on_original = found["on_original"]
                 if found["note"]:
-                    dup = {**dup, "error": str(dup.get("error", "duplicate failed"))
-                           + found["note"]}
+                    dup = {**dup, "error": _with_note(dup.get("error", "duplicate failed"),
+                                                      found["note"])}
                 return fmt(dup)
             reported = dup.get("workspace_id")
             wss_after = await _workspaces()

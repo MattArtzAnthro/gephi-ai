@@ -281,7 +281,7 @@ async def test_serializing_keeps_every_tool_listing_as_it_was():
             wrapped.add(t.name)
         before.add_tool(original, name=t.name, title=t.title, annotations=t.annotations,
                         icons=t.icons, meta=t.meta)
-    assert wrapped == {t.name for t in registered}
+    assert wrapped == {t.name for t in registered} - {"gephi_stop_layout"}
     alone = {t.name for t in registered if gephi_mcp._runs_alone(t.name)}
     assert {"gephi_whatif", "gephi_profile_graph", "gephi_set_node_color"} <= alone
     assert "gephi_get_graph_stats" not in alone
@@ -290,3 +290,39 @@ async def test_serializing_keeps_every_tool_listing_as_it_was():
     expected = {t.name: t.model_dump(mode="json", by_alias=True)
                 for t in await before.list_tools()}
     assert listed == expected
+
+
+async def test_stop_layout_reaches_gephi_while_a_sync_layout_holds_the_lock(monkeypatch):
+    waiting, release = asyncio.Event(), asyncio.Event()
+    stopped = []
+
+    async def layout_running():
+        waiting.set()
+        await release.wait()
+
+    state = install_fake_gephi(monkeypatch, faults={"/layout/status": {"success": True,
+                                                                       "running": False}},
+                               gates={"/layout/status": layout_running})
+    layout = asyncio.ensure_future(gephi_mcp.gephi_run_layout(algorithm="ForceAtlas 2", sync=True))
+    try:
+        await asyncio.wait_for(waiting.wait(), 5)
+        # The layout is held until released, so a stop that waited for the lock would never
+        # return; the bound turns that into a failure, not a hang.
+        out = await asyncio.wait_for(gephi_mcp.gephi_stop_layout(), 1)
+        stopped.append(layout.done())
+    finally:
+        release.set()
+        await asyncio.wait_for(layout, 5)
+    assert json.loads(out)["success"] is True
+    # The stop reached Gephi while the layout's status wait was still held open.
+    assert stopped == [False], "the layout call had already ended"
+    assert "/layout/stop" in _paths(state)
+
+
+async def test_a_locked_tool_awaited_directly_leaves_the_lock_marker_clear(monkeypatch):
+    # Awaited in this task, the wrapper sets the marker in this task's own context, so a reset
+    # that did not happen would show here, and every task started from here would skip the lock.
+    install_fake_gephi(monkeypatch)
+    await asyncio.wait_for(gephi_mcp.gephi_set_node_color(id="a", r=1, g=2, b=3), 5)
+    assert gephi_mcp._HOLDS_TOOL_LOCK.get() is False
+    await _two_changes_one_after_another(monkeypatch)
