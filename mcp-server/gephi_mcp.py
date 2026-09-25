@@ -2927,6 +2927,9 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
 
     dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": orig_index})
     if not dup.get("success", True):
+        # Nothing was copied, so the caller is still on their own graph, but the request
+        # itself reset the record. Put it back before reporting the failure.
+        LEDGER.restore(ledger_state)
         return fmt(dup)
     scratch_id = dup.get("workspace_id")
 
@@ -2953,9 +2956,12 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
                                "diff": _diff_profiles(before, after)}
     finally:
         cleanup = await _cleanup_scratch(scratch_id, orig_id)
-        # The caller is back on their own graph with their own styling, so the record that
-        # described it is valid again. Restored last, after every /workspace/ call has run.
-        LEDGER.restore(ledger_state)
+        # Once the caller is back on their own graph with their own styling, the record that
+        # described it is valid again. Restored last, after every /workspace/ call has run. If
+        # the switch back failed, they are left on the edited scratch copy, and the record would
+        # describe a graph they are no longer looking at, so it stays reset.
+        if cleanup.get("returned_to_workspace_id") == orig_id:
+            LEDGER.restore(ledger_state)
 
     outcome["cleanup"] = cleanup
     return fmt(outcome)
