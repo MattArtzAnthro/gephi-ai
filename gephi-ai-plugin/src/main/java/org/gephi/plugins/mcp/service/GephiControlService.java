@@ -2809,6 +2809,15 @@ public class GephiControlService {
                 if (processor == null) processor = Lookup.getDefault().lookup(Processor.class);
                 if (processor == null) return error("No processor found");
 
+                // Gephi's import containers auto-scale by default: before processing, its
+                // DefaultScaler recenters every node on the centroid, rescales sizes into
+                // 4 to 100, and scales positions by the same ratio (clamped to +/-5000).
+                // That silently rewrites the viz:position and viz:size values the file
+                // carries, so an export followed by an import did not round-trip. Files
+                // without positions are unaffected: the container still spreads them at
+                // random when it closes, whether or not auto-scale is on.
+                c.getLoader().setAutoScale(false);
+
                 Workspace importedWs = ic.process(c, processor, ws);
 
                 // Optional, and off by default. Capping rewrites viz:size values the file

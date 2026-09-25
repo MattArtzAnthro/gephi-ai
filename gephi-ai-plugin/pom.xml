@@ -180,6 +180,29 @@
             <version>${gephi.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <!--
+          Test only: Gephi's GEXF importer and its DefaultProcessor and DefaultScaler.
+          Needed by ImportRoundTripTest to run a real file through the container and the
+          processor, which is where the import rescales positions and sizes. At runtime
+          these classes come from the host Gephi install via Lookup.
+        -->
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>io-importer-plugin</artifactId>
+            <version>${gephi.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          Test only: maps a java.io.File to a FileObject outside the NetBeans platform, which
+          ImportController.importFile(File) needs. Gephi's own importer tests use it the same way.
+        -->
+        <dependency>
+            <groupId>org.netbeans.modules</groupId>
+            <artifactId>org-netbeans-modules-masterfs</artifactId>
+            <version>${netbeans.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
