@@ -1361,7 +1361,7 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
             if exploded:
                 result["layout_exploded"] = exploded
                 result["message"] = ("Layout " + ("stopped on request" if stopped else "finished")
-                                     + " but positions exploded numerically — see layout_exploded")
+                                     + " but positions exploded numerically, see layout_exploded")
             return fmt(result)
     result["status"] = "timeout"
     result["message"] = "Layout still running after 5 minutes"

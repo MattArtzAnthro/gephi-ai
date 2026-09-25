@@ -171,7 +171,7 @@ def test_bundle_uses_the_uv_runtime():
         "args": ["run", "--directory", "${__dirname}", manifest["server"]["entry_point"]],
     }
     assert (REPO / "mcpb" / manifest["server"]["entry_point"]).is_file()
-    assert not (REPO / "mcpb" / "server").exists(), "vendored libraries must be gone"
+    assert not (REPO / "mcpb" / "server").exists(), "the bundle must not vendor libraries"
 
 
 def test_bundle_pins_the_same_server_version_as_the_plugins():
@@ -182,5 +182,5 @@ def test_bundle_pins_the_same_server_version_as_the_plugins():
     assert manifest["version"] == pin == plugin_pin
 
 
-def test_readme_no_longer_claims_macos_ships_python_310():
+def test_readme_does_not_claim_macos_ships_python_310():
     assert "modern macOS provides" not in _read("README.md")

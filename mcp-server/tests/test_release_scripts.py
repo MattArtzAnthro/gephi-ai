@@ -223,7 +223,7 @@ def test_real_build_ships_the_locked_bundle(tmp_path):
     assert f'name = "gephi-ai"\nversion = "{version}"' in lock
 
 
-def test_mcpbignore_has_no_stale_server_line():
+def test_mcpbignore_has_no_server_line():
     assert "server/" not in _ignore_patterns()
 
 

@@ -10,7 +10,7 @@ skipped. This file is the how; run the script to find out what still needs doing
 
 ## Order matters
 
-PyPI first, then the release. The bundle no longer carries the server:
+PyPI first, then the release. The bundle does not carry the server:
 `mcpb/pyproject.toml` pins `gephi-ai==<version>`, and Claude Desktop installs
 that version from PyPI itself when someone installs the bundle. Publishing the
 server last means releasing a bundle that points at a version PyPI does not

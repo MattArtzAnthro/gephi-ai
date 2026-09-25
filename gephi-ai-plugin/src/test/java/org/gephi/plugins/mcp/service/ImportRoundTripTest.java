@@ -38,7 +38,8 @@ import org.openide.util.Lookup;
  * <p>This runs Gephi's real import path in a plain JVM: the GEXF and GraphML importers, the import
  * container, and the default processor, all found through Lookup. Gephi's containers
  * auto-scale by default, which recenters every node and rescales sizes into 4 to 100, so
- * a graph exported and imported again came back with different positions and sizes.
+ * a graph exported and imported again would come back with different positions and sizes.
+ * The import turns auto-scale off.
  */
 class ImportRoundTripTest {
 
@@ -103,7 +104,7 @@ class ImportRoundTripTest {
     /**
      * With auto-scale off, a file that carries no positions or sizes still imports as a
      * usable graph: the container spreads the nodes at random and the processor gives
-     * each one the default size, as before.
+     * each one the default size.
      */
     @Test
     void aFileWithoutPositionsStillGetsSpreadOutNodes(@TempDir Path dir) throws Exception {

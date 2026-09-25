@@ -33,7 +33,7 @@ def _desktop_command():
 
 def _with_this_checkout(args):
     """Resolve the server from this checkout instead of the unpublished PyPI pin."""
-    assert args[0] == "run", f"the manifest no longer launches with `uv run`: {args}"
+    assert args[0] == "run", f"the manifest does not launch with `uv run`: {args}"
     return ["run", "--no-project", "--with", str(SERVER_DIR), *args[1:]]
 
 

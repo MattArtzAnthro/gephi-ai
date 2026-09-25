@@ -1,6 +1,6 @@
 """An undo snapshot copies the workspace; the graph on screen is unchanged, so the methods
-record must survive it. The fake sits under GephiClient.request (at httpx), because the reset
-that caused the bug lives inside GephiClient.request itself."""
+record must survive it. The fake sits under GephiClient.request (at httpx), because the record
+reset under test lives inside GephiClient.request itself."""
 import asyncio
 import json
 import time
@@ -733,7 +733,7 @@ async def test_whatif_never_treats_a_pre_existing_workspace_as_the_copy(monkeypa
 
 # ── A duplicate that timed out can still finish in Gephi later ──
 # After a timeout the workspace list is polled for a while; a copy that appears is removed by
-# its id. Every other failure is checked once, as before.
+# its id. Every other failure is checked once.
 
 WHATIF_ENTRY = "whatif"
 ENTRIES = {

@@ -27,8 +27,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.10 is the requires-python floor; 3.14 is what a fresh Desktop bundle install
-        # resolves today.
+        # 3.10 is the requires-python floor; 3.14 is the newest version a Desktop bundle
+        # install can resolve.
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v4
