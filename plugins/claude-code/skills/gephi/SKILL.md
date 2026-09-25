@@ -30,7 +30,7 @@ You have access to 113 MCP tools from the `gephi-mcp` server (tool names start w
 - **Always call `project/new` before importing** — stale workspace state from prior operations can cause issues. A fresh project prevents this.
 - **`edge.color: "source"` colors edges individually** — the plugin automatically colors each edge to match its source node's color and sets mode to ORIGINAL. This is safe and produces the watercolor halo effect.
 - **`node.label.font` supports multi-word names** — e.g., `"Courier New 12 Bold"`. The plugin parses everything before the first digit as the font name.
-- **Imported node sizes are auto-capped at 30** — GEXF files with large `viz:size` values are automatically capped during import to prevent oversized nodes from hiding edges.
+- **Imported node sizes are kept as the file states them.** Pass `max_node_size` to `gephi_import_file` to cap oversized nodes that would hide edges. If an import looks collapsed into a small cluster, the file's coordinates are very small; run a layout.
 - **Filters refresh the preview automatically** — `remove_isolates`, `giant_component`, `filter_by_degree` now properly refresh the preview model after modifying the graph.
 - **`sync: true` in `gephi_run_layout`** — makes the call block until layout finishes. Always use this so Noverlap and Label Adjust don't start on a still-moving graph.
 - **If a filter is active, say so before you report anything.** With a filter applied in Gephi,
