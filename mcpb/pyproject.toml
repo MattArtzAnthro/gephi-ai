@@ -1,0 +1,5 @@
+[project]
+name = "gephi-ai-desktop-bundle"
+version = "1.18.1"
+requires-python = ">=3.10"
+dependencies = ["gephi-ai==1.18.1"]

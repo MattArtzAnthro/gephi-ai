@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.2",
+  "manifest_version": "0.4",
   "name": "gephi-ai",
   "display_name": "Gephi AI (MCP)",
   "version": "1.18.1",
@@ -20,16 +20,11 @@
     "community-detection"
   ],
   "server": {
-    "type": "python",
-    "entry_point": "server/main.py",
+    "type": "uv",
+    "entry_point": "src/server.py",
     "mcp_config": {
-      "command": "python3",
-      "args": [
-        "${__dirname}/server/main.py"
-      ],
-      "env": {
-        "PYTHONPATH": "${__dirname}/server/lib"
-      }
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"]
     }
   },
   "compatibility": {

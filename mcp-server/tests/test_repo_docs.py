@@ -3,6 +3,7 @@ Tripwires for the repository's agent-facing documents. Registration commands
 and instruction files get pasted verbatim by people and by agents, so a stale
 or missing one fails here instead of at a user's terminal.
 """
+import json
 import re
 from pathlib import Path
 
@@ -157,3 +158,23 @@ def test_no_skill_or_reference_names_a_tool_that_does_not_exist():
         if unknown:
             problems[str(path.relative_to(REPO))] = sorted(unknown)
     assert not problems, f"prose names tools that do not exist: {problems}"
+
+
+def test_bundle_uses_the_uv_runtime():
+    manifest = json.loads(_read("mcpb/manifest.json"))
+    assert manifest["manifest_version"] == "0.4"
+    assert manifest["server"]["type"] == "uv"
+    assert manifest["server"]["entry_point"] == "src/server.py"
+    assert not (REPO / "mcpb" / "server").exists(), "vendored libraries must be gone"
+
+
+def test_bundle_pins_the_same_server_version_as_the_plugins():
+    manifest = json.loads(_read("mcpb/manifest.json"))
+    pin = re.search(r'"gephi-ai==([^"]+)"', _read("mcpb/pyproject.toml")).group(1)
+    plugin_pin = json.loads(_read("plugins/claude-code/.mcp.json"))[
+        "mcpServers"]["gephi-mcp"]["args"][1].split("==")[1]
+    assert manifest["version"] == pin == plugin_pin
+
+
+def test_readme_no_longer_claims_macos_ships_python_310():
+    assert "modern macOS provides" not in _read("README.md")

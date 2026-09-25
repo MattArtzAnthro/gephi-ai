@@ -19,6 +19,7 @@ mcp-server/dist/
 # staged for the next "git add ." in a public repo.
 mcpb/server/lib*/
 *.mcpb
+dist/
 
 # Local drafts and internal notes — never publish (LinkedIn posts, papers, scratch)
 docs/
