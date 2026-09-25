@@ -408,3 +408,55 @@ async def test_a_receipt_waits_during_a_whatif(monkeypatch, tool):
     assert not sent_early, "the receipt read Gephi while the what-if was on its scratch copy"
     assert _paths(state).index(path) > max(
         i for i, p in enumerate(_paths(state)) if p == "/workspace/delete")
+
+
+def _no_poll_wait(monkeypatch):
+    # The sync layout polls once a second; the fake answers at once, so the wait is dropped.
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda delay, *a, **k: real_sleep(0))
+
+
+@pytest.mark.parametrize("stop_answer, stopped", [
+    ({"success": True, "message": "Layout stopped"}, True),
+    ({"success": True, "message": "No layout running"}, False),
+], ids=["stopped-a-layout", "nothing-to-stop"])
+async def test_a_sync_layout_says_when_it_was_stopped(monkeypatch, stop_answer, stopped):
+    # /layout/status only says whether a layout runs, so the layout call learns of the stop
+    # from gephi_stop_layout. A stop that found nothing running stopped nothing.
+    polling, release = asyncio.Event(), asyncio.Event()
+    state = install_fake_gephi(monkeypatch, faults={
+        "/layout/status": {"success": True, "running": False}, "/layout/stop": stop_answer},
+        gates={"/layout/status": _held(polling, release)})
+    _no_poll_wait(monkeypatch)
+    gephi_mcp.LEDGER.reset()
+    layout = asyncio.ensure_future(
+        gephi_mcp.gephi_run_layout(algorithm="ForceAtlas 2", iterations=1000, sync=True))
+    try:
+        await asyncio.wait_for(polling.wait(), 5)
+        await asyncio.wait_for(gephi_mcp.gephi_stop_layout(), 1)
+    finally:
+        release.set()
+    out = json.loads(await asyncio.wait_for(layout, 5))
+    assert out["success"] is True
+    recorded = gephi_mcp.LEDGER.receipt()["layout"]
+    if stopped:
+        assert out["status"] == "stopped"
+        assert "stopped on request before it finished" in out["message"]
+        assert recorded["stopped_before_finishing"] is True
+        assert recorded["iterations_requested"] == 1000 and "iterations" not in recorded
+    else:
+        assert out["status"] == "completed"
+        assert out["message"] == "Layout finished after polling"
+        assert recorded == {"algorithm": "ForceAtlas 2", "iterations": 1000}
+    assert "/layout/stop" in _paths(state)
+
+
+async def test_a_sync_layout_that_reaches_its_count_is_reported_as_finished(monkeypatch):
+    install_fake_gephi(monkeypatch, faults={"/layout/status": {"success": True, "running": False}})
+    _no_poll_wait(monkeypatch)
+    gephi_mcp.LEDGER.reset()
+    out = json.loads(await asyncio.wait_for(
+        gephi_mcp.gephi_run_layout(algorithm="ForceAtlas 2", iterations=1000, sync=True), 5))
+    assert out["status"] == "completed"
+    assert out["message"] == "Layout finished after polling"
+    assert gephi_mcp.LEDGER.receipt()["layout"] == {"algorithm": "ForceAtlas 2", "iterations": 1000}

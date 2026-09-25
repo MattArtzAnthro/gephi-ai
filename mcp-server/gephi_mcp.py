@@ -1340,18 +1340,28 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
                       **({"properties": properties} if properties else {}))
     if not sync or not result.get("success"):
         return fmt(result)
+    # /layout/status says only whether a layout is running, not why it ended, so a stop sent
+    # through gephi_stop_layout while this call waits is counted and checked afterwards.
+    stops_before = _layout_stops
     # Poll until layout stops
     for _ in range(300):  # max ~5 minutes at 1s intervals
         await asyncio.sleep(1)
         status = await gephi.request("GET", "/layout/status")
         if not status.get("running", True):
-            result["status"] = "completed"
-            result["message"] = "Layout finished after polling"
+            stopped = _layout_stops != stops_before
+            if stopped:
+                result["status"] = "stopped"
+                result["message"] = (f"Layout stopped on request before it finished; fewer than "
+                                     f"the {iterations} requested iterations ran")
+                LEDGER.mark_layout_stopped()
+            else:
+                result["status"] = "completed"
+                result["message"] = "Layout finished after polling"
             exploded = await _check_layout_positions()
             if exploded:
                 result["layout_exploded"] = exploded
-                result["message"] = ("Layout finished but positions exploded "
-                                     "numerically — see layout_exploded")
+                result["message"] = ("Layout " + ("stopped on request" if stopped else "finished")
+                                     + " but positions exploded numerically — see layout_exploded")
             return fmt(result)
     result["status"] = "timeout"
     result["message"] = "Layout still running after 5 minutes"
@@ -1481,7 +1491,16 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
 @_tool(name="gephi_stop_layout")
 async def gephi_stop_layout() -> str:
     """Stop a currently running layout algorithm."""
-    return fmt(await gephi.request("POST", "/layout/stop"))
+    global _layout_stops
+    result = await gephi.request("POST", "/layout/stop")
+    if result.get("success") and result.get("message") != "No layout running":
+        _layout_stops += 1
+    return fmt(result)
+
+
+#: How many times gephi_stop_layout has stopped a running layout. A sync gephi_run_layout
+#: compares it before and after its wait to tell a stopped layout from a finished one.
+_layout_stops = 0
 
 @_tool(name="gephi_get_layout_status")
 async def gephi_get_layout_status() -> str:

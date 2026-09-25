@@ -55,6 +55,16 @@ class Ledger:
         except Exception:
             pass
 
+    def mark_layout_stopped(self) -> None:
+        """The last layout was stopped before it finished, so the iteration count recorded for it
+        is what was asked for, not what ran."""
+        for entry in reversed(self.entries):
+            if entry["operation"] == "run_layout":
+                if "iterations" in entry:
+                    entry["iterations_requested"] = entry.pop("iterations")
+                entry["stopped_before_finishing"] = True
+                return
+
     def legend_items(self) -> list[dict[str, Any]]:
         """The visual mappings currently in force, one per channel, in the order first set."""
         by_channel: dict[str, dict[str, Any]] = {}
