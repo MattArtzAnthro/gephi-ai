@@ -375,11 +375,12 @@ async def _name_snapshot_copy(op: str, cur: dict[str, Any], before_ids: set[Any]
     reported = dup.get("workspace_id")
     if reported is not None:
         # The plugin's /workspace/duplicate reports the copy's id and opens the copy, so the
-        # copy is the workspace with that id and it must now be current. If it is not, some
-        # other workspace changed, and nothing else may be renamed in its place.
-        copy_i = next((i for i, w in enumerate(wss)
-                       if w.get("id") == reported and w.get("current")
-                       and reported != cur.get("id")), None)
+        # copy is the workspace with that id, it must be new, and it must now be current. If
+        # not, some other workspace changed, and nothing else may be renamed in its place.
+        copy_i = None
+        if reported not in before_ids:
+            copy_i = next((i for i, w in enumerate(wss)
+                           if w.get("id") == reported and w.get("current")), None)
     else:
         # No id reported: take the workspace the duplicate switched to.
         copy_i = next((i for i, w in enumerate(wss)
@@ -409,12 +410,14 @@ def _new_copy_id(before_ids: set[Any], after: list[dict[str, Any]], orig_id: Any
                  reported: Any) -> Any:
     """The id of the copy a duplicate made, or None when it cannot be told for certain.
 
-    The plugin reports the copy's id, and when it does, only that workspace is the copy. The
-    one workspace that was not there before is used only when no id was reported. Never
-    returns the original's id."""
+    The plugin reports the copy's id, and when it does, only that workspace is the copy, and
+    only if it was not there before the duplicate. The one workspace that was not there before
+    is used only when no id was reported. Never returns the original's id or any workspace
+    that existed before the duplicate."""
     if reported is not None:
         ids_after = {w.get("id") for w in after}
-        return reported if reported != orig_id and reported in ids_after else None
+        valid = reported != orig_id and reported not in before_ids and reported in ids_after
+        return reported if valid else None
     new = _new_ids(before_ids, after)
     if len(new) == 1 and new[0] != orig_id:
         return new[0]

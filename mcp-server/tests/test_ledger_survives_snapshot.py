@@ -568,3 +568,24 @@ async def test_a_copy_that_could_not_be_deleted_is_reported_as_left(monkeypatch)
     assert "could not be confirmed" not in out["error"]
     assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True), (2, False)]
     assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_a_snapshot_never_treats_a_pre_existing_workspace_as_the_copy(monkeypatch):
+    # The duplicate reports the id of a workspace that was there before it, and that workspace
+    # is now current. It is not the copy, so nothing may be renamed or deleted.
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    state["ws"].append({"id": 5, "name": "Other", "current": False, "node_count": 5})
+
+    def duplicate():
+        state["duplicate"](switch=False)
+        for w in state["ws"]:
+            w["current"] = w["id"] == 5
+        return {"success": True, "workspace_id": 5}
+
+    faults["/workspace/duplicate"] = duplicate
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert _renamed(state) == []
+    assert state["deleted"] == []
