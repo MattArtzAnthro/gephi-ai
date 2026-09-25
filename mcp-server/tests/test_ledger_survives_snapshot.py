@@ -1,9 +1,11 @@
 """An undo snapshot copies the workspace; the graph on screen is unchanged, so the methods
 record must survive it. The fake sits under GephiClient.request (at httpx), because the reset
 that caused the bug lives inside GephiClient.request itself."""
+import asyncio
 import json
 
 import httpx
+import pytest
 
 import gephi_mcp
 from session_ledger import Ledger
@@ -119,3 +121,53 @@ async def test_whatif_drops_the_record_when_it_cannot_switch_back(monkeypatch):
     assert out["cleanup"]["returned_to_workspace_id"] is None  # left on the edited copy
     # The record describes the original graph, which is not the one on screen any more.
     assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+async def test_a_manual_snapshot_keeps_the_record(monkeypatch):
+    install_fake_gephi(monkeypatch)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is True
+    assert out["snapshot"] == "[undo] W (before x)"
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_whatif_keeps_every_ledger_attribute(monkeypatch):
+    # A ledger attribute that a reset clears, standing in for any field added after `entries`.
+    def reset(self):
+        self.entries = []
+        self.extra = None
+
+    monkeypatch.setattr(Ledger, "reset", reset)
+    monkeypatch.setattr(gephi_mcp.LEDGER, "extra", None, raising=False)
+    install_fake_gephi(monkeypatch)
+    _record_layout()
+    gephi_mcp.LEDGER.extra = {"a": 1}
+    out = json.loads(await gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}]))
+    assert out["success"] is True
+    assert out["cleanup"]["returned_to_workspace_id"] == 1
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+    assert gephi_mcp.LEDGER.extra == {"a": 1}, "whatif restored entries but not the rest"
+
+
+async def test_a_snapshot_that_fails_midway_keeps_the_record(monkeypatch):
+    # GephiClient.request turns a connection error into an error dict, so the snapshot carries
+    # on past the failed rename. /workspace/duplicate has already reset the record by then.
+    install_fake_gephi(monkeypatch, faults={
+        "/workspace/rename": httpx.ConnectError("connection refused")})
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    # Today the failed rename is not reported: the snapshot says it succeeded. The record is
+    # what this test guards; if the rename failure starts being reported, update this line.
+    assert out["success"] is True
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+
+
+async def test_a_snapshot_interrupted_midway_keeps_the_record(monkeypatch):
+    # A cancellation is not caught by GephiClient.request, so it escapes the snapshot after
+    # /workspace/duplicate has reset the record. The restore still has to run.
+    install_fake_gephi(monkeypatch, faults={"/workspace/rename": asyncio.CancelledError()})
+    _record_layout()
+    with pytest.raises(asyncio.CancelledError):
+        await gephi_mcp.gephi_snapshot(label="x")
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"
