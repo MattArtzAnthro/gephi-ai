@@ -3,11 +3,14 @@
 bump-version.sh has to move every pin the Desktop bundle carries along with the server version,
 and build-mcpb.sh has to refuse a version the bundle does not pin before it builds anything.
 """
+import fnmatch
 import json
 import os
 import re
 import shutil
 import subprocess
+import urllib.request
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -97,3 +100,122 @@ def test_build_mcpb_refuses_a_version_the_bundle_does_not_pin(tmp_path):
     assert "does not pin gephi-ai==0.0.0-not-pinned" in run.stdout + run.stderr
     assert not (fake_bin / "npx-was-called").exists(), "the script reached npx"
     assert not (tmp_path / "dist").exists()
+
+
+def _fake_tools(tmp_path, uv_exit=0):
+    """Stand-in uv and npx that append their argv to one log, so the call order is visible."""
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    log = tmp_path / "calls.log"
+    for name, code in (("uv", uv_exit), ("npx", 0)):
+        tool = fake_bin / name
+        tool.write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\nexit {code}\n')
+        tool.chmod(0o755)
+    env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
+    return env, log
+
+
+def _pinned_version():
+    return json.loads((REPO / "mcpb/manifest.json").read_text())["version"]
+
+
+def test_build_mcpb_locks_the_bundle_before_packing(tmp_path):
+    _need("bash")
+    _copy_tree(BUILD_FILES, tmp_path)
+    env, log = _fake_tools(tmp_path)
+    version = _pinned_version()
+
+    run = subprocess.run(["bash", "scripts/build-mcpb.sh", version],
+                         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stdout + run.stderr
+    calls = log.read_text().splitlines()
+    assert calls == [
+        "uv lock --directory mcpb",
+        f"npx -y @anthropic-ai/mcpb pack mcpb dist/gephi-ai-{version}.mcpb",
+    ]
+
+
+def test_build_mcpb_stops_when_the_lock_fails(tmp_path):
+    _need("bash")
+    _copy_tree(BUILD_FILES, tmp_path)
+    env, log = _fake_tools(tmp_path, uv_exit=1)
+    version = _pinned_version()
+
+    run = subprocess.run(["bash", "scripts/build-mcpb.sh", version],
+                         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    assert run.returncode != 0
+    out = run.stdout + run.stderr
+    assert "could not lock the bundle's dependencies" in out
+    assert f"gephi-ai=={version}" in out and "PyPI" in out
+    assert log.read_text().splitlines() == ["uv lock --directory mcpb"], "the script reached npx"
+
+
+def test_build_mcpb_stops_when_uv_is_missing(tmp_path):
+    _need("bash")
+    _copy_tree(BUILD_FILES, tmp_path)
+    env, log = _fake_tools(tmp_path)
+    (tmp_path / "fake-bin" / "uv").unlink()
+    # Only the fake tools and the system directories, so a real uv cannot be found either.
+    env["PATH"] = os.pathsep.join([str(tmp_path / "fake-bin"), "/usr/bin", "/bin"])
+    if any(Path(d, "uv").exists() for d in ("/usr/bin", "/bin")):
+        pytest.skip("uv is installed in a system directory")
+
+    run = subprocess.run(["bash", "scripts/build-mcpb.sh", _pinned_version()],
+                         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    assert run.returncode != 0
+    assert "uv is not on PATH" in run.stdout + run.stderr
+    assert not log.exists(), "the script reached npx"
+
+
+def _ignore_patterns():
+    lines = (REPO / "mcpb/.mcpbignore").read_text().splitlines()
+    return [ln.strip() for ln in lines if ln.strip() and not ln.startswith("#")]
+
+
+def test_mcpbignore_ships_the_lock():
+    for pattern in _ignore_patterns():
+        assert not fnmatch.fnmatch("uv.lock", pattern.rstrip("/")), pattern
+
+
+def test_gitignore_ignores_the_bundle_lock():
+    if shutil.which("git") is None:
+        pytest.skip("git is not on PATH")
+    run = subprocess.run(["git", "check-ignore", "-q", "--no-index", "mcpb/uv.lock"],
+                         cwd=REPO, capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, "mcpb/uv.lock is not gitignored"
+
+
+def _pypi_reachable():
+    try:
+        with urllib.request.urlopen("https://pypi.org/simple/gephi-ai/", timeout=10) as r:
+            return r.status == 200
+    except OSError:
+        return False
+
+
+def test_real_build_ships_the_locked_bundle(tmp_path):
+    """Packs a temp copy with the real uv and npx; set GEPHI_AI_REQUIRE_REAL_BUILD to fail, not skip."""
+    required = bool(os.environ.get("GEPHI_AI_REQUIRE_REAL_BUILD"))
+    missing = [t for t in ("bash", "uv", "npx") if shutil.which(t) is None]
+    reason = None
+    if os.name == "nt":
+        reason = "the release scripts run on macOS and Linux"
+    elif missing:
+        reason = f"{', '.join(missing)} not on PATH"
+    elif not _pypi_reachable():
+        reason = "PyPI is unreachable"
+    if reason:
+        (pytest.fail if required else pytest.skip)(reason)
+
+    _copy_tree(BUILD_FILES + ["mcpb/.mcpbignore", "mcpb/src/server.py"], tmp_path)
+    version = _pinned_version()
+    run = subprocess.run(["bash", "scripts/build-mcpb.sh", version],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=600)
+    assert run.returncode == 0, run.stdout + run.stderr
+
+    bundle = tmp_path / "dist" / f"gephi-ai-{version}.mcpb"
+    with zipfile.ZipFile(bundle) as z:
+        names = {n for n in z.namelist() if not n.endswith("/")}
+        lock = z.read("uv.lock").decode()
+    assert names == {"manifest.json", "pyproject.toml", "src/server.py", "uv.lock"}
+    assert f'name = "gephi-ai"\nversion = "{version}"' in lock

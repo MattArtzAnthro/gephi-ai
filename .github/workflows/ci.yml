@@ -62,6 +62,17 @@ jobs:
         # The test launches the bundle with uv, as Claude Desktop does, so uv must be on PATH
         # here or the test skips.
         run: uv run --directory mcp-server --extra dev python -m pytest -q tests/test_bundle_smoke.py
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: '20'
+      - name: Build the bundle for real and check what it ships
+        # Runs scripts/build-mcpb.sh with real uv and npx in a temp copy. The variable turns a
+        # skip into a failure, so this runner always exercises the build.
+        if: runner.os == 'Linux'
+        env:
+          GEPHI_AI_REQUIRE_REAL_BUILD: '1'
+        run: uv run --directory mcp-server --extra dev python -m pytest -q -rs tests/test_release_scripts.py -k real_build
 
   codex-plugin:
     name: Codex plugin (manifest + parity)
