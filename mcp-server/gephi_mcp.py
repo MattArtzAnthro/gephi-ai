@@ -340,35 +340,78 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
     cur_i = _index_of(wss, cur.get("id"))
     if cur_i is None:
         return {"ok": False, "reason": "current workspace disappeared mid-snapshot"}
+    before_dup = wss
     dup = await gephi.request("POST", "/workspace/duplicate", json_data={"index": cur_i})
     if not dup.get("success", False):
         return {"ok": False, "reason": dup.get("error", "duplicate failed")}
 
+    # From here on a copy exists, so every failure removes it before reporting.
     wss = await _workspaces()
     if wss is None:
-        return {"ok": False, "reason": "workspace list unavailable after duplicate"}
+        reason = "workspace list unavailable after duplicate"
+        wss = await _workspaces()  # one retry, to find the copy and remove it
+        if wss is None:
+            return {"ok": False, "reason": reason + f'; a copy of the workspace, named like '
+                    f'"{cur.get("name")} copy", may remain in Gephi\'s tab bar; close it by hand'}
+        return await _abandon_snapshot_copy(
+            reason, _new_copy_id(before_dup, wss, cur.get("id"), dup), cur)
     copy_i = next((i for i, w in enumerate(wss)
                    if w.get("current") and w.get("id") != cur.get("id")), None)
     if copy_i is None:
-        return {"ok": False, "reason": "duplicate did not switch to the copy"}
+        return await _abandon_snapshot_copy(
+            "duplicate did not switch to the copy",
+            _new_copy_id(before_dup, wss, cur.get("id"), dup), cur)
+    copy_id = wss[copy_i].get("id")
     snap_name = f"{UNDO_PREFIX}{cur['name']} (before {op})"
     rn = await gephi.request("POST", "/workspace/rename",
                              json_data={"index": copy_i, "name": snap_name})
     if not rn.get("success", False):
         # A copy without the "[undo] " name is not an undo point gephi_undo can find, so this
         # is a failed snapshot. Switch back and remove the unnamed copy rather than leave it.
-        reason = f"could not name the undo copy ({rn.get('error', 'rename failed')})"
-        cleanup = await _cleanup_scratch(wss[copy_i].get("id"), cur.get("id"))
-        if not cleanup["scratch_deleted"]:
-            reason += "; an unnamed copy of the workspace was left in Gephi's tab bar"
-        if cleanup["returned_to_workspace_id"] != cur.get("id"):
-            reason += "; the copy is still the current workspace"
-        return {"ok": False, "reason": reason}
+        return await _abandon_snapshot_copy(
+            f"could not name the undo copy ({rn.get('error', 'rename failed')})", copy_id, cur)
     orig_i = _index_of(wss, cur.get("id"))
     sw = await gephi.request("POST", "/workspace/switch", json_data={"index": orig_i})
     if not sw.get("success", False):
-        return {"ok": False, "reason": "could not switch back to the original workspace"}
+        # The person would be left on the copy, so the snapshot is abandoned, not kept.
+        return await _abandon_snapshot_copy(
+            "could not switch back to the original workspace", copy_id, cur)
     return {"ok": True, "snapshot": snap_name}
+
+
+def _new_copy_id(before: list[dict[str, Any]], after: list[dict[str, Any]], orig_id: Any,
+                 dup: dict[str, Any]) -> Any:
+    """The id of the copy a duplicate made, or None when it cannot be told for certain.
+
+    Uses the id the duplicate reported when that workspace is in the list, otherwise the one
+    workspace that was not there before. Never returns the original's id."""
+    ids_after = {w.get("id") for w in after}
+    reported = dup.get("workspace_id")
+    if reported is not None and reported != orig_id and reported in ids_after:
+        return reported
+    ids_before = {w.get("id") for w in before}
+    new = [w.get("id") for w in after
+           if w.get("id") is not None and w.get("id") not in ids_before]
+    if len(new) == 1 and new[0] != orig_id:
+        return new[0]
+    return None
+
+
+async def _abandon_snapshot_copy(reason: str, copy_id: Any,
+                                 cur: dict[str, Any]) -> dict[str, Any]:
+    """Report a failed snapshot after putting the person back on their workspace and removing
+    the copy, which is deleted only by its own id and never when that id is the original's."""
+    orig_id = cur.get("id")
+    if copy_id is None or copy_id == orig_id:
+        return {"ok": False, "reason": reason + "; the copy could not be identified, so a copy "
+                f'named like "{cur.get("name")} copy" may remain in Gephi\'s tab bar; '
+                "close it by hand"}
+    cleanup = await _cleanup_scratch(copy_id, orig_id)
+    if not cleanup["scratch_deleted"]:
+        reason += "; a copy of the workspace was left in Gephi's tab bar"
+    if cleanup["returned_to_workspace_id"] != orig_id:
+        reason += "; the copy is still the current workspace"
+    return {"ok": False, "reason": reason}
 
 
 async def _snapshot_current(op: str, enforce_cap: bool = False) -> dict[str, Any]:

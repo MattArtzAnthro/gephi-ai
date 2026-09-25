@@ -25,11 +25,12 @@ GEXF = (
 def install_fake_gephi(monkeypatch, faults=None, gates=None):
     """Fake Gephi at the httpx layer. `faults` maps an endpoint path to the JSON body it
     should answer with instead, or to an exception it should raise. A list is a queue of
-    one-shot answers for successive calls, where None means answer normally. `gates` maps a
+    one-shot answers for successive calls, where None means answer normally, and a callable is
+    called for the answer. `gates` maps a
     path to a coroutine function awaited before that call is answered, so a test can hold a
     call open while another task runs. Every call is kept in state["calls"], and the id of
     every deleted workspace in state["deleted"]."""
-    faults = faults or {}
+    faults = {} if faults is None else faults
     gates = gates or {}
     state = {"ws": [{"id": 1, "name": "W", "current": True, "node_count": 5}], "next_id": 2,
              "calls": [], "deleted": []}
@@ -41,6 +42,8 @@ def install_fake_gephi(monkeypatch, faults=None, gates=None):
                 fault = fault.pop(0) if fault else None
             if isinstance(fault, BaseException):
                 raise fault
+            if callable(fault):
+                fault = fault()
             if fault is not None:
                 return fault
         if path == "/workspace/list":
@@ -266,3 +269,79 @@ async def test_whatif_drops_the_record_when_the_workspace_has_no_id(monkeypatch)
     _record_layout()
     await gephi_mcp.gephi_whatif(edits=[{"op": "remove_node", "id": "a"}])
     assert gephi_mcp.LEDGER.receipt()["layout"] is None
+
+
+# ── A snapshot step that fails after the duplicate leaves no stray copy ──────
+
+
+def _assert_back_on_the_original_with_no_copy(state):
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True)]
+    assert state["deleted"] == [2], "the copy was not removed by its id"
+    assert 1 not in state["deleted"], "the original workspace was deleted"
+
+
+async def test_a_snapshot_whose_switch_back_fails_removes_the_copy(monkeypatch):
+    state = install_fake_gephi(monkeypatch, faults={
+        "/workspace/switch": [{"success": False, "error": "switch refused"}]})
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert "could not switch back to the original workspace" in out["error"]
+    _assert_back_on_the_original_with_no_copy(state)
+
+
+async def test_a_snapshot_whose_list_after_the_duplicate_fails_removes_the_copy(monkeypatch):
+    # The list before the duplicate works, the one after fails, and the single retry works.
+    state = install_fake_gephi(monkeypatch, faults={
+        "/workspace/list": [None, {"success": False, "error": "busy"}]})
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert "workspace list unavailable after duplicate" in out["error"]
+    _assert_back_on_the_original_with_no_copy(state)
+
+
+async def test_a_snapshot_whose_list_fails_twice_says_a_copy_may_remain(monkeypatch):
+    state = install_fake_gephi(monkeypatch, faults={
+        "/workspace/list": [None, {"success": False, "error": "busy"},
+                            {"success": False, "error": "busy"}]})
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert '"W copy"' in out["error"] and "close it by hand" in out["error"]
+    # Without a list the copy cannot be told apart from the original, so nothing is deleted.
+    assert state["deleted"] == []
+    assert not any(m == "DELETE" for m, *_ in state["calls"])
+
+
+def _duplicate_without_switching(state):
+    """A duplicate that adds the copy but leaves the original current."""
+    def fault():
+        wid = state["next_id"]
+        state["next_id"] += 1
+        state["ws"].append({"id": wid, "name": "W copy", "current": False, "node_count": 5})
+        return {"success": True}  # no workspace_id, so the copy must be found in the list
+    return fault
+
+
+async def test_a_snapshot_whose_copy_cannot_be_identified_removes_the_copy(monkeypatch):
+    faults = {}
+    state = install_fake_gephi(monkeypatch, faults=faults)
+    faults["/workspace/duplicate"] = _duplicate_without_switching(state)
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert "duplicate did not switch to the copy" in out["error"]
+    _assert_back_on_the_original_with_no_copy(state)
+
+
+async def test_a_snapshot_never_deletes_when_no_new_workspace_appears(monkeypatch):
+    # The duplicate claims success but nothing new is in the list: there is no copy to remove,
+    # and nothing else may be deleted in its place.
+    state = install_fake_gephi(monkeypatch, faults={
+        "/workspace/duplicate": {"success": True}})
+    _record_layout()
+    out = json.loads(await gephi_mcp.gephi_snapshot(label="x"))
+    assert out["success"] is False
+    assert state["deleted"] == []
+    assert [(w["id"], w["current"]) for w in state["ws"]] == [(1, True)]
