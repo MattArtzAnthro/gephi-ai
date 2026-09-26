@@ -35,16 +35,15 @@ value splits them. Sanity-check by running two resolutions and comparing the
 ### Graph-Level Result
 | Result | Description |
 |--------|-------------|
-| `modularity` | Score from -0.5 to 1.0. Higher = clearer community structure. >0.3 is significant. |
+| `modularity` | Score from -0.5 to 1.0: how many more edges fall inside the communities than chance would place there, given the same degrees. Not a measure of strength on its own. |
 
 ### How to Visualize
 `gephi_color_by_partition({column: "modularity_class"})` - Each community gets a distinct color.
 
 ### Interpretation
-- **0.0-0.3**: Weak community structure
-- **0.3-0.5**: Moderate community structure
-- **0.5-0.7**: Strong community structure
-- **>0.7**: Very strong community structure (may indicate disconnected components)
+- **The score alone never shows strong communities.** Random graphs with the same degrees score 0.3 to 0.6, and sparse, hub-heavy networks sit at the top of that range. No value is a significance threshold.
+- **Check stability before naming communities.** Run `gephi_community_stability`, report `mean_stability` in plain words, and name only the groups in `stable_cores`. When `consensus_warning` appears, the communities are loose: describe the stable cores instead.
+- **A very high score** can mean the graph is several disconnected components. Check with `gephi_compute_connected_components`.
 
 ## Degree
 
