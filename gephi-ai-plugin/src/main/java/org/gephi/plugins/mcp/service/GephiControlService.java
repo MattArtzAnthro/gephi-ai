@@ -116,6 +116,63 @@ public class GephiControlService {
     }
 
     @SuppressWarnings("unchecked")
+    /**
+     * Where the running Gephi wants project and workspace changes made (new project, open,
+     * close, new, switch, delete, duplicate, rename). From Gephi 0.11.3 they run on a
+     * background thread: made on the interface thread they freeze it while listeners run, and
+     * Gephi warns that this will become an error. Earlier versions make them on the interface
+     * thread themselves, so there they stay on it.
+     */
+    private <T> T onProjectThread(Callable<T> work) {
+        if (projectCallsOffEdt() && !SwingUtilities.isEventDispatchThread()) {
+            try { return work.call(); }
+            catch (RuntimeException e) { throw e; }
+            catch (Exception e) { throw new RuntimeException(e); }
+        }
+        return runOnEDT(work);
+    }
+
+    private static volatile Boolean projectCallsOffEdt;
+
+    static boolean projectCallsOffEdt() {
+        Boolean known = projectCallsOffEdt;
+        if (known == null) {
+            known = versionAtLeast(projectApiVersion(), "0.11.3");
+            projectCallsOffEdt = known;
+        }
+        return known;
+    }
+
+    /** The specification version of Gephi's project API module, or null when unknown. */
+    static String projectApiVersion() {
+        try {
+            org.openide.modules.ModuleInfo module =
+                org.openide.modules.Modules.getDefault().ownerOf(ProjectController.class);
+            if (module != null && module.getSpecificationVersion() != null) {
+                return module.getSpecificationVersion().toString();
+            }
+        } catch (Throwable ignore) { /* outside Gephi's module system */ }
+        // Outside the module system (tests), read the module's jar manifest.
+        try {
+            java.net.URL jar = ProjectController.class.getProtectionDomain().getCodeSource().getLocation();
+            try (java.util.jar.JarFile f = new java.util.jar.JarFile(new File(jar.toURI()))) {
+                return f.getManifest().getMainAttributes().getValue("OpenIDE-Module-Specification-Version");
+            }
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    static boolean versionAtLeast(String version, String wanted) {
+        if (version == null) return false;
+        try {
+            return new org.openide.modules.SpecificationVersion(version)
+                .compareTo(new org.openide.modules.SpecificationVersion(wanted)) >= 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
     private <T> T runOnEDT(Callable<T> callable) {
         if (SwingUtilities.isEventDispatchThread()) {
             try { return callable.call(); }
@@ -391,8 +448,32 @@ public class GephiControlService {
 
     // ─── Project Management ──────────────────────────────────────────
 
+    /**
+     * Empties Gephi's Filters panel before its project closes. Closed off the interface
+     * thread, the project's filters are gone while the panel may still be drawing their
+     * entries, which fails inside Gephi; with the list emptied first there is nothing to draw.
+     * The project is being discarded, so nothing is lost.
+     */
+    private void clearFilterQueriesBeforeClosing() {
+        ProjectController pc = getProjectController();
+        if (!projectCallsOffEdt() || !pc.hasCurrentProject()) return;
+        try {
+            runOnEDT(() -> {
+                FilterController fc = Lookup.getDefault().lookup(FilterController.class);
+                org.gephi.filters.api.FilterModel fm = fc == null ? null : fc.getModel();
+                if (fm != null) {
+                    for (Query q : fm.getQueries()) fc.remove(q);
+                }
+                return null;
+            });
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Could not clear the filter list before closing the project", e);
+        }
+    }
+
     public JsonObject createProject(String name) {
-        return runOnEDT(() -> {
+        clearFilterQueriesBeforeClosing();
+        return onProjectThread(() -> {
             ProjectController pc = getProjectController();
             pc.newProject();
             Workspace ws = pc.getCurrentWorkspace();
@@ -412,9 +493,10 @@ public class GephiControlService {
             // deserializes into a queryable model — the "open reports success but the
             // graph is blank" bug. Verified: open works as the first action on a fresh
             // instance and fails only when a project is already open; Gephi's own
-            // File>Open closes first. closeCurrentProject touches UI, so run it on EDT.
+            // File>Open closes first.
             if (pc.hasCurrentProject()) {
-                runOnEDT(() -> { pc.closeCurrentProject(); return null; });
+                clearFilterQueriesBeforeClosing();
+                onProjectThread(() -> { pc.closeCurrentProject(); return null; });
             }
             // openProject(File) off the EDT: it blocks on a LongTaskExecutor Future
             // whose completion needs a free EDT.
@@ -505,7 +587,7 @@ public class GephiControlService {
     // ─── Workspace Management ────────────────────────────────────────
 
     public JsonObject newWorkspace() {
-        return runOnEDT(() -> {
+        return onProjectThread(() -> {
             try {
                 ProjectController pc = getProjectController();
                 if (pc.getCurrentProject() == null) return error("No project open");
@@ -548,7 +630,7 @@ public class GephiControlService {
     }
 
     public JsonObject switchWorkspace(int index) {
-        return runOnEDT(() -> {
+        return onProjectThread(() -> {
             ProjectController pc = getProjectController();
             if (pc.getCurrentProject() == null) return error("No project open");
             int i = 0;
@@ -564,7 +646,7 @@ public class GephiControlService {
     }
 
     public JsonObject deleteWorkspace(int index) {
-        return runOnEDT(() -> {
+        return onProjectThread(() -> {
             ProjectController pc = getProjectController();
             if (pc.getCurrentProject() == null) return error("No project open");
             int i = 0;
@@ -580,7 +662,7 @@ public class GephiControlService {
     }
 
     public JsonObject duplicateWorkspace(int index) {
-        return runOnEDT(() -> {
+        return onProjectThread(() -> {
             ProjectController pc = getProjectController();
             if (pc.getCurrentProject() == null) return error("No project open");
             int i = 0;
@@ -601,7 +683,7 @@ public class GephiControlService {
     }
 
     public JsonObject renameWorkspace(int index, String name) {
-        return runOnEDT(() -> {
+        return onProjectThread(() -> {
             ProjectController pc = getProjectController();
             if (pc.getCurrentProject() == null) return error("No project open");
             int i = 0;
@@ -3367,7 +3449,7 @@ public class GephiControlService {
                         + " or \"append\"");
                 }
                 ProjectController pc = getProjectController();
-                if (pc.getCurrentProject() == null) pc.newProject();
+                if (pc.getCurrentProject() == null) onProjectThread(() -> { pc.newProject(); return null; });
                 Workspace previous = currentWorkspace();
                 boolean previousEmpty = false;
                 if (previous != null) {
@@ -3404,10 +3486,18 @@ public class GephiControlService {
                 addIssues(issues, processor.getReport(), 20);
                 Workspace ws = importedWs != null ? importedWs : previous;
                 // Named after the file, as Gephi names a workspace opened from File > Open.
-                if (!append && ws != null && ws != previous) pc.renameWorkspace(ws, file.getName());
-                if (!append && previousEmpty && previous != null && previous != ws) {
-                    pc.deleteWorkspace(previous);
-                    pc.openWorkspace(ws);
+                final boolean tidy = !append && previousEmpty && previous != null && previous != ws;
+                if (!append && ws != null && ws != previous) {
+                    onProjectThread(() -> {
+                        pc.renameWorkspace(ws, file.getName());
+                        if (tidy) {
+                            // The import already made its workspace current; switching to it
+                            // again would close and reopen it for nothing.
+                            if (pc.getCurrentWorkspace() != ws) pc.openWorkspace(ws);
+                            pc.deleteWorkspace(previous);
+                        }
+                        return null;
+                    });
                 }
 
                 // Optional, and off by default. Capping rewrites viz:size values the file
@@ -4615,7 +4705,7 @@ public class GephiControlService {
         } finally { g.readUnlock(); }
         String name = workspaceName(source) + " " + fmtTime(low) + "–" + fmtTime(high);
         Workspace[] made = new Workspace[1];
-        onEdt(() -> {
+        onProjectThread(() -> {
             // A workspace's settings (time format, id type) are fixed when it is made.
             made[0] = pc.newWorkspace(pc.getCurrentProject(), gm.getConfiguration());
             GraphModel target = getGraphController().getGraphModel(made[0]);
@@ -4630,6 +4720,7 @@ public class GephiControlService {
             } finally { tg.writeUnlock(); }
             pc.renameWorkspace(made[0], name);
             pc.openWorkspace(made[0]);
+            return null;
         });
         Graph sliced = getGraphController().getGraphModel(made[0]).getGraph();
         JsonObject r = success("Opened a workspace with the network from " + fmtTime(low) + " to " + fmtTime(high));

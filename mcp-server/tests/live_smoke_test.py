@@ -46,6 +46,34 @@ GEXF = "/tmp/gephi_smoke_big.gexf"
 # at the end fails until the id-or-title fix lands.
 
 
+def gephi_log() -> str | None:
+    """Gephi's own log (messages.log) for the Gephi answering on GEPHI_API_URL's port, read
+    from its --userdir, or None where it cannot be found."""
+    import os
+    import subprocess
+    port = g.GEPHI_API_URL.rsplit(":", 1)[-1].split("/")[0]
+    pid = subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+                         capture_output=True, text=True).stdout.split()
+    if not pid:
+        return None
+    command = subprocess.run(["ps", "-o", "command=", "-p", pid[0]],
+                             capture_output=True, text=True).stdout
+    if "--userdir " not in command:
+        return None
+    userdir = command.split("--userdir ", 1)[1].split(" --", 1)[0].strip()
+    path = os.path.join(userdir, "var", "log", "messages.log")
+    if not os.path.exists(path):
+        return None
+    with open(path, errors="replace") as f:
+        return f.read()
+
+
+def gephi_log_problems(log: str) -> tuple[int, int]:
+    """(interface-thread warnings, SEVERE entries) in a Gephi log."""
+    return (log.count("was called from the Event Dispatch Thread"),
+            log.count("\nSEVERE"))
+
+
 def gephi_windows() -> list[str] | None:
     """Titles of the windows of the Gephi answering on GEPHI_API_URL's port, or None where
     they cannot be read (not macOS). More than the main window means a dialog is open."""
@@ -147,6 +175,7 @@ class Runner:
 
 
 async def main():
+    log_before = gephi_log()
     n, m = build_big_gexf(GEXF)
     print(f"Built {GEXF}: {n} nodes / {m} edges (avg degree {2 * m / n:.1f})")
     R = Runner()
@@ -507,6 +536,15 @@ async def main():
     save = json.loads(await g.gephi_save_project("/tmp/no-such-folder/x.gephi"))
     check(save.get("success") is False and "does not exist" in save.get("error", ""),
           "[save] a missing folder is refused at once instead of hanging", save.get("error"))
+
+    # Gephi's own log: this run must add no interface-thread warnings (Gephi 0.11.3 says
+    # those become errors) and no errors raised inside Gephi.
+    log_after = gephi_log()
+    if log_before is not None and log_after is not None and log_after.startswith(log_before):
+        warned, severe = gephi_log_problems(log_after[len(log_before):])
+        R.results.append(("PASS" if warned == 0 and severe == 0 else "FAIL",
+                          "[gephi log] no interface-thread warnings or errors in Gephi", 0.0,
+                          f"interface-thread warnings={warned} SEVERE={severe}"))
 
     # ---- DESTRUCTIVE LAST ----
     await R.run("clear_graph", g.gephi_clear_graph())

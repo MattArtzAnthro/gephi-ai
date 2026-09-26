@@ -39,6 +39,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   not exist is refused at once instead of waiting a minute, and saving no longer blocks
   Gephi's window.
 - A value written to a column named by its title lands in that column instead of a new one.
+- On Gephi 0.11.3 and later, new projects and workspace changes (new, switch, delete,
+  duplicate, rename) run off Gephi's interface thread, as Gephi asks. Gephi had logged a
+  warning for each, saying it would become an error. Earlier Gephi versions keep running them
+  on the interface thread, as their own menus do.
 - `gephi_export_screenshot` could open Gephi's save dialog and time out on a Gephi that asks
   where to save screenshots, which is Gephi's default. A capture that produces nothing is
   now tried once more.
