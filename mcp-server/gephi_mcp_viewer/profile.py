@@ -175,8 +175,10 @@ def structural_profile(graph: dict) -> dict:
     if (assortativity is not None and assortativity <= -0.3 and n >= 50):
         flags.append(
             f"strongly disassortative (assortativity {assortativity:.2f}): "
-            "hub-and-spoke wiring — in ForceAtlas 2 enable distributedAttraction "
-            "(dissuade hubs) so hubs don't collapse their neighborhoods"
+            "hub-and-spoke wiring — each hub sits in a halo of its own neighbours, which "
+            "the layout produces and is not a finding; leave distributedAttraction "
+            "(dissuade hubs) off, since it only acts on directed networks and costs "
+            "cluster separation"
         )
     if "reciprocity" in profile and profile["reciprocity"] < 0.1 and n >= 50:
         flags.append(

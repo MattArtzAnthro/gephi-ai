@@ -32,11 +32,13 @@ re-derive layout tuning from memory.
    `modularity_class`, or proceed without community color. Never color by a fake
    grouping.
 3. **Style.** `gephi_color_by_partition` (validated 8-color palette + gray beyond 8),
-   `gephi_size_by_ranking` on degree, preview settings per the skill (edge opacity
-   ~30, `edge.color` "source", labels off unless small + meaningful). For a few
+   `gephi_size_by_ranking` on degree, preview settings per the skill (edges a light
+   neutral near the background, straight unless direction matters; labels off unless
+   small + meaningful). For a few
    real edge *types*, `gephi_color_edges_by_partition` instead.
-4. **Layout.** ForceAtlas 2 per `layout-guide.md` (linLog, gravity, scalingRatio by
-   size, sync), then Noverlap.
+4. **Layout.** ForceAtlas 2 in two passes per `layout-guide.md` (LinLog off to tune,
+   then LinLog on with scalingRatio divided by about 20; small strong gravity; Dissuade
+   Hubs off; sync), then Noverlap.
 5. **Inspect and adjust.** `gephi_visual_qa` again, export a small PNG, Read it,
    diagnose with the symptom table, **change ONE parameter per rerun**. Repeat up to
    ~3 times or until both zoom levels read (distinct regions in overview,

@@ -41,11 +41,25 @@ what first-time readers most need and least know:
 - **Very dense networks are honestly better served by a matrix** than by any
   force layout. gephi-ai does not render matrices; say so rather than forcing
   a hairball to pretend.
+- **A round blob does not prove there are no groups.** The eye sees two groups
+  only when a gap separates them, and large groups fill the gap. Two real groups
+  with 60% of their ties inside look the same as a random network under any
+  layout. Check with modularity and `gephi_community_stability` before saying a
+  network has no groups.
+- **Hide the colours before naming groups.** Colour sits on top of the layout,
+  and community colours can make a random network look grouped. Turn them off
+  and ask whether the layout alone shows the groups. If it does not, the groups
+  come from the computation, not from anything the map shows; say so.
+- **Islands have no position.** Where a disconnected component lands is random.
+  It can be moved by hand, and its place means nothing.
+- **The empty halo around a hub is made by the layout.** Repulsion grows with a
+  node's number of links, so well-connected nodes carry empty space around them.
+  Do not read it as a structural hole.
 
 ## The process
 
-1. **Apply a good layout** (see the layout guide's purpose table; LinLog for
-   cluster separation).
+1. **Apply a good layout** (see the layout guide: ForceAtlas 2 in two passes,
+   LinLog last, for cluster separation), and stop changing it once reading starts.
 2. **Identify the main clusters — and name them with letters, temporarily.**
    A, B, C. Do NOT name them for real yet: honest letters beat premature
    labels, and committing to an imperfect description is what lets the

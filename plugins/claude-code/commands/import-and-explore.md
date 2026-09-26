@@ -46,7 +46,7 @@ Import a graph file into Gephi, run initial analysis, apply styling, and present
    - Color by community: `gephi_color_by_partition` with column `"modularity_class"` and the validated palette (see skill reference)
    - Size by degree: `gephi_size_by_ranking` with column `"degree"`, min_size 3, max_size 25
 
-8. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"`, 1000 iterations, properties `{"linLogMode": true, "scalingRatio": 100, "gravity": 1.0, "barnesHutOptimize": true}`.
+8. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"` in two passes with `sync: true`: first 1500 iterations with properties `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01, "barnesHutOptimization": true}`, then 3000 iterations with `{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001, "barnesHutOptimization": true}` (see the layout guide). Leave Dissuade Hubs off.
 
 9. **Report**: Summarize:
    - Graph size (nodes, edges)
