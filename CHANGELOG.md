@@ -4,6 +4,43 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.19.0 / Java plugin 1.3.2 / workflow packages 1.16.0
+
+### Fixed
+- **Modularity no longer runs forever.** Gephi's community detection occasionally never
+  converges (gephi#1630) and kept a CPU core busy until Gephi was restarted. Plugin 1.3.2 stops
+  a run after 45 seconds (`GEPHI_MODULARITY_DEADLINE`), and the server runs it again once and
+  says so (`reruns_after_nonconvergence`). A stopped run leaves the previous partition in the
+  column, and the server never reads it back as a result. On a 2,919-node reply network about 3
+  runs in 100 did not converge. The server still works with plugin 1.3.0 and 1.3.1, without the
+  deadline.
+- **`gephi_community_stability` finishes on large graphs.** It never finished on a network of
+  about 3,000 nodes; it now takes about 5 seconds for 20 runs. Repeated runs get a deadline
+  scaled to how long the first run took, so a run that does not converge costs seconds, not
+  minutes.
+- **`gephi_community_stability` can run twice on the same graph.** The second run used to report
+  that its column could not be written.
+
+### Changed
+- **`gephi_community_stability` measures stability differently, and reports lower numbers.**
+  A node's stability is now the chance that a node grouped with it in one run is grouped with it
+  in another. The old score also counted every node it was never grouped with, which made almost
+  every node look stable on a large graph: a reply network whose 20 runs gave 20 different
+  partitions scored 0.97 before and scores 0.41 now.
+- **New: stable cores.** Groups held together in at least 90% of runs are reported
+  (`stable_cores`) and written to a `stable_core` column (-1 for nodes in no core). When the
+  consensus partition chains most of the graph into one group, `consensus_warning` says so and
+  points to the stable cores.
+- Per-node stability is written to a `community_stability` column. On graphs over 50 nodes the
+  reply carries summaries and the least stable nodes instead of every node's score and every
+  group's members (141,000 characters on 2,919 nodes, now about 1,500).
+- **`gephi_profile_graph` reports reciprocity** for directed graphs, the share of ties that are
+  returned, and flags a network where fewer than 10% are.
+- **Workflow packages:** the skill no longer lets the assistant call communities strong from a
+  modularity score. Random graphs with the same degrees score 0.3 to 0.6. The assistant checks
+  stability before naming communities, and reads a mostly one-way network as people addressing
+  hubs rather than conversing. The community-detection workflow now includes the stability check.
+
 ## MCP server 1.18.2 / Java plugin 1.3.1 / workflow packages 1.15.1
 
 ### Fixed

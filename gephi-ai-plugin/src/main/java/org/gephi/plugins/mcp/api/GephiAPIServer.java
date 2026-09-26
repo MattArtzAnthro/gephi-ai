@@ -555,7 +555,8 @@ public class GephiAPIServer extends NanoHTTPD {
 
         if ("/statistics/modularity".equals(uri) && Method.POST.equals(method)) {
             double res = body != null && body.has("resolution") ? body.get("resolution").getAsDouble() : 1.0;
-            return service.computeModularity(res);
+            long timeoutMs = body != null && body.has("timeout_ms") ? body.get("timeout_ms").getAsLong() : 0;
+            return service.computeModularity(res, timeoutMs);
         }
 
         if ("/statistics/available".equals(uri) && Method.GET.equals(method)) {

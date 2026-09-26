@@ -26,6 +26,7 @@ import math
 import os
 import re
 import tempfile
+import time
 import weakref
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,14 @@ CLEANUP_TIMEOUT = REQUEST_TIMEOUT
 # seconds, so a copy that appears late is removed instead of left behind.
 DUPLICATE_GRACE = float(os.environ.get("GEPHI_DUPLICATE_GRACE", "30"))
 DUPLICATE_POLL_INTERVAL = 1.0
+# Gephi's modularity occasionally never converges (gephi#1630) and spins until Gephi restarts.
+# Each run is sent with this deadline, after which the plugin stops it, and a stopped run is
+# repeated up to MODULARITY_ATTEMPTS times in all. Plugins before 1.3.2 ignore the deadline.
+MODULARITY_DEADLINE = float(os.environ.get("GEPHI_MODULARITY_DEADLINE", "45"))
+MODULARITY_ATTEMPTS = 2
+# Repeated runs on one graph (gephi_community_stability) tighten the deadline to 20 times the
+# slowest run that finished, but never below this.
+MODULARITY_MIN_DEADLINE = 5.0
 
 # ── Undo snapshots ─────────────────────────────────────────────────────────
 # A rolling one-level undo: before each destructive tool runs, the current
@@ -1607,16 +1616,43 @@ async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
 
 # ─── Statistics ──────────────────────────────────────────────
 
+async def _run_modularity(resolution: float | None = None,
+                          deadline: float = MODULARITY_DEADLINE) -> dict[str, Any]:
+    """Run Gephi's modularity with a deadline, repeating a run Gephi had to stop.
+
+    A stopped run writes nothing, so the partition column still holds the previous run; a caller
+    must never read it back. The result carries `reruns_after_nonconvergence` when a run was
+    repeated, and a failure that says how many attempts were made when none finished.
+    """
+    body: dict[str, Any] = {"timeout_ms": int(deadline * 1000)}
+    if resolution is not None:
+        body["resolution"] = resolution
+    stopped = 0
+    mod: Any = None
+    for _ in range(MODULARITY_ATTEMPTS):
+        mod = await gephi.request("POST", "/statistics/modularity", json_data=body,
+                                  timeout=deadline + REQUEST_TIMEOUT)
+        if not (isinstance(mod, dict) and mod.get("stopped")):
+            if stopped and isinstance(mod, dict) and mod.get("success"):
+                mod["reruns_after_nonconvergence"] = stopped
+            return mod
+        stopped += 1
+    mod = dict(mod)
+    mod["error"] = (f"Gephi's modularity did not finish in {MODULARITY_ATTEMPTS} attempts of "
+                    f"{deadline:.0f} s each and was stopped each time. On most graphs "
+                    "this is Gephi failing to converge (gephi#1630); try again, or a slightly "
+                    "different resolution. Very large graphs can need a longer deadline "
+                    "(GEPHI_MODULARITY_DEADLINE).")
+    return mod
+
+
 @_tool(name="gephi_compute_modularity")
 async def gephi_compute_modularity(resolution: float = 1.0) -> str:
     """Run modularity (Louvain) community detection. Stores 'modularity_class' on nodes.
 
     Higher resolution yields fewer, larger communities.
     """
-    return await fmt_stat("modularity",
-                          await gephi.request("POST", "/statistics/modularity",
-                                              json_data={"resolution": resolution}),
-                          resolution=resolution)
+    return await fmt_stat("modularity", await _run_modularity(resolution), resolution=resolution)
 
 #: Gephi titles the community column "Modularity Class" and gives it the id "modularity_class".
 #: Which of the two a GEXF parser surfaces varies, so the read-back matches on a normalised form
@@ -1633,9 +1669,16 @@ def _partition_value(attributes: dict[str, Any]) -> Any:
     return None
 
 
+#: Per-node stability is written to this node column by gephi_community_stability.
+STABILITY_COLUMN = "community_stability"
+#: Above this many nodes, gephi_community_stability returns summaries instead of per-node lists.
+LIST_NODES_UP_TO = 50
+
+
 @_tool(name="gephi_community_stability")
 async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
-                                    consensus_column: str = "consensus_community") -> str:
+                                    consensus_column: str = "consensus_community",
+                                    core_column: str = "stable_core") -> str:
     """Run community detection repeatedly and report which groups actually hold up.
 
     Gephi reports one partition as though it were the answer. It is one draw: the same graph run
@@ -1645,13 +1688,22 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
     nodes lands together.
 
     Returns the number of genuinely distinct partitions seen (relabellings do not count as
-    different), a stability score per node, the least stable nodes by name, and a consensus
-    partition built from the pairs that agreed more often than not. A node's stability is the
-    average decisiveness of its co-membership relations: 1.0 means every relation came out the
-    same way every time, 0.5 means its membership is undetermined.
+    different), a stability score per node, the least stable nodes by name, stable cores, and a
+    consensus partition. A node's stability is the chance that a node grouped with it in one run
+    is grouped with it in another: 1.0 means its community-mates never change, 0.5 means half of
+    them do. `mean_stability` is the same chance pooled over every pair.
 
-    The consensus partition is written to its own column rather than overwriting
-    `modularity_class`, so the run you already had survives (gephi#2590).
+    Stable cores are the groups held together in at least 90% of runs, the groups a finding can
+    rest on; `stable_cores` gives their count, the share of nodes in one, and the largest sizes.
+    The consensus keeps pairs that agreed more often than not. On large sparse graphs those pairs
+    can chain into one group of nodes that are rarely together; `consensus_warning` says when,
+    and then the stable cores are the partition to read.
+
+    Both are written to their own columns (`consensus_community`, and `stable_core` with -1 for
+    nodes in no core) rather than overwriting `modularity_class`, so the run you already had
+    survives (gephi#2590). Each node's stability goes to `community_stability`, ready to colour or
+    size by. On graphs over 50 nodes the reply carries summaries and the least stable nodes, not
+    every node's score or every group's members; those are on the graph.
 
     Use this before describing communities as a finding. Answers gephi#2968, which Gephi closed
     as not planned, so nothing else in this ecosystem can tell you whether your groups are real.
@@ -1664,11 +1716,17 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
     from gephi_mcp_viewer import parse_gexf
 
     partitions: list[dict[str, Any]] = []
+    reruns = 0
+    deadline, slowest = MODULARITY_DEADLINE, 0.0
     for _ in range(runs):
-        mod = await gephi.request("POST", "/statistics/modularity",
-                                  json_data={"resolution": resolution})
+        started = time.monotonic()
+        mod = await _run_modularity(resolution, deadline)
         if not (isinstance(mod, dict) and mod.get("success")):
             return fmt(mod)
+        reruns += mod.get("reruns_after_nonconvergence", 0)
+        if not mod.get("reruns_after_nonconvergence"):
+            slowest = max(slowest, time.monotonic() - started)
+            deadline = min(MODULARITY_DEADLINE, max(MODULARITY_MIN_DEADLINE, 20 * slowest))
         exported = await _export_gexf_inline()
         if not (isinstance(exported, dict) and exported.get("success")):
             return fmt(exported)
@@ -1689,13 +1747,25 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
 
     result: dict[str, Any] = {"success": True, "resolution": resolution}
     result.update(consensus(partitions))
+    if reruns:
+        result["reruns_after_nonconvergence"] = reruns
 
     groups = result.get("consensus_groups") or []
+    cores = result.pop("stable_core_groups", None) or []
+    stability = result.get("node_stability") or {}
     if groups:
-        added = await gephi.request("POST", "/graph/columns/add",
-                                    json_data={"name": consensus_column, "type": "integer",
-                                               "target": "node"})
-        updates = [{"id": node, "attributes": {consensus_column: index}}
+        added = {"success": True}
+        for name, kind in ((consensus_column, "integer"), (core_column, "integer"),
+                           (STABILITY_COLUMN, "double")):
+            made = await gephi.request("POST", "/graph/columns/add",
+                                       json_data={"name": name, "type": kind, "target": "node"})
+            # A second run on the same graph finds its columns in place and writes over them.
+            if not made.get("success", True) and "already exists" not in str(made.get("error")):
+                added = made
+        core_of = {node: index for index, core in enumerate(cores) for node in core}
+        updates = [{"id": node, "attributes": {consensus_column: index,
+                                               core_column: core_of.get(node, -1),
+                                               STABILITY_COLUMN: stability.get(node, 1.0)}}
                    for index, group in enumerate(groups) for node in group]
         written = await gephi.request("POST", "/graph/nodes/attributes",
                                       json_data={"updates": updates})
@@ -1704,12 +1774,20 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
         if added.get("success", True) and written.get("success", True):
             result["consensus_column"] = consensus_column
             result["consensus_communities"] = len(groups)
+            result["core_column"] = core_column
+            result["stability_column"] = STABILITY_COLUMN
         else:
             result["consensus_column"] = None
             result["consensus_write_failed"] = (
                 "The consensus partition was computed but could not be written to the graph. "
                 "The stability numbers above are unaffected; the column is absent.")
             result["consensus_write_detail"] = added if not added.get("success", True) else written
+
+    # Per-node lists are for small graphs. On a large one they flood the reply; the same values
+    # are on the graph, in the columns above.
+    if len(stability) > LIST_NODES_UP_TO:
+        result.pop("node_stability", None)
+        result["consensus_group_sizes"] = [len(g) for g in result.pop("consensus_groups", [])[:10]]
 
     return await fmt_stat("modularity", result, resolution=resolution)
 
@@ -1737,7 +1815,7 @@ async def _compute_profile(include_slow: bool = False) -> dict:
     # on the statistics path. Keeping it is what lets the edge-weight caveats ever fire.
     note_weights_vary(bool(profile.get("weighted")))
 
-    mod = await gephi.request("POST", "/statistics/modularity", json_data={})
+    mod = await _run_modularity()
     if mod.get("success"):
         profile["modularity"] = {k: mod[k] for k in ("modularity", "communities") if k in mod}
     cc = await gephi.request("POST", "/statistics/clustering-coefficient", json_data={})
@@ -1768,12 +1846,16 @@ async def gephi_profile_graph(include_slow: bool = False) -> str:
     (components, isolates), weight distribution when weights carry signal
     (weights.heavy_tailed means the strongest ties will dominate a force
     layout: log-transform weights or lower edgeWeightInfluence before laying
-    out), plus Gephi-computed modularity (community count and strength) and
-    clustering coefficient with its random-graph expectation
+    out), reciprocity for directed graphs (the share of ties that are returned;
+    low means people address hubs rather than converse with them), plus
+    Gephi-computed modularity (community count and score; random graphs with the
+    same degrees score 0.3-0.6, so the score alone never shows strong communities:
+    run gephi_community_stability) and clustering coefficient with its
+    random-graph expectation
     (clustering_vs_random is the verdict: observed/expected for this exact
     degree sequence — quote the ratio, never the raw coefficient alone).
     Auto-raised flags (fragmentation, hub dominance, likely hairball,
-    heavy-tailed weights, strong disassortativity) each name their fix — act
+    heavy-tailed weights, strong disassortativity, mostly one-way ties) each name their fix — act
     on them before choosing layout parameters. One call = one approval prompt
     instead of six.
 

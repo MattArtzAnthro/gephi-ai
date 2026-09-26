@@ -1840,6 +1840,39 @@ public class GephiControlService {
             public void switchToIndeterminate() {}
         };
 
+    /** Cancels statistics that overrun their deadline. One daemon thread serves every run. */
+    private static final java.util.concurrent.ScheduledExecutorService DEADLINES =
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "Gephi AI statistic deadline");
+            t.setDaemon(true);
+            return t;
+        });
+
+    /**
+     * Run {@code work}, cancelling {@code task} if it is still running after {@code timeoutMs}.
+     * Returns true when the deadline stopped it. A timeout of 0 or less runs without a deadline.
+     * Gephi's modularity can loop forever (gephi#1630); its loop checks the cancel flag, so this
+     * ends the run and releases the graph lock it holds.
+     */
+    static boolean runWithDeadline(Runnable work, org.gephi.utils.longtask.spi.LongTask task,
+                                   long timeoutMs) {
+        if (timeoutMs <= 0) {
+            work.run();
+            return false;
+        }
+        java.util.concurrent.atomic.AtomicBoolean fired = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.ScheduledFuture<?> deadline = DEADLINES.schedule(() -> {
+            fired.set(true);
+            task.cancel();
+        }, timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        try {
+            work.run();
+        } finally {
+            deadline.cancel(false);
+        }
+        return fired.get();
+    }
+
     private JsonObject runStatistic(String builderName, Map<String, Object> params) {
         try {
             Workspace ws = currentWorkspace();
@@ -1876,6 +1909,11 @@ public class GephiControlService {
             // mistyped name is reported instead of silently ignored (a typo used to be
             // indistinguishable from a correctly-parameterised run).
             java.util.List<String> unappliedParams = new java.util.ArrayList<>();
+            long timeoutMs = 0;
+            if (params != null && params.get("timeout_ms") instanceof Number) {
+                params = new java.util.HashMap<>(params);
+                timeoutMs = ((Number) params.remove("timeout_ms")).longValue();
+            }
             if (params != null) {
                 for (Map.Entry<String, Object> e : params.entrySet()) {
                     if (!setViaReflection(stat, e.getKey(), e.getValue())) unappliedParams.add(e.getKey());
@@ -1889,8 +1927,21 @@ public class GephiControlService {
                 ((org.gephi.utils.longtask.spi.LongTask) stat).setProgressTicket(NOOP_TICKET);
             }
 
-            // Execute
-            stat.execute(gm);
+            // Execute, stopping it at the deadline when one was given
+            boolean stopped = stat instanceof org.gephi.utils.longtask.spi.LongTask
+                && runWithDeadline(() -> stat.execute(gm),
+                                   (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
+            if (!(stat instanceof org.gephi.utils.longtask.spi.LongTask)) stat.execute(gm);
+            if (stopped) {
+                // A cancelled run writes nothing, so the column still holds the previous run.
+                JsonObject r = error(matchedBuilder.getName() + " did not finish within "
+                    + (timeoutMs / 1000) + " s and was stopped; its column was not updated."
+                    + ("Modularity".equals(builderName)
+                        ? " Gephi's modularity occasionally never converges (gephi#1630);"
+                          + " running it again usually finishes normally." : ""));
+                r.addProperty("stopped", true);
+                return r;
+            }
 
             // Build result
             JsonObject r = new JsonObject();
@@ -1990,8 +2041,13 @@ public class GephiControlService {
     }
 
     public JsonObject computeModularity(double resolution) {
+        return computeModularity(resolution, 0);
+    }
+
+    public JsonObject computeModularity(double resolution, long timeoutMs) {
         java.util.Map<String, Object> params = new java.util.HashMap<>();
         params.put("resolution", resolution);
+        if (timeoutMs > 0) params.put("timeout_ms", timeoutMs);
         params.put("useWeight", false);
         return runStatistic("Modularity", params);
     }

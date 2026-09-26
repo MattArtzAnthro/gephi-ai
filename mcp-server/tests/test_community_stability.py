@@ -67,9 +67,11 @@ def test_a_node_that_bounces_between_communities_is_the_least_stable():
 
 
 def test_the_settled_nodes_keep_their_exact_hand_computed_stability():
-    """For 'a': with b always (1.0), with x half the time (0.5), never with c or d (both 1.0).
+    """For 'a': with b always (1.0), with x half the time (0.5), never with c or d.
 
-    decisiveness = max(p, 1-p) per pair -> (1.0 + 0.5 + 1.0 + 1.0) / 4 = 0.875
+    Stability is the chance that a node grouped with 'a' in one run is grouped with it in another:
+    sum(p^2) / sum(p) over the nodes it was ever grouped with -> (1 + 0.25) / (1 + 0.5) = 0.8333.
+    Nodes it is never grouped with do not count; they would make every node look decisive.
     """
     runs = [
         {"a": 1, "b": 1, "x": 1, "c": 2, "d": 2},
@@ -78,7 +80,52 @@ def test_the_settled_nodes_keep_their_exact_hand_computed_stability():
 
     result = consensus(runs)
 
-    assert result["node_stability"]["a"] == pytest.approx(0.875)
+    assert result["node_stability"]["a"] == pytest.approx(1.25 / 1.5, abs=1e-4)
+
+
+def test_strangers_do_not_make_a_node_look_stable():
+    """Every node's partner changes between the two runs. On a large graph almost every other node
+    is a stranger it is never grouped with; counting those as 'decisive' reported 0.97 here."""
+    n = 200
+    run1 = {i: i // 2 for i in range(n)}              # (0,1) (2,3) ...
+    run2 = {i: (i + 1) // 2 for i in range(n)}        # (0) (1,2) (3,4) ...
+
+    result = consensus([run1, run2])
+
+    assert result["mean_stability"] == pytest.approx(0.5, abs=0.01)
+
+
+def test_groups_that_hold_in_nearly_every_run_are_reported_as_stable_cores():
+    runs = [
+        {"a": 1, "b": 1, "x": 1, "c": 2, "d": 2},
+        {"a": 1, "b": 1, "x": 2, "c": 2, "d": 2},
+    ]
+
+    result = consensus(runs)
+    cores = {frozenset(g) for g in result["stable_core_groups"]}
+
+    assert cores == {frozenset({"a", "b"}), frozenset({"c", "d"})}, "x belongs to no stable core"
+    assert result["stable_cores"]["cores"] == 2
+    assert result["stable_cores"]["share_of_nodes"] == pytest.approx(0.8)
+
+
+def test_a_consensus_that_chains_most_nodes_together_is_flagged():
+    """Pairs that agree more often than not can link into one group spanning nodes that are rarely
+    together. The consensus then looks like one community when it is a chain of loose pairs."""
+    pairs_a = {i: i // 2 for i in range(10)}               # (0,1) (2,3) ...
+    pairs_b = {i: (i + 1) // 2 for i in range(10)}         # (0) (1,2) (3,4) ...
+    together = {i: 0 for i in range(10)}
+
+    result = consensus([pairs_a, pairs_b, together])
+
+    assert len(result["consensus_groups"][0]) == 10
+    assert "consensus_warning" in result
+
+
+def test_one_community_that_really_is_one_community_is_not_flagged():
+    result = consensus([{"a": 1, "b": 1, "c": 1}] * 3)
+
+    assert "consensus_warning" not in result
 
 
 def test_the_consensus_partition_keeps_pairs_that_agree_more_often_than_not():
@@ -138,3 +185,67 @@ def test_everything_in_one_community_every_time_is_stable():
 
     assert result["mean_stability"] == pytest.approx(1.0)
     assert len(result["consensus_groups"]) == 1
+
+
+def _reference(runs):
+    """The pair-by-pair definition, written out directly. Slow, and only for small inputs."""
+    from itertools import combinations
+    nodes = sorted({n for r in runs for n in r})
+    rates = {}
+    for a, b in combinations(nodes, 2):
+        shared = [r for r in runs if a in r and b in r]
+        if shared:
+            rates[(a, b)] = sum(r[a] == r[b] for r in shared) / len(shared)
+    stability = {}
+    for n in nodes:
+        ps = [p for (a, b), p in rates.items() if n in (a, b)]
+        stability[n] = round(sum(p * p for p in ps) / sum(ps), 4) if sum(ps) else 1.0
+    return stability, {pair for pair, p in rates.items() if p > 0.5}
+
+
+@pytest.mark.parametrize("seed", range(25))
+def test_scores_and_groups_match_the_pair_by_pair_definition(seed):
+    """Random runs over a few nodes, some missing from some runs, some nodes in no shared run."""
+    import random
+    rng = random.Random(seed)
+    nodes = [f"n{i}" for i in range(rng.randint(2, 12))]
+    runs = []
+    for _ in range(rng.randint(2, 6)):
+        present = [n for n in nodes if rng.random() > 0.15] or nodes[:1]
+        runs.append({n: rng.randint(0, 3) for n in present})
+
+    result = consensus(runs)
+    stability, agreed = _reference(runs)
+
+    assert result["node_stability"] == pytest.approx(stability, abs=1e-4)
+    for a, b in agreed:
+        assert any(a in g and b in g for g in result["consensus_groups"])
+    group_of = {n: i for i, g in enumerate(result["consensus_groups"]) for n in g}
+    for g in result["consensus_groups"]:
+        if len(g) > 1:
+            # every member is linked to the rest through agreed pairs, never merged by accident
+            linked = {g[0]}
+            grew = True
+            while grew:
+                grew = False
+                for a, b in agreed:
+                    if (a in linked) != (b in linked) and group_of[a] == group_of[b]:
+                        linked |= {a, b}
+                        grew = True
+            assert linked == set(g)
+
+
+def test_a_network_of_three_thousand_nodes_finishes_quickly():
+    """2,919 accounts over 20 runs never finished before, because every node rescanned every pair."""
+    import random
+    import time
+    rng = random.Random(0)
+    base = {f"n{i}": i % 30 for i in range(3000)}
+    runs = [{n: (c if rng.random() > 0.1 else rng.randint(0, 29)) for n, c in base.items()}
+            for _ in range(20)]
+
+    started = time.monotonic()
+    result = consensus(runs)
+
+    assert time.monotonic() - started < 15
+    assert result["runs"] == 20 and len(result["node_stability"]) == 3000

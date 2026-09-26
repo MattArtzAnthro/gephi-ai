@@ -46,8 +46,15 @@ Run a complete community detection and visualization workflow on the current Gep
      `params={"algorithm": "Leiden", "qualityFunction": "Modularity",
      "resolution": <resolution>}`; the result column is what the plugin
      reports (check `gephi_get_columns` and use that name in step 6).
-   Tell the user: "Running community detection..." then report the modularity
-   score and number of communities.
+   Tell the user: "Running community detection..." then report the number of
+   communities. Do not call the partition strong or weak from the modularity
+   score: random graphs with the same degrees score 0.3 to 0.6.
+
+   **Check that the communities hold up**: call `gephi_community_stability`
+   (Louvain only; 20 runs). Tell the user in plain words how often accounts
+   grouped together stay together (`mean_stability`) and how many stable cores
+   there are. If `consensus_warning` appears, say the communities are loose and
+   color by `stable_core` in step 6 instead of the single run.
 
 5. **Compute degree**: Call `gephi_compute_degree`. Tell the user: "Computing degree distribution..."
 
@@ -73,4 +80,4 @@ Run a complete community detection and visualization workflow on the current Gep
 
 8. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"`, 1500 iterations, and properties `{"scalingRatio": 200, "linLogMode": true, "gravity": 1.0, "barnesHutOptimize": true}`.
 
-9. **Report results**: Summarize the communities found, their sizes (query nodes to count per community), and the overall modularity score.
+9. **Report results**: Summarize the communities found, their sizes (query nodes to count per community), and how well they held up across runs. Give the modularity score only with its context, never as a verdict. Name only communities that are stable cores.

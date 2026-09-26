@@ -136,6 +136,12 @@ def structural_profile(graph: dict) -> dict:
         "clustering_expected_random": round(expected_clustering, 6),
     }
 
+    if profile["directed"]:
+        # Share of distinct directed ties whose reverse is also present.
+        ties = {(s, t) for s, t in seen_edges if s != t}
+        if ties:
+            profile["reciprocity"] = round(sum((t, s) in ties for s, t in ties) / len(ties), 3)
+
     if profile["weighted"]:
         w_median = statistics.median(weights)
         w_max = max(weights)
@@ -171,6 +177,11 @@ def structural_profile(graph: dict) -> dict:
             f"strongly disassortative (assortativity {assortativity:.2f}): "
             "hub-and-spoke wiring — in ForceAtlas 2 enable distributedAttraction "
             "(dissuade hubs) so hubs don't collapse their neighborhoods"
+        )
+    if "reciprocity" in profile and profile["reciprocity"] < 0.1 and n >= 50:
+        flags.append(
+            f"mostly one-way: only {profile['reciprocity']:.0%} of directed ties are returned — "
+            "describe hubs as accounts others address, not as partners in a conversation"
         )
     if profile["density"] > 0.3 and n >= 20:
         flags.append("very dense — force layouts will hairball; consider filtering weak ties")
