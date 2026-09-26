@@ -156,4 +156,27 @@ class ImportWorkspaceTest {
         assertTrue(r.has("import_issues") && r.getAsJsonArray("import_issues").size() > 0, r.toString());
         assertFalse(r.getAsJsonArray("import_issues").get(0).getAsJsonObject().get("message").getAsString().isEmpty());
     }
+
+    @Test
+    void appendingAFileWhoseTimeDoesNotFitIsRefusedAndChangesNothing(@TempDir Path dir) throws Exception {
+        ProjectController pc = freshProject();
+        String stamps = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<gexf xmlns=\"http://gexf.net/1.3\" version=\"1.3\"><graph defaultedgetype=\"undirected\""
+            + " mode=\"dynamic\" timeformat=\"double\" timerepresentation=\"timestamp\"><nodes>"
+            + "<node id=\"a\"><spells><spell timestamp=\"1\"/></spells></node></nodes></graph></gexf>";
+        String intervals = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<gexf xmlns=\"http://gexf.net/1.3\" version=\"1.3\"><graph defaultedgetype=\"undirected\""
+            + " mode=\"dynamic\" timeformat=\"double\"><nodes>"
+            + "<node id=\"b\" start=\"1\" end=\"2\"/></nodes></graph></gexf>";
+        GephiControlService.getInstance().importFile(write(dir, "stamps.gexf", stamps).toString(), null);
+        Workspace current = pc.getCurrentWorkspace();
+
+        JsonObject r = GephiControlService.getInstance()
+            .importFile(write(dir, "intervals.gexf", intervals).toString(), null, "append");
+
+        assertFalse(r.get("success").getAsBoolean(), r.toString());
+        assertTrue(r.get("error").getAsString().contains("its own workspace"), r.toString());
+        assertSame(current, pc.getCurrentWorkspace());
+        assertEquals(1, model(current).getGraph().getNodeCount(), "the refused file was partly added");
+    }
 }

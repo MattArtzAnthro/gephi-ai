@@ -640,3 +640,91 @@ def test_server_reports_package_version():
     import importlib.metadata
     assert gephi_mcp.mcp.version == importlib.metadata.version("gephi-ai")
     assert gephi_mcp.mcp.version != ""
+
+
+async def test_import_file_mode_and_cap(rec):
+    await out_of(gephi_mcp.gephi_import_file, file="/tmp/g.gexf", mode="append", max_node_size=30)
+    assert rec.last["json"] == {"file": "/tmp/g.gexf", "mode": "append", "max_node_size": 30}
+
+
+async def test_import_gexf_passes_mode(rec):
+    await out_of(gephi_mcp.gephi_import_gexf, file="/tmp/g.gexf", mode="append")
+    assert rec.last["endpoint"] == "/import/gexf"
+    assert rec.last["json"] == {"file": "/tmp/g.gexf", "mode": "append"}
+
+
+async def test_query_nodes_value_search(rec):
+    await out_of(gephi_mcp.gephi_query_nodes, column="Country", value="Peru", min=1.0, limit=5)
+    assert rec.last["params"] == {"limit": 5, "offset": 0, "column": "Country", "value": "Peru",
+                                  "min": 1.0}
+
+
+async def test_apply_filters_body(rec):
+    specs = [{"name": "Degree Range", "params": {"range": [2, 9]}},
+             {"name": "Equal: group String (Node)", "params": {"pattern": "a"}, "exclude": True}]
+    await out_of(gephi_mcp.gephi_apply_filters, filters=specs, combine="any", dry_run=True)
+    assert rec.last["endpoint"] == "/filter/combine"
+    assert rec.last["json"] == {"filters": specs, "combine": "any", "action": "select",
+                                "dry_run": True}
+
+
+async def test_apply_filter_dry_run_only_counts(rec, monkeypatch):
+    async def no_snapshot(op):
+        raise AssertionError("a dry run must not take an undo snapshot")
+    monkeypatch.setattr(gephi_mcp, "_auto_snapshot", no_snapshot)
+    await out_of(gephi_mcp.gephi_apply_filter, name="Degree Range", params={"range": [2, 9]},
+                 dry_run=True)
+    assert rec.last["endpoint"] == "/filter/combine"
+    assert rec.last["json"]["dry_run"] is True
+    assert rec.last["json"]["filters"] == [{"name": "Degree Range", "params": {"range": [2, 9]}}]
+
+
+async def test_time_slice_body(rec):
+    await out_of(gephi_mcp.gephi_time_slice, start=1990, end=1995)
+    assert rec.last["endpoint"] == "/time/slice"
+    assert rec.last["json"] == {"start": 1990, "end": 1995}
+
+
+async def test_shortest_path_body(rec):
+    await out_of(gephi_mcp.gephi_find_shortest_path, source="a", target="b", weighting="strength",
+                 follow_direction=False, mark_column="on_path")
+    assert rec.last["endpoint"] == "/graph/shortest-path"
+    assert rec.last["json"] == {"source": "a", "target": "b", "weighting": "strength",
+                                "follow_direction": False, "mark_column": "on_path"}
+
+
+async def test_stop_statistic_endpoint(rec):
+    await out_of(gephi_mcp.gephi_stop_statistic)
+    assert (rec.last["method"], rec.last["endpoint"]) == ("POST", "/statistics/stop")
+
+
+async def test_a_refused_edit_takes_no_snapshot(rec, monkeypatch):
+    snapshots = []
+
+    async def snapshot(op):
+        snapshots.append(op)
+        return True
+    monkeypatch.setattr(gephi_mcp, "_auto_snapshot", snapshot)
+    rec.responses = [{"success": False, "error": "Gephi keeps the 'Label' column"}]
+
+    out = await out_of(gephi_mcp.gephi_edit_column, column="Label", action="delete")
+
+    assert out["success"] is False
+    assert snapshots == [], "a refused edit replaced the undo point"
+    assert rec.calls[-1]["json"]["check_only"] is True
+    assert len(rec.calls) == 1
+
+
+async def test_an_accepted_edit_is_checked_then_snapshotted_then_made(rec, monkeypatch):
+    order = []
+
+    async def snapshot(op):
+        order.append("snapshot")
+        return True
+    monkeypatch.setattr(gephi_mcp, "_auto_snapshot", snapshot)
+
+    out = await out_of(gephi_mcp.gephi_set_time_from_columns, start="year")
+
+    assert [c["json"].get("check_only", False) for c in rec.calls] == [True, False]
+    assert order == ["snapshot"]
+    assert out["undo_available"] is True

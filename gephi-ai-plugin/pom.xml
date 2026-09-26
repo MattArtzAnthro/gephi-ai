@@ -214,6 +214,16 @@
             <scope>test</scope>
         </dependency>
         <!--
+          Test only: Gephi's filter controller, which runs combined filters. At runtime it
+          comes from the host Gephi install via Lookup.
+        -->
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>filters-impl</artifactId>
+            <version>${gephi.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
           Test only: maps a java.io.File to a FileObject outside the NetBeans platform, which
           ImportController.importFile(File) needs. Gephi's own importer tests use it the same way.
         -->

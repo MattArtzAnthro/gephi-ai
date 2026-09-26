@@ -21,6 +21,9 @@ number.** Do not narrate a verdict before the measurement has run.
 | "she's the key connector / bridge" | compute betweenness (`gephi_compute_betweenness`), then rank | where the named node sits in the betweenness ranking |
 | "he's the most important / active" | compute degree or the relevant centrality, then rank | the node's rank on that metric |
 | "the group survives losing him" / "removing X fragments everything" | `gephi_whatif` removing X | delta in components, giant-component share, avg path length |
+| "A can only reach B through C" / "C is the link between them" | `gephi_find_shortest_path(a, b)`, then `gephi_whatif` removing C | `equally_short_paths` (above 1: other routes of the same length exist) and whether a path survives without C |
+| "they're only a few steps apart" / "these two are far apart" | `gephi_find_shortest_path(a, b)` | `steps` (and `length` when weights are distances), against the network's average path length |
+| "the network grew / fragmented after X" | slice before and after with `gephi_time_slice`, same statistics in each (see change-over-time.md) | the per-period numbers, with the windows named |
 | "these accounts form a natural cluster" | `gephi_visual_qa` with `partition_column` = the proposed grouping | the partition truth-test verdict |
 
 The measurement tools already exist; the work is picking the right one and

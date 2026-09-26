@@ -286,3 +286,19 @@ For comprehensive analysis, run statistics in this order:
 6. `gephi_compute_clustering_coefficient` - Local cohesion
 7. `gephi_compute_eigenvector` - Influence (optional)
 8. `gephi_compute_hits` - Hub/authority (optional, directed graphs)
+
+## Statistics Over Time
+
+On a network with time data, run the same statistics in each period and compare
+them (see references/change-over-time.md), or use Gephi's dynamic statistics for a
+year-by-year series. A dynamic statistic needs `params={"window": ..., "tick": ...}`
+in the network's time units; without them, or without time data, it is refused
+with the network's time range.
+
+## Paths Between Two Nodes
+
+Average path length and diameter describe the whole network. For two named nodes,
+`gephi_find_shortest_path` gives the path itself. Count steps (`weighting="none"`)
+unless the weights mean something: "distance" when a weight is a length or a cost,
+"strength" when a heavier tie means a closer one. `equally_short_paths` above 1
+means the path shown is one of several, so no single middle node is the only link.

@@ -55,7 +55,9 @@ relevant reference rather than guessing.
    bridges — and verify the partition is real before naming it (see guardrails).
    Name a community only after reading source behind 2-3 of its top nodes, not the
    top word alone (`reading-network-maps.md`).
-4. **Report** with specific numbers and node references, in the user's vocabulary,
+4. **Change over time, when the network has time data** — slice the periods the
+   question needs and measure each the same way (references/change-over-time.md).
+5. **Report** with specific numbers and node references, in the user's vocabulary,
    and turn their stated expectations into hypotheses the analysis confirms or
    contradicts.
 

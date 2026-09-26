@@ -786,6 +786,17 @@ async def _auto_snapshot(op: str) -> bool:
         return False
 
 
+async def _snapshot_then(op: str, endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Run a change that Gephi may refuse, taking the undo snapshot only once Gephi has said
+    it will go ahead. There is one rolling undo point, so a snapshot taken for a refused call
+    would replace the one that undoes the previous change with a copy of the unchanged graph."""
+    check = await gephi.request("POST", endpoint, json_data={**body, "check_only": True})
+    if not check.get("success"):
+        return check
+    undo = await _auto_snapshot(op)
+    return _with_undo(await gephi.request("POST", endpoint, json_data=body), undo)
+
+
 def _with_undo(result: Any, undo_ok: bool) -> Any:
     if isinstance(result, dict):
         result["undo_available"] = undo_ok
@@ -2144,7 +2155,8 @@ async def gephi_list_filters() -> str:
 
 @_tool(name="gephi_apply_filter")
 async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
-                             action: str = "select", column: str | None = None) -> str:
+                             action: str = "select", column: str | None = None,
+                             dry_run: bool = False) -> str:
     """Apply a filter by name — the general-purpose filter tool.
 
     name matches an entry from gephi_list_filters (case-insensitive). params is a
@@ -2169,9 +2181,18 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
     This compiles a plain-language filtering intent ("nodes with degree ≥ 5 in
     the giant component", "only where type = X") into the right Gephi filter:
     pick the filter from gephi_list_filters, set its properties, choose the
-    action. For AND/OR of several conditions, apply them in sequence with
-    action="select" (each narrows the visible graph).
+    action. For AND, OR or NOT across several conditions, use gephi_apply_filters.
+
+    `dry_run`=True counts what would stay and what would go (nodes_kept,
+    nodes_removed, ...) and changes nothing; use it to tell the user what a filter
+    will hide before applying it.
     """
+    if dry_run:
+        spec: dict[str, Any] = {"name": name}
+        if params is not None:
+            spec["params"] = params
+        return fmt(await gephi.request("POST", "/filter/combine",
+                                       json_data={"filters": [spec], "dry_run": True}))
     return fmt(await gephi.request("POST", "/filter/apply",
                                    json_data=_body(name=name, params=params,
                                                    action=action, column=column)))
@@ -2209,9 +2230,8 @@ async def gephi_set_time_from_columns(start: str | None = None, end: str | None 
     "dd/MM/yyyy". A missing start means "from the beginning", a missing end "still
     present". Changes the network; an undo snapshot is taken first (gephi_undo reverses it).
     """
-    undo = await _auto_snapshot("set_time_from_columns")
     body = _body(start=start, end=end, target=target, date_format=date_format)
-    return fmt(_with_undo(await gephi.request("POST", "/time/from-columns", json_data=body), undo))
+    return fmt(await _snapshot_then("set_time_from_columns", "/time/from-columns", body))
 
 
 @_tool(name="gephi_time_slice")
@@ -2260,12 +2280,12 @@ async def gephi_edit_column(column: str, action: str, target: str = "node",
     - "fill_empty": write `value` into every empty cell, leaving filled ones alone.
     - "clear": empty every cell.
     The column is found by id or title. Gephi's own columns (id, label, time) cannot be
-    deleted, renamed or converted. An undo snapshot is taken first (gephi_undo reverses it).
+    deleted, renamed or converted. An undo snapshot is taken first (gephi_undo reverses it);
+    a refused edit changes nothing and keeps the earlier undo point.
     """
-    undo = await _auto_snapshot("edit_column")
     body = _body(column=column, action=action, target=target, value=value, type=type,
                  new_name=new_name)
-    return fmt(_with_undo(await gephi.request("POST", "/datalab/column/edit", json_data=body), undo))
+    return fmt(await _snapshot_then("edit_column", "/datalab/column/edit", body))
 
 
 @_tool(name="gephi_column_value_frequencies")

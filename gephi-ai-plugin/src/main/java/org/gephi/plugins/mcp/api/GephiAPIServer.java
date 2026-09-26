@@ -678,7 +678,7 @@ public class GephiAPIServer extends NanoHTTPD {
         if ("/time/from-columns".equals(uri) && Method.POST.equals(method)) {
             if (body == null) return errorResult("Missing body");
             return service.setTimeFromColumns(str(body, "target"), str(body, "start"), str(body, "end"),
-                str(body, "date_format"));
+                str(body, "date_format"), bool(body, "check_only"));
         }
 
         if ("/time/slice".equals(uri) && Method.POST.equals(method)) {
@@ -700,7 +700,7 @@ public class GephiAPIServer extends NanoHTTPD {
         if ("/datalab/column/edit".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("column") || !body.has("action")) return errorResult("Missing 'column' or 'action'");
             return service.editColumn(str(body, "target"), str(body, "column"), str(body, "action"),
-                str(body, "value"), str(body, "type"), str(body, "new_name"));
+                str(body, "value"), str(body, "type"), str(body, "new_name"), bool(body, "check_only"));
         }
 
         if ("/datalab/frequencies".equals(uri) && Method.POST.equals(method)) {
@@ -915,6 +915,10 @@ public class GephiAPIServer extends NanoHTTPD {
     }
 
     /** An optional float from a JSON body, or null when absent or not a number. */
+    static boolean bool(JsonObject body, String key) {
+        return body != null && body.has(key) && !body.get(key).isJsonNull() && body.get(key).getAsBoolean();
+    }
+
     static String str(JsonObject body, String key) {
         return body != null && body.has(key) && !body.get(key).isJsonNull() ? body.get(key).getAsString() : null;
     }

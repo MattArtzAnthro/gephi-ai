@@ -3478,7 +3478,9 @@ public class GephiControlService {
                     // A null workspace lets the processor create one whose settings match the file.
                     importedWs = ic.process(c, processor, append ? previous : null);
                 } catch (Exception e) {
-                    JsonObject err = error("Import failed: " + e.getMessage());
+                    JsonObject err = error("Import failed: " + e.getMessage() + (append
+                        ? ". The file's time format or id type differs from this workspace's; import it"
+                          + " without mode \"append\" to open it in its own workspace." : ""));
                     addIssues(issues, processor.getReport(), 20);
                     if (issues.size() > 0) err.add("import_issues", issues);
                     return err;
@@ -4606,6 +4608,12 @@ public class GephiControlService {
      * intervals, which is Gephi's default.
      */
     public JsonObject setTimeFromColumns(String target, String startName, String endName, String dateFormat) {
+        return setTimeFromColumns(target, startName, endName, dateFormat, false);
+    }
+
+    /** {@code checkOnly}: report whether the change would be refused, without changing anything. */
+    public JsonObject setTimeFromColumns(String target, String startName, String endName, String dateFormat,
+                                         boolean checkOnly) {
         GraphModel gm = currentGraphModel();
         if (gm == null) return error("No workspace open");
         if (startName == null && endName == null) return error("Name a 'start' column, an 'end' column, or both");
@@ -4622,6 +4630,15 @@ public class GephiControlService {
             Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsMergeStrategiesController.class);
         if (mc == null) return error("No datalab controller available");
         boolean numeric = (start == null || isNumberColumn(start)) && (end == null || isNumberColumn(end));
+        if (!numeric) {
+            if (dateFormat == null) {
+                return error("The columns hold text, so give 'date_format' as a Java date pattern,"
+                    + " for example \"yyyy-MM-dd\" or \"dd/MM/yyyy\"");
+            }
+            try { new java.text.SimpleDateFormat(dateFormat); }
+            catch (IllegalArgumentException e) { return error("Not a date pattern: " + dateFormat); }
+        }
+        if (checkOnly) return success("Ready");
         Graph g = gm.getGraph();
         int withTime = 0;
         lockWrite(g);
@@ -4629,13 +4646,7 @@ public class GephiControlService {
             if (numeric) {
                 mc.mergeNumericColumnsToTimeInterval(table, start, end, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
             } else {
-                if (dateFormat == null) {
-                    return error("The columns hold text, so give 'date_format' as a Java date pattern,"
-                        + " for example \"yyyy-MM-dd\" or \"dd/MM/yyyy\"");
-                }
-                java.text.SimpleDateFormat fmt;
-                try { fmt = new java.text.SimpleDateFormat(dateFormat); }
-                catch (IllegalArgumentException e) { return error("Not a date pattern: " + dateFormat); }
+                java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat(dateFormat);
                 mc.mergeDateColumnsToTimeInterval(table, start, end, fmt, null, null);
             }
             for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
@@ -4875,6 +4886,12 @@ public class GephiControlService {
      */
     public JsonObject editColumn(String target, String columnName, String action, String value,
                                  String type, String newName) {
+        return editColumn(target, columnName, action, value, type, newName, false);
+    }
+
+    /** {@code checkOnly}: report whether the edit would be refused, without changing anything. */
+    public JsonObject editColumn(String target, String columnName, String action, String value,
+                                 String type, String newName, boolean checkOnly) {
         GraphModel gm = currentGraphModel();
         if (gm == null) return error("No workspace open");
         if (columnName == null || action == null) return error("Give 'column' and 'action'");
@@ -4891,6 +4908,7 @@ public class GephiControlService {
             switch (action.toLowerCase(java.util.Locale.ROOT)) {
                 case "delete": {
                     if (!acc.canDeleteColumn(col)) return error("Gephi keeps the '" + title + "' column; it cannot be deleted");
+                    if (checkOnly) return success("Ready");
                     acc.deleteAttributeColumn(table, col);
                     return success("Deleted column " + title);
                 }
@@ -4898,6 +4916,7 @@ public class GephiControlService {
                     if (newName == null || newName.isBlank()) return error("Give the new name in 'new_name'");
                     if (!acc.canDeleteColumn(col)) return error("Gephi's own '" + title + "' column cannot be renamed");
                     if (findColumn(table, newName) != null) return error("A column named " + newName + " already exists");
+                    if (checkOnly) return success("Ready");
                     Column copy = acc.duplicateColumn(table, col, newName, col.getTypeClass());
                     acc.deleteAttributeColumn(table, col);
                     JsonObject r = success("Renamed " + title + " to " + copy.getTitle());
@@ -4908,6 +4927,7 @@ public class GephiControlService {
                     Class<?> cls = typeStringToClass(type);
                     if (cls == null) return error("Give 'type': string, integer, long, float, double or boolean");
                     if (!acc.canDeleteColumn(col)) return error("Gephi's own '" + title + "' column cannot be converted");
+                    if (checkOnly) return success("Ready");
                     int before = countValues(gm, target, col);
                     Column tmp = acc.duplicateColumn(table, col, title + " (converting)", cls);
                     acc.deleteAttributeColumn(table, col);
@@ -4926,6 +4946,7 @@ public class GephiControlService {
                 case "fill_empty": {
                     if (value == null) return error("Give the value to write in 'value'");
                     if (!acc.canChangeColumnData(col)) return error("The '" + title + "' column cannot be changed");
+                    if (checkOnly) return success("Ready");
                     java.util.List<Node> nodes = new java.util.ArrayList<>();
                     java.util.List<Edge> edges = new java.util.ArrayList<>();
                     for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
@@ -4940,6 +4961,7 @@ public class GephiControlService {
                 }
                 case "clear": {
                     if (!acc.canClearColumnData(col)) return error("The '" + title + "' column cannot be cleared");
+                    if (checkOnly) return success("Ready");
                     acc.clearColumnData(table, col);
                     return success("Cleared every value in " + title);
                 }

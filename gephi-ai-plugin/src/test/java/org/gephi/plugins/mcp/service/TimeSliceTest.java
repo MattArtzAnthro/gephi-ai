@@ -72,6 +72,10 @@ class TimeSliceTest {
         Files.writeString(f, DYNAMIC, StandardCharsets.UTF_8);
         GephiControlService.getInstance().importFile(f.toString(), null);
         Workspace source = pc.getCurrentWorkspace();
+        org.gephi.graph.api.GraphModel sourceModel =
+            Lookup.getDefault().lookup(GraphController.class).getGraphModel(source);
+        sourceModel.getGraph().getNode("a").setX(123f);
+        sourceModel.getGraph().getNode("a").setY(-45f);
 
         JsonObject r = GephiControlService.getInstance().timeSlice(1991, 1996);
 
@@ -81,6 +85,8 @@ class TimeSliceTest {
             .getGraphModel(pc.getCurrentWorkspace()).getGraph();
         assertEquals(2, sliced.getNodeCount(), "a and b are present, c is not");
         assertEquals(1, sliced.getEdgeCount(), "only a-b is present");
+        assertEquals(123f, sliced.getNode("a").x(), "a slice keeps the network's positions");
+        assertEquals(-45f, sliced.getNode("a").y());
         assertEquals(3, Lookup.getDefault().lookup(GraphController.class).getGraphModel(source)
             .getGraph().getNodeCount(), "the network itself is untouched");
     }

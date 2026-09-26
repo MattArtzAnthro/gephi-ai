@@ -23,6 +23,12 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   empty cells, or clears it. A conversion reports the values it could not read.
 - **Stop a statistic.** `gephi_stop_statistic` stops a statistic still running in Gephi,
   and interrupting a statistic from the chat stops it in Gephi too.
+- `gephi_apply_filter` takes `dry_run` to count what a filter would hide before applying it.
+- **Change over time in the skill.** A new reference walks through comparing a network
+  across periods: giving it time data, choosing windows, laying out once so every period
+  shares one map, and measuring each period the same way. Claim checking covers path claims
+  ("A reaches B only through C") and change claims, and exploring a network with time data
+  offers a comparison across periods.
 
 ### Changed
 - **Imports open in their own workspace**, named after the file, as Gephi's File > Open
@@ -39,6 +45,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   not exist is refused at once instead of waiting a minute, and saving no longer blocks
   Gephi's window.
 - A value written to a column named by its title lands in that column instead of a new one.
+- A refused column edit or time change no longer takes an undo snapshot. There is one undo
+  point, and a snapshot of the unchanged graph replaced the one that undid the change before.
+- Appending a file whose time format or id type does not fit the workspace says to import it
+  into its own workspace instead.
 - On Gephi 0.11.3 and later, new projects and workspace changes (new, switch, delete,
   duplicate, rename) run off Gephi's interface thread, as Gephi asks. Gephi had logged a
   warning for each, saying it would become an error. Earlier Gephi versions keep running them

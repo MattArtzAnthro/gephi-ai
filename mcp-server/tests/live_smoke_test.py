@@ -37,13 +37,10 @@ import gephi_mcp as g
 
 GEXF = "/tmp/gephi_smoke_big.gexf"
 
-# KNOWN BUG (tracked, see RELEASING.md): visual_qa / label_clusters /
-# community_layout resolve a partition column by its TITLE, while
-# color_by_partition / color_edges_by_partition / color_by_ranking resolve by
-# its ID. Gephi's modularity column is id="modularity_class" /
-# title="Modularity Class", so no single string works for both families. This
-# harness passes each tool the form it currently accepts; the consistency check
-# at the end fails until the id-or-title fix lands.
+# Every tool that takes a column accepts its id or its title. Gephi's modularity
+# column is id="modularity_class" / title="Modularity Class"; the harness passes
+# both forms across the tools, and the consistency check below passes the id to
+# both the colouring and the visual-QA families.
 
 
 def gephi_log() -> str | None:
@@ -349,17 +346,11 @@ async def main():
     # ---- perspective ----
     await R.run("switch_perspective(Overview)", g.gephi_switch_perspective("Overview"))
 
-    # ---- id/title consistency probe (documents the known bug) ----
-    # A single canonical column string ('modularity_class', the id the skill uses)
-    # should satisfy BOTH the coloring family and the qa/label/community family.
-    # It does not today: the qa/label/community family matches by title. This
-    # probe FAILS until the id-or-title fix lands, then flips to PASS.
+    # ---- id/title consistency: one column string works for every tool family ----
     await R.run("create_project#probe", g.gephi_create_project("probe"))
     await R.run("import_gexf#probe", g.gephi_import_gexf(GEXF))
     await R.run("compute_modularity#probe", g.gephi_compute_modularity(1.0))
-    # explicit assertion: with a known 8-community graph, BOTH tools given the
-    # SAME id string must resolve it. color resolves by id (ok); visual_qa
-    # resolves by title so groups==0 here — a real defect the report surfaces.
+    # With a known 8-community graph, both tools given the same id must resolve it.
     col_ok = "success\": true" in json.dumps(
         json.loads(await g.gephi_color_by_partition("modularity_class")))
     qa = json.loads(await g.gephi_visual_qa("modularity_class"))

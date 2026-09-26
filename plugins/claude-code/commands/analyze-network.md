@@ -29,7 +29,7 @@ Run a full structural analysis of the current graph and present a detailed repor
 
 5. **Community structure**: Call `gephi_compute_modularity` with resolution 1.0, then `gephi_community_stability` to check that the communities hold up. The modularity score alone never shows strong communities.
 
-6. **Path analysis**: Call `gephi_compute_avg_path_length` to get average path length, diameter, and radius.
+6. **Path analysis**: Call `gephi_compute_avg_path_length` to get average path length, diameter, and radius. When the user asks about two particular nodes, `gephi_find_shortest_path` gives the path between them and how many equally short paths exist.
 
 7. **Clustering**: Call `gephi_compute_clustering_coefficient` to measure local cohesion.
 

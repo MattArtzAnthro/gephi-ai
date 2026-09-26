@@ -15,7 +15,7 @@ the user did not provide a claim, ask for it in one sentence.
 
 1. Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop.
 2. Preserve the claim verbatim and classify it as comparison, connectivity,
-   centrality, grouping, or robustness.
+   centrality, grouping, robustness, paths, or change over time.
 3. Match the measurement to the claim's words:
    - comparison, such as "X is more central than Y": compute the named metric,
      then call `gephi_compare_nodes`;
@@ -24,7 +24,15 @@ the user did not provide a claim, ask for it in one sentence.
    - importance: compute the metric the word implies—bridge means betweenness,
      reach may mean degree or PageRank—and rank the relevant nodes;
    - robustness: call `gephi_whatif`, which edits and deletes a scratch workspace
-     while leaving the real graph unchanged.
+     while leaving the real graph unchanged;
+   - paths, such as "A reaches B only through C": call `gephi_find_shortest_path`;
+     `equally_short_paths` above 1 means C is not the only route, and
+     `gephi_whatif` removing C shows whether any path survives;
+   - change over time: slice each period with `gephi_time_slice`, run the same
+     statistic in each, switch back to the original workspace, and name the
+     windows in the verdict;
+   - counts under several conditions: `gephi_apply_filters` with `dry_run=True`
+     counts without hiding anything.
 4. If the claim is vague, measure the two or three plausible meanings and report
    them separately. Do not silently choose the result most favorable to the claim.
 5. Choose exactly one verdict: `confirmed`, `refuted`, or `can't-tell`.

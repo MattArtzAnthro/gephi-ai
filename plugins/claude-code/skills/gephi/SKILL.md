@@ -239,6 +239,8 @@ those plugins never covered.
 ### Analysis & counterfactual
 - `gephi_profile_graph` → one-call quantitative picture (size, density, degree with Gini + assortativity, connectivity, weight distribution, modularity, clustering vs random expectation); run first — its flags name layout fixes (heavy-tailed weights → log-transform; disassortative → dissuade hubs)
 - `gephi_whatif(edits, include_slow=False)` → apply hypothetical edits (`remove_node`/`remove_nodes`/`add_edge`/`remove_edge`) to a throwaway workspace copy, diff the structural profile before/after, auto-clean the scratch copy; the real graph is never touched. For robustness/"what if we removed X" claims — see references/claim-verification.md
+- `gephi_find_shortest_path(source, target, weighting)` → the path between two nodes, its steps, and how many equally short paths exist (`equally_short_paths` above 1 means no single middle node is "the" link). For "A reaches B only through C" and "how far apart" claims — see references/claim-verification.md
+- `gephi_stop_statistic` → stops a statistic still running in Gephi; its columns keep their earlier values
 - `gephi_compare_nodes(id_a, id_b, metric)` → deterministic two-node comparison on one metric (from attributes or a built-in field); errors if the metric isn't computed yet. For "is X more central than Y" claims — see references/claim-verification.md
 - `gephi_compare_workspaces(before, after, compare=None)` → what changed between two versions of the same network held in two workspaces (zero-based indices): nodes and edges added and removed, and which shared nodes grew or shrank on a numeric column. Warns when the two share no nodes, since that is usually a mismatched identifier rather than total turnover
 
@@ -262,7 +264,7 @@ those plugins never covered.
 `gephi_column_value_frequencies` (value distribution of a column), `gephi_detect_duplicates` (nodes sharing a column value), `gephi_merge_nodes` (merge duplicates into one — destructive), `gephi_create_regex_column` (boolean column flagging regex matches), `gephi_edit_column` (delete, rename, convert type, fill empty cells, clear)
 
 ### Timeline (dynamic graphs)
-`gephi_get_timeline` (read-only: is the graph dynamic, time bounds, dynamic columns, interval state). `gephi_set_time_from_columns` gives a network time data from start and end columns (years or dates). `gephi_time_slice` opens one period in its own workspace; slice each period and run the same statistics in each to describe change. Gephi's timeline itself is left to the user.
+`gephi_get_timeline` (read-only: is the graph dynamic, time bounds, dynamic columns, interval state). `gephi_set_time_from_columns` gives a network time data from start and end columns (years or dates). `gephi_time_slice` opens one period in its own workspace; lay out the whole network first so every slice keeps the same positions, then run the same statistics in each period. Gephi's timeline itself is left to the user. See references/change-over-time.md.
 
 ### Preview & Export
 `gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`, `gephi_export` (any format by name — VNA/Pajek/DL/spreadsheet/GDF/JSON, for UCINET/Pajek interchange), `gephi_view_graph` (interactive in-chat view, no `file` param), `gephi_export_legend` (SVG key for the map — Gephi has never had a legend; it describes only mappings applied through these tools and refuses rather than guessing), `gephi_session_receipt` (how the figure was made: mappings, statistics and their settings, layout, versions — for a methods section)
@@ -573,4 +575,5 @@ For statistics interpretation, see [references/statistics-guide.md](references/s
 For building and reading text networks, see [references/text-network-analysis.md](references/text-network-analysis.md).
 For verifying a plain-language structural claim against the graph, see [references/claim-verification.md](references/claim-verification.md).
 For compiling a plain-language filter into a Gephi filter, see [references/filtering.md](references/filtering.md).
+For comparing a network across periods, see [references/change-over-time.md](references/change-over-time.md).
 Multiplex graphs: `gephi_add_edge`/`gephi_add_edges` accept an `edge_type` label so the same pair can hold several parallel typed edges (e.g. "cites" + "coauthor"). To compare layers, filter to one type (`gephi_apply_filter` with the "Edge Type" filter), compute modularity, repeat per type, and compare the partitions.

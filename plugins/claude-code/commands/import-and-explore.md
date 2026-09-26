@@ -31,6 +31,8 @@ Import a graph file into Gephi, run initial analysis, apply styling, and present
 
 6. **Let the intake + profile guide what follows** — do not run a fixed
    recipe:
+   - Time data (`gephi_get_timeline` shows `graph_is_dynamic`) or a date
+     column: offer to compare periods (references/change-over-time.md).
    - Isolates or fragmentation: ask before removing anything (their "data
      problem" may be their finding).
    - Their stated interest picks the metric (brokers/gatekeepers ->
