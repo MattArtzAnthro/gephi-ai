@@ -450,6 +450,13 @@ public class GephiControlService {
             Project project = pc.getCurrentProject();
             if (project == null) return error("No project open");
             File file = new File(filePath).getAbsoluteFile();
+            // Checked first: a save that fails inside Gephi reports it in a dialog, which leaves
+            // this call waiting until someone closes it.
+            File dir = file.getParentFile();
+            if (dir == null || !dir.isDirectory()) return error("The folder " + dir + " does not exist");
+            if (!dir.canWrite() || (file.exists() && !file.canWrite())) {
+                return error("Gephi cannot write to " + file.getPath());
+            }
             long before = file.isFile() ? file.lastModified() : -1;
             long started = System.currentTimeMillis();
             pc.saveProject(project, file);
@@ -2990,7 +2997,9 @@ public class GephiControlService {
         }
 
         try {
-            runOnEDT(() -> {
+            // Gephi's first capture after it starts can fail inside Gephi (its image buffer is
+            // not ready yet) and write nothing, so a capture that produced no file is tried once more.
+            Callable<Object> capture = () -> {
                 // ScreenshotController is not independently registered in Lookup — it is only
                 // reachable via VisualizationController.getScreenshotController() (the same
                 // VisualizationController singleton getSelection/focusView already use).
@@ -3006,26 +3015,41 @@ public class GephiControlService {
                 // the user's next manual screenshot would then save into a directory that no
                 // longer exists. Auto-save is therefore turned back off and the directory
                 // pointed somewhere real, which returns the toolbar button to its normal
-                // save-dialog behaviour rather than to a silent failure.
-                try {
-                    sc.setAutoSave(true);
-                    sc.setDefaultDirectory(captureDir);
-                    sc.setScaleFactor(scaleFactor);
-                    sc.setTransparentBackground(transparentBackground);
-                    sc.takeScreenshot();
-                } finally {
-                    sc.setAutoSave(false);
-                    sc.setDefaultDirectory(new File(System.getProperty("user.home")));
-                }
+                // save-dialog behaviour rather than to a silent failure. takeScreenshot only
+                // schedules the capture, which reads the auto-save setting when it runs, so
+                // the settings are restored after the file appears (below), not here: restored
+                // at once, the capture found auto-save off and opened a save dialog.
+                sc.setAutoSave(true);
+                sc.setDefaultDirectory(captureDir);
+                sc.setScaleFactor(scaleFactor);
+                sc.setTransparentBackground(transparentBackground);
+                sc.takeScreenshot();
                 return null;
-            });
+            };
 
-            File written = pollForNewFile(captureDir, 10_000);
+            File written;
+            boolean stable;
+            try {
+                runOnEDT(capture);
+                written = pollForNewFile(captureDir, 10_000);
+                if (written == null) {
+                    runOnEDT(capture);
+                    written = pollForNewFile(captureDir, 10_000);
+                }
+                stable = written != null && waitForStableFileSize(written, 5_000);
+                // After writing, Gephi reads auto-save once more: on, it notes the file in the
+                // status bar; off, it opens a "Screenshot saved" dialog that waits for OK. That
+                // step is queued on the interface thread once the file is written, so the
+                // settings are restored behind it.
+                if (stable) Thread.sleep(300);
+            } finally {
+                restoreScreenshotSettings();
+            }
             if (written == null) {
-                return error("Screenshot did not complete within 10s — the render engine may be busy, "
+                return error("Screenshot did not complete after two tries — the render engine may be busy, "
                     + "retry, or fully restart Gephi if this persists");
             }
-            if (!waitForStableFileSize(written, 5_000)) {
+            if (!stable) {
                 return error("Screenshot file did not finish writing within 5s");
             }
 
@@ -3041,6 +3065,24 @@ public class GephiControlService {
             return error("Screenshot export failed: " + e.getMessage());
         } finally {
             deleteDirQuietly(captureDir);
+        }
+    }
+
+    /** Gephi's toolbar screenshot back to asking where to save, in the home folder. */
+    private void restoreScreenshotSettings() {
+        try {
+            runOnEDT(() -> {
+                org.gephi.visualization.api.VisualizationController vc = Lookup.getDefault()
+                    .lookup(org.gephi.visualization.api.VisualizationController.class);
+                org.gephi.visualization.api.ScreenshotController sc = vc == null ? null : vc.getScreenshotController();
+                if (sc != null) {
+                    sc.setAutoSave(false);
+                    sc.setDefaultDirectory(new File(System.getProperty("user.home")));
+                }
+                return null;
+            });
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Could not restore the screenshot settings", e);
         }
     }
 
@@ -3361,6 +3403,8 @@ public class GephiControlService {
                 }
                 addIssues(issues, processor.getReport(), 20);
                 Workspace ws = importedWs != null ? importedWs : previous;
+                // Named after the file, as Gephi names a workspace opened from File > Open.
+                if (!append && ws != null && ws != previous) pc.renameWorkspace(ws, file.getName());
                 if (!append && previousEmpty && previous != null && previous != ws) {
                     pc.deleteWorkspace(previous);
                     pc.openWorkspace(ws);
@@ -4076,6 +4120,51 @@ public class GephiControlService {
         return out;
     }
 
+    /**
+     * Every filter with a name that can be typed back. Gephi names the per-column filters with
+     * HTML (the column in black, its type in grey), and gives the same name to that column's
+     * Equal, Non-null and Partition Count filters, so a name alone reached only the first. Those
+     * filters are named "Category: column type" instead, e.g. "Equal: group String (Node)".
+     */
+    private java.util.List<Map.Entry<String, FilterBuilder>> namedFilterBuilders(Workspace ws) {
+        java.util.List<Map.Entry<String, FilterBuilder>> out = new java.util.ArrayList<>();
+        for (FilterBuilder b : Lookup.getDefault().lookupAll(FilterBuilder.class)) {
+            try { out.add(Map.entry(plainText(b.getName()), b)); } catch (Exception ignore) {}
+        }
+        for (CategoryBuilder cb : Lookup.getDefault().lookupAll(CategoryBuilder.class)) {
+            try {
+                FilterBuilder[] bs = cb.getBuilders(ws);
+                if (bs == null) continue;
+                for (FilterBuilder b : bs) {
+                    String category = b.getCategory() != null ? b.getCategory().getName() : null;
+                    String name = plainText(b.getName());
+                    out.add(Map.entry(category == null ? name : plainText(category) + ": " + name, b));
+                }
+            } catch (Exception ignore) { /* some category builders need a specific state */ }
+        }
+        return out;
+    }
+
+    /** The text of a Gephi label that may carry HTML markup. */
+    static String plainText(String label) {
+        if (label == null) return "";
+        return label.replaceAll("<[^>]*>", " ").replace("&amp;", "&").replace("&lt;", "<")
+            .replace("&gt;", ">").replaceAll("\\s+", " ").trim();
+    }
+
+    /** The filter builder a name refers to: the plain name, or Gephi's own label. */
+    private FilterBuilder findFilterBuilder(Workspace ws, String name) {
+        if (name == null) return null;
+        FilterBuilder byLabel = null;
+        for (Map.Entry<String, FilterBuilder> e : namedFilterBuilders(ws)) {
+            if (name.equalsIgnoreCase(e.getKey())) return e.getValue();
+            try {
+                if (byLabel == null && name.equalsIgnoreCase(e.getValue().getName())) byLabel = e.getValue();
+            } catch (Exception ignore) {}
+        }
+        return byLabel;
+    }
+
     /** Coerce a JSON value to a filter property's type; handles Range from a [lo, hi] pair. */
     static Object convertFilterProperty(Object val, Class<?> type) {
         if (val == null) return null;
@@ -4104,9 +4193,10 @@ public class GephiControlService {
         Workspace ws = currentWorkspace();
         if (ws == null) return error("No workspace open");
         JsonArray arr = new JsonArray();
-        for (FilterBuilder b : allFilterBuilders(ws)) {
+        for (Map.Entry<String, FilterBuilder> e : namedFilterBuilders(ws)) {
+            FilterBuilder b = e.getValue();
             JsonObject o = new JsonObject();
-            try { o.addProperty("name", b.getName()); } catch (Exception ignore) {}
+            o.addProperty("name", e.getKey());
             try { o.addProperty("category", b.getCategory() == null ? null : b.getCategory().getName()); } catch (Exception ignore) {}
             try { o.addProperty("description", b.getDescription()); } catch (Exception ignore) {}
             // Introspect the filter's settable properties so callers know what params to pass.
@@ -4139,11 +4229,8 @@ public class GephiControlService {
         if (gm == null) return error("No workspace open");
         if (name == null) return error("Missing 'name'");
 
-        FilterBuilder builder = null;
-        for (FilterBuilder b : allFilterBuilders(ws)) {
-            try { if (name.equalsIgnoreCase(b.getName())) { builder = b; break; } } catch (Exception ignore) {}
-        }
-        if (builder == null) return error("Filter not found: " + name + " (call /filter/list to see available filters)");
+        FilterBuilder builder = findFilterBuilder(ws, name);
+        if (builder == null) return error("Filter not found: " + name + " (gephi_list_filters lists them)");
 
         Filter filter = builder.getFilter(ws);
         if (filter == null) return error("Filter builder produced no filter: " + name);
@@ -4245,7 +4332,7 @@ public class GephiControlService {
             default:
                 return error("Unknown action: " + action + " (use select|new_workspace|column)");
         }
-        try { r.addProperty("filter", builder.getName()); } catch (Exception ignore) {}
+        r.addProperty("filter", name);
         return r;
     }
 
@@ -4276,6 +4363,507 @@ public class GephiControlService {
         // A filter that legitimately keeps every node never moves off `before`; treat a
         // stable reading as settled rather than reporting it as provisional forever.
         return gm.getGraphVisible().getNodeCount() == last;
+    }
+
+    // ─── Combined filters ────────────────────────────────────────────
+
+    /** A filter from its name and settings, or the reason it could not be made. */
+    private Object buildFilter(Workspace ws, String name, Map<String, Object> params) {
+        if (name == null) return "Each filter needs a 'name'";
+        FilterBuilder builder = findFilterBuilder(ws, name);
+        if (builder == null) return "Filter not found: " + name + " (gephi_list_filters lists them)";
+        Filter filter = builder.getFilter(ws);
+        if (filter == null) return "Filter builder produced no filter: " + name;
+        FilterProperty[] props = filter.getProperties();
+        if (params != null) {
+            for (Map.Entry<String, Object> e : params.entrySet()) {
+                FilterProperty match = null;
+                java.util.List<String> names = new java.util.ArrayList<>();
+                if (props != null) {
+                    for (FilterProperty p : props) {
+                        names.add(p.getName());
+                        if (match == null && e.getKey().equalsIgnoreCase(p.getName())) match = p;
+                    }
+                }
+                if (match == null) {
+                    return "Unknown filter property '" + e.getKey() + "' for " + name + " — valid properties: " + names;
+                }
+                Object converted = convertFilterProperty(e.getValue(), match.getValueType());
+                if (converted == null) {
+                    return "Could not coerce '" + e.getKey() + "' to " + match.getValueType().getSimpleName()
+                        + " (Range wants a [lo, hi] pair)";
+                }
+                try { match.setValue(converted); }
+                catch (Exception ex) { return "Failed to set '" + e.getKey() + "': " + ex.getMessage(); }
+            }
+        }
+        return filter;
+    }
+
+    private FilterBuilder operatorBuilder(Workspace ws, String simpleName) {
+        for (FilterBuilder b : allFilterBuilders(ws)) {
+            if (b.getClass().getSimpleName().equals(simpleName)) return b;
+        }
+        return null;
+    }
+
+    /**
+     * Applies several filters together: {@code combine} "all" keeps what every filter keeps,
+     * "any" what at least one keeps. A filter marked {@code exclude} keeps the opposite of what
+     * it would keep alone. {@code dry_run} counts what would remain without changing the view.
+     * The combined query shows in Gephi's Filters panel as its operator with the filters under it.
+     */
+    @SuppressWarnings("unchecked")
+    public JsonObject applyFilters(java.util.List<Map<String, Object>> specs, String combine, String action,
+                                   String column, boolean dryRun) {
+        FilterController fc = Lookup.getDefault().lookup(FilterController.class);
+        if (fc == null) return error("No filter controller available");
+        Workspace ws = currentWorkspace();
+        GraphModel gm = currentGraphModel();
+        if (ws == null || gm == null) return error("No workspace open");
+        if (specs == null || specs.isEmpty()) return error("Give at least one filter in 'filters'");
+        String mode = combine == null ? "all" : combine.toLowerCase(java.util.Locale.ROOT);
+        if (!mode.equals("all") && !mode.equals("any")) return error("combine must be \"all\" or \"any\"");
+        String act = action == null ? "select" : action.toLowerCase(java.util.Locale.ROOT);
+        if (!dryRun && !act.equals("select") && !act.equals("new_workspace") && !act.equals("column")) {
+            return error("Unknown action: " + action + " (use select|new_workspace|column)");
+        }
+        if (!dryRun && act.equals("column") && column == null) return error("action=column requires a 'column' name");
+
+        java.util.List<Query> parts = new java.util.ArrayList<>();
+        JsonArray applied = new JsonArray();
+        for (Map<String, Object> spec : specs) {
+            String name = spec.get("name") == null ? null : spec.get("name").toString();
+            Object params = spec.get("params");
+            Object built = buildFilter(ws, name, params instanceof Map ? (Map<String, Object>) params : null);
+            if (built instanceof String) return error((String) built);
+            Filter filter = (Filter) built;
+            Query q = fc.createQuery(filter);
+            boolean exclude = Boolean.TRUE.equals(spec.get("exclude"))
+                || "true".equalsIgnoreCase(String.valueOf(spec.get("exclude")));
+            if (exclude) {
+                String not = filter instanceof org.gephi.filters.spi.EdgeFilter ? "NOTBuilderEdge" : "NOTBuilderNode";
+                FilterBuilder nb = operatorBuilder(ws, not);
+                if (nb == null) return error("Gephi's NOT operator is not available");
+                Query nq = fc.createQuery(nb.getFilter(ws));
+                fc.setSubQuery(nq, q);
+                q = nq;
+            }
+            parts.add(q);
+            applied.add((exclude ? "NOT " : "") + name);
+        }
+        Query query;
+        if (parts.size() == 1) {
+            query = parts.get(0);
+        } else {
+            FilterBuilder ob = operatorBuilder(ws, mode.equals("all") ? "INTERSECTIONBuilder" : "UNIONBuilder");
+            if (ob == null) return error("Gephi's " + (mode.equals("all") ? "INTERSECTION" : "UNION") + " operator is not available");
+            query = fc.createQuery(ob.getFilter(ws));
+            for (Query part : parts) fc.setSubQuery(query, part);
+        }
+
+        int nodesBefore = gm.getGraph().getNodeCount();
+        int edgesBefore = gm.getGraph().getEdgeCount();
+        Graph lockGraph = gm.getGraph();
+        JsonObject r;
+        if (dryRun) {
+            org.gephi.graph.api.GraphView view;
+            lockWrite(lockGraph);
+            try { view = fc.filter(query); } finally { unlockWrite(lockGraph); }
+            Graph kept = gm.getGraph(view);
+            r = success("Dry run: nothing was changed");
+            r.addProperty("nodes_kept", kept.getNodeCount());
+            r.addProperty("edges_kept", kept.getEdgeCount());
+            r.addProperty("nodes_removed", nodesBefore - kept.getNodeCount());
+            r.addProperty("edges_removed", edgesBefore - kept.getEdgeCount());
+            if (!view.isMainView()) gm.destroyView(view);
+        } else {
+            fc.add(query);
+            lockWrite(lockGraph);
+            try {
+                switch (act) {
+                    case "new_workspace": fc.exportToNewWorkspace(query); break;
+                    case "column": fc.exportToColumn(column, query); break;
+                    default: fc.filterVisible(query);
+                }
+            } finally { unlockWrite(lockGraph); }
+            if (act.equals("select")) {
+                r = success("Filters applied to the visible graph");
+                boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
+                r.addProperty("nodes_before", nodesBefore);
+                r.addProperty("edges_before", edgesBefore);
+                r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
+                r.addProperty("edges_after", gm.getGraphVisible().getEdgeCount());
+                if (!settled) r.addProperty("counts_settled", false);
+            } else if (act.equals("new_workspace")) {
+                r = success("Filtered subgraph exported to a new workspace");
+            } else {
+                r = success("Filter membership written to boolean column: " + column);
+                r.addProperty("column", column);
+            }
+        }
+        r.addProperty("combine", mode);
+        r.add("filters", applied);
+        return r;
+    }
+
+    // ─── Time ────────────────────────────────────────────────────────
+
+    /**
+     * Gives nodes or edges their time from one or two columns: a start and an optional end,
+     * as numbers (years, for instance) or dates. Afterwards the network has time data, so the
+     * timeline, time slices and dynamic statistics work. Needs a workspace that stores time as
+     * intervals, which is Gephi's default.
+     */
+    public JsonObject setTimeFromColumns(String target, String startName, String endName, String dateFormat) {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        if (startName == null && endName == null) return error("Name a 'start' column, an 'end' column, or both");
+        if (gm.getConfiguration().getTimeRepresentation() != org.gephi.graph.api.TimeRepresentation.INTERVAL) {
+            return error("This workspace stores time as timestamps, so start and end columns cannot be"
+                + " turned into intervals. Import the data into a new workspace first.");
+        }
+        Table table = tableFor(gm, target);
+        Column start = startName == null ? null : findColumn(table, startName);
+        Column end = endName == null ? null : findColumn(table, endName);
+        if (startName != null && start == null) return error("Column not found: " + startName);
+        if (endName != null && end == null) return error("Column not found: " + endName);
+        org.gephi.datalab.api.AttributeColumnsMergeStrategiesController mc =
+            Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsMergeStrategiesController.class);
+        if (mc == null) return error("No datalab controller available");
+        boolean numeric = (start == null || isNumberColumn(start)) && (end == null || isNumberColumn(end));
+        Graph g = gm.getGraph();
+        int withTime = 0;
+        lockWrite(g);
+        try {
+            if (numeric) {
+                mc.mergeNumericColumnsToTimeInterval(table, start, end, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+            } else {
+                if (dateFormat == null) {
+                    return error("The columns hold text, so give 'date_format' as a Java date pattern,"
+                        + " for example \"yyyy-MM-dd\" or \"dd/MM/yyyy\"");
+                }
+                java.text.SimpleDateFormat fmt;
+                try { fmt = new java.text.SimpleDateFormat(dateFormat); }
+                catch (IllegalArgumentException e) { return error("Not a date pattern: " + dateFormat); }
+                mc.mergeDateColumnsToTimeInterval(table, start, end, fmt, null, null);
+            }
+            for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
+                if (el.getIntervals().length > 0) withTime++;
+            }
+        } catch (Exception e) {
+            return error("Could not set time from the columns: " + e.getMessage());
+        } finally { unlockWrite(g); }
+        JsonObject r = success("Time set on " + withTime + " " + ("edge".equalsIgnoreCase(target) ? "edges" : "nodes"));
+        r.addProperty("with_time", withTime);
+        org.gephi.graph.api.Interval b = gm.getTimeBounds();
+        if (b != null && !Double.isInfinite(b.getLow())) r.addProperty("time_min", b.getLow());
+        if (b != null && !Double.isInfinite(b.getHigh())) r.addProperty("time_max", b.getHigh());
+        return r;
+    }
+
+    private static boolean isNumberColumn(Column c) {
+        return Number.class.isAssignableFrom(c.getTypeClass())
+            || (c.getTypeClass().isPrimitive() && c.getTypeClass() != boolean.class && c.getTypeClass() != char.class);
+    }
+
+    /**
+     * True when an element is present at some moment in [low, high]. {@code rep} is how the
+     * workspace stores time; an element with no time data counts as always present.
+     */
+    static boolean presentIn(org.gephi.graph.api.Element e, double low, double high,
+                             org.gephi.graph.api.TimeRepresentation rep) {
+        if (rep == org.gephi.graph.api.TimeRepresentation.INTERVAL) {
+            org.gephi.graph.api.Interval[] intervals = e.getIntervals();
+            if (intervals.length == 0) return true;
+            for (org.gephi.graph.api.Interval i : intervals) {
+                if (i.getLow() <= high && i.getHigh() >= low) return true;
+            }
+            return false;
+        }
+        double[] stamps = e.getTimestamps();
+        if (stamps.length == 0) return true;
+        for (double t : stamps) {
+            if (t >= low && t <= high) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Copies what is present between {@code low} and {@code high} into a new workspace and
+     * opens it: nodes present then, and edges present then between them. The network itself,
+     * and Gephi's timeline, are left as they were.
+     */
+    public JsonObject timeSlice(double low, double high) {
+        if (!(low <= high)) return error("'start' must not be after 'end'");
+        ProjectController pc = getProjectController();
+        Workspace source = currentWorkspace();
+        if (source == null) return error("No workspace open");
+        GraphModel gm = getGraphController().getGraphModel(source);
+        if (!gm.isDynamic()) {
+            return error("This network has no time data. gephi_set_time_from_columns gives it time from"
+                + " start and end columns.");
+        }
+        Graph g = gm.getGraph();
+        java.util.List<Node> keep = new java.util.ArrayList<>();
+        java.util.Set<Object> dropEdges = new java.util.HashSet<>();
+        org.gephi.graph.api.TimeRepresentation rep = gm.getConfiguration().getTimeRepresentation();
+        lockRead(g);
+        try {
+            for (Node n : g.getNodes().toArray()) if (presentIn(n, low, high, rep)) keep.add(n);
+            for (Edge e : g.getEdges().toArray()) if (!presentIn(e, low, high, rep)) dropEdges.add(e.getId());
+        } finally { g.readUnlock(); }
+        String name = workspaceName(source) + " " + fmtTime(low) + "–" + fmtTime(high);
+        Workspace[] made = new Workspace[1];
+        onEdt(() -> {
+            // A workspace's settings (time format, id type) are fixed when it is made.
+            made[0] = pc.newWorkspace(pc.getCurrentProject(), gm.getConfiguration());
+            GraphModel target = getGraphController().getGraphModel(made[0]);
+            target.bridge().copyNodes(keep.toArray(new Node[0]));
+            Graph tg = target.getGraph();
+            tg.writeLock();
+            try {
+                for (Object id : dropEdges) {
+                    Edge e = tg.getEdge(id);
+                    if (e != null) tg.removeEdge(e);
+                }
+            } finally { tg.writeUnlock(); }
+            pc.renameWorkspace(made[0], name);
+            pc.openWorkspace(made[0]);
+        });
+        Graph sliced = getGraphController().getGraphModel(made[0]).getGraph();
+        JsonObject r = success("Opened a workspace with the network from " + fmtTime(low) + " to " + fmtTime(high));
+        r.addProperty("workspace_id", made[0].getId());
+        r.addProperty("workspace_name", name);
+        r.addProperty("node_count", sliced.getNodeCount());
+        r.addProperty("edge_count", sliced.getEdgeCount());
+        r.addProperty("source_node_count", g.getNodeCount());
+        r.addProperty("source_edge_count", g.getEdgeCount());
+        return r;
+    }
+
+    private static String workspaceName(Workspace ws) {
+        String n = ws.getName();
+        return n == null || n.isBlank() ? "Workspace " + ws.getId() : n;
+    }
+
+    // ─── Shortest path ───────────────────────────────────────────────
+
+    /** The result of a shortest-path search: the path, its length, and how many paths tie. */
+    static final class PathResult {
+        final java.util.List<Node> nodes;
+        final java.util.List<Edge> edges;
+        final double length;
+        final long tiedPaths;
+
+        PathResult(java.util.List<Node> nodes, java.util.List<Edge> edges, double length, long tiedPaths) {
+            this.nodes = nodes; this.edges = edges; this.length = length; this.tiedPaths = tiedPaths;
+        }
+    }
+
+    /**
+     * Dijkstra's shortest path from {@code from} to {@code to}, or null when none exists.
+     * {@code weighting}: "none" counts steps, "distance" reads an edge's weight as its length,
+     * "strength" reads a heavier edge as a closer tie (length 1 / weight). Directed edges are
+     * followed only forwards when {@code followDirection} is set. Also counts how many
+     * different paths share the shortest length.
+     */
+    static PathResult shortestPath(Graph g, Node from, Node to, String weighting, boolean followDirection) {
+        java.util.Map<Node, Double> dist = new java.util.HashMap<>();
+        java.util.Map<Node, Long> ways = new java.util.HashMap<>();
+        java.util.Map<Node, Edge> via = new java.util.HashMap<>();
+        java.util.PriorityQueue<Object[]> queue = new java.util.PriorityQueue<>(
+            (a, b) -> Double.compare((Double) a[1], (Double) b[1]));
+        dist.put(from, 0.0);
+        ways.put(from, 1L);
+        queue.add(new Object[] {from, 0.0});
+        java.util.Set<Node> done = new java.util.HashSet<>();
+        final double eps = 1e-9;
+        while (!queue.isEmpty()) {
+            Object[] head = queue.poll();
+            Node n = (Node) head[0];
+            if (!done.add(n)) continue;
+            if (n == to) break;
+            for (Edge e : g.getEdges(n).toArray()) {
+                Node other = g.getOpposite(n, e);
+                if (followDirection && e.isDirected() && e.getSource() != n) continue;
+                if (e.isSelfLoop() || done.contains(other)) continue;
+                double w = e.getWeight();
+                double step = "distance".equals(weighting) ? w : "strength".equals(weighting) ? 1.0 / w : 1.0;
+                if (!(step > 0) || Double.isInfinite(step)) continue;
+                double d = dist.get(n) + step;
+                Double known = dist.get(other);
+                if (known == null || d < known - eps) {
+                    dist.put(other, d);
+                    ways.put(other, ways.get(n));
+                    via.put(other, e);
+                    queue.add(new Object[] {other, d});
+                } else if (Math.abs(d - known) <= eps) {
+                    ways.merge(other, ways.get(n), Long::sum);
+                }
+            }
+        }
+        if (!dist.containsKey(to) || !done.contains(to)) return null;
+        java.util.LinkedList<Node> nodes = new java.util.LinkedList<>();
+        java.util.LinkedList<Edge> edges = new java.util.LinkedList<>();
+        Node cur = to;
+        nodes.addFirst(cur);
+        while (cur != from) {
+            Edge e = via.get(cur);
+            edges.addFirst(e);
+            cur = g.getOpposite(cur, e);
+            nodes.addFirst(cur);
+        }
+        return new PathResult(nodes, edges, dist.get(to), ways.get(to));
+    }
+
+    public JsonObject findShortestPath(String fromId, String toId, String weighting, boolean followDirection,
+                                       String markColumn) {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        String w = weighting == null ? "none" : weighting.toLowerCase(java.util.Locale.ROOT);
+        if (!w.equals("none") && !w.equals("distance") && !w.equals("strength")) {
+            return error("weighting must be \"none\", \"distance\" or \"strength\"");
+        }
+        Graph g = gm.getGraph();
+        PathResult path;
+        lockRead(g);
+        try {
+            Node from = g.getNode(fromId);
+            Node to = g.getNode(toId);
+            if (from == null) return error("Node not found: " + fromId);
+            if (to == null) return error("Node not found: " + toId);
+            path = from == to ? new PathResult(java.util.List.of(from), java.util.List.of(), 0, 1)
+                : shortestPath(g, from, to, w, followDirection);
+        } finally { g.readUnlock(); }
+        if (path == null) {
+            JsonObject r = success("No path from " + fromId + " to " + toId
+                + (followDirection && gm.isDirected() ? " following edge directions" : ""));
+            r.addProperty("found", false);
+            return r;
+        }
+        JsonArray nodes = new JsonArray();
+        for (Node n : path.nodes) {
+            JsonObject o = new JsonObject();
+            o.addProperty("id", n.getId().toString());
+            o.addProperty("label", n.getLabel());
+            nodes.add(o);
+        }
+        JsonObject r = success("Path of " + path.edges.size() + " step(s)");
+        r.addProperty("found", true);
+        r.addProperty("steps", path.edges.size());
+        if (!w.equals("none")) r.addProperty("length", path.length);
+        r.addProperty("weighting", w);
+        r.addProperty("equally_short_paths", path.tiedPaths);
+        r.add("path", nodes);
+        if (markColumn != null) {
+            lockWrite(g);
+            try {
+                Column nc = findColumn(gm.getNodeTable(), markColumn);
+                if (nc == null) nc = gm.getNodeTable().addColumn(markColumn, Boolean.class);
+                Column ec = findColumn(gm.getEdgeTable(), markColumn);
+                if (ec == null) ec = gm.getEdgeTable().addColumn(markColumn, Boolean.class);
+                if (nc.getTypeClass() != Boolean.class || ec.getTypeClass() != Boolean.class) {
+                    return error("Column '" + markColumn + "' already exists and is not true/false; choose another name");
+                }
+                for (Node n : g.getNodes().toArray()) n.setAttribute(nc, path.nodes.contains(n));
+                java.util.Set<Edge> onPath = new java.util.HashSet<>(path.edges);
+                for (Edge e : g.getEdges().toArray()) e.setAttribute(ec, onPath.contains(e));
+            } finally { unlockWrite(g); }
+            r.addProperty("mark_column", markColumn);
+        }
+        return r;
+    }
+
+    // ─── Column tidy-up ──────────────────────────────────────────────
+
+    /**
+     * Tidies one column. {@code action}: "delete" removes it; "rename" gives it {@code newName};
+     * "convert" changes its type to {@code type}, reporting values that could not convert;
+     * "fill_empty" writes {@code value} where the column is empty; "clear" empties it.
+     */
+    public JsonObject editColumn(String target, String columnName, String action, String value,
+                                 String type, String newName) {
+        GraphModel gm = currentGraphModel();
+        if (gm == null) return error("No workspace open");
+        if (columnName == null || action == null) return error("Give 'column' and 'action'");
+        org.gephi.datalab.api.AttributeColumnsController acc =
+            Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsController.class);
+        if (acc == null) return error("No datalab controller available");
+        Table table = tableFor(gm, target);
+        Column col = findColumn(table, columnName);
+        if (col == null) return error("Column not found: " + columnName);
+        String title = col.getTitle();
+        Graph g = gm.getGraph();
+        lockWrite(g);
+        try {
+            switch (action.toLowerCase(java.util.Locale.ROOT)) {
+                case "delete": {
+                    if (!acc.canDeleteColumn(col)) return error("Gephi keeps the '" + title + "' column; it cannot be deleted");
+                    acc.deleteAttributeColumn(table, col);
+                    return success("Deleted column " + title);
+                }
+                case "rename": {
+                    if (newName == null || newName.isBlank()) return error("Give the new name in 'new_name'");
+                    if (!acc.canDeleteColumn(col)) return error("Gephi's own '" + title + "' column cannot be renamed");
+                    if (findColumn(table, newName) != null) return error("A column named " + newName + " already exists");
+                    Column copy = acc.duplicateColumn(table, col, newName, col.getTypeClass());
+                    acc.deleteAttributeColumn(table, col);
+                    JsonObject r = success("Renamed " + title + " to " + copy.getTitle());
+                    r.addProperty("column", copy.getId());
+                    return r;
+                }
+                case "convert": {
+                    Class<?> cls = typeStringToClass(type);
+                    if (cls == null) return error("Give 'type': string, integer, long, float, double or boolean");
+                    if (!acc.canDeleteColumn(col)) return error("Gephi's own '" + title + "' column cannot be converted");
+                    int before = countValues(gm, target, col);
+                    Column tmp = acc.duplicateColumn(table, col, title + " (converting)", cls);
+                    acc.deleteAttributeColumn(table, col);
+                    Column converted = acc.duplicateColumn(table, tmp, title, cls);
+                    acc.deleteAttributeColumn(table, tmp);
+                    int after = countValues(gm, target, converted);
+                    JsonObject r = success("Converted " + title + " to " + cls.getSimpleName());
+                    r.addProperty("column", converted.getId());
+                    r.addProperty("values_lost", before - after);
+                    if (before > after) {
+                        r.addProperty("warning", (before - after) + " value(s) could not be read as "
+                            + cls.getSimpleName() + " and are now empty");
+                    }
+                    return r;
+                }
+                case "fill_empty": {
+                    if (value == null) return error("Give the value to write in 'value'");
+                    if (!acc.canChangeColumnData(col)) return error("The '" + title + "' column cannot be changed");
+                    java.util.List<Node> nodes = new java.util.ArrayList<>();
+                    java.util.List<Edge> edges = new java.util.ArrayList<>();
+                    for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
+                        if (el.getAttribute(col) != null) continue;
+                        if (el instanceof Node) nodes.add((Node) el); else edges.add((Edge) el);
+                    }
+                    if (!nodes.isEmpty()) acc.fillNodesColumnWithValue(nodes.toArray(new Node[0]), col, value);
+                    if (!edges.isEmpty()) acc.fillEdgesColumnWithValue(edges.toArray(new Edge[0]), col, value);
+                    JsonObject r = success("Filled " + (nodes.size() + edges.size()) + " empty value(s) in " + title);
+                    r.addProperty("filled", nodes.size() + edges.size());
+                    return r;
+                }
+                case "clear": {
+                    if (!acc.canClearColumnData(col)) return error("The '" + title + "' column cannot be cleared");
+                    acc.clearColumnData(table, col);
+                    return success("Cleared every value in " + title);
+                }
+                default:
+                    return error("Unknown action: " + action + " (use delete|rename|convert|fill_empty|clear)");
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        } finally { unlockWrite(g); }
+    }
+
+    private static int countValues(GraphModel gm, String target, Column col) {
+        int n = 0;
+        for (org.gephi.graph.api.Element el : elementsFor(gm, target)) if (el.getAttribute(col) != null) n++;
+        return n;
     }
 
     // ─── Data Laboratory (Group D) ───────────────────────────────────

@@ -242,4 +242,11 @@ class HelpersTest {
         if (children != null) for (File c : children) deleteRecursively(c);
         f.delete();
     }
+
+    @Test
+    void gephisHtmlFilterLabelsReadAsPlainText() {
+        assertEquals("group String (Node)", GephiControlService.plainText(
+            "<font color='#000000'>group</font> <font color='#999999'><i>String (Node)</i></font>"));
+        assertEquals("Degree Range", GephiControlService.plainText("Degree Range"));
+    }
 }

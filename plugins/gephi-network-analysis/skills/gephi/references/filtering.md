@@ -12,7 +12,8 @@ discover-then-run shape as `gephi_list_statistics` / `gephi_run_statistic`.
    built-in topology filters (Degree Range, In/Out-Degree Range, K-core, Giant
    Component, Ego Network, Neighbors, Edge Weight, Mutual Edge, Has Self-loop, …)
    **plus a per-column attribute filter for every node/edge column currently in
-   the graph** (Attribute Equal / Range / Non-null on that column). The
+   the graph**, named by kind and column, e.g. "Equal: group String (Node)",
+   "Range: Degree Integer (Node)", "Non-null: email String (Node)". The
    attribute set is data-dependent, so always list against the actual graph
    rather than assuming a filter name exists.
 2. **Match the intent to a filter and read its `properties`.** Each entry lists
@@ -38,12 +39,24 @@ discover-then-run shape as `gephi_list_statistics` / `gephi_run_statistic`.
 
 ## AND / OR / NOT
 
-For "degree ≥ 5 **and** in the giant component," apply the conditions in
-sequence with `action="select"` — each `select` narrows the already-visible
-graph, so stacked selects are an intersection (AND). For OR or NOT, prefer
-`action="column"` to mark each condition into its own boolean column, then
-reason over the columns (color by them, or combine them) rather than trying to
-express the boolean in one filter call. Say which logic you used; "these two
+`gephi_apply_filters` combines several filters in one call: `combine="all"`
+keeps what every filter keeps (AND), `combine="any"` what at least one keeps
+(OR), and `"exclude": true` on a filter keeps the opposite of what it would
+keep alone (NOT). "Country is Peru or Chile":
+
+```
+gephi_apply_filters(filters=[
+    {"name": "Equal: Country String (Node)", "params": {"pattern": "Peru"}},
+    {"name": "Equal: Country String (Node)", "params": {"pattern": "Chile"}}], combine="any")
+```
+
+Run it with `dry_run=True` first: the reply counts what
+would stay and what would go, and nothing changes. Each filter in a combined
+call judges the whole network, so "the giant component" there means the
+network's own, not the largest component of what the other filters kept;
+for that, apply the filters one after another as in the worked shape below.
+Take filter and property names from `gephi_list_filters`, not from this
+example. Say which logic you used; "these two
 teams barely interact" verified by a filter is only as good as the filter that
 stood for it (see claim-verification.md).
 
@@ -51,9 +64,9 @@ stood for it (see claim-verification.md).
 
 > "Keep only the well-connected core — degree 5 or more, largest component."
 >
-> 1. `gephi_list_filters` → find "Degree Range" (property "Degree Range",
+> 1. `gephi_list_filters` → find "Degree Range" (property "range",
 >    type Range) and "Giant Component" (no properties).
-> 2. `gephi_apply_filter("Degree Range", {"Degree Range": [5, 9999]}, "select")`
+> 2. `gephi_apply_filter("Degree Range", {"range": [5, 9999]}, "select")`
 >    → nodes_before 339, nodes_after 88.
 > 3. `gephi_apply_filter("Giant Component", action="select")` → nodes_after 71.
 > 4. Report: "Filtered to the degree-≥5 nodes in the giant component: 71 of 339

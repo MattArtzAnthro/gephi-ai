@@ -205,7 +205,8 @@ _DESTRUCTIVE = {
     "gephi_remove_isolates", "gephi_extract_ego_network",
     "gephi_extract_giant_component", "gephi_extract_backbone",
     "gephi_merge_nodes", "gephi_clear_graph", "gephi_reset_appearance",
-    "gephi_reset_filters", "gephi_apply_filter",
+    "gephi_reset_filters", "gephi_apply_filter", "gephi_apply_filters", "gephi_edit_column",
+    "gephi_set_time_from_columns",
 }
 # Reaches beyond Gephi: the health check fetches latest.json from GitHub.
 _OPEN_WORLD = {"gephi_health_check"}
@@ -1980,6 +1981,27 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
                                    json_data=_body(name=name, params=params),
                                    timeout=SLOW_REQUEST_TIMEOUT))
 
+@_tool(name="gephi_find_shortest_path")
+async def gephi_find_shortest_path(source: str, target: str, weighting: str = "none",
+                                   follow_direction: bool = True,
+                                   mark_column: str | None = None) -> str:
+    """Find the shortest path between two nodes (by id): the chain of nodes that links them.
+
+    `weighting`: "none" counts steps (the usual reading of "how far apart"); "distance"
+    reads each edge's weight as its length (kilometres, minutes); "strength" reads a
+    heavier edge as a closer tie (frequent contact, many co-authored papers), so strong
+    ties count as short. Pick by what the weights mean; ask when unsure.
+    Directed edges are followed forwards only unless `follow_direction` is False.
+    `equally_short_paths` says how many different paths share this length: when it is
+    above 1, this path is one of several, so do not present its middle nodes as the only
+    link. `mark_column` writes true/false into a node and an edge column, so the path
+    can be coloured with gephi_color_by_partition.
+    """
+    body = _body(source=source, target=target, weighting=weighting,
+                 follow_direction=follow_direction, mark_column=mark_column)
+    return fmt(await gephi.request("POST", "/graph/shortest-path", json_data=body))
+
+
 @_tool(name="gephi_stop_statistic")
 async def gephi_stop_statistic() -> str:
     """Stop a statistic that is still running in Gephi (a slow betweenness, path length,
@@ -2109,8 +2131,9 @@ async def gephi_list_filters() -> str:
 
     Covers the built-in topology filters (Degree Range, K-core, Giant Component,
     Ego Network, Neighbors, Edge Weight, …) AND a per-column attribute filter for
-    each node/edge column currently in the graph (Attribute Equal / Range /
-    Non-null on that column) — so the exact set depends on what columns exist.
+    each node/edge column currently in the graph, named by kind and column (e.g.
+    "Equal: group String (Node)", "Non-null: email String (Node)") — so the exact
+    set depends on what columns exist. Pass names exactly as listed.
     Each entry gives name, category, description, and `properties` (name + type)
     so you know what to pass to gephi_apply_filter. Range-typed properties take a
     [low, high] pair. This is the discovery step before applying an arbitrary
@@ -2127,7 +2150,7 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
     name matches an entry from gephi_list_filters (case-insensitive). params is a
     {property: value} map for that filter's properties (see the filter's
     `properties` in gephi_list_filters); a Range property takes a [low, high]
-    pair, e.g. params={"Degree Range": [2, 10]}. If a property name doesn't
+    pair, e.g. params={"range": [2, 10]}. If a property name doesn't
     match, the error lists the valid ones.
 
     action decides what happens with the matches:
@@ -2154,6 +2177,57 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
                                                    action=action, column=column)))
 
 
+@_tool(name="gephi_apply_filters")
+async def gephi_apply_filters(filters: list[dict[str, Any]], combine: str = "all",
+                              action: str = "select", column: str | None = None,
+                              dry_run: bool = False) -> str:
+    """Apply several filters together, e.g. "degree at least 3 AND in community 2" or
+    "Country is Peru OR Country is Chile".
+
+    Each entry in `filters` is {"name": ..., "params": {...}} as for gephi_apply_filter,
+    plus "exclude": true to keep the opposite of what that filter keeps (NOT).
+    `combine`: "all" keeps what every filter keeps (AND), "any" what at least one keeps (OR).
+    `action` is as for gephi_apply_filter: "select" (hide the rest, reversible with
+    gephi_reset_filters), "new_workspace", or "column" (write membership into `column`).
+    `dry_run`=True only counts what would stay and what would go; run it first and tell
+    the user before hiding a large part of the network. The combined query appears in
+    Gephi's Filters panel, so the user can adjust it there.
+    """
+    body = _body(filters=filters, combine=combine, action=action, column=column, dry_run=dry_run)
+    return fmt(await gephi.request("POST", "/filter/combine", json_data=body))
+
+
+@_tool(name="gephi_set_time_from_columns")
+async def gephi_set_time_from_columns(start: str | None = None, end: str | None = None,
+                                      target: str = "node", date_format: str | None = None) -> str:
+    """Give nodes (or edges, target="edge") their time from a start column and/or an end
+    column, so the network gains time data: Gephi's timeline, gephi_time_slice and the
+    dynamic statistics then work.
+
+    Columns holding numbers (years, for instance) are used as they are. Columns holding
+    dates as text need `date_format`, a Java date pattern such as "yyyy-MM-dd" or
+    "dd/MM/yyyy". A missing start means "from the beginning", a missing end "still
+    present". Changes the network; an undo snapshot is taken first (gephi_undo reverses it).
+    """
+    undo = await _auto_snapshot("set_time_from_columns")
+    body = _body(start=start, end=end, target=target, date_format=date_format)
+    return fmt(_with_undo(await gephi.request("POST", "/time/from-columns", json_data=body), undo))
+
+
+@_tool(name="gephi_time_slice")
+async def gephi_time_slice(start: float, end: float) -> str:
+    """Open the network as it was between `start` and `end` in a new workspace: the nodes
+    present at some moment in that window, and the edges present then between them.
+    Nodes and edges without time data count as always present. The network itself and
+    Gephi's timeline stay as they were; gephi_switch_workspace goes back.
+
+    Use it to compare periods: slice each one, then run the same statistics in each
+    workspace (gephi_compare_workspaces lines them up). Time-varying attribute values
+    keep their full history in the slice. Needs time data (see gephi_get_timeline; add it
+    with gephi_set_time_from_columns)."""
+    return fmt(await gephi.request("POST", "/time/slice", json_data={"start": start, "end": end}))
+
+
 @_tool(name="gephi_get_timeline")
 async def gephi_get_timeline() -> str:
     """Report the graph's dynamic/timeline state (read-only).
@@ -2163,15 +2237,35 @@ async def gephi_get_timeline() -> str:
     recognizes, and the timeline's enabled/interval state. Use it to check
     whether an imported graph is dynamic and over what time range.
 
-    To reason about change over time, read this plus the node/edge start/end
-    values (e.g. via gephi_query_nodes / the exported GEXF) — there is no
-    programmatic "restrict the graph to a time window" tool: driving Gephi's
-    timeline from outside destabilizes its render thread in this architecture
-    (both the data-view swap and the timeline-UI toggle proved unsafe), so it's
-    deliberately not exposed. Slice by time in the Gephi timeline UI directly if
-    you need the live view filtered.
+    To look at one period, gephi_time_slice opens it in a new workspace. Gephi's
+    timeline itself is left to the user: moving it from outside destabilizes Gephi's
+    drawing, so no tool drives it. A network without time data can get it from start
+    and end columns with gephi_set_time_from_columns.
     """
     return fmt(await gephi.request("GET", "/timeline"))
+
+
+@_tool(name="gephi_edit_column")
+async def gephi_edit_column(column: str, action: str, target: str = "node",
+                            value: str | None = None, type: str | None = None,
+                            new_name: str | None = None) -> str:
+    """Tidy one column of the node table (or the edge table, target="edge").
+
+    `action`:
+    - "delete": remove the column.
+    - "rename": give it `new_name`.
+    - "convert": change its type to `type` (string, integer, long, float, double,
+      boolean), e.g. numbers imported as text. Values that cannot be read as the new
+      type become empty; the reply counts them in `values_lost`, so tell the user.
+    - "fill_empty": write `value` into every empty cell, leaving filled ones alone.
+    - "clear": empty every cell.
+    The column is found by id or title. Gephi's own columns (id, label, time) cannot be
+    deleted, renamed or converted. An undo snapshot is taken first (gephi_undo reverses it).
+    """
+    undo = await _auto_snapshot("edit_column")
+    body = _body(column=column, action=action, target=target, value=value, type=type,
+                 new_name=new_name)
+    return fmt(_with_undo(await gephi.request("POST", "/datalab/column/edit", json_data=body), undo))
 
 
 @_tool(name="gephi_column_value_frequencies")

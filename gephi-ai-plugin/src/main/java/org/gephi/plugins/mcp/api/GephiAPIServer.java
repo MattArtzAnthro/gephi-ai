@@ -664,7 +664,44 @@ public class GephiAPIServer extends NanoHTTPD {
             return service.applyFilter(fname, filterParams, action, column);
         }
 
+        if ("/filter/combine".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("filters") || !body.get("filters").isJsonArray()) {
+                return errorResult("Missing 'filters' list");
+            }
+            List<Map<String, Object>> specs = GSON.fromJson(body.get("filters"), List.class);
+            return service.applyFilters(specs, str(body, "combine"), str(body, "action"), str(body, "column"),
+                body.has("dry_run") && body.get("dry_run").getAsBoolean());
+        }
+
+        // ─── Time ────────────────────────────────────────────────────
+
+        if ("/time/from-columns".equals(uri) && Method.POST.equals(method)) {
+            if (body == null) return errorResult("Missing body");
+            return service.setTimeFromColumns(str(body, "target"), str(body, "start"), str(body, "end"),
+                str(body, "date_format"));
+        }
+
+        if ("/time/slice".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("start") || !body.has("end")) return errorResult("Missing 'start' or 'end'");
+            return service.timeSlice(body.get("start").getAsDouble(), body.get("end").getAsDouble());
+        }
+
+        // ─── Paths ───────────────────────────────────────────────────
+
+        if ("/graph/shortest-path".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("source") || !body.has("target")) return errorResult("Missing 'source' or 'target'");
+            boolean follow = !body.has("follow_direction") || body.get("follow_direction").getAsBoolean();
+            return service.findShortestPath(body.get("source").getAsString(), body.get("target").getAsString(),
+                str(body, "weighting"), follow, str(body, "mark_column"));
+        }
+
         // ─── Data Laboratory ─────────────────────────────────────────
+
+        if ("/datalab/column/edit".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("column") || !body.has("action")) return errorResult("Missing 'column' or 'action'");
+            return service.editColumn(str(body, "target"), str(body, "column"), str(body, "action"),
+                str(body, "value"), str(body, "type"), str(body, "new_name"));
+        }
 
         if ("/datalab/frequencies".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("column")) return errorResult("Missing 'column'");
@@ -878,6 +915,10 @@ public class GephiAPIServer extends NanoHTTPD {
     }
 
     /** An optional float from a JSON body, or null when absent or not a number. */
+    static String str(JsonObject body, String key) {
+        return body != null && body.has(key) && !body.get(key).isJsonNull() ? body.get(key).getAsString() : null;
+    }
+
     static Float floatOrNull(JsonObject body, String key) {
         if (body == null || !body.has(key) || body.get(key).isJsonNull()) return null;
         try {

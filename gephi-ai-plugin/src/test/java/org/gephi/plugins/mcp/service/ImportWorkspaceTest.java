@@ -112,6 +112,7 @@ class ImportWorkspaceTest {
         assertNotSame(empty, pc.getCurrentWorkspace());
         assertEquals(1, workspaceCount(pc), "the empty starting workspace should not be left behind");
         assertEquals("new_workspace", r.get("import_mode").getAsString());
+        assertEquals("plain.gexf", pc.getCurrentWorkspace().getName(), "named after the file");
     }
 
     @Test

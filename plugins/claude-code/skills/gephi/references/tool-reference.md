@@ -82,7 +82,8 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_save_project
 - **Method**: POST `/project/save`
 - **Params**: `{file: str}` - absolute path to save to
-- **Returns**: `{success, message}`
+- **Returns**: `{success, message, file, bytes}`
+- **Notes**: Reports success only once the file is on disk; a save that failed or was cancelled returns an error.
 
 ### gephi_get_project_info
 - **Method**: GET `/project/info`
@@ -169,9 +170,9 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 
 ### gephi_query_nodes
 - **Method**: GET `/graph/nodes`
-- **Params**: `{limit?: int (100), offset?: int (0)}`
-- **Returns**: `{success, total, count, nodes: [{id, label, x, y, size, degree, r, g, b, a, attributes}]}`
-- **Notes**: Includes all custom attributes per node.
+- **Params**: `{limit?: int (100), offset?: int (0), column?: str, value?: str, contains?: str, min?: float, max?: float}`
+- **Returns**: `{success, total, matches?, count, nodes: [{id, label, x, y, size, degree, r, g, b, a, attributes}]}`
+- **Notes**: Includes all custom attributes per node, keyed by column title. To find nodes by value, name a `column` (id or title) with `value` (whole value; text ignores case), `contains` (part of the text), and/or `min`/`max` (inclusive numeric range); `matches` counts every match, not just the page.
 
 ### gephi_get_node
 - **Method**: GET `/graph/node/get/{id}`
@@ -288,7 +289,7 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_color_by_partition
 - **Method**: POST `/appearance/partition/color`
 - **Params**: `{column: str, colors?: {value: [r,g,b], ...}}`
-- **Notes**: Auto-generates palette if colors not provided. Use for modularity_class, type, category.
+- **Notes**: Auto-generates palette if colors not provided, largest groups first. Every group gets its own colour; past 12 groups the reply adds `palette_note`, because neighbouring colours get hard to tell apart. Use for modularity_class, type, category.
 
 ### gephi_color_edges_by_partition
 - **Method**: POST `/appearance/edge/partition-color`
@@ -379,6 +380,17 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_run_statistic
 - **Params**: `{name: str, params?: dict}` — `name` matches an entry from `gephi_list_statistics` (case-insensitive); `params` is an optional `{property: value}` map set on the statistic before it runs
 - **Notes**: the plugin-ecosystem passthrough — install a metric plugin in Gephi (Tools > Plugins) and it's immediately runnable here. Plugin statistics configured by a UI dialog usually need `params` (their fields start null/zero). Results land in node/edge columns as usual.
+
+### gephi_stop_statistic
+- **Method**: POST `/statistics/stop`
+- **Returns**: `{success, message, stopped: [name], cannot_stop?: [name]}`
+- **Notes**: Stops a statistic still running in Gephi; the stopped run writes nothing, so columns keep their earlier values. Interrupting a statistic's call from the chat stops it in Gephi too. Runs even while another tool is working.
+
+### gephi_find_shortest_path
+- **Method**: POST `/graph/shortest-path`
+- **Params**: `{source: str, target: str, weighting?: "none"|"distance"|"strength", follow_direction?: bool (true), mark_column?: str}`
+- **Returns**: `{success, found, steps, length?, weighting, equally_short_paths, path: [{id, label}], mark_column?}`
+- **Notes**: "none" counts steps; "distance" reads weight as length; "strength" reads a heavier edge as a closer tie (length 1/weight). When `equally_short_paths` is above 1 the path is one of several, so its middle nodes are not the only link. `mark_column` writes true/false on nodes and edges for colouring.
 
 ### gephi_profile_graph
 - **Method**: exports the graph (GEXF) and computes size, density, degree distribution, connectivity, weight signal, modularity, and clustering coefficient in one call
@@ -516,7 +528,13 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Method**: POST `/filter/apply`
 - **Params**: `{name, params?: {property: value}, action?: "select"|"new_workspace"|"column", column?}`
 - **Returns**: for `select`, `{success, filter, nodes_before, edges_before, nodes_after, edges_after}`; for `new_workspace`/`column`, a success message
-- **Usage**: apply any filter by name. `select` (default) narrows the visible graph non-destructively; `new_workspace` materializes the filtered subgraph (use for repeated filtering on large graphs — avoids unbounded hidden-element memory); `column` writes membership to a boolean column. Stack `select` calls for AND. See references/filtering.md.
+- **Usage**: apply any filter by name. `select` (default) narrows the visible graph non-destructively; `new_workspace` materializes the filtered subgraph (use for repeated filtering on large graphs — avoids unbounded hidden-element memory); `column` writes membership to a boolean column. For AND, OR or NOT across filters use `gephi_apply_filters`. See references/filtering.md.
+
+### gephi_apply_filters
+- **Method**: POST `/filter/combine`
+- **Params**: `{filters: [{name, params?, exclude?: bool}], combine?: "all"|"any", action?: "select"|"new_workspace"|"column", column?, dry_run?: bool}`
+- **Returns**: dry run `{success, nodes_kept, edges_kept, nodes_removed, edges_removed, combine, filters}`; otherwise as `gephi_apply_filter`, plus `combine` and `filters`
+- **Usage**: several filters at once. `combine` "all" keeps what every filter keeps (AND), "any" what at least one keeps (OR); `exclude` inverts one filter (NOT). Run `dry_run` first and say what will be hidden. The combined query shows in Gephi's Filters panel.
 
 ## Data Laboratory
 
@@ -544,12 +562,30 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Returns**: `{success, column}`
 - **Usage**: adds a boolean column flagging rows whose `column` value matches `regex` — mark a subset to color/size/filter by later, without hiding anything. Errors on invalid regex.
 
+### gephi_edit_column
+- **Method**: POST `/datalab/column/edit`
+- **Params**: `{column, action: "delete"|"rename"|"convert"|"fill_empty"|"clear", target?: "node"|"edge", value?, type?, new_name?}`
+- **Returns**: `{success, message, column?, values_lost?, filled?}`
+- **Usage**: tidy one column. `convert` changes its type (`type`: string, integer, long, float, double, boolean) and reports `values_lost` for values that could not convert; `fill_empty` writes `value` only into empty cells. Gephi's own columns cannot be deleted, renamed or converted. Auto-snapshots first; `gephi_undo` reverses it.
+
 ## Timeline
 
 ### gephi_get_timeline
 - **Method**: GET `/timeline`
 - **Returns**: `{success, graph_is_dynamic, time_min?, time_max?, time_format, dynamic_columns: [...], timeline_enabled?, has_valid_bounds?, interval_start?, interval_end?}`
-- **Usage**: report a graph's dynamic/timeline state — is it dynamic, what time range, which dynamic columns the timeline sees, current interval. Read-only; reason over node/edge start/end values to narrate change over time. There is intentionally **no** programmatic time-window tool — driving Gephi's timeline from outside destabilizes its render thread in this architecture (both the data-view swap and the timeline-UI toggle proved unsafe in testing); slice by time in the Gephi timeline UI directly if you need the live view filtered.
+- **Usage**: report a graph's time data: whether it has any, its range, which columns vary over time, and the timeline's current interval. Read-only. Gephi's timeline itself is left to the user; to study one period, use `gephi_time_slice`.
+
+### gephi_set_time_from_columns
+- **Method**: POST `/time/from-columns`
+- **Params**: `{start?: str, end?: str, target?: "node"|"edge", date_format?: str}`
+- **Returns**: `{success, with_time, time_min?, time_max?}`
+- **Usage**: gives nodes or edges their time from a start and/or end column, so the timeline, time slices and dynamic statistics work. Number columns (years) are used as they are; text dates need `date_format`, a Java date pattern such as "yyyy-MM-dd". Auto-snapshots first; `gephi_undo` reverses it.
+
+### gephi_time_slice
+- **Method**: POST `/time/slice`
+- **Params**: `{start: float, end: float}`
+- **Returns**: `{success, workspace_id, workspace_name, node_count, edge_count, source_node_count, source_edge_count}`
+- **Usage**: opens the network as it was between `start` and `end` in a new workspace: nodes present at some moment in the window, and edges present then between them. Elements without time data count as always present. The source network and Gephi's timeline are unchanged. Slice each period, run the same statistics in each, and compare with `gephi_compare_workspaces`.
 
 ## Preview Settings
 
@@ -641,20 +677,21 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 
 ### gephi_import_file
 - **Method**: POST `/import/file`
-- **Params**: `{file: str}`
-- **Notes**: Auto-detects format by extension. Supports GEXF, GraphML, GML, CSV, DOT, Pajek.
+- **Params**: `{file: str, mode?: "new_workspace"|"append", max_node_size?: float}`
+- **Returns**: `{success, node_count, edge_count, import_mode, import_issues?: [{level, message}]}`
+- **Notes**: Auto-detects format by extension. Supports GEXF, GraphML, GML, CSV, DOT, Pajek. By default the file opens in its own workspace, as from Gephi's File > Open, so its time format and id type always fit; an empty workspace left open is removed, and one holding a graph is kept. `mode: "append"` adds the file to the current workspace, and fails when the two disagree on time format or id type. Tell the user about `import_issues` that matter, such as edges dropped for a missing node.
 
 ### gephi_import_gexf
 - **Method**: POST `/import/gexf`
-- **Params**: `{file: str}`
+- **Params**: `{file: str, mode?: "new_workspace"|"append"}` — as `gephi_import_file`
 
 ### gephi_import_graphml
 - **Method**: POST `/import/graphml`
-- **Params**: `{file: str}`
+- **Params**: `{file: str, mode?: "new_workspace"|"append"}` — as `gephi_import_file`
 
 ### gephi_import_csv
 - **Method**: POST `/import/csv`
-- **Params**: `{file: str}`
+- **Params**: `{file: str, mode?: "new_workspace"|"append"}` — as `gephi_import_file`
 
 ## Text Network Analysis
 

@@ -7,6 +7,17 @@ as part of the release checklist.
     PYTHONPATH=. uv run --with mcp --with httpx --with pydantic \
         python tests/live_smoke_test.py
 
+To test a plugin build without touching a Gephi that is already open, start a second
+Gephi with its own settings folder and port, with the built plugin copied into that
+folder's modules/ and config/Modules/ (from the .nbm's netbeans/ directory):
+
+    /Applications/Gephi.app/Contents/Resources/gephi/bin/gephi --userdir /tmp/gephi-test \
+        --cachedir /tmp/gephi-test-cache -J-Dgephi.mcp.port=8091
+    GEPHI_API_URL=http://127.0.0.1:8091 PYTHONPATH=. python tests/live_smoke_test.py
+
+A fresh settings folder starts with Gephi's defaults, as a new user's Gephi does, so run
+it there before a release as well as against a Gephi that has been used for a while.
+
 Standard: ALWAYS test at scale — ~1000 nodes and many edges, never a toy graph.
 Small graphs hide real bugs (e.g. the visual_qa title-vs-id partition bug was
 invisible at 8 nodes) and say nothing about performance. This harness builds a
@@ -33,6 +44,26 @@ GEXF = "/tmp/gephi_smoke_big.gexf"
 # title="Modularity Class", so no single string works for both families. This
 # harness passes each tool the form it currently accepts; the consistency check
 # at the end fails until the id-or-title fix lands.
+
+
+def gephi_windows() -> list[str] | None:
+    """Titles of the windows of the Gephi answering on GEPHI_API_URL's port, or None where
+    they cannot be read (not macOS). More than the main window means a dialog is open."""
+    import subprocess
+    import sys
+    if sys.platform != "darwin":
+        return None
+    port = g.GEPHI_API_URL.rsplit(":", 1)[-1].split("/")[0]
+    pid = subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+                         capture_output=True, text=True).stdout.split()
+    if not pid:
+        return None
+    script = ('tell application "System Events" to get name of every window of '
+              f"(first process whose unix id is {pid[0]})")
+    out = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if out.returncode != 0:
+        return None
+    return [w.strip() for w in out.stdout.split(",") if w.strip()]
 
 
 def build_big_gexf(path: str, n: int = 1000, k: int = 8) -> tuple[int, int]:
@@ -216,6 +247,11 @@ async def main():
         ("export_svg", g.gephi_export_svg("/tmp/smoke.svg")),
     ]:
         await R.run(label, coro)
+    windows = gephi_windows()
+    if windows is not None:
+        R.results.append(("PASS" if len(windows) == 1 else "FAIL",
+                          "[dialogs] exports leave no Gephi dialog waiting for OK", 0.0,
+                          f"windows={windows}"))
 
     # ---- filters / extraction (mutate visible/workspaces) ----
     await R.run("filter_by_degree(dry_run)", g.gephi_filter_by_degree(min=10, dry_run=True))
@@ -410,6 +446,67 @@ async def main():
     R.results.append(("PASS" if empty_ok else "FAIL",
                       "[edge-case] empty graph: read/compute tools degrade gracefully",
                       0.0, "no exceptions on a 0-node graph"))
+
+    # ---- imports, time, search, paths, combined filters, column tidy-up, stop ----
+    def check(ok, label, detail=""):
+        R.results.append(("PASS" if ok else "FAIL", label, 0.0, str(detail)[:160]))
+
+    await g.gephi_create_project("survey")
+    imp = json.loads(await g.gephi_import_gexf(GEXF))
+    wss = json.loads(await g.gephi_list_workspaces()).get("workspaces", [])
+    check(imp.get("import_mode") == "new_workspace" and len(wss) == 1
+          and wss[0].get("name") == GEXF.rsplit("/", 1)[-1],
+          "[import] own workspace, named after the file, empty one removed", wss)
+    with open("/tmp/smoke_timed.gexf", "w") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?><gexf xmlns="http://gexf.net/1.3" '
+                'version="1.3"><graph defaultedgetype="undirected" mode="dynamic" '
+                'timeformat="double" timerepresentation="timestamp"><nodes>'
+                '<node id="t1"><spells><spell timestamp="1"/></spells></node>'
+                '<node id="t2"><spells><spell timestamp="2"/></spells></node></nodes>'
+                '<edges><edge id="te" source="t1" target="missing"/></edges></graph></gexf>')
+    timed = json.loads(await g.gephi_import_file("/tmp/smoke_timed.gexf"))
+    check(timed.get("success") is True and timed.get("import_issues"),
+          "[import] a timestamp file imports next to an open graph, with its warnings", timed)
+    await g.gephi_switch_workspace(0)
+    found = json.loads(await g.gephi_query_nodes(column="team", value="c3", limit=2))
+    check(found.get("matches", 0) > 0 and found.get("count") == 2,
+          "[search] query_nodes finds by value, case-insensitive", found.get("matches"))
+    part = json.loads(await g.gephi_color_by_partition("team"))
+    check(part.get("success") is True, "[palette] color_by_partition", part.get("palette_note", ""))
+    path = json.loads(await g.gephi_find_shortest_path("n0", "n999", follow_direction=False))
+    check(path.get("found") is True and path.get("equally_short_paths", 0) >= 1,
+          "[paths] shortest path n0 to n999", {k: path.get(k) for k in ("steps", "equally_short_paths")})
+    specs = [{"name": "Degree Range", "params": {"range": [8, 100000]}},
+             {"name": "Equal: team String (Node)", "params": {"pattern": "C3"}}]
+    both = json.loads(await g.gephi_apply_filters(specs, combine="all", dry_run=True))
+    either = json.loads(await g.gephi_apply_filters(specs, combine="any", dry_run=True))
+    check(both.get("success") and either.get("success")
+          and both["nodes_kept"] < either["nodes_kept"] and await stats_nodes() == 1000,
+          "[filters] AND keeps fewer than OR; a dry run changes nothing",
+          (both.get("nodes_kept"), either.get("nodes_kept"), both.get("error"), either.get("error")))
+    await g.gephi_add_column("joined", "integer")
+    await g.gephi_batch_set_node_attributes(
+        [{"id": f"n{i}", "attributes": {"joined": 1990 + i % 10}} for i in range(1000)])
+    tim = json.loads(await g.gephi_set_time_from_columns(start="joined"))
+    sl = json.loads(await g.gephi_time_slice(1990, 1992))
+    check(tim.get("with_time") == 1000 and sl.get("success") and 0 < sl.get("node_count", 0) < 1000,
+          "[time] time from a year column, then a slice in its own workspace",
+          (tim.get("with_time"), sl.get("node_count")))
+    await g.gephi_switch_workspace(0)
+    conv = json.loads(await g.gephi_edit_column("team", "convert", type="integer"))
+    check(conv.get("values_lost") == 1000, "[columns] convert reports values it could not read",
+          conv.get("values_lost"))
+    await g.gephi_undo()
+    run = asyncio.ensure_future(g.gephi_compute_betweenness())
+    await asyncio.sleep(0.3)
+    stop = json.loads(await g.gephi_stop_statistic())
+    ran = json.loads(await run)
+    check(ran.get("stopped") is True or ran.get("success") is True,
+          "[stop] stop_statistic stops a running statistic (or it had already finished)",
+          (stop.get("stopped"), ran.get("error")))
+    save = json.loads(await g.gephi_save_project("/tmp/no-such-folder/x.gephi"))
+    check(save.get("success") is False and "does not exist" in save.get("error", ""),
+          "[save] a missing folder is refused at once instead of hanging", save.get("error"))
 
     # ---- DESTRUCTIVE LAST ----
     await R.run("clear_graph", g.gephi_clear_graph())

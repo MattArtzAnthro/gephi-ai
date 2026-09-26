@@ -272,7 +272,7 @@ async def test_serializing_keeps_every_tool_listing_as_it_was():
     # The listing each tool would have without the wrapper, built from the unwrapped functions
     # on a separate server, must equal what the server lists.
     registered = gephi_mcp.mcp._tool_manager.list_tools()
-    assert len(registered) == 113
+    assert len(registered) == 119
     before = MCPServer("before")
     wrapped = set()
     for t in registered:

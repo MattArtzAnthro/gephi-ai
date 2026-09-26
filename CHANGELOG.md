@@ -4,6 +4,45 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Added
+- **Find nodes by value.** `gephi_query_nodes` takes a column and a whole value, part of the
+  text, or a numeric range, and counts every match.
+- **Combined filters.** `gephi_apply_filters` applies several filters with AND, OR or NOT,
+  shows the result in Gephi's Filters panel, and can count what would stay first
+  (`dry_run`) without changing anything.
+- **Time from columns and time slices.** `gephi_set_time_from_columns` gives nodes or edges
+  their time from start and end columns (years or dates). `gephi_time_slice` opens the
+  network as it was in one period in a new workspace, leaving the network and Gephi's
+  timeline as they were.
+- **Shortest paths.** `gephi_find_shortest_path` counts steps, or reads edge weight as a
+  length or as tie strength, says how many equally short paths exist, and can mark the path
+  for colouring.
+- **Column tidy-up.** `gephi_edit_column` deletes, renames or converts a column, fills its
+  empty cells, or clears it. A conversion reports the values it could not read.
+- **Stop a statistic.** `gephi_stop_statistic` stops a statistic still running in Gephi,
+  and interrupting a statistic from the chat stops it in Gephi too.
+
+### Changed
+- **Imports open in their own workspace**, named after the file, as Gephi's File > Open
+  does, so files with timestamps or integer ids import next to any open graph. An empty
+  workspace left open is removed. `mode="append"` adds a file to the current workspace.
+  Gephi's import warnings come back as `import_issues`.
+- Partition colours no longer repeat after twelve groups. The largest groups get the most
+  distinct colours, and a note says when there are too many groups to tell apart.
+- Gephi's per-column filters have plain names such as "Equal: group String (Node)". Their
+  Non-null and Partition Count versions were unreachable by name before.
+
+### Fixed
+- "Project saved" is reported only once the file is on disk. Saving into a folder that does
+  not exist is refused at once instead of waiting a minute, and saving no longer blocks
+  Gephi's window.
+- A value written to a column named by its title lands in that column instead of a new one.
+- `gephi_export_screenshot` could open Gephi's save dialog and time out on a Gephi that asks
+  where to save screenshots, which is Gephi's default. A capture that produces nothing is
+  now tried once more.
+
 ## MCP server 1.19.3 / Java plugin 1.4.0 / workflow packages 1.17.3
 
 ### Added
