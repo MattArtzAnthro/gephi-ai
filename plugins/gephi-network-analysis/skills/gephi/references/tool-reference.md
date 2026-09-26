@@ -314,6 +314,7 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 ### gephi_run_layout
 - **Method**: POST `/layout/run`
 - **Params**: `{algorithm: str, iterations?: int (1000), properties?: {name: value}}`
+- **Returns**: with plugin 1.3.3+, any setting name that matches no property of the layout is listed in `unapplied_params` with a `warning`; it was not applied, so fix the name and rerun.
 - **Notes**: Runs asynchronously. Algorithm names: forceatlas2, yifanhu, openord, fruchterman, circular, random (plus any layout plugin installed in Gephi — `gephi_get_available_layouts` lists what is present). Unmatched property keys are silently discarded, so check spelling against `gephi_get_layout_properties`: OpenOrd takes display names (`"Edge Cut"`, `"Layout Size"`), ForceAtlas 2 and Yifan Hu take camelCase. On Java plugin 1.2.16 and earlier, omitting properties for OpenOrd or Yifan Hu produced a collapsed or no-op layout — see references/layout-guide.md.
 
 ### gephi_stop_layout
