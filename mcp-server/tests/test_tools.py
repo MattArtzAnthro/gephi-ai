@@ -221,7 +221,7 @@ async def test_profile_graph_flow(rec, monkeypatch):
     <nodes>""" + "".join(f'<node id="n{i}" label="n{i}"/>' for i in range(8)) + "</nodes><edges>" + \
         "".join(f'<edge id="e{i}" source="n{i}" target="n{(i+1) % 8}"/>' for i in range(8)) + \
         "</edges></graph></gexf>"
-    async def fake(method, endpoint, params=None, json_data=None):
+    async def fake(method, endpoint, params=None, json_data=None, timeout=None):
         if endpoint == "/export/gexf":
             return {"success": True, "content": ring}
         if endpoint == "/statistics/modularity":
@@ -239,7 +239,7 @@ async def test_similarity_layout_flow(rec, monkeypatch):
         "".join(f'<edge id="e{i}" source="n{i}" target="n{(i+1) % 8}"/>' for i in range(8)) + \
         "</edges></graph></gexf>"
     calls = []
-    async def fake(method, endpoint, params=None, json_data=None):
+    async def fake(method, endpoint, params=None, json_data=None, timeout=None):
         calls.append((endpoint, json_data))
         if endpoint == "/export/gexf":
             return {"success": True, "content": ring}
