@@ -679,7 +679,7 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Method**: POST `/import/file`
 - **Params**: `{file: str, mode?: "new_workspace"|"append", max_node_size?: float}`
 - **Returns**: `{success, node_count, edge_count, import_mode, import_issues?: [{level, message}]}`
-- **Notes**: Auto-detects format by extension. Supports GEXF, GraphML, GML, CSV, DOT, Pajek. By default the file opens in its own workspace, as from Gephi's File > Open, so its time format and id type always fit; an empty workspace left open is removed, and one holding a graph is kept. `mode: "append"` adds the file to the current workspace, and fails when the two disagree on time format or id type. Tell the user about `import_issues` that matter, such as edges dropped for a missing node.
+- **Notes**: Auto-detects format by extension. Supports GEXF, GraphML, GML, CSV, DOT, Pajek. By default the file opens in its own workspace, as from Gephi's File > Open, so its time format and id type always fit; an empty workspace left open is removed, and one holding a graph is kept. `mode: "append"` adds the file to the current workspace, and fails when the two disagree on time format or id type. Tell the user about `import_issues` that matter, such as nodes Gephi created because an edge names a node the file does not list.
 
 ### gephi_import_gexf
 - **Method**: POST `/import/gexf`

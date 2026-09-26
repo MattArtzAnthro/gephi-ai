@@ -3864,7 +3864,7 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
     to it. "append" adds the file to the current workspace instead, for merging two files;
     Gephi refuses when their settings differ (for example one has timestamps and the other
     intervals). Warnings Gephi raised while reading the file come back as `import_issues`;
-    tell the user about any that matter, such as edges dropped for a missing node.
+    tell the user about any that matter, such as nodes Gephi created because an edge names a node the file does not list.
 
     No file path? (e.g. the user attached a spreadsheet/CSV/JSON/RDF in chat):
     parse the content yourself and build the graph with gephi_add_nodes +
