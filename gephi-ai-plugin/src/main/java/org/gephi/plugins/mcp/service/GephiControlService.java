@@ -1413,13 +1413,108 @@ public class GephiControlService {
 
     // ─── Appearance: Color/Size by Attribute ─────────────────────────
 
+    /**
+     * A column by its id, or by the title users see in Gephi (any case) when no id matches.
+     * Imported files often give columns internal ids such as "0" with a readable title.
+     */
+    static Column findColumn(org.gephi.graph.api.Table table, String name) {
+        if (table == null || name == null) return null;
+        Column byId = table.getColumn(name);
+        if (byId != null) return byId;
+        // Search a copy: iterating the table itself locks it until the loop runs to the end, so
+        // returning from inside the loop would leave the table locked and wedge Gephi.
+        for (Column c : table.toArray()) {
+            if (name.equalsIgnoreCase(c.getId()) || name.equalsIgnoreCase(c.getTitle())) return c;
+        }
+        return null;
+    }
+
+    private static int clamp255(int v) { return Math.max(0, Math.min(255, v)); }
+
+    /**
+     * Give a partition the exact colours Gephi AI applied, matched by the value's text as the
+     * colour map is keyed. Values Gephi AI left alone keep their colour in the panel. Returns how
+     * many values were set.
+     */
+    static int applyPaletteToPartition(org.gephi.appearance.api.Partition partition, Graph graph,
+                                       Map<String, Color> palette) {
+        int set = 0;
+        for (Object value : partition.getValues(graph)) {
+            Color c = palette.get(String.valueOf(value));
+            if (c != null) {
+                partition.setColor(value, c);
+                set++;
+            }
+        }
+        return set;
+    }
+
+    /** A two-stop colour ranking from the minimum colour to the maximum, as Gephi AI applies it. */
+    static void configureRankingColor(org.gephi.appearance.plugin.RankingElementColorTransformer t,
+                                      Color min, Color max) {
+        t.setColors(new Color[]{min, max});
+        t.setColorPositions(new float[]{0f, 1f});
+    }
+
+    /** A size ranking from the minimum size to the maximum, as Gephi AI applies it. */
+    static void configureRankingSize(org.gephi.appearance.plugin.RankingSizeTransformer<?> t,
+                                     float min, float max) {
+        t.setMinSize(min);
+        t.setMaxSize(max);
+    }
+
+    /**
+     * Set Gephi's Appearance panel to the node function Gephi AI just applied (nodes, the
+     * transformer's category, its UI, the column), after {@code configure} has given the function
+     * the same colours or sizes, so the panel shows what was done and Apply there reproduces it.
+     * Returns null when the panel shows it, or the reason it could not, without failing the caller.
+     */
+    private String showInAppearancePanel(Workspace ws, Column col,
+                                          Class<? extends org.gephi.appearance.spi.Transformer> transformer,
+                                          java.util.function.Consumer<org.gephi.appearance.api.Function> configure) {
+        try {
+            org.gephi.appearance.api.AppearanceController ac =
+                Lookup.getDefault().lookup(org.gephi.appearance.api.AppearanceController.class);
+            org.gephi.desktop.appearance.AppearanceUIController ui =
+                Lookup.getDefault().lookup(org.gephi.desktop.appearance.AppearanceUIController.class);
+            if (ac == null || ui == null) return "Gephi's Appearance panel is not available";
+            org.gephi.appearance.api.AppearanceModel am = ac.getModel(ws);
+            if (am == null) return "no appearance model for this workspace";
+            org.gephi.appearance.api.Function f = am.getNodeFunction(col, transformer);
+            if (f == null) {
+                return "Gephi's Appearance panel offers no " + transformer.getSimpleName()
+                    + " for column '" + col.getTitle() + "'";
+            }
+            configure.accept(f);
+            onEdt(() -> {
+                ui.setSelectedElementClass("nodes");
+                ui.setSelectedCategory(f.getUI().getCategory());
+                ui.setSelectedTransformerUI(f.getUI());
+                // Selecting the function already shown does not refresh the panel, so clear it
+                // first; otherwise the panel keeps the colours it had before.
+                ui.setSelectedFunction(null);
+                ui.setSelectedFunction(f);
+            });
+            return null;
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Could not show the appearance in Gephi's Appearance panel", e);
+            return "could not update Gephi's Appearance panel: " + e;
+        }
+    }
+
+    /** Record in a response whether Gephi's Appearance panel now shows what was applied. */
+    private static void reportPanel(JsonObject r, String problem) {
+        r.addProperty("appearance_panel", problem == null);
+        if (problem != null) r.addProperty("appearance_panel_note", problem);
+    }
+
     public JsonObject colorByPartition(String columnName, Map<String, int[]> colorMap) {
         Workspace ws = currentWorkspace();
         if (ws == null) return error("No project open");
         try {
             GraphModel gm = currentGraphModel();
             Graph graph = gm.getGraph();
-            Column col = gm.getNodeTable().getColumn(columnName);
+            Column col = findColumn(gm.getNodeTable(), columnName);
             if (col == null) return error("Column not found: " + columnName);
 
             // Collect distinct values
@@ -1467,6 +1562,10 @@ public class GephiControlService {
             } finally { unlockWrite(graph); }
             JsonObject r = success("Colored " + colored + " nodes by " + columnName);
             r.addProperty("partitions", palette.size());
+            reportPanel(r, showInAppearancePanel(ws, col,
+                org.gephi.appearance.plugin.PartitionElementColorTransformer.class,
+                f -> applyPaletteToPartition(((org.gephi.appearance.api.PartitionFunction) f).getPartition(),
+                                             f.getGraph(), palette)));
             return r;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -1504,12 +1603,12 @@ public class GephiControlService {
      * sizeByRanking call this from the HTTP thread, never inside a runOnEDT hop.
      */
     private Column resolveRankingColumn(GraphModel gm, String columnName) {
-        Column col = gm.getNodeTable().getColumn(columnName);
+        Column col = findColumn(gm.getNodeTable(), columnName);
         if (col == null && columnName != null) {
             String lc = columnName.toLowerCase();
             if (lc.equals("degree") || lc.equals("indegree") || lc.equals("outdegree")) {
                 runStatistic("Degree", null);
-                col = gm.getNodeTable().getColumn(columnName);
+                col = findColumn(gm.getNodeTable(), columnName);
             }
         }
         return col;
@@ -1558,6 +1657,11 @@ public class GephiControlService {
             JsonObject res = success("Colored " + colored + " nodes by ranking on " + columnName);
             res.addProperty("min_value", min);
             res.addProperty("max_value", max);
+            final Color low = new Color(clamp255(rMin), clamp255(gMin), clamp255(bMin));
+            final Color high = new Color(clamp255(rMax), clamp255(gMax), clamp255(bMax));
+            reportPanel(res, showInAppearancePanel(ws, col,
+                org.gephi.appearance.plugin.RankingElementColorTransformer.class,
+                f -> configureRankingColor(f.getTransformer(), low, high)));
             return res;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -1592,6 +1696,9 @@ public class GephiControlService {
             JsonObject res = success("Sized " + sized + " nodes by " + columnName);
             res.addProperty("min_value", min);
             res.addProperty("max_value", max);
+            reportPanel(res, showInAppearancePanel(ws, col,
+                org.gephi.appearance.plugin.RankingNodeSizeTransformer.class,
+                f -> configureRankingSize(f.getTransformer(), minSize, maxSize)));
             return res;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -1616,6 +1723,19 @@ public class GephiControlService {
             }
             pendingLayoutProps = null;
             pendingLayoutAlgo = null;
+            org.gephi.layout.api.LayoutController lc = layoutController();
+            if (lc != null) {
+                if (lc.getModel().isRunning()) return error("Layout already running");
+                final int panelIters = iterations > 0 ? iterations : 1000;
+                java.util.List<String> unappliedHere =
+                    startLayoutThroughController(lc, layout, properties, panelIters, this::onEdt);
+                JsonObject r = new JsonObject();
+                r.addProperty("success", true);
+                r.addProperty("layout", algo);
+                r.addProperty("status", "running");
+                reportUnapplied(r, unappliedHere, algo);
+                return r;
+            }
             java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
             final Layout fl = layout;
             final int iters = iterations > 0 ? iterations : 1000;
@@ -1655,6 +1775,11 @@ public class GephiControlService {
     }
 
     public JsonObject stopLayout() {
+        org.gephi.layout.api.LayoutController lc = layoutController();
+        if (lc != null && lc.getModel().isRunning()) {
+            lc.stopLayout();
+            return success("Layout stopped");
+        }
         if (!layoutRunning.get()) return success("No layout running");
         layoutRunning.set(false);
         // cancel(false): the cooperative layoutRunning flag already stops the loop at the
@@ -1668,8 +1793,14 @@ public class GephiControlService {
     public JsonObject getLayoutStatus() {
         JsonObject r = new JsonObject();
         r.addProperty("success", true);
-        r.addProperty("running", layoutRunning.get());
-        if (currentLayoutName != null) r.addProperty("layout", currentLayoutName);
+        org.gephi.layout.api.LayoutController lc = layoutController();
+        boolean panelRunning = lc != null && lc.getModel().isRunning();
+        r.addProperty("running", panelRunning || layoutRunning.get());
+        if (panelRunning && lc.getModel().getSelectedBuilder() != null) {
+            r.addProperty("layout", lc.getModel().getSelectedBuilder().getName());
+        } else if (currentLayoutName != null) {
+            r.addProperty("layout", currentLayoutName);
+        }
         return r;
     }
 
@@ -1893,6 +2024,136 @@ public class GephiControlService {
         return fired.get();
     }
 
+    /**
+     * A dynamic statistic steps through the network's timeline window by window. On a network
+     * with no time data there is no timeline to step through and Gephi's loop never ends, so it
+     * is refused. Returns the reason, or null when the statistic can run.
+     */
+    private static String fmtTime(double t) {
+        return t == Math.rint(t) ? String.valueOf((long) t) : String.valueOf(t);
+    }
+
+    static String dynamicStatisticProblem(Statistics stat, GraphModel gm) {
+        if (!(stat instanceof org.gephi.statistics.spi.DynamicStatistics) || gm == null) return null;
+        org.gephi.graph.api.Interval bounds = gm.isDynamic() ? gm.getTimeBounds() : null;
+        if (bounds == null || Double.isInfinite(bounds.getLow()) || Double.isInfinite(bounds.getHigh())) {
+            return "This is a dynamic statistic and needs a network with time data (timestamps or"
+                + " intervals on nodes or edges). This network has none, so it was not run.";
+        }
+        // Gephi's dynamic statistics start with window 0 and tick 0, which its settings dialog
+        // fills in. Gephi steps from the start by tick while a window fits, so tick 0 never ends
+        // and a window wider than the span computes nothing.
+        org.gephi.statistics.spi.DynamicStatistics dyn = (org.gephi.statistics.spi.DynamicStatistics) stat;
+        double span = bounds.getHigh() - bounds.getLow();
+        String range = " The network's time data runs from " + fmtTime(bounds.getLow()) + " to "
+            + fmtTime(bounds.getHigh()) + "; pass params {\"window\": ..., \"tick\": ...} in those units.";
+        if (!(dyn.getTick() > 0)) {
+            return "This dynamic statistic needs a tick (the step between windows) greater than 0." + range;
+        }
+        if (dyn.getWindow() < 0 || dyn.getWindow() > span) {
+            return "This dynamic statistic needs a window (the width of each time slice) between 0"
+                + " and the network's time span." + range;
+        }
+        return null;
+    }
+
+    /** A statistic with no deadline is waited for this long before it is reported as still running. */
+    static final long STATISTIC_WAIT_CAP_MS = 60L * 60 * 1000;
+    /** After a deadline cancels a statistic, how long to wait for it to actually stop. */
+    static final long STATISTIC_STOP_GRACE_MS = 30_000;
+
+    /**
+     * Run a statistic through Gephi's Statistics panel when the desktop interface is present, so
+     * the panel shows it running, its result and its report, as if the user had clicked Run.
+     * Without the panel (headless, tests) the statistic runs directly. Returns true when the
+     * deadline stopped it; throws when Gephi reports a failure or the run never finishes.
+     */
+    static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
+                                    org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
+                                    java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
+        if (panel == null) {
+            if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
+                return runWithDeadline(() -> stat.execute(gm),
+                                       (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
+            }
+            stat.execute(gm);
+            return false;
+        }
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+            new java.util.concurrent.atomic.AtomicReference<>();
+        org.gephi.utils.longtask.api.LongTaskListener listener =
+            new org.gephi.utils.longtask.api.LongTaskListener() {
+                @Override
+                public void taskFinished(org.gephi.utils.longtask.spi.LongTask task) {
+                    done.countDown();
+                }
+
+                // Gephi 0.11.3+ reports a failed run here (and shows the user a dialog); earlier
+                // versions never call it, and the wait below still ends at its limit.
+                public void fatalError(Throwable t) {
+                    failure.set(t);
+                    done.countDown();
+                }
+            };
+        onEdt.accept(() -> panel.execute(stat, listener));
+        boolean stopped = false;
+        long wait = timeoutMs > 0 ? timeoutMs : STATISTIC_WAIT_CAP_MS;
+        if (!done.await(wait, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            if (timeoutMs <= 0 || !(stat instanceof org.gephi.utils.longtask.spi.LongTask)) {
+                throw new IllegalStateException("The statistic is still running in Gephi after "
+                    + (wait / 60000) + " minutes; stop it from Gephi's Statistics panel.");
+            }
+            ((org.gephi.utils.longtask.spi.LongTask) stat).cancel();
+            stopped = true;
+            if (!done.await(STATISTIC_STOP_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("The statistic was stopped at its deadline but has"
+                    + " not finished; restart Gephi if it keeps running.");
+            }
+        }
+        if (failure.get() != null) throw new RuntimeException(failure.get());
+        return stopped;
+    }
+
+    /**
+     * Start a layout through Gephi's LayoutController, so the Layout panel shows the algorithm,
+     * the settings used and the running state. Selecting a layout reloads the settings Gephi
+     * saved for it, so the settings go on after selection, starting from the layout's defaults
+     * as a directly run layout does; selecting it again makes the panel show them. Returns the
+     * setting names that matched no property.
+     */
+    static java.util.List<String> startLayoutThroughController(org.gephi.layout.api.LayoutController lc,
+                                                          Layout layout, Map<String, Object> properties,
+                                                          int iterations,
+                                                          java.util.function.Consumer<Runnable> onEdt) {
+        java.util.List<String> unapplied = new java.util.ArrayList<>();
+        onEdt.accept(() -> {
+            lc.setLayout(layout);
+            try {
+                layout.resetPropertiesValues();
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "resetPropertiesValues failed for " + layout, e);
+            }
+            unapplied.addAll(applyLayoutProperties(layout, properties));
+            lc.setLayout(layout);
+            lc.executeLayout(iterations);
+        });
+        return unapplied;
+    }
+
+    private void onEdt(Runnable r) {
+        runOnEDT(() -> {
+            r.run();
+            return null;
+        });
+    }
+
+    private static org.gephi.layout.api.LayoutController layoutController() {
+        org.gephi.layout.api.LayoutController lc =
+            Lookup.getDefault().lookup(org.gephi.layout.api.LayoutController.class);
+        return lc != null && lc.getModel() != null ? lc : null;
+    }
+
     private JsonObject runStatistic(String builderName, Map<String, Object> params) {
         try {
             Workspace ws = currentWorkspace();
@@ -1948,10 +2209,11 @@ public class GephiControlService {
             }
 
             // Execute, stopping it at the deadline when one was given
-            boolean stopped = stat instanceof org.gephi.utils.longtask.spi.LongTask
-                && runWithDeadline(() -> stat.execute(gm),
-                                   (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
-            if (!(stat instanceof org.gephi.utils.longtask.spi.LongTask)) stat.execute(gm);
+            String dynamicProblem = dynamicStatisticProblem(stat, gm);
+            if (dynamicProblem != null) return error(dynamicProblem);
+            boolean stopped = executeStatistic(stat, gm, timeoutMs,
+                Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class),
+                this::onEdt);
             if (stopped) {
                 // A cancelled run writes nothing, so the column still holds the previous run.
                 JsonObject r = error(matchedBuilder.getName() + " did not finish within "
@@ -3048,7 +3310,8 @@ public class GephiControlService {
             // Find the column
             Column ccCol = gm.getNodeTable().getColumn("componentnumber");
             if (ccCol == null) {
-                for (Column col : gm.getNodeTable()) {
+                // A copy: breaking out of a loop over the table itself would leave it locked.
+                for (Column col : gm.getNodeTable().toArray()) {
                     if (col.getTitle().toLowerCase().contains("component")) {
                         ccCol = col;
                         break;
