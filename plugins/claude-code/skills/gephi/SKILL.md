@@ -8,12 +8,12 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.16.1"
+  version: "1.17.0"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.16.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.17.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 113 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__gephi-mcp__gephi_*`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -41,7 +41,7 @@ You have access to 113 MCP tools from the `gephi-mcp` server (tool names start w
   and both `full_node_count` and `visible_node_count`. Never present a number computed on a
   filtered subgraph as a fact about the whole network: surface the warning, name both counts, and
   ask whether the filter was intended. Reset with `gephi_reset_filters` if it was not.
-- **A modularity score alone never shows strong communities.** Random graphs with the same degrees score 0.3 to 0.6, and sparse, hub-heavy networks sit at the top of that range, so never call a partition "strong" or "clear" from the score and never use "above 0.3" as a threshold. Before naming communities or reporting them as findings, run `gephi_community_stability`. Report `mean_stability` in plain words ("accounts grouped together stay together about 40% of the time"), name only groups that are stable cores, and when `consensus_warning` appears, say the communities are loose and describe the stable cores instead.
+- **A modularity score alone never shows strong communities.** Random graphs with the same degrees score 0.3 to 0.6, and sparse, hub-heavy networks sit at the top of that range, so never call a partition "strong" or "clear" from the score and never use "above 0.3" as a threshold. Before naming communities or reporting them as findings, run `gephi_community_stability`. Report `mean_stability` in plain words ("accounts grouped together stay together about 40% of the time"), Small stable cores appear even in a randomly wired network, so their number or coverage is never evidence of communities: judge by `mean_stability` and by how large the biggest cores are, and name only large cores whose members make sense together. When `consensus_warning` appears, say the communities are loose.
 - **Reply, mention, citation and follower networks are mostly one-way.** Read `reciprocity` in `gephi_profile_graph` before calling a directed network a conversation. When few ties are returned, describe hubs as accounts people address, not as partners in an exchange.
 - **Never claim "scale-free" or "power law" from a heavy-tailed degree distribution** — power-law and log-normal fits are near-indistinguishable in practice, and the term smuggles in a universal-law claim (Jacomy 2020). Describe hub dominance as a characteristic of THIS network ("a few accounts concentrate most ties"), not as the signature of a law.
 - **Every final export ships with its story.** When handing over a finished map, always provide copy-ready caption text: data, layout and key settings, what size and color encode, and what the map does and does not license a reader to conclude. Circulating a network image without interpretive context ("storyletting") is the field's named failure mode — see references/reading-network-maps.md.
@@ -54,8 +54,8 @@ You have access to 113 MCP tools from the `gephi-mcp` server (tool names start w
 3. **Import** — `gephi_import_file` or build with `gephi_add_nodes`/`gephi_add_edges`
 4. **Statistics** — compute degree, modularity, etc.
 5. **Data-truth check** — before coloring by any claimed grouping, run `gephi_visual_qa` with `partition_column` set. If the verdict is "none", the attribute does not match the topology and coloring by it would mislead; compute real communities with `gephi_compute_modularity` instead (and say so). When building demo/synthetic networks, wire real structure: preferential attachment within communities, hub-biased bridges between them, within-group edge share above 60% — never random edges with decorative group labels.
-6. **Style** — color by partition, size by ranking. With community colors applied, tint edges by their source (`edge.color` set to `source`, `edge.opacity` 30-40) so edges carry community identity without noise. Exception: dense word co-occurrence graphs (text networks) — per-source edge coloring adds a second visual dimension on top of an already-high edge count and reads as busier, not clearer; use a flat neutral gray instead (see references/text-network-analysis.md).
-7. **Layout** — `gephi_run_layout` with `"ForceAtlas 2"` (linLogMode true, gravity 0), then run `gephi_visual_qa` and export a small PNG to inspect; fix every warning and adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
+6. **Style** — color by partition, size by ranking. Groups come first and edges second: draw edges in a light neutral close to the background (`edge.color` `#D0D0D0` on white, opacity 80-100) so the groups read first and dark edge bundles are not mistaken for nodes, and make nodes contrast with it. Coloring edges by their source (`edge.color: "source"`) is a deliberate choice for showing where ties come from, not a default. Draw edges straight (`edge.curved: false`) unless the network is directed and direction matters. Size nodes as a ratio suited to where the map will be seen: about 1 to 10 for a whole map on screen, more for a large print.
+7. **Layout** — ask first where the map will be shown (screen, web page, print) and whether it is for exploring or for showing others. Then `gephi_run_layout` with `"ForceAtlas 2"` in two passes (LinLog off, then LinLog on with scalingRatio divided by about 20; see Layout below), then run `gephi_visual_qa` and export a small PNG to inspect; fix every warning and adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
 8. **Preview** — `gephi_set_preview_settings` for export appearance
 9. **Export** — size the canvas to the layout shape using `extent.suggested_export` from `gephi_visual_qa`, then `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation (pass `caption_column` for floating cluster captions; the app offers per-node ask-Claude, ego highlighting, in-place refresh, and a time slider on dynamic graphs); use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
 
@@ -107,8 +107,9 @@ The first turn decides the quality of everything after it. Two moves, always:
    numbers, and ask the 2-3 questions the profile raises. Three of its
    numbers pick layout parameters before any render: `weights.heavy_tailed`
    means log-transform weights (or lower edgeWeightInfluence) before a force
-   layout; strongly negative `degree.assortativity` means enable
-   distributedAttraction (dissuade hubs); `clustering_vs_random` is the
+   layout; strongly negative `degree.assortativity` means hub-and-spoke wiring,
+   where each hub sits in a halo of its neighbours that the layout produces
+   (not a finding; leave Dissuade Hubs off); `clustering_vs_random` is the
    baseline-relative form of "highly clustered" — quote the ratio, never the
    raw coefficient alone.
 
@@ -283,20 +284,21 @@ for the largest nodes; color must not be the only way to identify a community.
 ### Publication Export Settings
 Clean (no labels):
 ```json
-{"node.label.show": false, "edge.opacity": 25, "edge.curved": true, "edge.color": "source", "edge.thickness": 2.0, "node.opacity": 100, "node.border.width": 0.3, "arrow.size": 0}
+{"node.label.show": false, "edge.opacity": 90, "edge.curved": false, "edge.color": "#D0D0D0", "edge.thickness": 1.0, "node.opacity": 100, "node.border.width": 0.3, "arrow.size": 0}
 ```
 
 Labeled:
 ```json
-{"node.label.show": true, "node.label.proportinalSize": false, "node.label.font": "Arial 10 Plain", "node.label.outline.size": 4, "node.label.outline.opacity": 95, "edge.opacity": 15}
+{"node.label.show": true, "node.label.proportinalSize": true, "node.label.font": "Arial 10 Plain", "node.label.outline.size": 4, "node.label.outline.opacity": 95, "edge.opacity": 15}
 ```
 
 New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"node.label.overlapGridSize": 50` controls grid granularity. Both can be combined with existing label settings.
 
 ### Layout
 - Choosing by purpose (groups, scale, maps, circles, finishing passes): see the layout guide's "Choosing a layout" table — lead with what the person wants to see, then name the algorithm.
-- ForceAtlas 2 for most graphs: `{"scalingRatio": 15, "linLogMode": true, "gravity": 0, "sync": true}`, 1000-1500 iterations — scale `scalingRatio` up with node count (see Beautiful Graph Recipe table). Gravity stays 0 on connected graphs (use 0.5-1.0 only to keep disconnected components in frame); excessive gravity packs nodes into a central blob and is the most common layout mistake. LinLog mode + gravity 0 is the reference config for making communities visible (Venturini, Jacomy, and Jensen 2021).
-- **Inspect and adjust, always — and measure, don't just look:** after the layout, run `gephi_visual_qa` with `partition_column` set to the community column. Its `partition.separation` (mean intra-community pair distance over mean random pair distance; 1.0 = fully mixed, near 0 = tight distinct clusters) is the objective form of "did the communities separate" — track it across parameter changes and quote the before/after when explaining an adjustment. Then export a small PNG, look at it, diagnose with the symptom table in references/layout-guide.md (blob = gravity too high; hairball = LinLog off or scaling too low; unreadable cluster interiors = raise scalingRatio), change ONE parameter, rerun ~300 iterations. Two or three loops usually converge — say what you saw, what the separation did, and what you changed.
+- ForceAtlas 2 in two passes (full settings in the Beautiful Graph Recipe). Pass 1, LinLog off: `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01}`, 1500 iterations; raise scalingRatio for more room. For a quick look, stop here. Pass 2, for a final map: switch `linLogMode` on, divide scalingRatio by about 20, lower gravity (0.001 or below), and run 3000 iterations or more; large networks keep improving for a long time. Strong gravity at a small value keeps islands and filaments in frame; if a round containing circle shows, lower it, because it makes the network look denser than it is. Leave `distributedAttraction` (Dissuade Hubs) off: it acts only on directed networks and costs cluster separation. Use it only as a deliberate exploration view, say so in the caption, and offer the map without it.
+- Decide the orientation and size ratio for the output before the final pass, and stop changing the layout once the person has started reading the map: a rerun keeps the clusters but moves them, and they lose what they learned.
+- **Inspect and adjust, always — and measure, don't just look:** after the layout, run `gephi_visual_qa` with `partition_column` set to the community column. Its `partition.separation` (mean intra-community pair distance over mean random pair distance; 1.0 = fully mixed, near 0 = tight distinct clusters) is the objective form of "did the communities separate" — track it across parameter changes and quote the before/after when explaining an adjustment. Then export a small PNG, look at it, diagnose with the symptom table in references/layout-guide.md (blob = gravity too high; hairball = run the LinLog pass or filter weak ties; unreadable cluster interiors = raise scalingRatio), change ONE parameter, rerun ~300 iterations. Two or three loops usually converge — say what you saw, what the separation did, and what you changed.
 - Follow with Noverlap: `{"algorithm": "Noverlap", "iterations": 500, "properties": {"margin": 5.0}, "sync": true}`
 - Follow with Label Adjust (500 iterations, sync: true) if labels are enabled
 - **`barnesHutOptimize` is wrong** — the correct key is `barnesHutOptimization`
@@ -319,12 +321,12 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
   utilities (Grammarly Desktop and similar assistants) for the Gephi session.
   Graph size and click timing do not reliably matter.
 - **Workspace switching can deadlock** — same render-deadlock cause as above; if the API hangs after a workspace switch, restart Gephi.
-- **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer high FA2 gravity (5–8) over destructive filters — as a temporary containment tactic only; revert gravity to 0 for the final layout.
+- **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer `strongGravityMode` with a small gravity (0.01, lower if a containing circle shows) over destructive filters.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
 - **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
 - **For dark backgrounds, use the dark-surface variant of the community palette** (see Styling Defaults) — palettes tuned for white surfaces lose contrast on dark ones and vice versa.
 - **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
-- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. `gephi_visual_qa` now detects this (`extent.outliers` lists the runaway nodes) and computes `suggested_export` from the main cloud, so export with the suggested dimensions before reaching for Python cropping. To pull outliers into frame instead: gravity 5–8 in FA2 (temporary containment only). If post-processing anyway, centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
+- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. `gephi_visual_qa` now detects this (`extent.outliers` lists the runaway nodes) and computes `suggested_export` from the main cloud, so export with the suggested dimensions before reaching for Python cropping. To pull outliers into frame instead: `strongGravityMode` with a small gravity (0.01 or lower). If post-processing anyway, centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
 - **ForceAtlas 2 can numerically explode, not just spread out** — observed once on a ~700-node/~1900-edge weighted graph with a high-weight hub, 1500 iterations: node coordinates reached `Infinity`/`NaN` (one node hit `1e37`), not just a large-but-finite bounding box. This is silent: the layout call still returns `success`. Sync runs of `gephi_run_layout` now check for this automatically — a `layout_exploded` block in the result means do NOT export or style; follow its fix. Async runs and older servers still need the manual `math.isfinite` check on exported positions. (The exact parameter combination that triggered it is unconfirmed — see the `/layout/run` request-key gotcha below, discovered afterward, which casts doubt on which properties were actually active for this run. Treat this as "FA2 can do this on some graphs," not as a specific combination to avoid.) Fix: reset with Random Layout and rerun rather than trying to nudge the exploded node back — the explosion wasn't confined to one node, it corrupted the whole layout. The profile's heavy-tailed-weights flag is the advance warning: log-transform weights or lower edgeWeightInfluence before laying out a graph that carries it.
 - **`/layout/run`'s tuning values must be sent under the key `"properties"`, not `"params"`** — when driving the Gephi HTTP API directly (not through `gephi_run_layout`, which builds this correctly), a request with the wrong key returns `success: true` and runs the layout on its plugin defaults, silently discarding every custom value. There is no error to catch this. The tell: changing `scalingRatio`/`gravity` across a wide range and getting back nearly the same layout extent every time — a layout genuinely that insensitive to a parameter is itself the anomaly. Verify the request shape (or just use `gephi_run_layout`) before concluding a parameter doesn't matter for a given graph. The same applies to `"Noverlap"`'s `speed`/`ratio`/`margin`, which default to `0.0` — a full no-op, not a gentle setting.
 - **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
@@ -338,60 +340,56 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 
 Bad-looking graphs almost always come from one of three problems: layout parameters ignored (the most common), no overlap prevention, or wrong edge/label settings. Follow this recipe for publication-quality output.
 
-### scalingRatio by graph size
-
-`scalingRatio` must be calibrated to node count — too high and communities fly to the canvas edges:
-
-| Nodes | scalingRatio | barnesHutOptimization | distributedAttraction |
-|-------|-------------|----------------------|----------------------|
-| ≤ 50  | 10–20       | false                | false                |
-| 50–300 | 30–80      | true                 | false                |
-| 300–1000 | 100–150  | true                 | true                 |
-| 1000+ | 200–300     | true                 | true                 |
-
-### Phase 1 — Community layout (1000–1500 iterations)
+### Pass 1 — Tune with LinLog off (1500 iterations)
 ```json
 {
   "algorithm": "ForceAtlas 2",
-  "iterations": 1200,
+  "iterations": 1500,
   "sync": true,
   "properties": {
-    "scalingRatio": 15,
-    "linLogMode": true,
-    "gravity": 1.0,
+    "linLogMode": false,
+    "scalingRatio": 10,
+    "strongGravityMode": true,
+    "gravity": 0.01,
+    "distributedAttraction": false,
     "barnesHutOptimization": false
   }
 }
 ```
-- `linLogMode: true` is the single most important setting — it makes communities pull together as tight clusters with open space between them
-- `scalingRatio` default (10) is fine for small graphs; scale up with node count per the table above
-- `distributedAttraction` (Dissuade Hubs) helps large graphs but pushes communities apart on small ones — avoid for < 300 nodes
-- `barnesHutOptimization` is only needed for large graphs (300+); skip it for small graphs to avoid approximation artifacts
-- Always use `sync: true` so Phase 2 doesn't start on a still-moving graph
+- Raise `scalingRatio` for more room between nodes; more room also allows more contrast between small and big nodes
+- `strongGravityMode` with a small `gravity` holds islands and filaments in frame. If a round containing circle shows, lower gravity (0.001, or far below); too much makes the network look denser than it is
+- `barnesHutOptimization: true` above about 1,000 nodes; it is faster but adds a little noise
+- For a quick look, this pass is enough
 
-### Phase 2 — Overlap prevention (200 iterations)
+### Pass 2 — Separate the clusters with LinLog (3000+ iterations)
 ```json
 {
   "algorithm": "ForceAtlas 2",
-  "iterations": 200,
+  "iterations": 3000,
   "sync": true,
   "properties": {
-    "scalingRatio": 15,
     "linLogMode": true,
-    "gravity": 1.0,
-    "adjustSizes": true
+    "scalingRatio": 0.5,
+    "strongGravityMode": true,
+    "gravity": 0.001,
+    "distributedAttraction": false
   }
 }
 ```
-- `adjustSizes: true` (Prevent Overlap) runs FA2 while accounting for node sizes — nodes physically push each other apart
-- Keep the same `scalingRatio` as Phase 1 so community structure is preserved
+- Switch LinLog on only after pass 1 has stopped, and divide pass 1's `scalingRatio` by about 20
+- LinLog gives the clearest clusters but converges slowly: run it long, and longer on large networks (a network of 10,000+ nodes keeps improving for a long time). If nodes keep jittering, lower `jitterTolerance`
+- `distributedAttraction` (Dissuade Hubs) stays off: it acts only on directed networks, pushes nodes that send many links but receive few to the edge, and costs cluster separation
+- Always use `sync: true` so the next pass doesn't start on a still-moving graph
 
-### Phase 3 — Fine-grained separation
+### Pass 3 — Overlap prevention (200 iterations)
+Rerun pass 2's settings with `"adjustSizes": true` for about 200 iterations. It slows the layout on purpose and treats nodes as slightly bigger, so check `partition.separation` did not get worse. If the layout jams, shrink the nodes or skip this pass.
+
+### Pass 4 — Fine-grained separation
 ```json
 {"algorithm": "Noverlap", "iterations": 300, "sync": true, "properties": {"margin": 3.0}}
 ```
 
-### Phase 4 — Label positioning (only if showing labels)
+### Pass 5 — Label positioning (only if showing labels)
 ```json
 {"algorithm": "Label Adjust", "iterations": 300, "sync": true}
 ```
@@ -400,18 +398,18 @@ Bad-looking graphs almost always come from one of three problems: layout paramet
 ```json
 {
   "node.label.show": false,
-  "edge.color": "source",
-  "edge.opacity": 20,
-  "edge.curved": true,
-  "edge.thickness": 1.5,
+  "edge.color": "#D0D0D0",
+  "edge.opacity": 90,
+  "edge.curved": false,
+  "edge.thickness": 1.0,
   "node.opacity": 100,
   "node.border.width": 0.5,
   "node.label.avoidOverlap": true,
   "arrow.size": 0
 }
 ```
-- `edge.color: "source"` creates the watercolor halo effect where edges fade into their source community color
-- `edge.opacity: 20` keeps edges from overwhelming the community structure
+- Edges in a light neutral near the background keep the groups primary. Set contrast with the tone first and lower opacity only a little: low opacity piles up into uneven texture where edges bundle
+- `edge.color: "source"` (edges tinted by their source community) is an option when where ties come from matters; say so in the caption
 - `node.label.avoidOverlap: true` (0.11.1+) prevents label collisions without needing Label Adjust
 
 ## Dark Background Workflow
@@ -562,9 +560,9 @@ plt.savefig('graph-labeled.png', facecolor='#0a0c1a', bbox_inches='tight', pad_i
 top-PageRank members (`gephi_query_nodes` or the exported node table).
 
 ### Troubleshooting
-- **Nodes in a ball**: gravity is too high OR layout parameters weren't applied (check you're using correct key names). Fix: run Random Layout (1 iteration), then re-run Phase 1.
-- **Communities not separating**: `linLogMode` is off, or `scalingRatio` is too low. Verify properties are accepted.
-- **Nodes still overlapping after Phase 2**: run Noverlap with higher margin (5–8).
+- **Nodes in a ball**: gravity is too high OR layout parameters weren't applied (check you're using correct key names). Fix: run Random Layout (1 iteration), then re-run pass 1.
+- **Communities not separating**: run pass 2 (LinLog), check Dissuade Hubs is off, and verify properties are accepted. A round blob does not prove there are no groups: the eye only sees two groups when there is a gap between them, and large groups fill it. Check with modularity and `gephi_community_stability` before saying the network has none.
+- **Nodes still overlapping after pass 3**: run Noverlap with higher margin (5–8).
 - **Labels colliding**: run Label Adjust, or enable `node.label.avoidOverlap: true` in preview settings.
 
 For detailed tool parameters, see [references/tool-reference.md](references/tool-reference.md).

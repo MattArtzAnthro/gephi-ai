@@ -17,7 +17,7 @@ not be criticized for crossing edges.
 
 | What the person wants | Use | Notes |
 |---|---|---|
-| "Show me the groups/communities" | ForceAtlas 2 (linLogMode true, gravity 0) | The default for almost everything; see the reference config below |
+| "Show me the groups/communities" | ForceAtlas 2 in two passes (LinLog off, then on) | The default for almost everything; see the two passes below |
 | Groups in a TREE-LIKE network (replies, retweets, seeded citations) | Community layout (`gephi_community_layout`) | Force layouts cannot separate star-shaped communities — run modularity first, then this; see the tree-like section below |
 | "Who plays similar roles?" (even if not directly connected) | Similarity layout (`gephi_similarity_layout`) | Embedding-based; proximity = similar structural role, NOT connection — always say so when presenting. Compare against FA2; disagreements mark bridge/boundary actors |
 | A huge network (50k+ nodes) | OpenOrd first, then a short ForceAtlas 2 pass | OpenOrd is built for scale; FA2 refines the detail |
@@ -68,45 +68,54 @@ expect to reach a good layout by iteration, not by one perfect setting.
 
 ## ForceAtlas2 (Default Choice)
 
-The go-to algorithm. For revealing community structure, the VNA literature treats
-**LinLog mode with gravity 0** as the reference configuration: Noack showed
-logarithmic repulsion (LinLog) is the empirical gold standard for rendering
-communities as compact, separated visual clusters, and Venturini et al. found FA2
-with LinLog and zero gravity made clustering clearly more discernible than both
-default FA2 and Fruchterman-Reingold on the same network.
+The go-to algorithm. LinLog mode (logarithmic attraction) is the gold standard for
+rendering communities as compact, separated clusters: Noack showed it empirically,
+and Venturini et al. found FA2 with LinLog made clustering clearly more discernible
+than default FA2 and Fruchterman-Reingold on the same network. LinLog also converges
+slowly, so it is the second pass, not the first.
 
-### Gravity: less than you think
+### Two passes
 
-Gravity is NOT a quality knob. Its only job is to keep disconnected components from
-drifting off-screen. Excessive gravity packs all nodes toward the center and
-destroys the attraction-repulsion balance that makes structure visible — the single
-most common cause of unreadable, over-compacted layouts.
+1. **Tune with LinLog off.** `{"linLogMode": false, "scalingRatio": 10,
+   "strongGravityMode": true, "gravity": 0.01}`, about 1500 iterations. Adjust
+   scalingRatio here. For a quick look, stop after this pass.
+2. **Final map: LinLog on.** Stop the layout, switch `linLogMode` on, divide
+   scalingRatio by about 20, lower gravity (0.001 or below), and run 3000
+   iterations or more. Large networks keep improving for a long time (10,000+
+   nodes: let it run). The clusters become denser, with more space between them.
 
-- Connected graph: **gravity 0** (or 0.5 if the frame drifts).
-- Disconnected components: the smallest gravity that keeps them in frame
-  (start at 0.5; go to 1.0 only if pieces still escape).
-- Never raise gravity to "tighten" a layout — lower `scalingRatio` instead.
-- `strongGravityMode` is almost never right for analysis layouts.
+Change settings only while the layout is stopped.
+
+### Gravity: small, and usually strong mode
+
+Gravity only keeps islands and filaments in frame. Plain gravity barely does that,
+and raising it packs the graph into a ball. Use `strongGravityMode` with a small
+value (0.01, going to 0.001 or far below with LinLog). It holds the network in an
+emergent circle with islands on its edge. Too much crushes filaments and makes the
+network look denser than it is: lower it until the containing circle is no longer
+visible. There is no correct value; it depends on size and density. Never raise
+gravity to tighten a layout: lower `scalingRatio` instead.
 
 ### Key Parameters
 | Parameter | Recommended start | Effect |
 |-----------|-------------------|--------|
-| `linLogMode` | **true** for community readability | Logarithmic repulsion; clusters become compact and separated |
-| `gravity` | **0** (0.5–1.0 only for disconnected graphs) | Pulls everything centerward; excess packs the graph into a blob |
-| `scalingRatio` | by node count: <1k start 1-2; 1k-10k start 2-4; >10k start 4-8 (raise to spread, lower to tighten) | Overall expansion; the correct knob for micro/macro balance. Start low and expand only if cramped — starting high over-spreads into specks |
-| `barnesHutOptimization` | true above ~5k nodes | Faster with slight approximation |
-| `edgeWeightInfluence` | 1.0 (0 to ignore weights) | How strongly weights pull |
-| `jitterTolerance` | 1.0 | Higher = faster, less precise |
-| `preventOverlap` | true only for the final polishing pass | Readability; distorts distances slightly |
+| `linLogMode` | false in pass 1, true in pass 2 | Clearest cluster separation, slow to converge |
+| `scalingRatio` | 10 in pass 1; that value ÷ 20 in pass 2 | Ratio of repulsion to attraction: the overall spread. More room allows more contrast between small and big nodes |
+| `strongGravityMode` + `gravity` | true + 0.01 (lower in pass 2) | Keeps islands and filaments in frame; excess makes the network look denser |
+| `distributedAttraction` | **false** | Dissuade Hubs: acts only on directed networks, pushes nodes that send many links but receive few to the edge, and costs cluster separation. Use only as a deliberate exploration view, say so in the caption, and offer the map without it |
+| `barnesHutOptimization` | true above ~1k nodes | Faster; adds a little noise |
+| `edgeWeightInfluence` | 1.0 (set 0 to test whether weights matter) | An exponent on the weight. With weights between 0 and 1, raising it weakens ties. Normalize very large ranges and never use negative weights |
+| `jitterTolerance` | 1.0 | Lower it (e.g. 0.25) when nodes keep vibrating |
+| `adjustSizes` | true only for the final polishing pass | Prevent Overlap: slows the layout on purpose and treats nodes as slightly bigger; check it did not blur the clusters. If it jams, shrink the nodes |
 
 ### Micro/macro balance
 
 LinLog emphasizes macrostructure (separation between clusters) at some cost to
 microstructure (readable detail inside each cluster). Balance them deliberately:
 
-- Cluster blobs too tight to read internally → raise `scalingRatio`, or run a short
-  finishing pass with `linLogMode: false` to relax local spacing.
-- Clusters readable but global shape mushy → LinLog on, check gravity is 0.
+- Cluster blobs too tight to read internally → raise `scalingRatio`, or finish with a
+  short pass with `linLogMode: false`.
+- Clusters readable but global shape mushy → run the LinLog pass longer.
 - Judge at two zoom levels: does the overview show distinct regions, and does a
   zoomed region show distinguishable nodes? A layout that only works at one zoom
   level is half-finished.
@@ -115,57 +124,57 @@ microstructure (readable detail inside each cluster). Balance them deliberately:
 
 Never trust settings blind; look at the result and iterate. After each layout run:
 
-1. Export a modest PNG (e.g. 1200px) and actually look at it.
+1. Run `gephi_visual_qa` with `partition_column`, export a modest PNG (e.g. 1200px) and
+   actually look at it.
 2. Diagnose with this table:
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| Dense ball in the center, empty margins | Gravity too strong | Set gravity to 0, rerun |
+| Dense ball in the center, empty margins | Gravity too strong | Lower gravity (strong mode, smaller value), rerun |
+| A visible round containing circle | Strong gravity too high | Lower gravity until the circle disappears |
 | Tight little clusters lost in vast whitespace | scalingRatio too high for the graph size (LinLog amplifies this) | Lower scalingRatio (halve it), rerun; `gephi_visual_qa` flags this as "over-spread" |
-| Uniform circle/disc, no lumps or hollows | Structure not yet expressed | LinLog on, more iterations; if it persists, the graph may genuinely lack clustering |
-| "Hairball" tangle | Settings, not necessarily the data | LinLog on, gravity 0, raise scalingRatio; consider filtering weak edges first |
-| Clusters overlap and smear together | Repulsion too weak | Raise scalingRatio; check LinLog is on |
-| Distinct clusters but unreadable inside | Macro over micro | Raise scalingRatio or short non-LinLog finishing pass |
-| Components flying off-frame | No gravity on a disconnected graph | Small gravity (0.5) |
-| Nodes on top of each other in final render | Overlap not resolved | Final short pass with preventOverlap: true |
+| Uniform circle/disc, no lumps or hollows | Not yet separated, or groups too mixed to show | Run the LinLog pass longer. A round blob does not prove there are no groups: the eye only sees groups separated by a gap, and large groups fill it. Check with modularity and `gephi_community_stability` |
+| "Hairball" tangle | Settings, not necessarily the data | Run the LinLog pass; consider filtering weak edges first |
+| Clusters overlap and smear together | Repulsion too weak, or Dissuade Hubs on | Raise scalingRatio; turn Dissuade Hubs off |
+| Distinct clusters but unreadable inside | Macro over micro | Raise scalingRatio or a short non-LinLog finishing pass |
+| Components flying off-frame | No gravity on a disconnected graph | `strongGravityMode` with a small gravity |
+| Nodes on top of each other in final render | Overlap not resolved | Final short pass with `adjustSizes: true` |
 
 3. Change ONE parameter, rerun (a few hundred iterations suffice for adjustment), and
    look again. Two or three loops usually converge. Report what you saw and changed.
 
-Composition tip: once structure is right, a short final pass (200-300 iterations) with
-slightly higher gravity (1-2) rounds a straggly composition into the frame without
-destroying cluster separation — apply gently and re-inspect.
+Once the person has started reading the map, stop rerunning it: a rerun keeps the
+clusters but moves and rotates them, and they lose what they learned. Decide the
+orientation for the output (horizontal or vertical; a diagonal spread never fits)
+before that point.
 
 Shape-reading notes: a non-circular overall silhouette usually indicates polarization
 (a meaningful axis); density differences indicate clustering; do not over-read exact
 distances between individual node pairs — force layouts convey topology as regions and
-gradients, not calibrated distances.
+gradients, not calibrated distances. The empty space around a hub is produced by the
+layout (repulsion grows with a node's number of links), not a finding. Where a
+disconnected island sits means nothing; it can be moved by hand.
 
 ### Iteration Guidelines
-- Small graph (<500 nodes): 200-500 iterations
-- Medium graph (500-5k): 500-1000 iterations
-- Large graph (5k-50k): 1000-3000 iterations (barnesHutOptimization: true)
+- Pass 1: about 1500 iterations at any size (barnesHutOptimization above ~1k nodes)
+- Pass 2: 3000+ iterations; for 10k+ nodes, much longer
 - Check layout status and stop early if converged
 
-### Recommended Settings by Graph Type
-**Community-focused (the usual case):**
+### Recommended Settings
+
+**Pass 1 (tuning, or a quick map):**
 ```json
-{"linLogMode": true, "gravity": 0, "scalingRatio": 2.0}
+{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01}
 ```
 
-**Large graph (>5k nodes):**
+**Pass 2 (final map):**
 ```json
-{"linLogMode": true, "gravity": 0, "scalingRatio": 10.0, "barnesHutOptimization": true}
-```
-
-**Disconnected graph:**
-```json
-{"linLogMode": true, "gravity": 0.5, "scalingRatio": 2.0}
+{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001}
 ```
 
 **Final polish (after structure is right):**
 ```json
-{"preventOverlap": true, "scalingRatio": 2.0}
+{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001, "adjustSizes": true}
 ```
 (short pass, ~100-200 iterations)
 
@@ -268,7 +277,7 @@ that actually changes the picture.
 ```json
 {"Edge Cut": 0.8, "Num Iterations": 750}
 ```
-Then a short ForceAtlas 2 pass (`linLogMode: true, gravity: 0`) for detail.
+Then a short ForceAtlas 2 pass (pass 2 settings: LinLog on, small scalingRatio, small strong gravity) for detail.
 Lower `Edge Cut` toward 0 if the result fragments more than the data warrants.
 
 ## Fruchterman-Reingold
@@ -305,15 +314,16 @@ configuration.
 
 ### Standard exploration (community structure)
 ```
-gephi_run_layout({algorithm: "forceatlas2", iterations: 800, properties: {linLogMode: true, gravity: 0, scalingRatio: 2.0}})
-# Export a small PNG, inspect, diagnose with the table above, adjust ONE parameter, rerun ~300 iterations
+gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 1500, sync: true, properties: {linLogMode: false, scalingRatio: 10, strongGravityMode: true, gravity: 0.01}})
+# Inspect with gephi_visual_qa and a small PNG, adjust ONE parameter, rerun ~300 iterations
 ```
 
 ### Publication quality
 ```
-gephi_run_layout({algorithm: "forceatlas2", iterations: 1000, properties: {linLogMode: true, gravity: 0, scalingRatio: 2.0}})
+gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 1500, sync: true, properties: {linLogMode: false, scalingRatio: 10, strongGravityMode: true, gravity: 0.01}})
+gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 3000, sync: true, properties: {linLogMode: true, scalingRatio: 0.5, strongGravityMode: true, gravity: 0.001}})
 # Inspect and adjust until macro and micro both read well, then:
-gephi_run_layout({algorithm: "forceatlas2", iterations: 150, properties: {preventOverlap: true}})
+gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 150, sync: true, properties: {linLogMode: true, scalingRatio: 0.5, strongGravityMode: true, gravity: 0.001, adjustSizes: true}})
 ```
 
 ### Large graph
@@ -321,7 +331,8 @@ gephi_run_layout({algorithm: "forceatlas2", iterations: 150, properties: {preven
 # Properties are explicit so this also works on Java plugin 1.2.16 and earlier,
 # where a bare Yifan Hu call is a silent no-op (see the OpenOrd section).
 gephi_run_layout({algorithm: "yifanhu", iterations: 300, properties: {optimalDistance: 100, initialStepSize: 20, stepRatio: 0.95, relativeStrength: 0.2}})
-gephi_run_layout({algorithm: "forceatlas2", iterations: 1500, properties: {linLogMode: true, gravity: 0, scalingRatio: 10.0, barnesHutOptimization: true}})
+gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 1500, sync: true, properties: {linLogMode: false, scalingRatio: 10, strongGravityMode: true, gravity: 0.01, barnesHutOptimization: true}})
+gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 5000, sync: true, properties: {linLogMode: true, scalingRatio: 0.5, strongGravityMode: true, gravity: 0.001, barnesHutOptimization: true}})
 ```
 On an affected build with the properties omitted, the pre-pass does nothing and
 FA2 silently does all the work from the original positions — and the run still

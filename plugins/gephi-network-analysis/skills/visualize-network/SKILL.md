@@ -25,11 +25,13 @@ caption and interpretation discipline.
    community color.
 3. **Style.** Compute degree if needed. Apply the validated eight-color partition
    palette with gray beyond eight communities, size nodes by degree, and set
-   preview defaults from the gephi skill. Use subdued source-colored edges for
-   most networks and neutral gray for dense text networks.
+   preview defaults from the gephi skill. Draw edges in a light neutral near the
+   background, straight unless direction matters; source-colored edges are a
+   deliberate choice, not a default.
 4. **Layout.** Run the layout selected by the layout guide. For ForceAtlas 2, use
-   synchronous execution, LinLog, size-appropriate scaling, and measured weight
-   handling. Finish with Noverlap.
+   synchronous execution and two passes (LinLog off to tune, then LinLog on with
+   scalingRatio divided by about 20), small strong gravity, Dissuade Hubs off, and
+   measured weight handling. Finish with Noverlap.
 5. **Inspect.** Run `gephi_visual_qa`, export a small diagnostic PNG, and inspect
    it. Check overview separation and close-up node legibility.
 6. **Adjust one variable.** Diagnose the symptom, change exactly one layout or

@@ -31,10 +31,10 @@ first (laid out, sized, colored), which `/visualize` or `/analyze-network` does.
    ```json
    {
      "node.label.show": false,
-     "edge.opacity": 25,
-     "edge.curved": true,
-     "edge.color": "source",
-     "edge.thickness": 2.0,
+     "edge.opacity": 90,
+     "edge.curved": false,
+     "edge.color": "#D0D0D0",
+     "edge.thickness": 1.0,
      "node.opacity": 100,
      "node.border.width": 0.3,
      "arrow.size": 0
