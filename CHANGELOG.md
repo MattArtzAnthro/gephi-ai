@@ -4,6 +4,18 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Workflow packages 1.16.1
+
+### Fixed
+- **The statistics guide no longer calls modularity above 0.3 significant.** It graded
+  scores from weak to very strong, which contradicted the skill: random graphs with the same
+  degrees score 0.3 to 0.6. It now says the score alone never shows strong communities and
+  points to `gephi_community_stability`.
+- **The tool reference had the resolution backwards.** Raising Gephi's resolution gives fewer,
+  larger communities, not more.
+- **The analyze-network workflow checks stability** before reporting communities, instead of
+  interpreting the modularity score on its own.
+
 ## MCP server 1.19.0 / Java plugin 1.3.2 / workflow packages 1.16.0
 
 ### Fixed

@@ -356,7 +356,7 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{resolution?: float (1.0)}`
 - **Creates**: `modularity_class` (Integer) on nodes
 - **Returns**: `{success, modularity}`
-- **Notes**: Higher resolution = more communities. Use `gephi_color_by_partition` with `modularity_class` afterwards. Gephi's modularity occasionally never converges (gephi#1630); with plugin 1.3.2+ such a run is stopped after 45 s (`GEPHI_MODULARITY_DEADLINE`) and repeated once, and `reruns_after_nonconvergence` says so.
+- **Notes**: Higher resolution = fewer, larger communities (Gephi merges as the value rises, the reverse of the literature's convention). Use `gephi_color_by_partition` with `modularity_class` afterwards. Gephi's modularity occasionally never converges (gephi#1630); with plugin 1.3.2+ such a run is stopped after 45 s (`GEPHI_MODULARITY_DEADLINE`) and repeated once, and `reruns_after_nonconvergence` says so.
 
 ### gephi_community_stability
 - **Method**: runs community detection `runs` times on the unchanged graph, reading the partition back between runs, and measures how often each pair of nodes lands together. Writes its results to their own columns so the run already on the graph survives.
