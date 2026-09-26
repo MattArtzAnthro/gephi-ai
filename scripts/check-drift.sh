@@ -97,7 +97,7 @@ else
       note "release v$LATEST_SERVER is missing asset gephi-ai-$LATEST_NBM.nbm — README points users at the Releases page for it"
     fi
   else
-    note "latest.json advertises server $LATEST_SERVER but there is no release v$LATEST_SERVER — health_check will tell users to update toward a download that does not exist (fix: gh release create v$LATEST_SERVER gephi-ai-$LATEST_SERVER.mcpb gephi-ai-$LATEST_NBM.nbm ...)"
+    note "latest.json advertises server $LATEST_SERVER but there is no release v$LATEST_SERVER, so health_check will tell users to update toward a download that does not exist (fix: gh release create v$LATEST_SERVER dist/gephi-ai-$LATEST_SERVER.mcpb gephi-ai-$LATEST_NBM.nbm ...)"
   fi
 fi
 echo ""

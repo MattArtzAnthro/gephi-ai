@@ -53,6 +53,8 @@ if [ -n "$NEW_SERVER" ] && [ "$NEW_SERVER" != "$OLD_SERVER" ]; then
   sedi "s/gephi-ai==$OLD_SERVER/gephi-ai==$NEW_SERVER/" plugins/claude-code/.mcp.json
   sedi "s/gephi-ai==$OLD_SERVER/gephi-ai==$NEW_SERVER/" plugins/gephi-network-analysis/.mcp.json
   jset mcpb/manifest.json version "$NEW_SERVER"
+  sedi "s/gephi-ai==$OLD_SERVER/gephi-ai==$NEW_SERVER/" mcpb/pyproject.toml
+  sedi "s/^version = \"$OLD_SERVER\"/version = \"$NEW_SERVER\"/" mcpb/pyproject.toml
   jset latest.json server "$NEW_SERVER"
 fi
 
@@ -94,6 +96,7 @@ echo "--- verify ---"
 check ".mcp.json pin"      "$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
 check "Codex .mcp.json pin" "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
 check "mcpb manifest"      "$(python3 -c "import json;print(json.load(open('mcpb/manifest.json'))['version'])")" "$S"
+check "mcpb pyproject pin" "$(grep -oE 'gephi-ai==[0-9.]+' mcpb/pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$S"
 check "latest.json server" "$(python3 -c "import json;print(json.load(open('latest.json'))['server'])")" "$S"
 # /health reads its version from the module manifest, which nbm-maven-plugin generates from
 # the POM, so there is nothing to sweep here. What must stay true is that nobody reintroduces
