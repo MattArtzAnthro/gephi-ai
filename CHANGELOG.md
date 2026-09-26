@@ -4,7 +4,38 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## MCP server 1.18.1
+## MCP server 1.18.2 / Java plugin 1.3.1 / workflow packages 1.15.1
+
+### Fixed
+- **The methods record no longer empties during undo snapshots, what-if runs, or a
+  failed workspace duplicate.** Figures exported afterwards keep a complete legend.
+- **Workspace copies no longer pile up.** The copies that `gephi_snapshot` and
+  `gephi_whatif` make are removed when a call is cancelled, times out, or fails partway.
+  The server removes only the copy Gephi reports making, never a workspace you had before.
+  If a duplicate times out, the server keeps checking for a late copy for up to 30 seconds
+  (`GEPHI_DUPLICATE_GRACE`).
+- **A snapshot whose rename failed no longer claims it can be undone.**
+- **A sync layout stopped with `gephi_stop_layout` now reports `stopped`** instead of
+  `completed`.
+- **Claude Desktop: the bundle no longer needs Python on your machine.** It runs on the
+  `uv` runtime Claude Desktop provides. The first launch downloads the server's
+  dependencies, which takes a few seconds.
+
+### Changed
+- **Graph-changing tools now run one at a time**, so parallel calls from an assistant
+  cannot interleave their edits. A change sent while a sync layout runs waits for the
+  layout to finish (at most 5 minutes); call `gephi_stop_layout` to go sooner. Read-only
+  tools do not wait, except during `gephi_whatif` and `gephi_compare_workspaces`, so they
+  always read your own graph and never a temporary copy.
+- **Java plugin 1.3.1: imports keep the file's positions and sizes exactly.** Gephi used
+  to rescale imported graphs. GEXF and GraphML files now open as saved, including
+  coordinates beyond ±5000. A file whose coordinates all fall between 0 and 1 opens as a
+  tight cluster; run a layout to spread it out. Install the new `.nbm` to get this; the
+  server still works with plugin 1.3.0.
+- The Claude Desktop bundle's dependencies are locked when it is built, so every install
+  gets the same versions.
+- The README is shorter, built around a three-step install.
+
 
 ### Fixed
 - **`gephi_community_stability` reported a failed write as a successful one.** It issued
