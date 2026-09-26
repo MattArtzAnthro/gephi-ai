@@ -76,6 +76,9 @@ slowly, so it is the second pass, not the first.
 
 ### Two passes
 
+This procedure, and the advice below on gravity, Dissuade Hubs, Prevent Overlap and edge
+weights, follows Mathieu Jacomy's ForceAtlas 2 tutorials (YouTube, 2025).
+
 1. **Tune with LinLog off.** `{"linLogMode": false, "scalingRatio": 10,
    "strongGravityMode": true, "gravity": 0.01}`, about 1500 iterations. Adjust
    scalingRatio here. For a quick look, stop after this pass.

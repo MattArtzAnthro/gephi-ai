@@ -4,6 +4,19 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.19.2 / Java plugin 1.3.3 / workflow packages 1.17.1
+
+### Fixed
+- **Misspelled layout settings are reported.** A setting name that matches no property of the
+  layout used to be dropped without a word, so the layout ran on its default and nothing
+  said so. Plugin 1.3.3 lists such names in `unapplied_params` with a warning, for both
+  running and configuring a layout, and the server passes it through.
+
+### Changed
+- The skill and the layout tool credit their sources for the layout procedure, contrast
+  advice and reading rules: Mathieu Jacomy's ForceAtlas 2 tutorials, and Venturini, Jacomy,
+  and Jensen (2021) for LinLog. The reading guide lists the tutorials as a source to recommend.
+
 ## MCP server 1.19.1 / workflow packages 1.17.0
 
 ### Changed

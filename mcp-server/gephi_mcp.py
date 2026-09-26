@@ -1318,7 +1318,9 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
                            properties: dict[str, Any] | None = None, sync: bool = False) -> str:
     """Run a layout algorithm to position nodes.
 
-    For community readability with "ForceAtlas 2", lay out in two passes:
+    For community readability with "ForceAtlas 2", lay out in two passes (after Mathieu
+    Jacomy's ForceAtlas 2 tutorials; LinLog for cluster separation per Venturini, Jacomy,
+    and Jensen 2021):
     1. Tune with LinLog off: {"linLogMode": false, "scalingRatio": 10,
        "strongGravityMode": true, "gravity": 0.01}, with barnesHutOptimization on above
        ~1k nodes. Raise scalingRatio for more room. If a round containing circle shows,
@@ -1332,6 +1334,8 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     separation; use it only as a deliberate exploration view and say so in the caption.
     After the run, call gephi_visual_qa with partition_column: partition.separation
     (lower = clearer groups) lets you compare settings. Change one parameter per rerun.
+    A setting whose name matches no property is not applied: the result then carries
+    unapplied_params and a warning (Gephi AI plugin 1.3.3+). Fix the name and rerun.
 
     properties: optional {name: value} tuning map (gravity, scalingRatio, linLogMode,
     barnesHutOptimization, ...). sync=True waits until the layout finishes before

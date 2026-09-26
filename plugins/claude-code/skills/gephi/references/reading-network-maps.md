@@ -45,16 +45,17 @@ what first-time readers most need and least know:
   only when a gap separates them, and large groups fill the gap. Two real groups
   with 60% of their ties inside look the same as a random network under any
   layout. Check with modularity and `gephi_community_stability` before saying a
-  network has no groups.
+  network has no groups (Jacomy's cluster-illusion demonstration, 2025).
 - **Hide the colours before naming groups.** Colour sits on top of the layout,
   and community colours can make a random network look grouped. Turn them off
   and ask whether the layout alone shows the groups. If it does not, the groups
-  come from the computation, not from anything the map shows; say so.
+  come from the computation, not from anything the map shows; say so (Jacomy,
+  2025).
 - **Islands have no position.** Where a disconnected component lands is random.
-  It can be moved by hand, and its place means nothing.
+  It can be moved by hand, and its place means nothing (Jacomy, 2025).
 - **The empty halo around a hub is made by the layout.** Repulsion grows with a
   node's number of links, so well-connected nodes carry empty space around them.
-  Do not read it as a structural hole.
+  Do not read it as a structural hole (Jacomy, 2025).
 
 ## The process
 
@@ -128,6 +129,7 @@ source (most are open access):
 | Which metric confirms what the eye sees (bridges, hubs, outliers) | Grandjean and Jacomy 2019, "Translating Networks" (DH conference, open access) — the metric-to-visual-position mapping |
 | A gentler first primer on visual network analysis | Venturini, Jacomy, and Pereira 2015, "Visual Network Analysis" (working paper) |
 | What ForceAtlas 2 actually does, its parameters | Jacomy et al. 2014, "ForceAtlas2" (PLoS ONE, open access) |
+| Tuning ForceAtlas 2 step by step, contrast and color, in short videos (in French) | Mathieu Jacomy's Gephi tutorials on YouTube (2025) |
 | Whether their network is "scale-free", power laws | Jacomy 2020, "Epistemic Clashes in Network Science" (Big Data & Society, open access) |
 | One-click tools, defaults, why the craft makes them decide | Jacomy and Munk 2024, "Interfering with the black-box-tradeoff model: Gephisto, a one-click Gephi for critical technical practice" (Convergence 30(1)) |
 | Sharing maps responsibly, why context must travel with images | Jacomy and Jokubauskaitė 2022, "Unblackboxing Gephi" (HAL preprint) |
