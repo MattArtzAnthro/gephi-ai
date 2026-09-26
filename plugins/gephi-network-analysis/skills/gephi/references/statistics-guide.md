@@ -2,7 +2,7 @@
 
 ## Overview
 
-Gephi statistics compute graph-level and node-level metrics. After running a statistic, results are stored as node/edge attributes that can be used for coloring and sizing.
+Gephi statistics compute graph-level and node-level metrics. After running a statistic, results are stored as node and edge attributes that can be used for colouring and sizing. When a statistic has a known defect in Gephi, its reply carries a `caveats` list; read it and pass on what applies.
 
 ## Modularity (Community Detection)
 
@@ -67,16 +67,49 @@ The number of connections each node has. In directed graphs, distinguishes betwe
 | `outdegree` | Integer | Outgoing connections (directed) |
 
 ### How to Visualize
-- `gephi_size_by_ranking({column: "degree", min_size: 5, max_size: 40})` - Hub nodes appear larger
+- `gephi_size_by_ranking({column: "degree"})` - Hub nodes appear larger (the default range, 10 to 100, gives about one to ten on screen)
 - `gephi_color_by_ranking({column: "degree"})` - Gradient from low to high connectivity
+
+### Weighted degree
+When ties have weights (messages sent, co-authored papers, words co-occurring),
+the count of ties and the total weight of ties can rank nodes differently.
+`gephi_run_statistic("Weighted Degree")` writes a "Weighted Degree" column: the
+sum of each node's edge weights. Report which of the two a ranking uses.
 
 ### Interpretation
 - **High degree nodes**: Hubs, influencers, central actors
 - **Heavy-tailed distribution** (a few high-degree hubs, many low-degree nodes):
   describe it as hub dominance in *this* network. Do NOT call it "scale-free" or
-  fit a "power law" — power-law and log-normal fits are near-indistinguishable in
-  practice and the label smuggles in a universal-law claim (Jacomy 2020).
+  fit a "power law": power-law and log-normal fits are nearly
+  indistinguishable in practice, and the label smuggles in a universal-law
+  claim (Jacomy 2020). Most real networks are not scale-free on a formal test
+  (Broido and Clauset 2019).
+- **Describe a heavy tail from the profile.** `gephi_profile_graph` gives what
+  a plain description needs, under `degree`:
+  - `gini`: how unequal the degrees are, from 0 (every node has the same
+    number of ties) to 1 (one node has them all);
+  - `top_5pct_edge_share`: the share of all ties that touch the best-connected
+    5% of nodes;
+  - `max` against `median`: how far the largest hub sits above a typical node.
+
+  "The best-connected 5% of nodes touch 60% of the ties, and the largest hub has
+  40 times the median degree" is a finding a reader can check. Choose the
+  numbers that fit the question; there is no cutoff that makes a tail "heavy."
+- **A formal test needs a separate package.** Fitting and comparing
+  distributions properly needs a statistics package this plugin does not
+  bundle. Ask before installing one. Even then, never report a fitted exponent
+  as a finding: the fit says which curve is least bad for these data, not that
+  the network follows a law (Broido and Clauset 2019).
 - **Even distribution**: connections spread across nodes, no dominant hubs
+
+### Directed communication data: compare in and out
+In email, messaging, or reply networks, read `indegree` (ties received) next to
+`outdegree` (ties sent) for the top nodes. A node that sends widely and hears
+back rarely is often a mailing list, an announcement account, or a system
+sender, not a person at the centre of the conversation. Report such nodes
+separately, and test what they do to the picture with `gephi_whatif` removing
+them. Judge each case by what the node is; there is no fixed in-to-out ratio
+that marks one.
 
 ## Betweenness Centrality
 
@@ -100,6 +133,9 @@ How often a node lies on the shortest path between other pairs of nodes. High be
 | `harmonicclosnesscentrality` | Double | Harmonic closeness centrality |
 | `eccentricity` | Double | Maximum shortest path to any other node |
 
+Gephi's closeness carries a known caveat (the reply's `caveats` list says
+which). For "central to the whole network," PageRank is the safer read.
+
 ### Graph-Level Results
 | Result | Description |
 |--------|-------------|
@@ -119,7 +155,7 @@ How often a node lies on the shortest path between other pairs of nodes. High be
 ## PageRank
 
 ### What It Measures
-Node importance based on the quality and quantity of incoming links. A node is important if it's linked to by other important nodes (recursive definition).
+Node importance based on the quality and quantity of incoming links. A node is important if other important nodes link to it (recursive definition).
 
 ### When to Use
 - Web page ranking
@@ -160,6 +196,14 @@ Similar to PageRank but for undirected networks. Measures influence: a node is i
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `eigencentrality` | Double | Eigenvector centrality (0 to 1) |
+
+### Caveat
+Gephi's eigenvector centrality stops iterating before its values settle on some
+networks, which can put the wrong node first. `gephi_compute_eigenvector` runs
+1,000 iterations, which recovers the order on known cases, but values can still
+differ from an exact calculation by up to about a tenth. Do not rank on small
+differences: compute PageRank as well, compare the two top lists, and say so when
+they disagree.
 
 ### How to Visualize
 - `gephi_size_by_ranking({column: "eigencentrality"})` - Influential nodes appear larger
@@ -284,7 +328,7 @@ For comprehensive analysis, run statistics in this order:
 4. `gephi_compute_betweenness` - Bridge nodes (can be slow)
 5. `gephi_compute_pagerank` - Node importance
 6. `gephi_compute_clustering_coefficient` - Local cohesion
-7. `gephi_compute_eigenvector` - Influence (optional)
+7. `gephi_compute_eigenvector` - Influence (optional; compare with PageRank)
 8. `gephi_compute_hits` - Hub/authority (optional, directed graphs)
 
 ## Statistics Over Time
@@ -302,3 +346,10 @@ Average path length and diameter describe the whole network. For two named nodes
 unless the weights mean something: "distance" when a weight is a length or a cost,
 "strength" when a heavier tie means a closer one. `equally_short_paths` above 1
 means the path shown is one of several, so no single middle node is the only link.
+
+## References
+
+Broido, Anna D., and Aaron Clauset. 2019. "Scale-Free Networks Are Rare."
+*Nature Communications* 10: 1017.
+
+Jacomy, Mathieu. 2020. "Epistemic Clashes in Network Science: Mapping the Tensions between Idiographic and Nomothetic Subcultures." *Big Data & Society* 7 (2).

@@ -23,6 +23,29 @@ year, a first-contact date, a posting date), give it time data with
 - Run it for edges too (`target="edge"`) when ties have their own dates;
   otherwise an edge is present whenever both of its nodes are.
 
+### Separate node and edge files, one edge row per pair per period
+
+A common shape: a node file, and an edge file with one row for each pair in
+each period (the same two people appear once for 2020, again for 2021). Do not
+import that edge file as a CSV. Gephi merges repeated source-target rows on
+import: their weights are summed and only one row's other values survive, so
+the years are lost and the network can no longer be sliced by period. Load it
+this way instead:
+
+1. `gephi_import_file` on the node file. It opens in its own workspace.
+2. `gephi_add_edges` with the edge rows, in batches of a few hundred. Give each
+   row `edge_type` set to its period (for example `"2021"`) and
+   `attributes: {"year": 2021}`. A pair can hold one edge of each type, so the
+   rows for different periods stay separate edges.
+3. `gephi_set_time_from_columns(start="year", end="year", target="edge")`, so
+   each edge is present in its own year only.
+4. Lay out once, on the whole network (section 3).
+5. `gephi_time_slice(start, end)` for each period.
+
+To add node attributes from a second file afterwards, import it with
+`gephi_import_file(..., mode="append")`: rows whose ids match existing nodes
+attach their values to those nodes.
+
 Say what the time means before going further: "a node is present from the
 year it joined, and never leaves" is an assumption the reader should see.
 
@@ -64,6 +87,30 @@ nodes, edges, density, components, modularity, and the nodes whose rank moved.
   it may only be accumulation.
 - **Small periods.** A slice with few nodes gives unstable statistics. Say so
   rather than reading a trend into noise.
+
+## Mixing between groups, period by period
+
+"Did the two departments work together more after the merger?" is a question
+about mixing: how many ties stay inside a group and how many cross between
+groups. In each period's workspace, run `gephi_visual_qa` with
+`partition_column` set to the grouping column. Its `partition` block gives:
+
+- `within_fraction`: the share of ties that stay inside a group;
+- `random_baseline`: the share that would stay inside by chance, given the
+  group sizes;
+- `ratio_vs_random`: the first divided by the second.
+
+A within-group share well above the baseline means the groups keep to
+themselves; near the baseline, ties ignore the groups. Compare the ratio across
+periods rather than the raw share, because the baseline moves when group sizes
+change.
+
+For ties between two named groups when there are more, first narrow the view to
+those two groups with `gephi_apply_filters`, one filter per group and
+`combine="any"`, then run `gephi_visual_qa` on what is shown. Reset the filter
+(`gephi_reset_filters`) before the next period. The count is by tie, not by
+weight: ten weak ties and ten strong ones count the same. Say so when weights
+matter to the question.
 
 ## 5. Dynamic statistics, for a series instead of snapshots
 

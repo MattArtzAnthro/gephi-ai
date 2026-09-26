@@ -7,9 +7,9 @@ explaining a choice, use the plain-language purpose, then name the layout.
 
 Know which interpretation regime the network is in before judging any layout
 (Jacomy 2021): SMALL networks (up to a few dozen nodes) are read
-diagrammatically — follow the individual paths, so judge layouts by
-legibility, minimal edge crossings, even spacing. LARGE networks are read
-topologically — nobody follows individual edges; density patterns ARE the
+diagrammatically: readers follow the individual paths, so judge layouts by
+legibility, minimal edge crossings, and even spacing. LARGE networks are read
+topologically: nobody follows individual edges, and density patterns ARE the
 message, so judge layouts by whether clusters, holes, and bridges show.
 Applying small-network standards to a big map (or vice versa) is a category
 error: a 30-node org chart does not need LinLog, and a 3,000-node map should
@@ -18,8 +18,8 @@ not be criticized for crossing edges.
 | What the person wants | Use | Notes |
 |---|---|---|
 | "Show me the groups/communities" | ForceAtlas 2 in two passes (LinLog off, then on) | The default for almost everything; see the two passes below |
-| Groups in a TREE-LIKE network (replies, retweets, seeded citations) | Community layout (`gephi_community_layout`) | Force layouts cannot separate star-shaped communities — run modularity first, then this; see the tree-like section below |
-| "Who plays similar roles?" (even if not directly connected) | Similarity layout (`gephi_similarity_layout`) | Embedding-based; proximity = similar structural role, NOT connection — always say so when presenting. Compare against FA2; disagreements mark bridge/boundary actors |
+| Groups in a TREE-LIKE network (replies, retweets, seeded citations) | Community layout (`gephi_community_layout`) | Force layouts cannot separate star-shaped communities: run modularity first, then this; see the tree-like section below |
+| "Who plays similar roles?" (even if not directly connected) | Similarity layout (`gephi_similarity_layout`) | Embedding-based; proximity = similar structural role, NOT connection; always say so when presenting. Compare against FA2; disagreements mark bridge/boundary actors |
 | A huge network (50k+ nodes) | OpenOrd first, then a short ForceAtlas 2 pass | OpenOrd is built for scale; FA2 refines the detail |
 | A quick, decent picture of a medium network | Yifan Hu | Fast spring layout, less community emphasis than FA2 |
 | A small network with classic, even spacing | Fruchterman Reingold | Best under ~1k nodes; the "textbook" look |
@@ -153,7 +153,7 @@ before that point.
 
 Shape-reading notes: a non-circular overall silhouette usually indicates polarization
 (a meaningful axis); density differences indicate clustering; do not over-read exact
-distances between individual node pairs — force layouts convey topology as regions and
+distances between individual node pairs: force layouts convey topology as regions and
 gradients, not calibrated distances. The empty space around a hub is produced by the
 layout (repulsion grows with a node's number of links), not a finding. Where a
 disconnected island sits means nothing; it can be moved by hand.
@@ -194,7 +194,7 @@ graphs, often followed by ForceAtlas2 refinement.
 ### Key Parameters
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `stepRatio` | 0.95 | Cooling rate. Higher cools slower — cleaner final layout, longer runtime |
+| `stepRatio` | 0.95 | Cooling rate. Higher cools slower: cleaner final layout, longer runtime |
 | `optimalDistance` | 100 | Target distance between nodes. Raise to separate clusters in dense graphs |
 | `theta` | 1.2 | Barnes-Hut approximation (higher = faster, less precise) |
 | `relativeStrength` | 0.2 | Repulsion/attraction balance. Guards against clusters collapsing or over-expanding |
@@ -202,15 +202,10 @@ graphs, often followed by ForceAtlas2 refinement.
 | `convergenceThreshold` | 1.0E-4 | Energy floor at which the layout stops. Smaller = more accurate |
 | `adaptiveCooling` | false | Helps escape local energy minima on stubborn graphs |
 
-These camelCase keys resolve correctly — the plugin matches them against the
-middle segment of `YifanHu.optimalDistance.name` (verified: passing them moves
-nodes; omitting them does not).
-
-**On Java plugin 1.2.16 and earlier, Yifan Hu will not run without them** — a
-bare `gephi_run_layout("yifanhu")` returns `success: true` and changes nothing
-at all, because every property is 0. See the OpenOrd section above. Fixed in
-1.2.17; on older builds always pass at least `optimalDistance`,
-`initialStepSize`, and `stepRatio`.
+Pass these keys in camelCase: the plugin matches them against the middle
+segment of Gephi's property names (`optimalDistance` for
+`YifanHu.optimalDistance.name`). A bare call runs on the defaults above; pass
+only what you want to change.
 
 ### Recommended Iterations
 - 100-500 iterations (converges fast)
@@ -224,11 +219,12 @@ first pass on a huge graph, then refine with a short ForceAtlas 2 run.
 ### Property names are the trap here
 
 OpenOrd exposes **no dotted canonical names**, so the display name is the only
-key that resolves — spaces, capitals, and `(%)` included. Unlike Yifan Hu
+key that resolves, spaces, capitals, and `(%)` included. Unlike Yifan Hu
 (where `optimalDistance` matches `YifanHu.optimalDistance.name`) and
 ForceAtlas 2 (camelCase), a camelCased `edgeCut` here matches nothing and is
-**silently discarded** — the run returns `success: true` on stock defaults. Use
-exactly these strings, or call `gephi_get_layout_properties("OpenOrd")` first.
+not applied: the reply lists it under `unapplied_params` with a warning, and
+the layout runs on its defaults. Use exactly these strings, or call
+`gephi_get_layout_properties("OpenOrd")` first.
 
 | Property (exact key) | Default | Effect |
 |---|---|---|
@@ -236,41 +232,25 @@ exactly these strings, or call `gephi_get_layout_properties("OpenOrd")` first.
 | `"Num Iterations"` | 750 | Raise only for very large graphs. More iterations = less dense result |
 | `"Num Threads"` | cores − 1 | |
 | `"Layout Size"` | 20000 | Total coordinate span; furthest node lands at ± half this |
-| `"Random seed"` | 0 | Output depends on seed, iterations, AND thread count. Not reproducible run-to-run even with a fixed seed — do not promise reproducibility |
+| `"Random seed"` | 0 | Output depends on seed, iterations, AND thread count. Not reproducible run to run even with a fixed seed, so do not promise reproducibility |
 
-### Requires plugin 1.2.17+ (older plugins produce a collapsed layout)
+### Defaults
 
-Those defaults are the ones the Gephi UI applies via `resetPropertiesValues()`.
-**Java plugin 1.2.16 and earlier never called it**, so every unspecified OpenOrd
-property ran at its Java zero-value. Measured on a 40-node graph under 1.2.16:
-`gephi_run_layout("OpenOrd")` with no properties put **all 40 nodes at (0, 0)**,
-because `Layout Size` was 0 and the coordinate space had zero span. Yifan Hu was
-worse — a bare run was a **complete no-op**, positions byte-identical to before.
-Both returned `success: true`. ForceAtlas 2 was never affected; its builder
-self-initializes, which is why the bug went unnoticed for so long.
-
-1.2.17 resets properties in `findLayout`, so bare calls now behave like the
-Gephi UI and you only pass what you want to change. **If the user is on 1.2.16
-or earlier**, either tell them to update or pass every property explicitly —
-`{"Layout Size": 20000, "Num Iterations": 750, "Edge Cut": 0.8}` restored a
-normal ±10000 spread on the old build.
-
-The tell that you are on an affected build: `gephi_get_layout_properties`
-returns all-zero `value` fields for OpenOrd or Yifan Hu. On 1.2.17+ they report
-the real defaults. Either way the `description` field states the true default in
-prose, so prefer it when the numbers look implausible.
+A bare call runs on the same defaults the Gephi window applies, so pass only
+what you want to change. `gephi_get_layout_properties` reports each property's
+default in `value`, and its `description` states it in prose.
 
 ### The five-stage schedule
 
 Time is split across five annealing stages, tunable as percentages
 (`"Liquid (%)"` 25, `"Expansion (%)"` 25, `"Cooldown (%)"` 25,
-`"Crunch (%)"` 10, `"Simmer (%)"` 15 — they should sum to 100):
+`"Crunch (%)"` 10, `"Simmer (%)"` 15; they should sum to 100):
 
-1. **Liquid** — high-temperature global structure
-2. **Expansion** — push outward, maximize cluster separation
-3. **Cooldown** — settle into semi-stable regions
-4. **Crunch** — compress around cluster centers, sharpen boundaries
-5. **Simmer** — local stabilization, resolve overlaps
+1. **Liquid**: high-temperature global structure
+2. **Expansion**: push outward, maximize cluster separation
+3. **Cooldown**: settle into semi-stable regions
+4. **Crunch**: compress around cluster centers, sharpen boundaries
+5. **Simmer**: local stabilization, resolve overlaps
 
 Leave the split alone unless you have a specific reason; `Edge Cut` is the knob
 that actually changes the picture.
@@ -286,7 +266,7 @@ Lower `Edge Cut` toward 0 if the result fragments more than the data warrants.
 ## Fruchterman-Reingold
 
 Classic force-directed algorithm with even node spacing. Note: on clustered
-networks it shows community structure noticeably worse than ForceAtlas2 — prefer
+networks it shows community structure noticeably worse than ForceAtlas2; prefer
 FA2 unless you specifically want uniform spacing on a small graph.
 
 ### When to Use
@@ -322,24 +302,60 @@ gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 1500, sync: true, prope
 ```
 
 ### Publication quality
-```
-gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 1500, sync: true, properties: {linLogMode: false, scalingRatio: 10, strongGravityMode: true, gravity: 0.01}})
-gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 3000, sync: true, properties: {linLogMode: true, scalingRatio: 0.5, strongGravityMode: true, gravity: 0.001}})
-# Inspect and adjust until macro and micro both read well, then:
-gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 150, sync: true, properties: {linLogMode: true, scalingRatio: 0.5, strongGravityMode: true, gravity: 0.001, adjustSizes: true}})
-```
+Follow the five-pass recipe below.
 
 ### Large graph
 ```
-# Properties are explicit so this also works on Java plugin 1.2.16 and earlier,
-# where a bare Yifan Hu call is a silent no-op (see the OpenOrd section).
-gephi_run_layout({algorithm: "yifanhu", iterations: 300, properties: {optimalDistance: 100, initialStepSize: 20, stepRatio: 0.95, relativeStrength: 0.2}})
+gephi_run_layout({algorithm: "yifanhu", iterations: 300, sync: true, properties: {optimalDistance: 100, initialStepSize: 20, stepRatio: 0.95, relativeStrength: 0.2}})
 gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 1500, sync: true, properties: {linLogMode: false, scalingRatio: 10, strongGravityMode: true, gravity: 0.01, barnesHutOptimization: true}})
 gephi_run_layout({algorithm: "ForceAtlas 2", iterations: 5000, sync: true, properties: {linLogMode: true, scalingRatio: 0.5, strongGravityMode: true, gravity: 0.001, barnesHutOptimization: true}})
 ```
-On an affected build with the properties omitted, the pre-pass does nothing and
-FA2 silently does all the work from the original positions — and the run still
-reports success, so the only symptom is a layout that looks like FA2 alone.
+`sync: true` on every pass makes each one wait for the last to finish, so no
+pass starts on a graph that is still moving.
+
+## Five-pass recipe for a finished map
+
+A map that looks bad almost always has one of three causes: layout settings
+left at their defaults (the most common), overlapping nodes, or edge and label
+settings that bury the groups. These five passes address all three. Run every
+pass with `sync: true`, and check with `gephi_visual_qa` (with
+`partition_column`) between passes.
+
+1. **Tune with LinLog off**, about 1500 iterations: the pass 1 settings above,
+   with `distributedAttraction: false` and `barnesHutOptimization` true only
+   above about 1,000 nodes. For a quick look, stop here.
+2. **Separate the clusters with LinLog on**, 3000 iterations or more: the pass
+   2 settings above. Switch LinLog on only after pass 1 has stopped. If nodes
+   keep jittering, lower `jitterTolerance`.
+3. **Prevent overlap**: rerun pass 2's settings with `"adjustSizes": true` for
+   about 200 iterations. Check that `partition.separation` in
+   `gephi_visual_qa` did not get worse; if the layout jams, shrink the nodes or
+   skip this pass.
+4. **Fine separation with Noverlap**:
+   ```
+   gephi_run_layout({algorithm: "Noverlap", iterations: 300, sync: true, properties: {margin: 3.0}})
+   ```
+5. **Label positions, only when labels show**:
+   ```
+   gephi_run_layout({algorithm: "Label Adjust", iterations: 300, sync: true})
+   ```
+   Run it last, after sizes and labels are final.
+
+Then set the preview for a light background. The edge default keeps edges in a
+light neutral close to the background, so the groups stay primary:
+
+```
+gephi_set_preview_settings(settings={"edge.color": "#D0D0D0", "edge.opacity": 90, "edge.thickness": 1.0, "edge.curved": false,
+    "node.opacity": 100, "node.border.width": 0.5, "node.label.show": false, "node.label.avoidOverlap": true, "arrow.size": 0})
+```
+
+- Set contrast with the edge tone first and lower opacity only a little: low
+  opacity piles up into uneven texture where edges bundle.
+- Label settings change labels only; they never reset edge values.
+- `"edge.color": "source"` (edges tinted by their source community) suits a map
+  where it matters where ties come from; say so in the caption.
+- `node.label.avoidOverlap` keeps labels from colliding without a Label Adjust
+  pass.
 
 ## Real-world harvest networks (single-window mention/interaction data)
 
@@ -348,35 +364,36 @@ of interactions) have a characteristic shape the demo networks never show:
 
 - **Expect heavy fragmentation** (hundreds of tiny components) and a
   leaf-majority degree distribution (most nodes have exactly one tie). The
-  profile flags both. Neither is a data error — they describe the harvest.
+  profile flags both. Neither is a data error: they describe the harvest.
 - **Map the skeleton, keep the whole.** For a readable map, filter to
-  degree >= 2 (then giant component); keep the full graph for statistics and
-  say what was set aside — the excluded share is itself a finding.
+  degree >= 2 (then giant component) with `gephi_apply_filter`, which hides
+  rather than deletes; keep the full graph for statistics and
+  say what was set aside, because the excluded share is itself a finding.
 - **Fit the extent mechanically when over-spread persists:** run Contraction
   (~20% shrink per pass) repeatedly until gephi_visual_qa stops warning, then
   Noverlap. Raising node sizes also closes the ratio from the other side.
 - **Directed hub maps: kill the arrowheads before export** (preview setting
-  `arrow.size` 0) — at hub scale they render as giant wedges that bury the map.
+  `arrow.size` 0): at hub scale they render as giant wedges that bury the map.
 - **Captions vs legend:** in-place captions (and centroid captions) assume
-  communities occupy separate regions. When communities interpenetrate — one
-  dense core, colors mixed through it — use a legend instead; colliding
+  communities occupy separate regions. When communities interpenetrate (one
+  dense core, colors mixed through it), use a legend instead; colliding
   captions are the map telling you the groups share space.
 - **External matplotlib re-render note:** GEXF colors parse as strings like
-  `rgb(27,175,122)` — handle that format, not only hex.
+  `rgb(27,175,122)`; handle that format, not only hex.
 
 ## Tree-like networks: when force layouts cannot separate communities
 
 Reply, retweet, mention, and seeded-citation networks are tree-like (barely
-more ties than nodes — the profile flags it). Their communities are stars
+more ties than nodes; the profile flags it). Their communities are stars
 fanning out from hub accounts, and interleaved star-arms have no ties pulling
-them together, so **ForceAtlas 2 leaves real communities fully mixed no matter
-how many iterations you run**. This is structural, not a tuning problem;
-measured on a real reply network, 4,000 LinLog iterations moved the
-separation score only from 0.88 to 0.84.
+them together, so **ForceAtlas 2 leaves real communities mixed no matter how
+many iterations run**. This is structural, not a tuning problem: when thousands
+of LinLog iterations barely move `partition.separation` in `gephi_visual_qa`,
+more iterations will not help.
 
 The fix is `gephi_community_layout`: detect communities first (modularity),
-then draw each as its own radial disc — hub at center, members ringed by
-reply-distance, discs packed side by side. Same network: separation 0.10.
+then draw each as its own radial disc (hub at center, members ringed by
+reply distance, discs packed side by side).
 
 - **Judge separation by number, not by eye.** The tool reports
   separation_before/after (mean intra-community pair distance over mean random

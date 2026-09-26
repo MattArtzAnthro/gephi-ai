@@ -728,3 +728,28 @@ async def test_an_accepted_edit_is_checked_then_snapshotted_then_made(rec, monke
     assert [c["json"].get("check_only", False) for c in rec.calls] == [True, False]
     assert order == ["snapshot"]
     assert out["undo_available"] is True
+
+
+async def test_size_by_ranking_sends_a_cap_only_when_given(rec):
+    await out_of(gephi_mcp.gephi_size_by_ranking, column="degree")
+    assert "cap" not in rec.last["json"]
+    await out_of(gephi_mcp.gephi_size_by_ranking, column="degree", cap=30)
+    assert rec.last["json"]["cap"] == 30
+
+
+async def test_a_capped_size_mapping_reaches_the_legend(rec):
+    gephi_mcp.LEDGER.reset()
+    await out_of(gephi_mcp.gephi_size_by_ranking, column="degree", cap=30)
+    item = gephi_mcp.LEDGER.legend_items()[-1]
+    assert item["channel"] == "node size" and item["cap"] == 30
+
+
+async def test_eigenvector_runs_long_enough_to_converge_by_default(rec):
+    """Gephi's default of 100 iterations stops early: on Les Miserables it ranks Valjean first,
+    where the converged eigenvector ranks Gavroche first. 1,000 iterations recovers the order."""
+    await out_of(gephi_mcp.gephi_compute_eigenvector)
+    call = next(c for c in rec.calls if c["endpoint"] == "/statistics/run")
+    assert call["json"] == {"name": "Eigenvector Centrality", "params": {"numRuns": 1000}}
+    await out_of(gephi_mcp.gephi_compute_eigenvector, iterations=5000)
+    call = [c for c in rec.calls if c["endpoint"] == "/statistics/run"][-1]
+    assert call["json"]["params"] == {"numRuns": 5000}

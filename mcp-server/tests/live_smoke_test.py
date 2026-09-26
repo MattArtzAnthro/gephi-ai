@@ -31,6 +31,7 @@ import json
 import random
 import time
 
+import httpx
 from mcp.types import CallToolResult
 
 import gephi_mcp as g
@@ -491,6 +492,11 @@ async def main():
     found = json.loads(await g.gephi_query_nodes(column="team", value="c3", limit=2))
     check(found.get("matches", 0) > 0 and found.get("count") == 2,
           "[search] query_nodes finds by value, case-insensitive", found.get("matches"))
+    await g.gephi_compute_degree()
+    capped = json.loads(await g.gephi_size_by_ranking("degree", cap=10))
+    check(capped.get("success") is True and capped.get("nodes_at_cap", 0) > 0,
+          "[size cap] nodes at or above the cap share the largest size",
+          (capped.get("nodes_at_cap"), capped.get("error")))
     part = json.loads(await g.gephi_color_by_partition("team"))
     check(part.get("success") is True, "[palette] color_by_partition", part.get("palette_note", ""))
     path = json.loads(await g.gephi_find_shortest_path("n0", "n999", follow_direction=False))
@@ -527,6 +533,31 @@ async def main():
     save = json.loads(await g.gephi_save_project("/tmp/no-such-folder/x.gephi"))
     check(save.get("success") is False and "does not exist" in save.get("error", ""),
           "[save] a missing folder is refused at once instead of hanging", save.get("error"))
+
+    # Names are not ASCII. The plugin must read a body as UTF-8 even when the Content-Type names
+    # no charset (the raw post below sends none, as older servers and other clients do); the
+    # server's own calls must then find those nodes by their real ids.
+    await g.gephi_new_workspace()
+    async with httpx.AsyncClient() as client:
+        await client.post(f"{g.GEPHI_API_URL}/graph/nodes/add",
+                          content=json.dumps({"nodes": [{"id": "Tomás", "label": "Tomás"}]},
+                                             ensure_ascii=False).encode("utf-8"),
+                          headers={"Content-Type": "application/json"})
+    await g.gephi_add_nodes([{"id": "Zoë Wójcik", "label": "Zoë Wójcik"}])
+    await g.gephi_add_edge("Tomás", "Zoë Wójcik")
+    colored = json.loads(await g.gephi_set_node_color("Tomás", 200, 30, 30))
+    route = json.loads(await g.gephi_find_shortest_path("Tomás", "Zoë Wójcik"))
+    ids = [step.get("id") for step in route.get("path", [])]
+    check(colored.get("success") is True and ids == ["Tomás", "Zoë Wójcik"],
+          "[unicode] accented ids survive a request with and without a declared charset",
+          (colored.get("error"), ids))
+    await g.gephi_switch_workspace(0)
+    first = json.loads(await g.gephi_query_nodes(limit=1)).get("nodes", [{}])[0].get("id")
+    what = json.loads(await g.gephi_whatif([{"op": "remove_node", "id": first}], include_slow=True))
+    diffed = sorted(d.get("metric") for d in what.get("diff", []))
+    check({"avg_path_length", "giant_component_share"} <= set(diffed),
+          "[whatif] path length and the largest component's share are diffed",
+          diffed or what.get("detail", what.get("error")))
 
     # Gephi's own log: this run must add no interface-thread warnings (Gephi 0.11.3 says
     # those become errors) and no errors raised inside Gephi.

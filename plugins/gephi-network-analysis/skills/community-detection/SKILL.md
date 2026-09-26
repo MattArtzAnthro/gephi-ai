@@ -7,16 +7,28 @@ description: Detect, validate, visualize, and explain communities in the loaded 
 
 Run a complete community detection and visualization workflow on the current Gephi graph.
 
-**Tell the user what you're doing at each step** — narrate briefly before each tool call.
+Follow the `gephi` skill's rules throughout; this workflow repeats only the ones
+it is most likely to break.
+Read `../gephi/references/statistics-guide.md` before
+interpreting modularity, and `../gephi/references/layout-guide.md`
+before the layout step.
+
+**Tell the user what you are doing at each step.** Narrate briefly before each tool call.
+
+## Rules this workflow must keep
+
+- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step, remove or overwrite nothing, and list each choice under "Choices I made". If there is no input to work on, stop and say what is needed.
+- **Session start.** Start with `gephi_health_check`. Then check which workspace is open (`gephi_list_workspaces`) and whether a filter is active (`filter_active` in replies): a filter from an earlier conversation stays on, and exports and checks then see only what it shows.
+- **Stability.** Run `gephi_community_stability` before naming, captioning, or colouring by groups, and say how stable they are.
+- **Palette.** On a light background, leave `colors` unset: the plugin gives the largest group the first of eight colours validated for readability, the next largest the second, and so on, in an order that keeps the five largest groups distinguishable wherever they touch, even for colour-blind readers; past five groups, label the groups as well. On a dark background, pass the dark-surface palette. Colour must never be the only way to tell groups apart: label the largest nodes or the groups.
 
 ## Steps
 
-1. **Health check**: Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop.
+1. **Session start**: Call `gephi_health_check`. If it fails, tell the user to start Gephi and stop. Call `gephi_list_workspaces` and `gephi_get_project_info`, and tell the user the node and edge counts. If `filter_active` is true, say that communities will be found in the visible nodes only.
 
-2. **Graph info**: Call `gephi_get_project_info`. Tell the user the node/edge counts.
-
-3. **Ask which method** (skip if the request names one or the user already
-   said). One question, with the trade-off stated plainly:
+2. **Ask which method** (skip if the request names one or the user already
+   said). One question, with the trade-off stated plainly. Default: Louvain at
+   resolution 1.0.
 
    - **Louvain** (Gephi's built-in Modularity; Blondel et al. 2008): maximizes
      modularity by greedy local moves. Fast and familiar; the default.
@@ -38,14 +50,14 @@ Run a complete community detection and visualization workflow on the current Gep
    block structure is supported at all. Cite the papers in the caption
    when the map is publication-bound.
 
-4. **Compute communities**:
+3. **Compute communities**:
    - Louvain: call `gephi_compute_modularity` with the requested
-     resolution (default 1.0). Note Gephi's resolution runs *opposite* to the
+     resolution (default 1.0). Gephi's resolution runs *opposite* to the
      gamma convention in most papers: raising it merges communities.
    - Leiden: call `gephi_run_statistic` with `name="Leiden algorithm"` and
      `params={"algorithm": "Leiden", "qualityFunction": "Modularity",
      "resolution": <resolution>}`; the result column is what the plugin
-     reports (check `gephi_get_columns` and use that name in step 6).
+     reports (check `gephi_get_columns` and use that name in step 5).
    Tell the user: "Running community detection..." then report the number of
    communities. Do not call the partition strong or weak from the modularity
    score: random graphs with the same degrees score 0.3 to 0.6.
@@ -54,30 +66,14 @@ Run a complete community detection and visualization workflow on the current Gep
    (Louvain only; 20 runs). Tell the user in plain words how often accounts
    grouped together stay together (`mean_stability`) and how many stable cores
    there are. If `consensus_warning` appears, say the communities are loose and
-   color by `stable_core` in step 6 instead of the single run.
+   color by `stable_core` in step 5 instead of the single run.
 
-5. **Compute degree**: Call `gephi_compute_degree`. Tell the user: "Computing degree distribution..."
+4. **Compute degree**: Call `gephi_compute_degree`. Tell the user: "Computing degree distribution..."
 
-6. **Color by community**: Call `gephi_color_by_partition` with the community column (`"modularity_class"` for Louvain; the Leiden plugin's column otherwise) and the validated palette (readable on white exports, colorblind-safe):
-   ```json
-   {
-     "column": "modularity_class",
-     "colors": {
-       "0": [42, 120, 214],
-       "1": [27, 175, 122],
-       "2": [237, 161, 0],
-       "3": [0, 131, 0],
-       "4": [74, 58, 167],
-       "5": [227, 73, 72],
-       "6": [232, 123, 164],
-       "7": [235, 104, 52]
-     }
-   }
-   ```
-   With more than 8 communities, color the 8 largest and set the rest to gray [153,153,153].
+5. **Color by community**: Call `gephi_color_by_partition` with the community column (`"modularity_class"` for Louvain, `stable_core` when the stability check warned, the Leiden plugin's column otherwise). Leave `colors` unset on a light background (see the palette rule); past eight groups the reply carries a `palette_note`, which the report repeats.
 
-7. **Size by degree**: Call `gephi_size_by_ranking` with column `"degree"`, `min_size: 3`, `max_size: 25`.
+6. **Size by degree**: Call `gephi_size_by_ranking` with column `"degree"` and the default sizes (about one to ten on screen).
 
-8. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"` in two passes with `sync: true`: first 1500 iterations with properties `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01, "barnesHutOptimization": true}`, then 3000 iterations with `{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001, "barnesHutOptimization": true}` (see the layout guide). Leave Dissuade Hubs off.
+7. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"` in two passes with `sync: true`: first 1500 iterations with properties `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01, "barnesHutOptimization": true}`, then 3000 iterations with `{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001, "barnesHutOptimization": true}` (see the layout guide). Leave Dissuade Hubs off.
 
-9. **Report results**: Summarize the communities found, their sizes (query nodes to count per community), and how well they held up across runs. Give the modularity score only with its context, never as a verdict. Name only communities that are stable cores.
+8. **Report results**: Summarize the communities found, their sizes (`gephi_column_value_frequencies` on the community column counts members per community), and how well they held up across runs. Give the modularity score only with its context, never as a verdict. Name only communities that are stable cores. End with "Choices I made" when any default was used.

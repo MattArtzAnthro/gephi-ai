@@ -1680,17 +1680,22 @@ public class GephiControlService {
         if (problem != null) r.addProperty("appearance_panel_note", problem);
     }
 
-    /** Twelve well-separated colours, given to the largest groups first. */
+    /**
+     * Eight colours validated for categorical use on light backgrounds (lightness band, chroma
+     * floor, contrast), given to the largest groups first. On a map any two groups can touch, so
+     * the order keeps every pair of the first five apart with normal vision and under simulated
+     * red and green colour blindness; past five, groups need labels as well as colour. The skill
+     * documents the same eight, with a variant for dark backgrounds.
+     */
     static final Color[] BASE_PALETTE = {
-        new Color(31, 119, 180), new Color(255, 127, 14), new Color(44, 160, 44),
-        new Color(214, 39, 40), new Color(148, 103, 189), new Color(140, 86, 75),
-        new Color(227, 119, 194), new Color(127, 127, 127), new Color(188, 189, 34),
-        new Color(23, 190, 207), new Color(174, 199, 232), new Color(255, 187, 120)
+        new Color(42, 120, 214), new Color(237, 161, 0), new Color(0, 131, 0),
+        new Color(232, 123, 164), new Color(74, 58, 167), new Color(227, 73, 72),
+        new Color(27, 175, 122), new Color(235, 104, 52)
     };
 
     /**
      * A colour per value, largest group first, so the most distinct colours go to the groups
-     * that cover most of the map. Past the twelve base colours every further group still gets
+     * that cover most of the map. Past the eight base colours every further group still gets
      * its own colour: hues step by the golden angle, and saturation and brightness alternate so
      * neighbouring hues stay apart.
      */
@@ -1715,11 +1720,15 @@ public class GephiControlService {
         return Color.getHSBColor(hue, saturation, brightness);
     }
 
+    /** Past this many groups, some pairs of colours are hard to tell apart where groups touch. */
+    static final int DISTINCT_GROUPS = 5;
+
     static void addPaletteNote(JsonObject r, int groups) {
-        if (groups > BASE_PALETTE.length) {
+        if (groups > DISTINCT_GROUPS) {
             r.addProperty("palette_note", groups + " groups each have their own colour, but past "
-                + BASE_PALETTE.length + " neighbouring colours get hard to tell apart. Consider colouring"
-                + " only the largest groups, or filtering the small ones out first.");
+                + DISTINCT_GROUPS + " some colours are hard to tell apart where groups touch,"
+                + " especially for colour-blind readers. Label the groups as well, or colour only"
+                + " the largest and leave the rest gray.");
         }
     }
 
@@ -1869,7 +1878,24 @@ public class GephiControlService {
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
+    /**
+     * The size a node with value {@code v} gets on a ranking from {@code min} to {@code max}.
+     * With a {@code cap} below {@code max}, values at or above the cap get the largest size and
+     * the rest spread over the whole range, so a few outliers cannot shrink every other node.
+     */
+    static float rankedSize(double v, double min, double max, Double cap, float minSize, float maxSize) {
+        double top = cap != null && cap < max ? cap : max;
+        double range = top - min;
+        if (range <= 0) range = 1;
+        double t = Math.min(1.0, Math.max(0.0, (v - min) / range));
+        return (float) (minSize + t * (maxSize - minSize));
+    }
+
     public JsonObject sizeByRanking(String columnName, float minSize, float maxSize) {
+        return sizeByRanking(columnName, minSize, maxSize, null);
+    }
+
+    public JsonObject sizeByRanking(String columnName, float minSize, float maxSize, Double cap) {
         Workspace ws = currentWorkspace();
         if (ws == null) return error("No project open");
         try {
@@ -1881,17 +1907,17 @@ public class GephiControlService {
             double[] mm = numericRange(graph, col);
             if (mm == null) return error("No numeric values in column " + columnName);
             double min = mm[0], max = mm[1];
-            double range = max - min;
-            if (range == 0) range = 1;
+            boolean capped = cap != null && cap < max;
 
-            int sized = 0;
+            int sized = 0, atCap = 0;
             lockWrite(graph);
             try {
                 for (Node n : graph.getNodes().toArray()) {
                     Object v = n.getAttribute(col);
                     if (v instanceof Number) {
-                        double t = (((Number) v).doubleValue() - min) / range;
-                        n.setSize((float)(minSize + t * (maxSize - minSize)));
+                        double value = ((Number) v).doubleValue();
+                        n.setSize(rankedSize(value, min, max, cap, minSize, maxSize));
+                        if (capped && value >= cap) atCap++;
                         sized++;
                     }
                 }
@@ -1899,9 +1925,16 @@ public class GephiControlService {
             JsonObject res = success("Sized " + sized + " nodes by " + columnName);
             res.addProperty("min_value", min);
             res.addProperty("max_value", max);
-            reportPanel(res, showInAppearancePanel(ws, col,
-                org.gephi.appearance.plugin.RankingNodeSizeTransformer.class,
-                f -> configureRankingSize(f.getTransformer(), minSize, maxSize)));
+            if (capped) {
+                res.addProperty("cap", cap);
+                res.addProperty("nodes_at_cap", atCap);
+                reportPanel(res, "Gephi's Appearance panel has no cap, so it was left as it was;"
+                    + " reapplying the ranking there would undo the cap.");
+            } else {
+                reportPanel(res, showInAppearancePanel(ws, col,
+                    org.gephi.appearance.plugin.RankingNodeSizeTransformer.class,
+                    f -> configureRankingSize(f.getTransformer(), minSize, maxSize)));
+            }
             return res;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }

@@ -242,6 +242,39 @@ async def test_profile_reports_clustering_vs_random_ratio(rec):
     assert out["clustering_vs_random"] == pytest.approx(2.0, rel=1e-3)
 
 
+# Response shapes as Gephi 0.11.3 returns them (recorded live), not as the code hopes they are.
+GEPHI_MODULARITY = {"success": True, "statistic": "Modularity", "modularity": 0.55}
+GEPHI_CLUSTERING = {"success": True, "average_clustering_coefficient": 0.5625}
+GEPHI_DISTANCE = {"success": True, "statistic": "Graph Distance",
+                  "average_path_length": 2.64, "diameter": 5.0, "radius": 3.0}
+
+
+async def test_profile_keeps_gephis_average_path_length(rec):
+    rec.responses = [{"success": True, "content": GEXF_STAR},
+                     GEPHI_MODULARITY, GEPHI_CLUSTERING, GEPHI_DISTANCE]
+    out = json.loads(await gephi_mcp.gephi_profile_graph(include_slow=True))
+    assert out["distance"]["avg_path_length"] == pytest.approx(2.64)
+
+
+# Gephi's modularity response carries no community count, so this one stays empty until the
+# profile counts the partition itself.
+WHATIF_METRICS_GEPHI_DOES_NOT_SUPPLY = {"communities"}
+
+
+async def test_every_whatif_metric_resolves_in_a_profile_from_gephis_responses(rec):
+    rec.responses = [{"success": True, "content": GEXF_STAR},
+                     GEPHI_MODULARITY, GEPHI_CLUSTERING, GEPHI_DISTANCE]
+    profile = await gephi_mcp._compute_profile(include_slow=True)
+    missing = [label for label, path in gephi_mcp._WHATIF_METRICS
+               if gephi_mcp._dig(profile, path) is None
+               and label not in WHATIF_METRICS_GEPHI_DOES_NOT_SUPPLY]
+    assert missing == []
+
+
+def test_whatif_diffs_the_share_held_by_the_largest_component():
+    assert ("components", "giant_share") in [path for _, path in gephi_mcp._WHATIF_METRICS]
+
+
 # ─── run_layout finite-positions guard ───────────────────────
 
 GEXF_TEMPLATE = textwrap.dedent("""\

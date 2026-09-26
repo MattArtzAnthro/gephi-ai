@@ -21,6 +21,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import fi.iki.elonen.NanoHTTPD;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,9 +77,7 @@ public class GephiAPIServer extends NanoHTTPD {
         try {
             JsonObject requestBody = null;
             if (Method.POST.equals(method) || Method.PUT.equals(method)) {
-                Map<String, String> files = new HashMap<>();
-                session.parseBody(files);
-                String body = files.get("postData");
+                String body = readBody(session.getInputStream(), session.getHeaders().get("content-length"));
                 if (body != null && !body.isEmpty()) {
                     requestBody = JsonParser.parseString(body).getAsJsonObject();
                 }
@@ -117,6 +117,19 @@ public class GephiAPIServer extends NanoHTTPD {
         boolean hasOrigin = origin != null && !origin.trim().isEmpty();
         boolean hasFetchSite = secFetchSite != null && !secFetchSite.trim().isEmpty();
         return !hasOrigin && !hasFetchSite;
+    }
+
+    /**
+     * Reads a request body of {@code contentLength} bytes (the raw Content-Length header,
+     * possibly null) and decodes it as UTF-8. Request bodies are JSON, which is UTF-8;
+     * NanoHTTPD's parseBody decodes as US-ASCII when the Content-Type names no charset,
+     * corrupting every non-ASCII id, label, and value. Package-private and static so it
+     * can be unit-tested without a live server.
+     */
+    static String readBody(InputStream in, String contentLength) throws IOException {
+        long length = contentLength == null || contentLength.isBlank() ? 0 : Long.parseLong(contentLength.trim());
+        if (length <= 0) return "";
+        return new String(in.readNBytes((int) length), StandardCharsets.UTF_8);
     }
 
     /** True when the request's Host header is absent or resolves to the loopback interface. */
@@ -509,7 +522,8 @@ public class GephiAPIServer extends NanoHTTPD {
             if (body == null || !body.has("column")) return errorResult("Missing 'column'");
             float minSize = body.has("min_size") ? body.get("min_size").getAsFloat() : 5f;
             float maxSize = body.has("max_size") ? body.get("max_size").getAsFloat() : 50f;
-            return service.sizeByRanking(body.get("column").getAsString(), minSize, maxSize);
+            Double cap = body.has("cap") && !body.get("cap").isJsonNull() ? body.get("cap").getAsDouble() : null;
+            return service.sizeByRanking(body.get("column").getAsString(), minSize, maxSize, cap);
         }
 
         // ─── Layout ──────────────────────────────────────────────────

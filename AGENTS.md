@@ -4,7 +4,9 @@ This repository ships an MCP server (`gephi-ai` on PyPI) that controls a
 running Gephi Desktop through a local HTTP API provided by the Gephi AI plugin
 (`gephi-ai-<version>.nbm`), plus a portable skill that teaches network-analysis
 practice. The server exposes 119 tools whose names start with `gephi_`
-(Claude Code shows them as `mcp__gephi-mcp__gephi_*`).
+(Claude Code shows them as `mcp__gephi-mcp__gephi_*` when the server is
+registered by hand, and as `mcp__plugin_gephi-network-analysis_gephi-mcp__gephi_*`
+when they come from the plugin).
 
 When a user asks to build, analyze, lay out, style, or export a network, follow
 this chain:

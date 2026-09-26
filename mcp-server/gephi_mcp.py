@@ -380,6 +380,9 @@ def _timed_out(response: dict[str, Any]) -> bool:
     return response.get("success") is False and response.get("error") == TIMEOUT_ERROR
 
 
+JSON_UTF8 = {"Content-Type": "application/json; charset=utf-8"}
+
+
 class GephiClient:
     def __init__(self, base_url: str = GEPHI_API_URL):
         self.base_url = base_url.rstrip("/")
@@ -399,7 +402,11 @@ class GephiClient:
                 LEDGER.reset()
         try:
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
-                response = await client.request(method=method, url=url, params=params, json=json_data)
+                # Name the charset: Gephi's HTTP server decodes a body as US-ASCII when none is
+                # given, which corrupted every non-ASCII id and label on older plugin builds.
+                headers = JSON_UTF8 if json_data is not None else None
+                response = await client.request(method=method, url=url, params=params,
+                                                json=json_data, headers=headers)
                 response.raise_for_status()
                 return response.json()
         except asyncio.CancelledError:
@@ -1235,12 +1242,13 @@ async def gephi_reset_appearance(r: int = 153, g: int = 153, b: int = 153, size:
 async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | None = None) -> str:
     """Color nodes by a categorical attribute (e.g. modularity_class, type).
 
-    colors: optional {value: [r, g, b]} map; otherwise a distinct palette is assigned.
-    Recommended palette (validated for readability on white exports and colorblind
-    separation; pale/pastel colors are near-invisible on white): {"0": [42,120,214],
-    "1": [27,175,122], "2": [237,161,0], "3": [0,131,0], "4": [74,58,167],
-    "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}. With more than 8
-    categories, color the 8 largest and set the rest to gray [153,153,153].
+    colors: leave unset on light backgrounds. The plugin then gives the largest group the
+    first of eight colours validated for readability on white, the next largest the second,
+    and so on, in an order that keeps the five largest groups apart wherever they touch, even
+    for colour-blind readers; further groups get their own generated colours, and past five
+    groups a palette_note says to label the groups as well.
+    Pass colors ({value: [r, g, b]}) only for a dark background, using the dark-surface
+    palette in the skill, or to match colours the person already uses.
 
     column may be the column's id or the title shown in Gephi. With Gephi AI plugin 1.4.0+,
     Gephi's Appearance panel is set to the same partition and colors, so the user sees what
@@ -1283,20 +1291,27 @@ async def gephi_color_by_ranking(column: str,
                                               "r_max": r_max, "g_max": g_max, "b_max": b_max}))
 
 @_tool(name="gephi_size_by_ranking")
-async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: float = 60) -> str:
+async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: float = 100,
+                                cap: float | None = None) -> str:
     """Size nodes by a numeric attribute, mapping values between min_size and max_size.
 
     Always do this before exporting or viewing — unsized nodes render as invisible
-    specks. Degree with min 10, max 60 is a good default; scale up for large canvases.
+    specks. The default range, 10 to 100, gives the about one-to-ten ratio suited to a
+    whole map on screen; widen it for a large print.
+
+    cap: a value at and above which every node gets max_size, so a few outliers (a
+    mailing list with ten times anyone's contacts) do not shrink every other node. The
+    reply says how many nodes sit at the cap; say so in the caption, and the legend
+    records it. Gephi's Appearance panel has no cap, so it is left unchanged.
     column may be the id or the title shown in Gephi. With plugin 1.4.0+, Gephi's
     Appearance panel is set to the same ranking and size range (appearance_panel says
     whether it was).
     """
     return _fmt_styled(await gephi.request("POST", "/appearance/ranking/size",
-                                           json_data={"column": column, "min_size": min_size,
-                                                      "max_size": max_size}),
+                                           json_data=_body(column=column, min_size=min_size,
+                                                           max_size=max_size, cap=cap)),
                        "size_by_ranking", column=column,
-                       min_size=min_size, max_size=max_size)
+                       min_size=min_size, max_size=max_size, cap=cap)
 
 
 # ─── Reading the graph ───────────────────────────────────────
@@ -1902,7 +1917,10 @@ async def _compute_profile(include_slow: bool = False) -> dict:
     if include_slow and profile["nodes"] <= 3000:
         dist = await gephi.request("POST", "/statistics/avg-path-length", json_data={})
         if dist.get("success"):
-            profile["distance"] = {k: dist[k] for k in ("avg_path_length", "diameter", "radius") if k in dist}
+            profile["distance"] = {k: dist[k] for k in ("diameter", "radius") if k in dist}
+            # Gephi names it average_path_length; the profile has always called it avg_path_length.
+            if "average_path_length" in dist:
+                profile["distance"]["avg_path_length"] = dist["average_path_length"]
     return _carry_filter_warning(exported, profile)
 
 
@@ -2072,9 +2090,21 @@ async def gephi_compute_hits() -> str:
     return fmt(await gephi.request("POST", "/statistics/hits"))
 
 @_tool(name="gephi_compute_eigenvector")
-async def gephi_compute_eigenvector() -> str:
-    """Compute eigenvector centrality. Stores 'eigencentrality' on nodes."""
-    return await fmt_stat("eigenvector", await gephi.request("POST", "/statistics/eigenvector"))
+async def gephi_compute_eigenvector(iterations: int = 1000) -> str:
+    """Compute eigenvector centrality. Stores 'eigencentrality' on nodes.
+
+    iterations: how long Gephi iterates. Gephi's own default of 100 stops before the values
+    settle on some networks and can put the wrong node first, so this runs 1,000 by
+    default (about 3 seconds on 5,000 nodes). Values can still differ from an exact
+    calculation by up to about a tenth: do not rank on small differences, and compare with
+    PageRank when the order matters.
+    """
+    return await fmt_stat("eigenvector",
+                          await gephi.request("POST", "/statistics/run",
+                                              json_data={"name": "Eigenvector Centrality",
+                                                         "params": {"numRuns": iterations}},
+                                              timeout=SLOW_REQUEST_TIMEOUT),
+                          iterations=iterations)
 
 
 # ─── Filters ─────────────────────────────────────────────────
@@ -2717,11 +2747,12 @@ async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> 
     """Export the graph visualization as PNG. Run a layout first to position nodes.
 
     Default rendering yields near-invisible output; before exporting: (1) size nodes
-    with gephi_size_by_ranking (e.g. degree, 10-60); (2) color with the validated
-    palette (see gephi_color_by_partition); (3) call gephi_set_preview_settings with
-    {"edge.opacity": 25, "edge.thickness": 2.0, "node.opacity": 100,
-    "node.border.width": 0.3, "arrow.size": 0}. Then export, look at the image, and
-    fix what is unreadable before declaring done.
+    with gephi_size_by_ranking (e.g. degree, default range); (2) colour groups with
+    gephi_color_by_partition; (3) call gephi_set_preview_settings with
+    {"edge.color": "#D0D0D0", "edge.opacity": 90, "edge.thickness": 1.0,
+    "edge.curved": false, "node.opacity": 100, "node.border.width": 0.3,
+    "arrow.size": 0}, light neutral edges so the groups read first. Then export, look
+    at the image, and fix what is unreadable before declaring done.
     """
     return fmt(await gephi.request("POST", "/export/png",
                                    json_data={"file": file, "width": width, "height": height}))
@@ -2866,10 +2897,10 @@ async def gephi_get_selection(clear: bool = False) -> str:
     "this group", "the ones I selected", "what did I grab?". Their selection is
     the answer; do not ask them to type node names.
 
-    How the human points: box-drag selection is turned ON automatically at the
-    start of the session, so they can just drag a box around nodes on the
-    Overview canvas and the selection persists until they box elsewhere — no need
-    to hunt for a toolbar tool. (If they switched to another mouse mode, the
+    How the human points: the first call to this tool turns box-drag selection on
+    (gephi_set_selection_mode with "rectangle" does it up front), so they can drag a
+    box around nodes on the Overview canvas, and the selection persists until they box
+    elsewhere, with no need to hunt for a toolbar tool. (If they switched to another mouse mode, the
     dashed-square rectangle icon in the thin left toolbar turns it back on; plain
     hover highlighting is transient and does not register.)
 
@@ -3473,6 +3504,7 @@ _WHATIF_METRICS = [
     ("max_degree", ("degree", "max")),
     ("median_degree", ("degree", "median")),
     ("components", ("components", "count")),
+    ("giant_component_share", ("components", "giant_share")),
     ("isolates", ("isolates",)),
     ("modularity", ("modularity", "modularity")),
     ("communities", ("modularity", "communities")),
@@ -3578,8 +3610,8 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
 
     Returns {success, edits_applied, diff, cleanup}. `diff` is a list of
     {metric, before, after, delta} for global structural metrics (nodes, edges,
-    density, degree, components, isolates, modularity, communities, clustering,
-    and path length/diameter when include_slow). The tool returns measurements,
+    density, degree, components, the share of nodes in the largest component,
+    isolates, modularity, clustering, and path length/diameter when include_slow). The tool returns measurements,
     not conclusions — narrate the result yourself, and remember a counterfactual
     on a small or skewed graph can mislead the same way any single sample can.
     If an edit fails (e.g. add_edge on a pair that already has an edge), the

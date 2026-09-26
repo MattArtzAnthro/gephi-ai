@@ -117,6 +117,105 @@ async def two_cliques():
     return all(s is not None for s in steps)
 
 
+# The character co-appearance network of Les Miserables (Knuth 1993, The Stanford GraphBase),
+# unweighted. Gephi's default eigenvector run ranks Valjean first on it; the converged eigenvector
+# ranks Gavroche first.
+LES_MISERABLES = [
+    ("Napoleon", "Myriel"), ("Myriel", "MlleBaptistine"), ("Myriel", "MmeMagloire"), ("Myriel",
+    "CountessDeLo"), ("Myriel", "Geborand"), ("Myriel", "Champtercier"), ("Myriel", "Cravatte"),
+    ("Myriel", "Count"), ("Myriel", "OldMan"), ("Myriel", "Valjean"), ("MlleBaptistine",
+    "MmeMagloire"), ("MlleBaptistine", "Valjean"), ("MmeMagloire", "Valjean"), ("Valjean",
+    "Labarre"), ("Valjean", "Marguerite"), ("Valjean", "MmeDeR"), ("Valjean", "Isabeau"),
+    ("Valjean", "Gervais"), ("Valjean", "Fantine"), ("Valjean", "MmeThenardier"), ("Valjean",
+    "Thenardier"), ("Valjean", "Cosette"), ("Valjean", "Javert"), ("Valjean", "Fauchelevent"),
+    ("Valjean", "Bamatabois"), ("Valjean", "Simplice"), ("Valjean", "Scaufflaire"), ("Valjean",
+    "Woman1"), ("Valjean", "Judge"), ("Valjean", "Champmathieu"), ("Valjean", "Brevet"), ("Valjean",
+    "Chenildieu"), ("Valjean", "Cochepaille"), ("Valjean", "Woman2"), ("Valjean", "MotherInnocent"),
+    ("Valjean", "Gavroche"), ("Valjean", "Gillenormand"), ("Valjean", "MlleGillenormand"),
+    ("Valjean", "Marius"), ("Valjean", "Enjolras"), ("Valjean", "Bossuet"), ("Valjean",
+    "Gueulemer"), ("Valjean", "Babet"), ("Valjean", "Claquesous"), ("Valjean", "Montparnasse"),
+    ("Valjean", "Toussaint"), ("Marguerite", "Fantine"), ("Listolier", "Tholomyes"), ("Listolier",
+    "Fameuil"), ("Listolier", "Blacheville"), ("Listolier", "Favourite"), ("Listolier", "Dahlia"),
+    ("Listolier", "Zephine"), ("Listolier", "Fantine"), ("Tholomyes", "Fameuil"), ("Tholomyes",
+    "Blacheville"), ("Tholomyes", "Favourite"), ("Tholomyes", "Dahlia"), ("Tholomyes", "Zephine"),
+    ("Tholomyes", "Fantine"), ("Tholomyes", "Cosette"), ("Tholomyes", "Marius"), ("Fameuil",
+    "Blacheville"), ("Fameuil", "Favourite"), ("Fameuil", "Dahlia"), ("Fameuil", "Zephine"),
+    ("Fameuil", "Fantine"), ("Blacheville", "Favourite"), ("Blacheville", "Dahlia"), ("Blacheville",
+    "Zephine"), ("Blacheville", "Fantine"), ("Favourite", "Dahlia"), ("Favourite", "Zephine"),
+    ("Favourite", "Fantine"), ("Dahlia", "Zephine"), ("Dahlia", "Fantine"), ("Zephine", "Fantine"),
+    ("Fantine", "MmeThenardier"), ("Fantine", "Thenardier"), ("Fantine", "Javert"), ("Fantine",
+    "Bamatabois"), ("Fantine", "Perpetue"), ("Fantine", "Simplice"), ("MmeThenardier",
+    "Thenardier"), ("MmeThenardier", "Cosette"), ("MmeThenardier", "Javert"), ("MmeThenardier",
+    "Eponine"), ("MmeThenardier", "Anzelma"), ("MmeThenardier", "Magnon"), ("MmeThenardier",
+    "Gueulemer"), ("MmeThenardier", "Babet"), ("MmeThenardier", "Claquesous"), ("Thenardier",
+    "Cosette"), ("Thenardier", "Javert"), ("Thenardier", "Pontmercy"), ("Thenardier",
+    "Boulatruelle"), ("Thenardier", "Eponine"), ("Thenardier", "Anzelma"), ("Thenardier",
+    "Gavroche"), ("Thenardier", "Marius"), ("Thenardier", "Gueulemer"), ("Thenardier", "Babet"),
+    ("Thenardier", "Claquesous"), ("Thenardier", "Montparnasse"), ("Thenardier", "Brujon"),
+    ("Cosette", "Javert"), ("Cosette", "Woman2"), ("Cosette", "Gillenormand"), ("Cosette",
+    "MlleGillenormand"), ("Cosette", "LtGillenormand"), ("Cosette", "Marius"), ("Cosette",
+    "Toussaint"), ("Javert", "Fauchelevent"), ("Javert", "Bamatabois"), ("Javert", "Simplice"),
+    ("Javert", "Woman1"), ("Javert", "Woman2"), ("Javert", "Gavroche"), ("Javert", "Enjolras"),
+    ("Javert", "Gueulemer"), ("Javert", "Babet"), ("Javert", "Claquesous"), ("Javert",
+    "Montparnasse"), ("Javert", "Toussaint"), ("Fauchelevent", "MotherInnocent"), ("Fauchelevent",
+    "Gribier"), ("Bamatabois", "Judge"), ("Bamatabois", "Champmathieu"), ("Bamatabois", "Brevet"),
+    ("Bamatabois", "Chenildieu"), ("Bamatabois", "Cochepaille"), ("Perpetue", "Simplice"), ("Judge",
+    "Champmathieu"), ("Judge", "Brevet"), ("Judge", "Chenildieu"), ("Judge", "Cochepaille"),
+    ("Champmathieu", "Brevet"), ("Champmathieu", "Chenildieu"), ("Champmathieu", "Cochepaille"),
+    ("Brevet", "Chenildieu"), ("Brevet", "Cochepaille"), ("Chenildieu", "Cochepaille"),
+    ("Pontmercy", "MmePontmercy"), ("Pontmercy", "Marius"), ("Eponine", "Anzelma"), ("Eponine",
+    "Marius"), ("Eponine", "Mabeuf"), ("Eponine", "Courfeyrac"), ("Eponine", "Gueulemer"),
+    ("Eponine", "Babet"), ("Eponine", "Claquesous"), ("Eponine", "Montparnasse"), ("Eponine",
+    "Brujon"), ("MmeBurgon", "Jondrette"), ("MmeBurgon", "Gavroche"), ("Gavroche", "Marius"),
+    ("Gavroche", "Mabeuf"), ("Gavroche", "Enjolras"), ("Gavroche", "Combeferre"), ("Gavroche",
+    "Prouvaire"), ("Gavroche", "Feuilly"), ("Gavroche", "Courfeyrac"), ("Gavroche", "Bahorel"),
+    ("Gavroche", "Bossuet"), ("Gavroche", "Joly"), ("Gavroche", "Grantaire"), ("Gavroche",
+    "Gueulemer"), ("Gavroche", "Babet"), ("Gavroche", "Montparnasse"), ("Gavroche", "Child1"),
+    ("Gavroche", "Child2"), ("Gavroche", "Brujon"), ("Gavroche", "MmeHucheloup"), ("Gillenormand",
+    "Magnon"), ("Gillenormand", "MlleGillenormand"), ("Gillenormand", "LtGillenormand"),
+    ("Gillenormand", "Marius"), ("Gillenormand", "BaronessT"), ("MlleGillenormand", "MmePontmercy"),
+    ("MlleGillenormand", "MlleVaubois"), ("MlleGillenormand", "LtGillenormand"),
+    ("MlleGillenormand", "Marius"), ("LtGillenormand", "Marius"), ("Marius", "BaronessT"),
+    ("Marius", "Mabeuf"), ("Marius", "Enjolras"), ("Marius", "Combeferre"), ("Marius", "Feuilly"),
+    ("Marius", "Courfeyrac"), ("Marius", "Bahorel"), ("Marius", "Bossuet"), ("Marius", "Joly"),
+    ("Mabeuf", "Enjolras"), ("Mabeuf", "Combeferre"), ("Mabeuf", "Feuilly"), ("Mabeuf",
+    "Courfeyrac"), ("Mabeuf", "Bahorel"), ("Mabeuf", "Bossuet"), ("Mabeuf", "Joly"), ("Mabeuf",
+    "MotherPlutarch"), ("Enjolras", "Combeferre"), ("Enjolras", "Prouvaire"), ("Enjolras",
+    "Feuilly"), ("Enjolras", "Courfeyrac"), ("Enjolras", "Bahorel"), ("Enjolras", "Bossuet"),
+    ("Enjolras", "Joly"), ("Enjolras", "Grantaire"), ("Enjolras", "Claquesous"), ("Enjolras",
+    "MmeHucheloup"), ("Combeferre", "Prouvaire"), ("Combeferre", "Feuilly"), ("Combeferre",
+    "Courfeyrac"), ("Combeferre", "Bahorel"), ("Combeferre", "Bossuet"), ("Combeferre", "Joly"),
+    ("Combeferre", "Grantaire"), ("Prouvaire", "Feuilly"), ("Prouvaire", "Courfeyrac"),
+    ("Prouvaire", "Bahorel"), ("Prouvaire", "Bossuet"), ("Prouvaire", "Joly"), ("Prouvaire",
+    "Grantaire"), ("Feuilly", "Courfeyrac"), ("Feuilly", "Bahorel"), ("Feuilly", "Bossuet"),
+    ("Feuilly", "Joly"), ("Feuilly", "Grantaire"), ("Courfeyrac", "Bahorel"), ("Courfeyrac",
+    "Bossuet"), ("Courfeyrac", "Joly"), ("Courfeyrac", "Grantaire"), ("Courfeyrac", "MmeHucheloup"),
+    ("Bahorel", "Bossuet"), ("Bahorel", "Joly"), ("Bahorel", "Grantaire"), ("Bahorel",
+    "MmeHucheloup"), ("Bossuet", "Joly"), ("Bossuet", "Grantaire"), ("Bossuet", "MmeHucheloup"),
+    ("Joly", "Grantaire"), ("Joly", "MmeHucheloup"), ("Grantaire", "MmeHucheloup"), ("Gueulemer",
+    "Babet"), ("Gueulemer", "Claquesous"), ("Gueulemer", "Montparnasse"), ("Gueulemer", "Brujon"),
+    ("Babet", "Claquesous"), ("Babet", "Montparnasse"), ("Babet", "Brujon"), ("Claquesous",
+    "Montparnasse"), ("Claquesous", "Brujon"), ("Montparnasse", "Brujon"), ("Child1", "Child2")
+]
+
+
+def metric_values(payload, *names):
+    """Each node's value for a metric, read by column id or by the title Gephi shows.
+
+    Nodes come back with attributes keyed by title ("Betweenness Centrality"), so a probe that
+    looks only for the id reads nothing, and two empty readings compare equal. None when any node
+    lacks the value: a probe must then give no verdict rather than compare nothing with nothing.
+    """
+    values = {}
+    for node in payload.get("nodes", []):
+        attrs = node.get("attributes", {})
+        value = next((attrs[n] for n in names if attrs.get(n) is not None), None)
+        if value is None:
+            return None
+        values[node["id"]] = value
+    return values or None
+
+
 @pytest.fixture(autouse=True)
 async def require_gephi():
     health = json.loads(await gephi_mcp.gephi_health_check())
@@ -163,10 +262,6 @@ async def test_probe_gephi_557_edge_weight_is_ignored_by_centrality():
     if not await two_cliques():
         return VERDICTS.note_failure(probe, "could not build the test graph")
 
-    def scores(payload):
-        return {n["id"]: n.get("attributes", {}).get("betweenesscentrality")
-                for n in payload.get("nodes", [])}
-
     if await call(gephi_mcp.gephi_compute_betweenness) is None:
         return VERDICTS.note_failure(probe, "the first betweenness run failed")
     before = await call(gephi_mcp.gephi_query_nodes, limit=100)
@@ -178,10 +273,13 @@ async def test_probe_gephi_557_edge_weight_is_ignored_by_centrality():
         return VERDICTS.note_failure(probe, "the second betweenness run failed")
     after = await call(gephi_mcp.gephi_query_nodes, limit=100)
 
-    if before is None or after is None or not before.get("nodes"):
+    names = ("betweenesscentrality", "Betweenness Centrality")
+    first = metric_values(before or {}, *names)
+    second = metric_values(after or {}, *names)
+    if first is None or second is None:
         return VERDICTS.note_failure(probe, "could not read the betweenness values back")
 
-    unchanged = scores(before) == scores(after)
+    unchanged = first == second
     VERDICTS.record(
         probe, reproduced=unchanged, measured=True,
         detail=("betweenness was identical after a 1000x weight change on the bridge"
@@ -266,3 +364,45 @@ async def test_probe_gephi_858_average_clustering_coefficient():
     wrong = abs(float(value) - 1.0) > 1e-6
     VERDICTS.record(probe, reproduced=wrong, measured=True,
                     detail=f"an undirected triangle reported {value}; every definition gives 1.0")
+
+
+async def test_probe_gephi_2145_eigenvector_stops_before_it_converges():
+    """Compare Gephi's eigenvector centrality, as the tool runs it, with the exact one.
+
+    Both are scaled so the largest value is 1, which is Gephi's convention, so a difference in
+    scaling cannot pass for a defect. The defect is live when Gephi puts a different node first or
+    any value is off by more than 0.05.
+    """
+    import numpy as np
+
+    probe = "probe_gephi_2145"
+    ids = sorted({n for edge in LES_MISERABLES for n in edge})
+    steps = [
+        await call(gephi_mcp.gephi_clear_graph),
+        await call(gephi_mcp.gephi_add_nodes, nodes=[{"id": n} for n in ids]),
+        await call(gephi_mcp.gephi_add_edges,
+                   edges=[{"source": a, "target": b, "directed": False} for a, b in LES_MISERABLES]),
+    ]
+    if not all(s is not None for s in steps):
+        return VERDICTS.note_failure(probe, "could not build the test graph")
+    if await call(gephi_mcp.gephi_compute_eigenvector) is None:
+        return VERDICTS.note_failure(probe, "the eigenvector run failed")
+    read = await call(gephi_mcp.gephi_query_nodes, limit=len(ids))
+    gephi = metric_values(read or {}, "eigencentrality", "Eigenvector Centrality")
+    if gephi is None or len(gephi) != len(ids):
+        return VERDICTS.note_failure(probe, "could not read the eigenvector values back")
+
+    index = {n: i for i, n in enumerate(ids)}
+    adjacency = np.zeros((len(ids), len(ids)))
+    for a, b in LES_MISERABLES:
+        adjacency[index[a], index[b]] = adjacency[index[b], index[a]] = 1
+    exact = np.abs(np.linalg.eigh(adjacency)[1][:, -1])
+    exact /= exact.max()
+
+    worst = max(abs(gephi[n] - exact[index[n]]) for n in ids)
+    top_gephi = max(ids, key=gephi.get)
+    top_exact = ids[int(exact.argmax())]
+    wrong = top_gephi != top_exact or worst > 0.05
+    VERDICTS.record(
+        probe, reproduced=wrong, measured=True,
+        detail=f"first node {top_gephi} (exact {top_exact}), largest difference {worst:.3f}")

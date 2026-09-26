@@ -184,3 +184,32 @@ def test_bundle_pins_the_same_server_version_as_the_plugins():
 
 def test_readme_does_not_claim_macos_ships_python_310():
     assert "modern macOS provides" not in _read("README.md")
+
+
+# ── Tool descriptions and the skill give the same defaults ──
+# A session that never loads the skill still reads the tool descriptions, so a default stated
+# differently in the two is a default that depends on whether the skill happened to load.
+
+def _tool_doc(name):
+    import gephi_mcp
+    return next(t.description for t in gephi_mcp.mcp._tool_manager.list_tools() if t.name == name)
+
+
+def test_node_sizes_default_to_a_one_to_ten_ratio():
+    import inspect
+
+    import gephi_mcp
+    params = inspect.signature(gephi_mcp.gephi_size_by_ranking).parameters
+    assert params["max_size"].default == 10 * params["min_size"].default
+
+
+def test_export_png_recommends_the_skills_edge_default():
+    doc = _tool_doc("gephi_export_png")
+    assert '"edge.color": "#D0D0D0"' in doc and '"edge.opacity": 90' in doc
+    assert '"edge.opacity": 25' not in doc
+
+
+def test_color_by_partition_leaves_the_palette_to_the_plugin():
+    doc = _tool_doc("gephi_color_by_partition")
+    assert "gray" not in doc.lower() and "grey" not in doc.lower()
+    assert "largest group" in doc

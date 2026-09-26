@@ -1,10 +1,12 @@
 ---
 name: gephi
 description: |
-  When the user wants to analyze, visualize, or explore network graphs using Gephi,
-  this skill provides workflows and best practices for the 119 Gephi AI tools.
-  Triggered when the user mentions Gephi, network analysis, graph visualization,
-  community detection, social network analysis, or graph metrics.
+  Load before the first gephi_ tool call in any session. Use when someone asks to build,
+  import, analyze, style, lay out, filter, teach from, compare over time, or export a
+  network in Gephi, or asks who matters most, which groups exist, whether a claim about a
+  network holds, or whether a network is scale-free. Holds the rules that keep readings
+  honest: test groups for stability before naming them, never call a network scale-free,
+  and ship every map with its caption.
 compatibility: Requires Gephi Desktop 0.11.1+ (0.11.3 recommended) running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
@@ -15,565 +17,169 @@ metadata:
 
 *Skill version 1.17.3 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
-You have access to 119 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__gephi-mcp__gephi_*`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
-
-## Communication
-
-**Always narrate what you're doing.** Before each major tool call, tell the user what's about to happen in a short sentence (e.g., "Computing modularity...", "Running ForceAtlas 2 layout..."). This prevents the user from wondering what's happening during long operations.
-
-## Critical Things To Know
-
-- **Layout algorithm name**: Use `"ForceAtlas 2"` (with space and capitals), not `"forceatlas2"`
-- **Export file parameter**: Export tools use `file` as the key, not `path`
-- **Run statistics before styling** — `modularity_class` and `degree` columns don't exist until you compute them
-- **`node.label.proportinalSize`** — note the typo (missing 'o'). This is Gephi's actual property name.
-- **Always call `project/new` before importing** — stale workspace state from prior operations can cause issues. A fresh project prevents this.
-- **`edge.color: "source"` colors edges individually** — the plugin automatically colors each edge to match its source node's color and sets mode to ORIGINAL. This is safe and produces the watercolor halo effect.
-- **`node.label.font` supports multi-word names** — e.g., `"Courier New 12 Bold"`. The plugin parses everything before the first digit as the font name.
-- **Imported node sizes are kept as the file states them.** Pass `max_node_size` to `gephi_import_file` to cap oversized nodes that would hide edges. If an import looks collapsed into a small cluster, the file's coordinates are very small; run a layout.
-- **Filters refresh the preview automatically** — `remove_isolates`, `giant_component`, `filter_by_degree` now properly refresh the preview model after modifying the graph.
-- **`sync: true` in `gephi_run_layout`** — makes the call block until layout finishes. Always use this so Noverlap and Label Adjust don't start on a still-moving graph.
-- **If a filter is active, say so before you report anything.** With a filter applied in Gephi,
-  the read path that backs `gephi_profile_graph`, `gephi_similarity_layout`,
-  `gephi_community_layout`, and `gephi_community_stability` sees only the VISIBLE subgraph, while
-  `gephi_get_graph_stats` reports the FULL graph. Results now carry `filter_warning` when those
-  disagree, and the underlying responses carry `view` (`"visible"` or `"full"`), `filter_active`,
-  and both `full_node_count` and `visible_node_count`. Never present a number computed on a
-  filtered subgraph as a fact about the whole network: surface the warning, name both counts, and
-  ask whether the filter was intended. Reset with `gephi_reset_filters` if it was not.
-- **A modularity score alone never shows strong communities.** Random graphs with the same degrees score 0.3 to 0.6, and sparse, hub-heavy networks sit at the top of that range, so never call a partition "strong" or "clear" from the score and never use "above 0.3" as a threshold. Before naming communities or reporting them as findings, run `gephi_community_stability`. Report `mean_stability` in plain words ("accounts grouped together stay together about 40% of the time"), Small stable cores appear even in a randomly wired network, so their number or coverage is never evidence of communities: judge by `mean_stability` and by how large the biggest cores are, and name only large cores whose members make sense together. When `consensus_warning` appears, say the communities are loose.
-- **Reply, mention, citation and follower networks are mostly one-way.** Read `reciprocity` in `gephi_profile_graph` before calling a directed network a conversation. When few ties are returned, describe hubs as accounts people address, not as partners in an exchange.
-- **Never claim "scale-free" or "power law" from a heavy-tailed degree distribution** — power-law and log-normal fits are near-indistinguishable in practice, and the term smuggles in a universal-law claim (Jacomy 2020). Describe hub dominance as a characteristic of THIS network ("a few accounts concentrate most ties"), not as the signature of a law.
-- **Every final export ships with its story.** When handing over a finished map, always provide copy-ready caption text: data, layout and key settings, what size and color encode, and what the map does and does not license a reader to conclude. Circulating a network image without interpretive context ("storyletting") is the field's named failure mode — see references/reading-network-maps.md.
-- **The craft has citable sources; use them.** When a question goes deeper than the conversation can carry, recommend ONE matched open-access source (table in references/reading-network-maps.md). When a map is publication-bound, include the software citations in the caption offer (Gephi = Bastian et al. 2009; ForceAtlas 2 = Jacomy et al. 2014; modularity = Blondel et al. 2008; plugins per their own papers). Most users don't know their tools are citable scholarship.
-
-## Standard Workflow
-
-1. **Health check** — `gephi_health_check` (stop if Gephi isn't running)
-2. **Fresh project** — call `gephi_create_project` before importing
-3. **Import** — `gephi_import_file` or build with `gephi_add_nodes`/`gephi_add_edges`
-4. **Statistics** — compute degree, modularity, etc.
-5. **Data-truth check** — before coloring by any claimed grouping, run `gephi_visual_qa` with `partition_column` set. If the verdict is "none", the attribute does not match the topology and coloring by it would mislead; compute real communities with `gephi_compute_modularity` instead (and say so). When building demo/synthetic networks, wire real structure: preferential attachment within communities, hub-biased bridges between them, within-group edge share above 60% — never random edges with decorative group labels.
-6. **Style** — color by partition, size by ranking. Groups come first and edges second (Jacomy's contrast advice): draw edges in a light neutral close to the background (`edge.color` `#D0D0D0` on white, opacity 80-100) so the groups read first and dark edge bundles are not mistaken for nodes, and make nodes contrast with it. Coloring edges by their source (`edge.color: "source"`) is a deliberate choice for showing where ties come from, not a default. Draw edges straight (`edge.curved: false`) unless the network is directed and direction matters. Size nodes as a ratio suited to where the map will be seen: about 1 to 10 for a whole map on screen, more for a large print.
-7. **Layout** — ask first where the map will be shown (screen, web page, print) and whether it is for exploring or for showing others. Then `gephi_run_layout` with `"ForceAtlas 2"` in two passes (LinLog off, then LinLog on with scalingRatio divided by about 20; see Layout below), then run `gephi_visual_qa` and export a small PNG to inspect; fix every warning and adjust per references/layout-guide.md before finishing with `"Noverlap"` and `"Label Adjust"`
-8. **Preview** — `gephi_set_preview_settings` for export appearance
-9. **Export** — size the canvas to the layout shape using `extent.suggested_export` from `gephi_visual_qa`, then `gephi_export_png` (use `file` param), `gephi_export_svg`, etc. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph` — it renders an interactive view inline in the conversation (pass `caption_column` for floating cluster captions; the app offers per-node ask-Claude, ego highlighting, in-place refresh, and a time slider on dynamic graphs); use `gephi_export_png` for publication stills. When crafting a bespoke network diagram and the MCP App view is unavailable or unsuitable, build an interactive HTML/canvas artifact from `gephi_export_gexf` data (positions, colors, and sizes are baked in) instead of settling for a static PNG — reserve PNG for publication exports.
-
-## Teaching Mode (watch-along sessions)
-
-When a human is watching the Gephi window while you work (teaching, demos, paired
-analysis), switch to narrated pacing: announce each step and what to watch for
-BEFORE doing it; use `gephi_focus_view` to direct their eyes (fit graph after
-import/layout, center+select a cluster before discussing it); run layouts in
-200-300 iteration chunks with narration between passes instead of one long blast;
-pause after each visible change and invite their observations. The /teach command
-codifies the full pattern. Watching the instrument operate is the pedagogy — never
-do anything the viewer can't follow.
-
-With Gephi AI plugin 1.4.0+, Gephi's own panels show what you do: the Statistics panel
-shows each statistic running, its result and its report; the Layout panel shows the
-algorithm and the exact settings used; the Appearance panel shows the column and the
-colors or sizes applied. Point the viewer to them ("the Layout panel now shows the settings
-I used") and invite them to rerun or adjust a step by hand; a statistic can be cancelled
-from the Statistics panel. Columns can be named by id or by the title shown in Gephi.
-
-**The person can point back.** `gephi_get_selection` reads what they have selected
-in the Gephi window. Whenever they use deictic words about the canvas — "these",
-"this group", "the ones I selected" — read the selection FIRST and answer about
-those exact nodes; never ask them to type node names. Box-drag selection is turned
-on automatically at the start of a session, so just tell them they can drag a box
-around nodes and the selection persists while they come back to the conversation —
-no toolbar hunting. Hover highlighting is transient and does not register; the box
-drag is the pointing gesture. (If a reply's `rectangle_selection` is false they
-switched modes — the dashed-square icon in the thin left toolbar turns it back on.)
-
-**Close long sessions by naming the loop.** A working session reshapes both
-sides; say so before ending. One or two sentences on what you now do
-differently because of them (a correction they made, a habit you adapted to, a
-reading of theirs that beat yours), and an invitation for the reverse. Where
-understanding matters (teaching, first analyses), test it by mutual teachback —
-they restate the map to you, you restate their domain to them, each side
-repairs the other — rather than by asking "does that make sense?"
-
-## Opening a Network Conversation
-
-The first turn decides the quality of everything after it. Two moves, always:
-
-1. **Ask the intake question** (skip if they already told you): one friendly
-   sentence — "what are the nodes and connections here, and what are you
-   hoping to learn?" Their answer supplies what no file carries: meaning and
-   the question at stake. Use their vocabulary everywhere (reports, captions,
-   labels), and treat their expectations as hypotheses to test, not truths to
-   assume.
-2. **Run `gephi_profile_graph`** — one call, the full quantitative picture
-   (size, density, degree distribution with Gini and assortativity,
-   components, isolates, weight distribution, modularity, clustering with its
-   random-graph expectation, auto-raised flags). You can absorb a dozen
-   simultaneous measurements better than most humans can; do it, then give a
-   short plain-language first reading that marries their description with the
-   numbers, and ask the 2-3 questions the profile raises. Three of its
-   numbers pick layout parameters before any render: `weights.heavy_tailed`
-   means log-transform weights (or lower edgeWeightInfluence) before a force
-   layout; strongly negative `degree.assortativity` means hub-and-spoke wiring,
-   where each hub sits in a halo of its neighbours that the layout produces
-   (not a finding; leave Dissuade Hubs off); `clustering_vs_random` is the
-   baseline-relative form of "highly clustered" — quote the ratio, never the
-   raw coefficient alone.
-
-**The first reading is provisional by design — the goal is exploration, not
-conclusions.** Success is measured by what the person notices next, not by how
-fast a verdict lands:
-
-- **Elicit before you tell.** At the moments that matter — first look at a new
-  layout, right after an attribute overlay changes the picture, when they
-  point at something — ask ONE concrete question before giving your reading
-  ("where does your eye go first?", "which groups look like they talk to each
-  other?", "what made you select these?"). Their unprimed reading is evidence
-  that is destroyed the instant you speak first. Then always give your own
-  reading and compare aloud; asking without telling is a quiz, and quizzes are
-  not conversation. Never elicit on task turns (they asked for an export, give
-  the export), and if they wave a question off or say "just tell me", stop
-  eliciting for the session.
-- Present impressions as things to check together, never as findings ("the
-  numbers hint at groups — want to see if they match anything you
-  recognize?"), and pair every pattern with a rival explanation or a way it
-  could be wrong.
-- Close the opening with two or three places to look together and let the
-  person choose — the machine proposes, the human steers.
-- No verdict vocabulary ("clearly", "confirms", "this network is X") before a
-  check has run WITH them; verdicts are always relative to a baseline and to
-  their stated expectation.
-- Symmetry: your own impressions get tested exactly like their expectations
-  do. Neither side's prior gets a free pass.
-
-**Then let both guide every downstream decision:**
-
-- Their goal picks the metric: brokers/gatekeepers -> betweenness;
-  reach/influence -> degree or PageRank; "who plays similar roles" -> the
-  similarity layout; importance-by-association -> eigenvector.
-- Size + density pick the layout (purpose table in the layout guide); the
-  profile's hairball flag means filter weak ties or raise scalingRatio before
-  wasting a render; the tree-like flag means force layouts will NOT separate
-  communities — run modularity, then gephi_community_layout (and state its
-  changed reading rule: disc placement is legibility, not structure).
-- If they expect an attribute to organize the network, TEST it (partition
-  share vs baseline) before coloring by it; when it fails, say so plainly and
-  offer detected communities — the gap between their expectation and the
-  structure is usually the finding.
-- Isolates and fragments: ask before removing (one person's noise is another
-  person's result).
-- Caption clusters in their vocabulary, derived from their data, never
-  "cluster 0/1/2" — but only AFTER the reading process has earned the names
-  (letters first, real names last; see references/reading-network-maps.md).
-- When interpreting a laid-out map, follow the guided reading process in
-  references/reading-network-maps.md: layout -> clusters (letter names) ->
-  structural holes (the gaps are findings too) -> THEN attribute colors
-  compared against the structure -> special nodes (bridges, within-cluster
-  hubs, off-color outliers) -> earned names. State the reading rules (axes
-  mean nothing, only distances; reruns keep clusters, not positions).
-
-## Plugin Ecosystem Passthrough
-
-gephi-ai drives Gephi's plugin ecosystem, not just its built-ins (verified live):
-
-- **Layouts:** anything installed via Tools > Plugins appears in
-  `gephi_get_available_layouts` and runs by name (verified with Force Atlas 3D). Bundled
-  in core and always available: Noverlap (overlap-removal finishing pass),
-  OpenOrd (very large graphs), Label Adjust.
-- **Statistics:** `gephi_list_statistics` shows every metric including plugin
-  ones; `gephi_run_statistic` runs any of them by name (verified with the CWTS
-  Leiden plugin — recommend it over plain modularity for large networks).
-  Results land in columns; style with size/color-by-ranking or partition.
-- If a user wants a capability Gephi lacks, check the plugin portal
-  (gephi.org/desktop/plugins) — install in Gephi, restart it, and the new
-  layouts/metrics are immediately drivable here.
-
-## From Files to Networks (recipes)
-
-Any data the conversation can read becomes a graph — no importer plugin needed.
-With a file path (Claude Code / Cowork): `gephi_import_file` handles GEXF,
-GraphML, GML, CSV, DOT, Pajek. Without a path (attachment in chat, API data,
-pasted table): parse it yourself and batch `gephi_add_nodes` + `gephi_add_edges`
-(chunk a few hundred per call). Shapes:
-
-- **Edge list** (source,target[,weight] rows): add directly.
-- **Adjacency matrix**: one edge per nonzero cell.
-- **Bipartite two-column** (person,event): add both node sets with a `type`
-  attribute, or project (edge between rows sharing a value).
-- **Entity rows with attributes** (spreadsheet of people/orgs): nodes with
-  attributes; edges from a relationship column, or compute attribute-similarity
-  edges yourself (only link above a threshold, put similarity in weight).
-- **JSON**: map objects to nodes, references between them to edges.
-- **RDF/triples**: subject and object as nodes, predicate as edge label.
-- **Free text** (an essay, transcript, article, or corpus, not already a
-  node/edge shape): `gephi_text_to_network` builds a word co-occurrence
-  graph directly — don't hand-parse prose yourself. See
-  references/text-network-analysis.md before reporting any structural gap
-  as a finding.
-
-Then run the standard flow (stats -> style -> layout -> QA). This replaces what
-portal users install separate importer plugins for, and it works with formats
-those plugins never covered.
-
-## Tool Quick Reference
-
-### Project & Workspace
-`gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_delete_workspace`, `gephi_duplicate_workspace`, `gephi_rename_workspace`, `gephi_snapshot` (save a one-level undo point), `gephi_undo` (restore it)
-
-### Graph Construction
-`gephi_add_node`/`gephi_add_nodes`, `gephi_add_edge`/`gephi_add_edges`, `gephi_remove_node`/`gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`/`gephi_set_edge_label`, `gephi_set_node_position`/`gephi_batch_set_positions`, `gephi_set_edge_weight`, `gephi_query_nodes`, `gephi_get_node`, `gephi_query_edges`, `gephi_text_to_network` (builds a word co-occurrence graph from free text, with optional `pos_filter="nouns"`, `min_word_frequency`, `merge_phrases`, `exclude_self_referential`/`self_referential_threshold` for document-frequency-based generic-hub detection, and `context_snippets` to attach real source-text excerpts to each flagged candidate for the gray-zone cases no threshold or word list can resolve — see references/text-network-analysis.md), `gephi_extract_backbone` (disparity-filter edge pruning — a principled alternative to a flat weight cutoff, see references/text-network-analysis.md)
-
-### Statistics (run before styling)
-- `gephi_compute_modularity` → creates `modularity_class`
-- `gephi_compute_degree` → creates `degree`, `indegree`, `outdegree`
-- `gephi_compute_betweenness` → creates `betweenesscentrality`, `closnesscentrality`, `eccentricity`, `harmonicclosnesscentrality` (0.11.1+)
-- `gephi_compute_pagerank` → creates `pageranks`
-- `gephi_compute_eigenvector` → creates `eigencentrality`
-- `gephi_compute_connected_components` → creates `componentnumber`
-- `gephi_compute_clustering_coefficient` → creates `clustering`
-- `gephi_compute_avg_path_length` → avg path length, diameter
-- `gephi_compute_hits` → creates `authority`, `hub` (lowercase column names)
-- `gephi_community_stability(runs=20, resolution=1.0)` → run community detection repeatedly and report which groups hold up: distinct partitions seen, `mean_stability` (the chance that nodes grouped together in one run are grouped together in another), the least stable nodes, stable cores (groups held together in 90% of runs), and a `consensus_warning` when the consensus is a chain rather than a community. Writes `stable_core` (-1 = no core), `consensus_community` and a per-node `community_stability` column. **Run this before calling communities a finding** — Gephi reports one partition as though it were the answer, and it is one draw
-- Statistics results may carry a `caveats` block naming a known Gephi defect that affects the number (e.g. the modularity resolution parameter is the reciprocal of the literature convention; centrality ignores edge weights). Read it out to the user rather than reporting the bare number
-
-### Analysis & counterfactual
-- `gephi_profile_graph` → one-call quantitative picture (size, density, degree with Gini + assortativity, connectivity, weight distribution, modularity, clustering vs random expectation); run first — its flags name layout fixes (heavy-tailed weights → log-transform; disassortative → dissuade hubs)
-- `gephi_whatif(edits, include_slow=False)` → apply hypothetical edits (`remove_node`/`remove_nodes`/`add_edge`/`remove_edge`) to a throwaway workspace copy, diff the structural profile before/after, auto-clean the scratch copy; the real graph is never touched. For robustness/"what if we removed X" claims — see references/claim-verification.md
-- `gephi_find_shortest_path(source, target, weighting)` → the path between two nodes, its steps, and how many equally short paths exist (`equally_short_paths` above 1 means no single middle node is "the" link). For "A reaches B only through C" and "how far apart" claims — see references/claim-verification.md
-- `gephi_stop_statistic` → stops a statistic still running in Gephi; its columns keep their earlier values
-- `gephi_compare_nodes(id_a, id_b, metric)` → deterministic two-node comparison on one metric (from attributes or a built-in field); errors if the metric isn't computed yet. For "is X more central than Y" claims — see references/claim-verification.md
-- `gephi_compare_workspaces(before, after, compare=None)` → what changed between two versions of the same network held in two workspaces (zero-based indices): nodes and edges added and removed, and which shared nodes grew or shrank on a numeric column. Warns when the two share no nodes, since that is usually a mismatched identifier rather than total turnover
-
-### Two-mode (bipartite) networks
-- `gephi_bipartite_layout(mode_column)` → lay the two modes out in separate columns. `mode_column` names the attribute separating the kinds of node; Gephi has no notion of a mode, so it must be told, and a column with more than two values is refused
-- `gephi_bipartite_projection(mode_column, keep)` → collapse to one mode, joining nodes that share a partner (weighted by how many), in a NEW workspace so the two-mode data survives. This is how two-mode data becomes a social network for analysis; Gephi cannot do it at all
-
-### Appearance
-`gephi_color_by_partition`, `gephi_color_edges_by_partition` (color edges by a categorical edge column — relationship type/period/tier), `gephi_color_by_ranking`, `gephi_size_by_ranking`, `gephi_set_node_color`/`gephi_set_node_size`, `gephi_set_edge_color`, `gephi_edge_thickness_by_weight`, `gephi_batch_set_node_colors`, `gephi_reset_appearance`
-
-### Layout
-`gephi_run_layout` (use `"ForceAtlas 2"`, `"Yifan Hu"`, `"Fruchterman Reingold"`, `"Circular"`, `"Random Layout"`), `gephi_stop_layout`, `gephi_get_layout_status`, `gephi_get_available_layouts`, `gephi_get_layout_properties`/`gephi_set_layout_properties`
-
-### View / Camera / Perspective (Desktop only)
-`gephi_focus_view` (mode graph|zero|node|edge|region, select highlights nodes, zoom) — directs the human viewer's attention in the Gephi window; essential in teaching mode. `gephi_set_selection_mode` (rectangle|direct|disable) — enable box-drag selection so pointing (`gephi_get_selection`) works without the human clicking the toolbar icon; call with `rectangle` at the start of teaching mode. `gephi_get_perspective`/`gephi_switch_perspective` — list/switch the top-level tab (Overview / Data Laboratory / Preview) to bring the viewer to the view you're about to discuss.
-
-### Filtering
-`gephi_filter_by_degree`, `gephi_filter_by_edge_weight`, `gephi_remove_isolates`, `gephi_extract_ego_network`, `gephi_extract_giant_component`, `gephi_reset_filters`, `gephi_list_filters`/`gephi_apply_filter` (the general filter tools — apply ANY built-in or per-column attribute filter by name, action `select`/`new_workspace`/`column`), `gephi_apply_filters` (several filters combined with AND, OR or NOT; `dry_run` counts first). See references/filtering.md
-
-### Data Laboratory
-`gephi_column_value_frequencies` (value distribution of a column), `gephi_detect_duplicates` (nodes sharing a column value), `gephi_merge_nodes` (merge duplicates into one — destructive), `gephi_create_regex_column` (boolean column flagging regex matches), `gephi_edit_column` (delete, rename, convert type, fill empty cells, clear)
-
-### Timeline (dynamic graphs)
-`gephi_get_timeline` (read-only: is the graph dynamic, time bounds, dynamic columns, interval state). `gephi_set_time_from_columns` gives a network time data from start and end columns (years or dates). `gephi_time_slice` opens one period in its own workspace; lay out the whole network first so every slice keeps the same positions, then run the same statistics in each period. Gephi's timeline itself is left to the user. See references/change-over-time.md.
-
-### Preview & Export
-`gephi_get_preview_settings`/`gephi_set_preview_settings`, `gephi_export_png`/`gephi_export_pdf`/`gephi_export_svg` (use `file` param), `gephi_export_gexf`/`gephi_export_graphml`/`gephi_export_csv`, `gephi_export` (any format by name — VNA/Pajek/DL/spreadsheet/GDF/JSON, for UCINET/Pajek interchange), `gephi_view_graph` (interactive in-chat view, no `file` param), `gephi_export_legend` (SVG key for the map — Gephi has never had a legend; it describes only mappings applied through these tools and refuses rather than guessing), `gephi_session_receipt` (how the figure was made: mappings, statistics and their settings, layout, versions — for a methods section)
-
-### Import
-`gephi_import_file`, `gephi_import_gexf`/`gephi_import_graphml`/`gephi_import_csv`
-
-## Styling Defaults
-
-### Community Colors (validated palette)
-Always override default Gephi colors for `gephi_color_by_partition`. This palette is
-validated for categorical use on light backgrounds (lightness band, chroma floor,
-colorblind separation, contrast — the old pastel palette failed all four and was
-near-invisible on white exports):
-```json
-{"0": [42,120,214], "1": [27,175,122], "2": [237,161,0], "3": [0,131,0], "4": [74,58,167], "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}
-```
-On dark backgrounds use the dark-surface variant:
-```json
-{"0": [57,135,229], "1": [25,158,112], "2": [201,133,0], "3": [0,131,0], "4": [144,133,233], "5": [230,103,103], "6": [213,81,129], "7": [217,89,38]}
-```
-More than 8 communities: color the 8 largest, set the rest to neutral gray
-[153,153,153] — extra generated hues stop being distinguishable. Enable node labels
-for the largest nodes; color must not be the only way to identify a community.
-
-### Publication Export Settings
-Clean (no labels):
-```json
-{"node.label.show": false, "edge.opacity": 90, "edge.curved": false, "edge.color": "#D0D0D0", "edge.thickness": 1.0, "node.opacity": 100, "node.border.width": 0.3, "arrow.size": 0}
-```
-
-Labeled:
-```json
-{"node.label.show": true, "node.label.proportinalSize": true, "node.label.font": "Arial 10 Plain", "node.label.outline.size": 4, "node.label.outline.opacity": 95, "edge.opacity": 15}
-```
-
-New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"node.label.overlapGridSize": 50` controls grid granularity. Both can be combined with existing label settings.
-
-### Layout
-- Choosing by purpose (groups, scale, maps, circles, finishing passes): see the layout guide's "Choosing a layout" table — lead with what the person wants to see, then name the algorithm.
-- ForceAtlas 2 in two passes, following Mathieu Jacomy's ForceAtlas 2 tutorials (full settings in the Beautiful Graph Recipe). Pass 1, LinLog off: `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01}`, 1500 iterations; raise scalingRatio for more room. For a quick look, stop here. Pass 2, for a final map: switch `linLogMode` on, divide scalingRatio by about 20, lower gravity (0.001 or below), and run 3000 iterations or more; large networks keep improving for a long time. Strong gravity at a small value keeps islands and filaments in frame; if a round containing circle shows, lower it, because it makes the network look denser than it is. Leave `distributedAttraction` (Dissuade Hubs) off: it acts only on directed networks and costs cluster separation. Use it only as a deliberate exploration view, say so in the caption, and offer the map without it.
-- Decide the orientation and size ratio for the output before the final pass, and stop changing the layout once the person has started reading the map: a rerun keeps the clusters but moves them, and they lose what they learned.
-- **Inspect and adjust, always — and measure, don't just look:** after the layout, run `gephi_visual_qa` with `partition_column` set to the community column. Its `partition.separation` (mean intra-community pair distance over mean random pair distance; 1.0 = fully mixed, near 0 = tight distinct clusters) is the objective form of "did the communities separate" — track it across parameter changes and quote the before/after when explaining an adjustment. Then export a small PNG, look at it, diagnose with the symptom table in references/layout-guide.md (blob = gravity too high; hairball = run the LinLog pass or filter weak ties; unreadable cluster interiors = raise scalingRatio), change ONE parameter, rerun ~300 iterations. Two or three loops usually converge — say what you saw, what the separation did, and what you changed.
-- Follow with Noverlap: `{"algorithm": "Noverlap", "iterations": 500, "properties": {"margin": 5.0}, "sync": true}`
-- Follow with Label Adjust (500 iterations, sync: true) if labels are enabled
-- **`barnesHutOptimize` is wrong** — the correct key is `barnesHutOptimization`
-
-## Key Gotchas
-
-- **"Graph is busy" errors and the wedge detector.** Plugin 1.2.0+ fixed the historic macOS wedge at the root (writes pause the renderer via Gephi's own viz-engine API, and a read-lock leak in the query endpoints — the main culprit — is closed), and every lock wait is bounded, so nothing hangs anymore. If a call returns "Graph is busy", retry once — a transient render pass can hold the lock briefly. If it **persists**, run `gephi_health_check` and read the verdict: `graph_lock: "busy"` or a **nonzero `graph_lock_stats.readers` while Gephi is idle means a leaked read hold — nothing will recover this; tell the user plainly that Gephi must be fully quit and reopened**, and that their graph data in an unsaved project will be lost (suggest `gephi_save_project` earlier in sessions). `queued > 0` for a long time means a writer is starving behind render load — pause mutations and let it drain. On plugin 1.1.x these protections don't exist: writes can hang indefinitely, so keep sessions to one focused build → style → layout → export pass and upgrade the plugin.
-- **Preview settings do not affect Gephi's Overview canvas.** Everything set via `gephi_set_preview_settings` (including `node.label.show`) applies to exports and the Preview tab only. To see labels live in the Overview window, the user must click the black **T** toggle in the toolbar at the bottom of the graph canvas — only they can do that.
-- **Label fonts render in graph-coordinate space and clamp weirdly.** A fixed point size vanishes on large layouts, and with `node.label.proportinalSize: false` Gephi clamps every label to its node's bounds (bigger fonts silently do nothing). For readable hub captions use `gephi_label_clusters` (proportional sizing + extent-scaled font handled for you); when hand-tuning, set proportional TRUE and scale the base font to the layout extent.
-- **Filters are destructive** — they permanently remove nodes/edges. An undo snapshot is taken automatically before each destructive tool (their results report `undo_available`), and `gephi_undo` restores the graph — but it is ONE level deep with no redo, so verify after each destructive step before taking the next. Single `gephi_remove_node`/`gephi_remove_edge` calls are NOT auto-snapshotted; call `gephi_snapshot` first before a risky sequence of small edits.
-- **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
-- **On Gephi 0.11.2 and earlier, opening the Overview tab can freeze Gephi on macOS**
-  (force-quit to recover) when an accessibility tool such as Grammarly Desktop polls the
-  app while the graph canvas is created. It is fixed in Gephi 0.11.3: suggest updating.
-  On an older version, quit those tools for the Gephi session. `graph_lock` reports ok
-  during the freeze, because it happens outside the graph.
-- **Workspace switching can deadlock the renderer** — if the API hangs after a workspace switch, restart Gephi.
-- **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer `strongGravityMode` with a small gravity (0.01, lower if a containing circle shows) over destructive filters.
-- **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
-- **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
-- **For dark backgrounds, use the dark-surface variant of the community palette** (see Styling Defaults) — palettes tuned for white surfaces lose contrast on dark ones and vice versa.
-- **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
-- **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. `gephi_visual_qa` now detects this (`extent.outliers` lists the runaway nodes) and computes `suggested_export` from the main cloud, so export with the suggested dimensions before reaching for Python cropping. To pull outliers into frame instead: `strongGravityMode` with a small gravity (0.01 or lower). If post-processing anyway, centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
-- **ForceAtlas 2 can explode numerically, not just spread out:** coordinates become `Infinity` or `NaN` while the call still reports success. Gephi 0.11.3 fixed one cause (nodes with zero net movement, gephi#3235), but it can still happen, especially on weighted graphs with a heavy hub. Sync runs of `gephi_run_layout` check for it: a `layout_exploded` block means do not export or style. Reset with Random Layout and rerun; the whole layout is affected, not one node. The profile's heavy-tailed-weights flag is the advance warning: log-transform weights or lower edgeWeightInfluence before laying out.
-- **`/layout/run`'s tuning values must be sent under the key `"properties"`, not `"params"`** — when driving the Gephi HTTP API directly (not through `gephi_run_layout`, which builds this correctly), a request with the wrong key returns `success: true` and runs the layout on its plugin defaults, silently discarding every custom value. There is no error to catch this. The tell: changing `scalingRatio`/`gravity` across a wide range and getting back nearly the same layout extent every time — a layout genuinely that insensitive to a parameter is itself the anomaly. Verify the request shape (or just use `gephi_run_layout`) before concluding a parameter doesn't matter for a given graph. The same applies to `"Noverlap"`'s `speed`/`ratio`/`margin`, which default to `0.0` — a full no-op, not a gentle setting.
-- **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
-- **Vivid source colors are required for white-background visibility** — "soft pastel" appearance on white comes from vivid node colors rendered at high opacity (not from literally pale colors). Pastel node colors (e.g., [227,185,216]) are near-white and disappear even at 90% opacity. Use fully saturated colors (e.g., [220,30,80], [150,30,220]) — at 100% opacity with thick edges they produce a vivid, readable graph. Reduce opacity only if the graph is dense enough that overlapping edges create unwanted solid blobs.
-- **White background KG final settings that work** — `edge.opacity: 100`, `edge.thickness: 6`, `node size min 8 max 30`, vivid modularity colors, centroid-crop the export. These settings produce clearly visible colored lines on white.
-- **Hand-authored GEXF must XML-escape `"` (and `'`) in attribute values** — when you generate a GEXF yourself to import, node `label`/attribute values containing a double-quote (e.g. titles like `"Un/Doing Race"` or `Sorting Things Out: …`) produce malformed XML and `gephi_import_file` fails with `java.lang.RuntimeException` SEVERE. Escape `<>&"'` in every attribute, then validate the file parses (`python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" file.gexf`) before importing.
-- **`gephi_query_nodes` `sort_by`/`descending` may not sort** — observed returning nodes in alphabetical id order regardless. To rank, pull the nodes and sort client-side, or read `pageranks`/`degree` from an exported GEXF/CSV.
-- **Re-styling right after an export is a lock hotspot** — `gephi_color_by_partition` / `gephi_size_by_ranking` called immediately after a PNG export frequently returns `Graph is busy (renderer holds the lock); please retry`. Retry once or twice; if it persists, don't fight it — `gephi_export_gexf` and finish styling/labeling externally (see "Render externally from GEXF" below).
-
-## Beautiful Graph Recipe
-
-Bad-looking graphs almost always come from one of three problems: layout parameters ignored (the most common), no overlap prevention, or wrong edge/label settings. Follow this recipe for publication-quality output.
-
-### Pass 1 — Tune with LinLog off (1500 iterations)
-```json
-{
-  "algorithm": "ForceAtlas 2",
-  "iterations": 1500,
-  "sync": true,
-  "properties": {
-    "linLogMode": false,
-    "scalingRatio": 10,
-    "strongGravityMode": true,
-    "gravity": 0.01,
-    "distributedAttraction": false,
-    "barnesHutOptimization": false
-  }
-}
-```
-- Raise `scalingRatio` for more room between nodes; more room also allows more contrast between small and big nodes
-- `strongGravityMode` with a small `gravity` holds islands and filaments in frame. If a round containing circle shows, lower gravity (0.001, or far below); too much makes the network look denser than it is
-- `barnesHutOptimization: true` above about 1,000 nodes; it is faster but adds a little noise
-- For a quick look, this pass is enough
-
-### Pass 2 — Separate the clusters with LinLog (3000+ iterations)
-```json
-{
-  "algorithm": "ForceAtlas 2",
-  "iterations": 3000,
-  "sync": true,
-  "properties": {
-    "linLogMode": true,
-    "scalingRatio": 0.5,
-    "strongGravityMode": true,
-    "gravity": 0.001,
-    "distributedAttraction": false
-  }
-}
-```
-- Switch LinLog on only after pass 1 has stopped, and divide pass 1's `scalingRatio` by about 20
-- LinLog gives the clearest clusters but converges slowly: run it long, and longer on large networks (a network of 10,000+ nodes keeps improving for a long time). If nodes keep jittering, lower `jitterTolerance`
-- `distributedAttraction` (Dissuade Hubs) stays off: it acts only on directed networks, pushes nodes that send many links but receive few to the edge, and costs cluster separation
-- Always use `sync: true` so the next pass doesn't start on a still-moving graph
-
-### Pass 3 — Overlap prevention (200 iterations)
-Rerun pass 2's settings with `"adjustSizes": true` for about 200 iterations. It slows the layout on purpose and treats nodes as slightly bigger, so check `partition.separation` did not get worse. If the layout jams, shrink the nodes or skip this pass.
-
-### Pass 4 — Fine-grained separation
-```json
-{"algorithm": "Noverlap", "iterations": 300, "sync": true, "properties": {"margin": 3.0}}
-```
-
-### Pass 5 — Label positioning (only if showing labels)
-```json
-{"algorithm": "Label Adjust", "iterations": 300, "sync": true}
-```
-
-### Preview settings for community graphs
-```json
-{
-  "node.label.show": false,
-  "edge.color": "#D0D0D0",
-  "edge.opacity": 90,
-  "edge.curved": false,
-  "edge.thickness": 1.0,
-  "node.opacity": 100,
-  "node.border.width": 0.5,
-  "node.label.avoidOverlap": true,
-  "arrow.size": 0
-}
-```
-- Edges in a light neutral near the background keep the groups primary. Set contrast with the tone first and lower opacity only a little: low opacity piles up into uneven texture where edges bundle
-- `edge.color: "source"` (edges tinted by their source community) is an option when where ties come from matters; say so in the caption
-- `node.label.avoidOverlap: true` (0.11.1+) prevents label collisions without needing Label Adjust
-
-## Dark Background Workflow
-
-Gephi's PNG exporter always writes a white background regardless of `background.color`. Use this Python post-processing recipe after `gephi_export_png`:
-
-```python
-from PIL import Image
-import numpy as np
-
-img = Image.open('export.png').convert('RGB')
-arr = np.array(img, dtype=np.float32)
-bg = np.array([28, 28, 46], dtype=np.float32)   # dark navy #1C1C2E
-
-dist = 255.0 - arr
-alpha = np.clip(np.max(dist, axis=2) / 255.0 * 1.8, 0, 1)
-a_safe = np.maximum(alpha, 0.02)[:,:,np.newaxis]
-recovered = np.clip((arr - 255.0*(1-alpha[:,:,np.newaxis])) / a_safe, 0, 255)
-result = np.clip(bg + alpha[:,:,np.newaxis]*(recovered - bg), 0, 255).astype(np.uint8)
-Image.fromarray(result).save('export-dark.png')
-```
-
-**Requirements for this to work well:**
-- `edge.opacity` must be at least 60 (pastels at 25% produce near-white pixels; recovery fails)
-- Use saturated/vibrant colors, not pastels
-- Works best for unlabeled exports — labels turn invisible after compositing (white outlines → navy)
-
-**For labeled exports**, use white background (`background.color: "#FFFFFF"`). Labels are readable on white natively.
-
-**Crop and scale to fill canvas** — use centroid-based cropping, not alpha-threshold bounding box. Alpha-threshold fails on sparse graphs (outlier nodes at canvas edges push the bounding box to full canvas width). Centroid method finds the center of mass of visible content and crops a fixed window around it:
-
-```python
-dist = 255.0 - arr
-alpha = np.clip(np.max(dist, axis=2) / 255.0 * 1.8, 0, 1)
-mask = alpha > 0.12
-ys, xs = np.where(mask)
-cy, cx = int(ys.mean()), int(xs.mean())
-half_w, half_h = 900, 700   # tune to graph density
-img.crop((max(0,cx-half_w), max(0,cy-half_h),
-          min(W,cx+half_w), min(H,cy+half_h))).resize((3840,2160), Image.LANCZOS).save('export-zoom.png')
-```
-
-- Adjust `half_w`/`half_h` based on how spread out the graph is (900/700 works for KGs with bounding box blowout)
-- For dark background compositing, apply the compositing step first, then centroid-crop the result
-
-## Community Labels (Post-Processing)
-
-Gephi has no native community label feature. Use Python to overlay one label per modularity class after export.
-
-**Workflow:**
-
-1. Run `gephi_query_nodes` (limit covers all nodes, attributes: `["modularity_class"]`) to get x/y positions and colors per node.
-2. Group by modularity class, compute centroid: `cx = mean(xs)`, `cy = mean(ys)`.
-3. Map Gephi coordinates → pixels using the full coordinate bounding box:
-   ```python
-   px = (cx - x_min) / (x_max - x_min) * W
-   py = H - (cy - y_min) / (y_max - y_min) * H   # Y axis is inverted
-   ```
-4. Draw text at those pixel positions using PIL, with a white outline (draw at ±2px offsets before drawing the colored label).
-5. Exclude any class whose centroid is a known outlier (single node pushed far from the main cluster by FA2 repulsion — centroid will be far outside the visible region).
-6. Compute the crop window from the min/max of in-frame centroid pixels + 320px margin each side, then resize to target canvas.
-
-**Gotchas:**
-- FA2 can push a single-node class (degree-1 node) to extreme coordinates (e.g. x = -233494). Always check centroids for outliers before cropping.
-- Community centroids land inside the edge mass, not cleanly beside clusters (hub-and-spoke topology means all clusters overlap in the center). See "Radial leader-line labels" below for the fix.
-
-### Render externally from GEXF (exact coords, full control)
-
-When you need labels, distinct community colors, or any layout the overlay-on-PNG
-path can't give cleanly, **don't pull coordinates with `gephi_query_nodes` and
-don't use `export_csv`** (the node CSV has no x/y). Instead `gephi_export_gexf`
-— it bakes `<viz:position>` plus every attribute (`modularity_class`,
-`pageranks`) — then re-render the whole figure in matplotlib. This sidesteps the
-white-background compositing entirely and gives full control over color (no
-look-alike-palette collisions) and label placement.
-
-Parse the viz namespace **by local tag name** (`position`/`size`/`color` are in
-`gexf.net/.../viz`, not the default namespace):
-
-```python
-import xml.etree.ElementTree as ET
-import numpy as np, matplotlib; matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
-import matplotlib.patheffects as pe
-
-local = lambda t: t.split('}')[-1]
-root = ET.parse('graph-positions.gexf').getroot()
-pos, comm, pr = {}, {}, {}
-for n in root.iter():
-    if local(n.tag) != 'node': continue
-    nid = n.get('id')
-    for c in n:
-        if local(c.tag) == 'position': pos[nid] = (float(c.get('x')), float(c.get('y')))
-        elif local(c.tag) == 'attvalues':
-            for av in c:
-                if av.get('for') == 'modularity_class': comm[nid] = int(float(av.get('value')))
-                elif av.get('for') == 'pageranks':       pr[nid]   = float(av.get('value'))
-edges = [(e.get('source'), e.get('target')) for e in root.iter()
-         if local(e.tag) == 'edge' and e.get('source') in pos and e.get('target') in pos]
-
-PAL = {0:'#e74c3c',1:'#e98b1f',2:'#f1c40f',3:'#8bc34a',4:'#2ecc71',
-       5:'#1abc9c',6:'#3498db',7:'#ff2e88',8:'#9b59b6',9:'#00d0e0'}  # 10 distinct hues
-nodes = list(pos)
-fig, ax = plt.subplots(figsize=(17,17), dpi=240)
-fig.patch.set_facecolor('#0a0c1a'); ax.set_facecolor('#0a0c1a')
-ax.add_collection(LineCollection([[pos[s],pos[t]] for s,t in edges],
-    colors=[PAL[comm.get(s,0)] for s,_ in edges], linewidths=0.35, alpha=0.10))
-pv = np.array([pr.get(n,0) for n in nodes])
-ax.scatter([pos[n][0] for n in nodes], [pos[n][1] for n in nodes],
-    s=18 + (pv/pv.max())*2600, c=[PAL[comm.get(n,0)] for n in nodes],
-    edgecolors='none', alpha=0.95, zorder=3)
-```
-
-(Edges colored by **source** community = the watercolor halo; nodes sized by
-PageRank. matplotlib renders ~7k edges fine.)
-
-### Radial leader-line labels (fixes centroid pile-up)
-
-Because community centroids overlap in the dense core, labels placed *at* the
-centroids collide. Instead place labels on a **ring** around the graph, evenly
-spaced by each centroid's angle, with a **leader line** back to a marker at the
-true centroid — no overlaps, locations still exact:
-
-```python
-xs = np.array([pos[n][0] for n in nodes]); ys = np.array([pos[n][1] for n in nodes])
-cx, cy = np.median(xs), np.median(ys)
-R = np.percentile(np.hypot(xs-cx, ys-cy), 98)         # cloud radius (98th pct ignores outliers)
-anchor = {k: (np.median([pos[n][0] for n in nodes if comm.get(n)==k]),
-              np.median([pos[n][1] for n in nodes if comm.get(n)==k])) for k in PAL}
-order = sorted(PAL, key=lambda k: np.arctan2(anchor[k][1]-cy, anchor[k][0]-cx))
-base  = np.arctan2(anchor[order[0]][1]-cy, anchor[order[0]][0]-cx)
-for i, k in enumerate(order):
-    ang = base + 2*np.pi*i/len(order)                 # even spacing → guaranteed no overlap
-    lx, ly = cx + R*1.32*np.cos(ang), cy + R*1.32*np.sin(ang)
-    ax.plot([anchor[k][0], lx], [anchor[k][1], ly], color=PAL[k], lw=1.2, alpha=0.55, zorder=4)
-    ax.scatter([anchor[k][0]], [anchor[k][1]], s=140, facecolor=PAL[k],
-               edgecolor='white', lw=1.5, zorder=6)
-    t = ax.text(lx, ly, NAMES[k], color='white', ha='left' if lx>=cx else 'right',
-                va='center', fontsize=16, fontweight='bold', zorder=7)
-    t.set_path_effects([pe.withStroke(linewidth=4.5, foreground=PAL[k]),
-                        pe.withStroke(linewidth=9, foreground='#0a0c1a')])
-ax.set_aspect('equal'); ax.axis('off')
-plt.savefig('graph-labeled.png', facecolor='#0a0c1a', bbox_inches='tight', pad_inches=0.25)
-```
-
-`NAMES` is your `{modularity_class: "Theme"}` map — name each community from its
-top-PageRank members (`gephi_query_nodes` or the exported node table).
-
-### Troubleshooting
-- **Nodes in a ball**: gravity is too high OR layout parameters weren't applied (check you're using correct key names). Fix: run Random Layout (1 iteration), then re-run pass 1.
-- **Communities not separating**: run pass 2 (LinLog), check Dissuade Hubs is off, and verify properties are accepted. A round blob does not prove there are no groups: the eye only sees two groups when there is a gap between them, and large groups fill it. Check with modularity and `gephi_community_stability` before saying the network has none.
-- **Nodes still overlapping after pass 3**: run Noverlap with higher margin (5–8).
-- **Labels colliding**: run Label Adjust, or enable `node.label.avoidOverlap: true` in preview settings.
-
-For detailed tool parameters, see [references/tool-reference.md](references/tool-reference.md).
-For layout algorithm details, see [references/layout-guide.md](references/layout-guide.md).
-For statistics interpretation, see [references/statistics-guide.md](references/statistics-guide.md).
-For building and reading text networks, see [references/text-network-analysis.md](references/text-network-analysis.md).
-For verifying a plain-language structural claim against the graph, see [references/claim-verification.md](references/claim-verification.md).
-For compiling a plain-language filter into a Gephi filter, see [references/filtering.md](references/filtering.md).
-For comparing a network across periods, see [references/change-over-time.md](references/change-over-time.md).
-Multiplex graphs: `gephi_add_edge`/`gephi_add_edges` accept an `edge_type` label so the same pair can hold several parallel typed edges (e.g. "cites" + "coauthor"). To compare layers, filter to one type (`gephi_apply_filter` with the "Edge Type" filter), compute modularity, repeat per type, and compare the partitions.
+You have access to 119 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__plugin_gephi-network-analysis_gephi-mcp__gephi_*` from the plugin, or `mcp__gephi-mcp__gephi_*` when the server is registered by hand) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
+
+Write for someone who has never used network software. The first time you use a technical term with the person, gloss it in a few words.
+
+## Start of a session
+
+- Start with `gephi_health_check`. Then check which workspace is open (`gephi_list_workspaces`) and whether a filter is active (`filter_active` in replies): a filter from an earlier conversation stays on, and exports and checks then see only what it shows.
+- If Gephi is not running, say so and stop. If the reply carries `update`, tell the person once, with its `how_to_update` step.
+- Imports open in their own workspace, so no new project is needed. Never create or open a project over unsaved work; save it first or ask.
+- Read the matching reference before a specialised task (index at the end). Every reference path below is relative to this skill's folder.
+
+## Talking with the person
+
+- **Narrate.** Before each major tool call, say in one short sentence what is about to happen ("Computing modularity...", "Running ForceAtlas 2...").
+- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step, remove or overwrite nothing, and list each choice under "Choices I made". If there is no input to work on, stop and say what is needed.
+- **Open with the intake question** unless they already answered it: "What are the nodes and connections here, and what are you hoping to learn?" Their answer supplies what no file carries, meaning and the question at stake. Use their vocabulary in reports, captions, and labels, and treat their expectations as hypotheses to test.
+- **Elicit before you tell.** At the moments that matter (the first look at a new layout, right after an attribute overlay changes the picture, when they point at something), ask ONE concrete question before giving your reading: "Where does your eye go first?", "Which groups look like they talk to each other?", "What made you select these?" Their unprimed reading is evidence that is lost the moment you speak first. Then give your own reading and compare aloud; asking without telling is a quiz. Never elicit on task turns (they asked for an export: give the export), and if they wave a question off or say "just tell me", stop eliciting for the session.
+- **Offer, do not pronounce.** Present impressions as things to check together, never as findings, and pair every pattern with a rival explanation or a way it could be wrong. Close an opening with two or three places to look and let the person choose: the machine proposes, the human steers. Use no verdict vocabulary ("clearly", "confirms", "this network is X") before a check has run with them; a verdict is always relative to a baseline and to their stated expectation. Test your own impressions exactly as you test theirs.
+- **The person can point back.** `gephi_get_selection` reads what they have selected in the Gephi window. When they say "these", "this group", or "the ones I selected", read the selection first and answer about those exact nodes; never ask them to type node names. Call `gephi_set_selection_mode` with mode `rectangle` when a session starts, then tell them they can drag a box around nodes and the selection stays while they come back to the conversation. Hovering does not register; the box drag is the pointing gesture. If a reply's `rectangle_selection` is false, they switched modes: the dashed-square icon in the thin left toolbar turns it back on.
+- **Close long sessions by naming the loop.** A working session reshapes both sides. Before ending, say in one or two sentences what you do differently because of them (a correction they made, a habit you adapted to, a reading of theirs that beat yours) and invite the reverse. Where understanding matters (teaching, first analyses), test it by mutual teachback: they restate the map to you, you restate their domain to them, and each side repairs the other. Do not ask "does that make sense?"
+
+## Rules that protect a reading
+
+- **Say when a filter is active before you report anything.** With a filter on, `gephi_profile_graph`, `gephi_similarity_layout`, `gephi_community_layout`, and `gephi_community_stability` see only the visible nodes, while `gephi_get_graph_stats` reports the full graph. Replies carry `filter_warning` when these disagree, plus `view` (`"visible"` or `"full"`), `filter_active`, `full_node_count`, and `visible_node_count`. Never present a number from a filtered view as a fact about the whole network: name both counts and ask whether the filter was intended. `gephi_reset_filters` clears it.
+- **A modularity score never shows strong communities on its own.** Random graphs with the same degrees score 0.3 to 0.6, and sparse, hub-heavy networks sit at the top of that range, so never call a partition "strong" or "clear" from the score, and never use "above 0.3" as a threshold. Run `gephi_community_stability` before naming, captioning, or colouring by groups, and say how stable they are. Report `mean_stability` in plain words ("accounts grouped together stay together about 40% of the time"). Small stable cores appear even in randomly wired networks, so their number or coverage is never evidence of communities. Judge by `mean_stability` and by how large the biggest cores are, and name only large cores whose members make sense together. When `consensus_warning` appears, say the communities are loose.
+- **Read clustering against its baseline.** Quote `clustering_vs_random` from the profile (the actual clustering over what a random network with the same degrees would show), never the raw coefficient alone.
+- **Reply, mention, citation, and follower networks are mostly one-way.** Read `reciprocity` (the share of ties returned) in `gephi_profile_graph` before calling a directed network a conversation. When few ties are returned, describe hubs as accounts people address, not as partners in an exchange.
+- **Never call a network "scale-free" or say its degrees follow a "power law"**, even when asked directly. Power-law and log-normal fits are near-indistinguishable in practice, and the term smuggles in a universal-law claim (Jacomy 2020); strongly scale-free networks are rare in real data (Broido and Clauset 2019). Describe the tail from `gephi_profile_graph` instead: the `degree` block's `max` against its `median`, `top_5pct_edge_share`, and `gini` (degree inequality, 0 for equal and near 1 when one node holds everything). Say it as a property of this network ("a few accounts hold most of the ties"). Never report a fitted exponent as a finding. A formal test needs a separate package; ask before installing one.
+- **Read caveats out.** Statistics results may carry a `caveats` block naming a known Gephi defect (the modularity resolution runs the reverse of the literature's convention; centrality ignores edge weights). Pass it on rather than reporting the bare number. Gephi's eigenvector centrality can rank nodes differently from a standard calculation: never rank on it alone, and compare with PageRank.
+- **Every export ships with its story.** Every export ships with a copy-ready caption (data, layout and settings, what size and colour encode, what the map does and does not show) and, when colour encodes groups, a legend (`gephi_export_legend`). A network image circulated without that context ("storyletting") is the field's named failure mode; see references/reading-network-maps.md.
+- **The craft has citable sources; use them.** When a question goes deeper than the conversation can carry, recommend ONE matched open-access source (table in references/reading-network-maps.md). For a publication-bound map, offer the software citations with the caption: Gephi (Bastian et al. 2009), ForceAtlas 2 (Jacomy et al. 2014), modularity (Blondel et al. 2008), and plugins per their own papers. `gephi_session_receipt` lists the mappings, statistics, settings, and versions behind a figure for a methods section.
+- **A verified claim comes with receipts.** Once a claim has a verdict, `gephi_claim_record` re-reads the cited nodes and values from the live graph and returns a record to cite. See references/claim-verification.md.
+
+## Standard workflow
+
+1. **Start** as above: health check, open workspace, active filter.
+2. **Import or build.** `gephi_import_file` for a file, or `gephi_add_nodes` and `gephi_add_edges` in batches of a few hundred (see "Reading and cleaning data").
+3. **Profile and give a first reading** (next section).
+4. **Compute statistics** before styling: `modularity_class`, `degree`, and centrality columns do not exist until their statistic runs.
+5. **Check the data against the structure.** Before colouring by a claimed grouping, run `gephi_visual_qa` with `partition_column` set. If the verdict is "none", the attribute does not match the topology and colouring by it would mislead; say so and compute communities with `gephi_compute_modularity` instead. When building a demo or synthetic network, wire real structure (preferential attachment within groups, hub-biased bridges between them, more than 60% of edges within groups), never random edges with decorative group labels.
+6. **Style** (see "Styling").
+7. **Lay out** (see "Layout"). Ask where the map will be shown (screen, web page, print) and whether it is for exploring or for showing others. Default: a screen, for showing others.
+8. **Inspect.** Run `gephi_visual_qa` and export a small PNG to look at; fix every warning before finishing.
+9. **Export.** Size the canvas from `extent.suggested_export` in `gephi_visual_qa`, then `gephi_export_png` or `gephi_export_svg` (the parameter is `file`). `gephi_export_figure` writes the map and its legend as one figure, with a title and reading notes that you write and it never invents. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph`: it gives an inline view with cluster captions (`caption_column`), per-node questions, ego highlighting, refresh, and a time slider on dynamic graphs. When that view is unavailable or unsuitable, build an interactive HTML or canvas artifact from `gephi_export_gexf` data (positions, colours, and sizes are baked in) rather than settling for a static PNG. Keep PNG for publication stills. Add the caption and legend.
+
+## The first reading
+
+Run `gephi_profile_graph`: one call gives size, density, the degree distribution, components, isolates, the weight distribution, modularity, clustering against its random expectation, and flags. Absorb it, give a short plain-language first reading that joins their description with the numbers, and ask the two or three questions the profile raises. The first reading is provisional by design: success is what the person notices next, not how fast a verdict lands.
+
+Three numbers set layout parameters before any render:
+
+- `weights.heavy_tailed`: a few ties are far heavier than the rest and will dominate a force layout. Log-transform the weights or lower `edgeWeightInfluence` first.
+- Strongly negative `degree.assortativity` (hubs link mostly to small nodes, not to each other): hub-and-spoke wiring. Each hub sits in a halo of its neighbours that the layout produces; that halo is not a finding. Leave Dissuade Hubs off.
+- The hairball flag: filter weak ties or raise `scalingRatio` before rendering. The tree-like flag: force layouts will not separate communities; run modularity, then `gephi_community_layout`, and state its reading rule (disc placement is for legibility, not structure).
+
+Then let their goal and the profile guide every later choice:
+
+- Their goal picks the metric: brokers or gatekeepers, betweenness; reach or influence, degree or PageRank; "who plays similar roles", `gephi_similarity_layout`; importance by association, eigenvector (with the caveat above).
+- Size and density pick the layout (the purpose table in references/layout-guide.md).
+- If they expect an attribute to organise the network, test it (within-group share against a baseline) before colouring by it. When it fails, say so plainly and offer detected communities: the gap between expectation and structure is usually the finding.
+- Ask before removing isolates or fragments: one person's noise is another person's result.
+- Read a laid-out map with the guided process in references/reading-network-maps.md: layout, then clusters named with letters, then structural holes (the gaps are findings too), then attribute colours compared against the structure, then special nodes (bridges, hubs within a cluster, off-colour outliers), then earned names in their vocabulary, never "cluster 0/1/2". State the reading rules: axes mean nothing, only distances do, and a rerun keeps clusters but not positions.
+
+## Styling
+
+- **Groups first, edges second** (Jacomy's contrast advice). On a light background use `{"edge.color": "#D0D0D0", "edge.opacity": 90, "edge.thickness": 1.0, "edge.curved": false}` so the groups read first and dark edge bundles are not mistaken for nodes. Set contrast with the tone and lower opacity only a little: low opacity piles up into uneven texture where edges bundle. Label settings change labels only; they never reset edge values. Colouring edges by their source (`"edge.color": "source"`) is a deliberate choice for showing where ties come from, not a default; say so in the caption. Curve edges only when the network is directed and direction matters.
+- **Colours.** On a light background, leave `colors` unset: the plugin gives the largest group the first of eight colours validated for readability, the next largest the second, and so on. The order keeps the five largest groups distinguishable wherever they touch, even for colour-blind readers; past five groups, label the groups as well as colouring them. On a dark background, pass the dark-surface palette. Colour must never be the only way to tell groups apart: label the largest nodes or the groups. Past eight groups, the plugin adds generated colours and a `palette_note`; say in the caption that colour alone cannot separate them.
+  - Light (the plugin default, for reference): `{"0":[42,120,214],"1":[237,161,0],"2":[0,131,0],"3":[232,123,164],"4":[74,58,167],"5":[227,73,72],"6":[27,175,122],"7":[235,104,52]}`
+  - Dark-surface (pass explicitly, keyed largest group first): `{"0":[57,135,229],"1":[201,133,0],"2":[0,131,0],"3":[213,81,129],"4":[144,133,233],"5":[230,103,103],"6":[25,158,112],"7":[217,89,38]}`
+  - Avoid pale custom colours such as [227,185,216]: they vanish on white even at full opacity.
+- **Named groups.** Once groups have earned names, write them to a column (`gephi_add_column`, then `gephi_batch_set_node_attributes`) and colour by that column, so the legend and the figure show names, not numbers.
+- **Size.** Size nodes at about one to ten on screen (the `gephi_size_by_ranking` default, 10 to 100); widen the range for a large print. When betweenness spans several orders of magnitude, most nodes end up at the minimum size; size by degree instead. When a few nodes dwarf the rest (a mailing list with ten times anyone's contacts), pass `cap` at a value just above the busiest ordinary node, so everyone else stays visible, and say in the caption which nodes sit at the cap; in directed communication data, sizing by in-degree often shows who is actually written to.
+- **Clean export settings:** `{"node.label.show": false, "edge.color": "#D0D0D0", "edge.opacity": 90, "edge.thickness": 1.0, "edge.curved": false, "node.opacity": 100, "node.border.width": 0.3, "arrow.size": 0}`
+- **Labels only:** `{"node.label.show": true, "node.label.proportinalSize": true, "node.label.font": "Arial 10 Plain", "node.label.outline.size": 4, "node.label.outline.opacity": 95, "node.label.avoidOverlap": true}`. `proportinalSize` is Gephi's real spelling. Fonts may have multi-word names ("Courier New 12 Bold"). `node.label.overlapGridSize` (for example 50) sets how finely `avoidOverlap` checks for collisions. For readable captions on hubs, use `gephi_label_clusters`, which sizes them to the layout; a fixed font vanishes on large layouts, and with proportional size off Gephi clamps every label to its node.
+- **Dark backgrounds.** Set `background.color` with `gephi_set_preview_settings`; `gephi_export_png` fills the background with it. Pass the dark-surface palette. For a labelled export, stay on white. To composite or re-render outside Gephi, see references/external-rendering.md.
+
+## Layout
+
+The full five-pass Beautiful Graph Recipe (settings, preview values, and troubleshooting) is in references/layout-guide.md. In short, following Mathieu Jacomy's ForceAtlas 2 tutorials:
+
+- **Choose by purpose.** Lead with what the person wants to see, then name the algorithm (the "Choosing a layout" table in the layout guide).
+- **Pass 1, LinLog off:** `{"algorithm": "ForceAtlas 2", "iterations": 1500, "sync": true, "properties": {"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01, "distributedAttraction": false}}`. Raise `scalingRatio` for more room. For a quick look, stop here.
+- **Pass 2, LinLog on** (LinLog is a mode that pulls clusters apart more sharply): divide `scalingRatio` by about 20, lower gravity to 0.001 or below, and run 3000 iterations or more; large networks keep improving for a long time. Strong gravity at a small value keeps islands and filaments in frame; if a round containing circle shows, lower it, because it makes the network look denser than it is.
+- **Dissuade Hubs (`distributedAttraction`) stays off:** it acts only on directed networks and costs cluster separation. Use it only as a deliberate exploration view, say so in the caption, and offer the map without it.
+- **Finish** with Noverlap (`{"algorithm": "Noverlap", "iterations": 500, "sync": true, "properties": {"margin": 5.0}}`) and, when labels show, Label Adjust (500 iterations, `sync: true`).
+- **Inspect and measure.** Run `gephi_visual_qa` with `partition_column` set. `partition.separation` is the mean distance within groups over the mean distance between random pairs: 1.0 is fully mixed, near 0 is tight, distinct groups. Track it across changes and quote before and after. Export a small PNG, diagnose with the symptom table in the layout guide (blob: gravity too high; hairball: run the LinLog pass or filter weak ties; unreadable cluster interiors: raise `scalingRatio`), change ONE parameter, and rerun about 300 iterations. Two or three loops usually converge; say what you saw, what separation did, and what you changed.
+- **Fix the output first.** Decide orientation and size ratio before the final pass, and stop changing the layout once the person has started reading the map: a rerun keeps the clusters but moves them, and they lose what they have read from it.
+- **Plugins.** Layouts installed through Gephi's Tools > Plugins appear in `gephi_get_available_layouts` and run by name. Noverlap, OpenOrd (very large graphs), and Label Adjust are bundled with Gephi. Statistics plugins appear in `gephi_list_statistics` and run through `gephi_run_statistic`; recommend the CWTS Leiden plugin over plain modularity for large networks. For a capability Gephi lacks, check the plugin portal (gephi.org/desktop/plugins): install, restart Gephi, and it can be driven here.
+
+## Reading and cleaning data
+
+- **Files.** `gephi_import_file` reads GEXF, GraphML, GML, CSV, DOT, and Pajek (`mode="append"` adds a file to the current workspace, for example a node table to an edge list). `max_node_size` caps oversized nodes that would hide edges; otherwise imported sizes are kept as the file states them. A graph that looks collapsed into a small cluster has very small coordinates: run a layout.
+- **No file path** (an attachment, API data, a pasted table): parse it and batch `gephi_add_nodes` and `gephi_add_edges`. An edge list adds directly; an adjacency matrix gives one edge per nonzero cell; a two-column person,event table becomes two node sets with a `type` attribute, or a projection (`gephi_bipartite_projection`); entity rows become nodes with attributes, with edges from a relationship column or from attribute similarity above a threshold (similarity in `weight`); JSON maps objects to nodes and references to edges; RDF maps subject and object to nodes and the predicate to the edge label.
+- **Repeated edge rows.** An edge CSV with repeated source-target rows is merged on import: weights are summed, and only one row's other values survive. To keep one edge per pair per period, load edges with `gephi_add_edges`, giving each row an `edge_type` for its period; see references/change-over-time.md.
+- **Hand-written GEXF** must escape `<>&"'` in every attribute value, or the import fails. Check the file parses before importing: `python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse(sys.argv[1])" file.gexf`.
+- **Free text** (an essay, transcript, or corpus): `gephi_text_to_network` builds a word co-occurrence graph (options for nouns only, minimum word frequency, phrases, and generic hub words are in the text reference); do not hand-parse prose. It adds to the current workspace unless `clear_existing` is true. Read references/text-network-analysis.md before reporting any structural gap as a finding.
+- **Ranking.** To rank nodes on a metric, call `gephi_query_nodes` with `column` set to the metric and `min` set to a cutoff, with `limit` 20 or less, and raise or lower the cutoff until about ten nodes match (`matches` gives the total). A large `limit` returns every column of every node and can overflow.
+- **Weighted degree** (the sum of a node's edge weights): `gephi_run_statistic("Weighted Degree")` writes a "Weighted Degree" column.
+- **Duplicates.** `gephi_detect_duplicates` finds nodes whose whole value in one column matches, ignoring case only. For name variants ("J. Smith", "Smith, John"), write a normalised column first (`gephi_add_column`, then `gephi_batch_set_node_attributes`), detect on it, check each group, and merge with `gephi_merge_nodes` one group at a time.
+- **Tidy columns** with `gephi_edit_column` (delete, rename, convert type, fill empty cells, clear); a conversion reports the values it could not read in `values_lost`. `gephi_create_regex_column` flags matching rows without hiding anything.
+- **Multiplex graphs.** `gephi_add_edge` and `gephi_add_edges` take `edge_type`, so one pair can hold parallel typed edges ("cites" and "coauthor"). To compare layers, filter to one type (`gephi_apply_filter` with the "Edge Type" filter), compute modularity, repeat per type, and compare the partitions.
+- **Change over time.** `gephi_set_time_from_columns` gives a network time from start and end columns; `gephi_time_slice` opens one period in its own workspace. Lay out the whole network first so every slice keeps the same positions. See references/change-over-time.md.
+
+## Hide, remove, and undo
+
+- `gephi_apply_filter` and `gephi_apply_filters` hide nodes and change nothing; `gephi_reset_filters` shows them again. Pass `dry_run` to count what a filter would hide or remove before running it. The remove and extract tools delete, keep one undo level, and have no redo; for an experiment, duplicate the workspace first.
+- Deleting tools take an undo snapshot first and report `undo_available`; `gephi_undo` restores it. Verify after each deleting step before taking the next. `gephi_remove_isolates` has no `dry_run`: count isolates in the profile first. Single `gephi_remove_node` and `gephi_remove_edge` calls take no snapshot; call `gephi_snapshot` before a risky run of small edits.
+- For "what if X were gone", use `gephi_whatif`: it edits a throwaway copy and reports the change, and the real graph is never touched.
+- To keep outlier nodes in frame, prefer strong gravity at a small value over deleting them.
+- See references/filtering.md for turning a plain-language filter into a Gephi filter.
+
+## Teaching mode (watch-along sessions)
+
+When a person is watching the Gephi window while you work (teaching, demos, paired analysis), switch to narrated pacing. Watching the instrument operate is the pedagogy; never do anything the viewer cannot follow.
+
+- Announce each step and what to watch for BEFORE doing it.
+- Direct their eyes with `gephi_focus_view`: fit the graph (mode `graph`) after an import or layout; centre on and select a cluster before discussing it.
+- Run layouts in chunks of 200 to 300 iterations, with narration between passes, instead of one long run.
+- Pause after each visible change and invite their observations.
+- Gephi's own panels show what you do: the Statistics panel shows each statistic running, its result, and its report; the Layout panel shows the algorithm and the exact settings; the Appearance panel shows the column and the colours or sizes applied. Point the viewer to them and invite them to rerun or adjust a step by hand. A statistic can be cancelled from the Statistics panel. Columns can be named by id or by the title shown in Gephi.
+- Switch the viewer to the tab you are about to discuss with `gephi_switch_perspective` (Overview, Data Laboratory, Preview).
+- The /teach command codifies the full pattern.
+
+## Tool map
+
+- **Project and workspace:** `gephi_create_project`, `gephi_open_project`, `gephi_save_project`, `gephi_get_project_info`, `gephi_new_workspace`, `gephi_list_workspaces`, `gephi_switch_workspace`, `gephi_duplicate_workspace`, `gephi_rename_workspace`, `gephi_delete_workspace`, `gephi_snapshot`, `gephi_undo`.
+- **Build and edit:** `gephi_add_node`, `gephi_add_nodes`, `gephi_add_edge`, `gephi_add_edges`, `gephi_remove_node`, `gephi_bulk_remove_nodes`, `gephi_remove_edge`, `gephi_clear_graph`, `gephi_set_node_label`, `gephi_set_edge_label`, `gephi_set_node_attributes`, `gephi_set_edge_attributes`, `gephi_set_edge_weight`, `gephi_set_node_position`, `gephi_batch_set_positions`, `gephi_text_to_network`, `gephi_extract_backbone` (disparity-filter pruning, a principled alternative to a flat weight cutoff).
+- **Read:** `gephi_get_graph_stats`, `gephi_get_graph_type`, `gephi_get_columns`, `gephi_get_node`, `gephi_query_nodes`, `gephi_query_edges`, `gephi_profile_graph`.
+- **Statistics** (column written): `gephi_compute_modularity` (`modularity_class`), `gephi_compute_degree` (`degree`, `indegree`, `outdegree`), `gephi_compute_betweenness` (`betweenesscentrality`, `closnesscentrality`, `eccentricity`, `harmonicclosnesscentrality`), `gephi_compute_pagerank` (`pageranks`), `gephi_compute_eigenvector` (`eigencentrality`), `gephi_compute_hits` (`authority`, `hub`), `gephi_compute_connected_components` (`componentnumber`), `gephi_compute_clustering_coefficient` (`clustering`), `gephi_compute_avg_path_length` (values only), `gephi_community_stability` (`stable_core`, `consensus_community`, `community_stability`), `gephi_list_statistics`, `gephi_run_statistic`, `gephi_stop_statistic`.
+- **Claims and counterfactuals:** `gephi_compare_nodes`, `gephi_find_shortest_path` (`equally_short_paths` above 1 means no single middle node is "the" link), `gephi_whatif`, `gephi_compare_workspaces`, `gephi_claim_record`. See references/claim-verification.md.
+- **Two-mode networks:** `gephi_bipartite_layout` (needs a `mode_column` with two values), `gephi_bipartite_projection` (collapses to one mode in a new workspace, weighted by shared partners).
+- **Appearance:** `gephi_color_by_partition`, `gephi_color_by_ranking`, `gephi_color_edges_by_partition`, `gephi_size_by_ranking`, `gephi_set_node_color`, `gephi_set_node_size`, `gephi_batch_set_node_colors`, `gephi_set_edge_color`, `gephi_edge_thickness_by_weight`, `gephi_reset_appearance`, `gephi_label_clusters`.
+- **Layout:** `gephi_run_layout`, `gephi_stop_layout`, `gephi_get_layout_status`, `gephi_get_available_layouts`, `gephi_get_layout_properties`, `gephi_set_layout_properties`, `gephi_community_layout`, `gephi_similarity_layout`, `gephi_visual_qa`.
+- **View (Desktop only):** `gephi_focus_view`, `gephi_get_selection`, `gephi_set_selection_mode`, `gephi_get_perspective`, `gephi_switch_perspective`.
+- **Filters:** `gephi_list_filters`, `gephi_apply_filter`, `gephi_apply_filters`, `gephi_reset_filters`, `gephi_filter_by_degree`, `gephi_filter_by_edge_weight`, `gephi_remove_isolates`, `gephi_extract_giant_component`, `gephi_extract_ego_network`.
+- **Data tidying:** `gephi_add_column`, `gephi_batch_set_node_attributes`, `gephi_edit_column`, `gephi_column_value_frequencies`, `gephi_create_regex_column`, `gephi_detect_duplicates`, `gephi_merge_nodes`.
+- **Paths and time:** `gephi_find_shortest_path`, `gephi_get_timeline`, `gephi_set_time_from_columns`, `gephi_time_slice`.
+- **Import:** `gephi_import_file`, `gephi_import_gexf`, `gephi_import_graphml`, `gephi_import_csv`.
+- **Preview and export:** `gephi_get_preview_settings`, `gephi_set_preview_settings`, `gephi_export_png`, `gephi_export_svg`, `gephi_export_pdf`, `gephi_export_figure` (map and legend as one PDF and PNG), `gephi_export_legend`, `gephi_export_screenshot` (the live canvas as the person sees it, selection included), `gephi_export_gexf`, `gephi_export_graphml`, `gephi_export_csv`, `gephi_export` (any format by name, for UCINET or Pajek), `gephi_view_graph`, `gephi_session_receipt`.
+
+## Live gotchas
+
+- The layout name is `"ForceAtlas 2"`, with the space and capitals. Its key is `barnesHutOptimization` (turn it on above about 1,000 nodes), not `barnesHutOptimize`.
+- Export tools take `file`, not `path`.
+- Always pass `sync: true` to `gephi_run_layout`, so Noverlap and Label Adjust do not start on a moving graph.
+- **"Graph is busy".** Retry once; a render pass can hold the lock briefly. Re-styling right after a PNG export is the usual spot; retry once or twice. If it persists, run `gephi_health_check`: `graph_lock: "busy"`, or a nonzero `graph_lock_stats.readers` while Gephi is idle, means a leaked read hold that nothing recovers. Tell the person plainly that Gephi must be quit and reopened, and that an unsaved project will be lost (offer `gephi_save_project` early in long sessions). `queued` above 0 for a long time means a write is waiting behind rendering: pause changes and let it drain.
+- The API changes data but does not move Gephi's camera: call `gephi_focus_view` with mode `"graph"` after an import or layout.
+- Preview settings apply to exports and the Preview tab only. To see labels in the Overview window, the person clicks the black **T** toggle at the bottom of the graph canvas.
+- **ForceAtlas 2 can explode numerically:** coordinates become `Infinity` or `NaN` while the call reports success, most often on weighted graphs with a heavy hub. A `layout_exploded` block in a sync run means do not style or export: reset with Random Layout and rerun. The heavy-tailed-weights flag is the advance warning.
+- **Nodes in a ball** mean gravity is too high (above about 3) or settings were not applied: run Random Layout for one iteration, then pass 1 again.
+- **Outliers blowing out the frame.** `gephi_visual_qa` lists them in `extent.outliers` and computes `suggested_export` from the main cloud; export at those dimensions. To pull them in, use strong gravity at 0.01 or lower.
+- When driving Gephi's HTTP API directly (not through `gephi_run_layout`), layout values go under `"properties"`, not `"params"`. The wrong key returns success and runs on defaults. The tell: wide changes to `scalingRatio` or `gravity` return nearly the same layout extent.
+- Behaviour that depends on the Gephi or plugin version (such as a macOS freeze when the Overview opens) is listed in references/version-notes.md.
+
+## References
+
+- [references/tool-reference.md](references/tool-reference.md): every tool's parameters and returns.
+- [references/layout-guide.md](references/layout-guide.md): choosing a layout, the Beautiful Graph Recipe, and the symptom table.
+- [references/statistics-guide.md](references/statistics-guide.md): reading each statistic.
+- [references/reading-network-maps.md](references/reading-network-maps.md): the guided reading process, sources, and captions.
+- [references/claim-verification.md](references/claim-verification.md): checking a plain-language claim against the graph.
+- [references/filtering.md](references/filtering.md): turning a plain-language filter into a Gephi filter.
+- [references/text-network-analysis.md](references/text-network-analysis.md): building and reading text networks.
+- [references/change-over-time.md](references/change-over-time.md): comparing a network across periods.
+- [references/external-rendering.md](references/external-rendering.md): dark compositing, cropping, and re-rendering from GEXF outside Gephi.
+- [references/version-notes.md](references/version-notes.md): what differs by Gephi and plugin version.

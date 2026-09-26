@@ -79,6 +79,8 @@ class Ledger:
                 item["palette"] = entry["palette"]
             if entry.get("min_size") is not None or entry.get("max_size") is not None:
                 item["range"] = [entry.get("min_size"), entry.get("max_size")]
+            if entry.get("cap") is not None:
+                item["cap"] = entry["cap"]
             by_channel[channel] = item
         return list(by_channel.values())
 

@@ -140,11 +140,11 @@
         "always": true
       },
       "severity": "wrong",
-      "says": "Eigenvector centrality is reported not to be calculated properly. The report is untriaged. Check against an independent implementation before ranking on it. Not verified against your Gephi: run the probe suite to confirm it still holds.",
+      "says": "Gephi's eigenvector centrality stops iterating before its values settle on some networks, which can put the wrong node first. gephi_compute_eigenvector runs 1,000 iterations (set with iterations), which recovers the order on known cases, but values can still differ from an exact calculation by up to about a tenth: do not rank on small differences, and compare with PageRank. Not verified against your Gephi: run the probe suite to confirm it still holds.",
       "reported_open_since": "2019-10-10",
       "verification": {
         "status": "unverified",
-        "why": "Deciding this needs an independent implementation of the measure to compare against, and a mismatch of conventions between the two would look identical to a fix. No probe is written rather than one that could give a false all-clear."
+        "probe": "probe_gephi_2145"
       }
     },
     {

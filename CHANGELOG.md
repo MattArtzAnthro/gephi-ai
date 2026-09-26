@@ -7,6 +7,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 ## Unreleased
 
 ### Added
+- **Cap node sizes.** `gephi_size_by_ranking` takes `cap`: every node at or above it gets
+  the largest size, so a few outliers (a mailing list with ten times anyone's contacts) no
+  longer shrink every other node. The reply counts the nodes at the cap and the legend
+  records it.
 - **Find nodes by value.** `gephi_query_nodes` takes a column and a whole value, part of the
   text, or a numeric range, and counts every match.
 - **Combined filters.** `gephi_apply_filters` applies several filters with AND, OR or NOT,
@@ -31,12 +35,46 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   offers a comparison across periods.
 
 ### Changed
+- **The skill reaches every workflow.** Each Claude Code command now loads the gephi skill
+  first, reads references from the installed plugin, and repeats the few rules it could
+  break: test groups for stability before naming them, a caption and legend with every
+  export, a dry run before a filter. When a step asks the person something and no answer
+  comes, the assistant uses the step's named default and lists what it chose.
+- **A shorter core skill.** SKILL.md keeps every rule that still holds, in about a third fewer words. The
+  Python rendering recipes moved to `references/external-rendering.md` and version-bound
+  notes to `references/version-notes.md`; the five-pass layout recipe now lives in the
+  layout guide. The skill no longer tells the assistant to create a new project before an
+  import, which could discard unsaved work.
+- **The agents may use what their work needs, and no more.** The claim verifier and the
+  network analyst stay read-only (the claim verifier no longer leaves a visible filter on
+  the graph); the text-network builder and layout iterator can check group stability and
+  export a legend.
+- **New guidance:** a worked path for node and edge files with one row per pair per period
+  (importing repeated rows merges them), mixing between groups per period, checking a
+  claim's group definitions and comparing a removal against a comparable node, weighted
+  degree, a caveat on eigenvector centrality, and broadcast accounts in communication data.
+- **Group colours default to the validated palette.** With no colours given,
+  `gephi_color_by_partition` now uses the eight colours validated for readability on white
+  and for colour-blind separation, largest group first, instead of a set with gray and two
+  pale tones. Its description says to leave colours unset on light backgrounds.
+- **Colour order keeps the largest groups apart.** On a map any two groups can touch, so the
+  eight colours are now handed out in an order that keeps every pair of the five largest
+  groups distinguishable with normal vision and for red- and green-blind readers. Past five
+  groups the reply's note says to label the groups as well.
+- **Eigenvector centrality runs until it settles.** Gephi's default of 100 iterations stops
+  early on some networks and can put the wrong node first (Valjean ahead of Gavroche in Les
+  Miserables). `gephi_compute_eigenvector` now runs 1,000 by default and takes
+  `iterations`; its caveat says values can still differ from an exact calculation by up to
+  about a tenth.
+- **One default for sizes and edges.** `gephi_size_by_ranking` now defaults to 10 to 100,
+  about one to ten, and `gephi_export_png` recommends the same light neutral edges as the
+  skill instead of a different set.
 - **Imports open in their own workspace**, named after the file, as Gephi's File > Open
   does, so files with timestamps or integer ids import next to any open graph. An empty
   workspace left open is removed. `mode="append"` adds a file to the current workspace.
   Gephi's import warnings come back as `import_issues`.
-- Partition colours no longer repeat after twelve groups. The largest groups get the most
-  distinct colours, and a note says when there are too many groups to tell apart.
+- Partition colours no longer repeat. Past the eight base colours each group gets its own
+  generated colour, and a note says when there are too many groups to tell apart.
 - Gephi's per-column filters have plain names such as "Equal: group String (Node)". Their
   Non-null and Partition Count versions were unreachable by name before.
 
@@ -56,6 +94,26 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - `gephi_export_screenshot` could open Gephi's save dialog and time out on a Gephi that asks
   where to save screenshots, which is Gephi's default. A capture that produces nothing is
   now tried once more.
+- **Names with accents survive.** Node ids, labels and values sent to Gephi were read as
+  plain ASCII, so "Tomás" became "Tom??s" and later calls could not find the node. The
+  plugin now reads every request as UTF-8, and the server says so in each request, which
+  also fixes older plugins.
+- `gephi_whatif` and `gephi_profile_graph` report average path length again; Gephi names
+  it differently from what the server looked for, so it was silently left out.
+  `gephi_whatif` also compares the share of nodes in the largest component. Its
+  description no longer promises a community count Gephi does not supply.
+- The probe for betweenness ignoring edge weights read its values under a name nodes do not
+  carry, so it compared two empty readings and reported the defect without measuring it. It
+  now reads the values; the defect is confirmed. A new probe checks eigenvector centrality
+  against an exact calculation.
+- **The skill** now teaches on the network the person is looking at, in plain words;
+  searches on part of a name before calling someone absent from a graph; and caps sizes when
+  a few nodes dwarf the rest.
+- **The Claude Code plugin's safeguards now apply.** The check that Gephi is running before
+  a graph change, the agents' tool lists and the commands' pre-approved tools named the
+  tools as they appear for a server registered by hand, so under the plugin the check never
+  ran, the read-only agents could use every tool, and each command asked permission for
+  every Gephi call.
 
 ## MCP server 1.19.3 / Java plugin 1.4.0 / workflow packages 1.17.3
 

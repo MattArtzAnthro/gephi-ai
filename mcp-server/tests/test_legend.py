@@ -119,3 +119,11 @@ def test_the_legend_grows_with_the_number_of_groups():
         return float(re.search(r'height="([0-9.]+)"', doc).group(1))
 
     assert height(large) > height(small), "twelve groups must not overflow a one-group box"
+
+
+def test_a_capped_size_legend_says_where_the_cap_starts_on_a_line_of_its_own():
+    svg = legend_fragment([{**SIZE, "cap": 30}])
+    height = lambda doc: float(re.search(r'height="([0-9.]+)"', doc).group(1))  # noqa: E731
+
+    assert "30 and above" in svg
+    assert height(legend_document([{**SIZE, "cap": 30}])) > height(legend_document([SIZE]))
