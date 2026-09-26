@@ -4,6 +4,35 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.19.1 / workflow packages 1.17.0
+
+### Changed
+- **Layouts separate groups better.** ForceAtlas 2 now runs in two passes: tune with LinLog
+  off, then switch LinLog on with the scaling divided by about 20 and run longer. Gravity is
+  small and in strong mode, which holds islands in frame without crushing the network. The old
+  single LinLog pass with large scaling values left groups in a blob on larger networks. The
+  skill, the layout guide, the tool description and every workflow now give the same settings.
+- **Dissuade Hubs is off by default.** It was switched on for every network over 300 nodes
+  and recommended for hub-and-spoke networks. It only acts on directed networks, where it
+  pushes accounts that send many links but receive few to the edge and hides the groups. The
+  profile's hub-and-spoke flag now says to leave it off.
+- **Edges are quieter by default.** Maps draw edges in a light neutral close to the
+  background, straight unless direction matters, so the groups read first. Coloring edges by
+  their source community is still available as a deliberate choice. Labeled exports size
+  labels with their nodes.
+- **Stable cores are not treated as proof of communities.** Small stable cores appear even in
+  a randomly wired network. The assistant now judges by stability and by how large the biggest
+  cores are, and names only large cores whose members make sense together.
+- **New reading rules.** A round blob does not prove a network has no groups. Hide the
+  community colors before naming groups. Where a disconnected island sits means nothing. The
+  empty space around a hub is made by the layout. The assistant also asks where a map will be
+  shown before the final layout, and stops changing the layout once you have started reading it.
+
+### Fixed
+- Several workflows set `barnesHutOptimize`, which Gephi does not recognize, so the setting
+  never took effect. They now use `barnesHutOptimization`.
+- The layout guide's overlap pass used `preventOverlap`; the setting is `adjustSizes`.
+
 ## Workflow packages 1.16.1
 
 ### Fixed
