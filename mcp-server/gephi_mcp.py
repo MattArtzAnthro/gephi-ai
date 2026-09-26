@@ -1193,6 +1193,11 @@ async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | N
     "1": [27,175,122], "2": [237,161,0], "3": [0,131,0], "4": [74,58,167],
     "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}. With more than 8
     categories, color the 8 largest and set the rest to gray [153,153,153].
+
+    column may be the column's id or the title shown in Gephi. With Gephi AI plugin 1.4.0+,
+    Gephi's Appearance panel is set to the same partition and colors, so the user sees what
+    was applied and can reapply it there; appearance_panel says whether it was, and
+    appearance_panel_note says why not.
     """
     return _fmt_styled(await gephi.request("POST", "/appearance/partition/color",
                                            json_data=_body(column=column, colors=colors)),
@@ -1220,7 +1225,9 @@ async def gephi_color_by_ranking(column: str,
                                  r_max: int = 255, g_max: int = 0, b_max: int = 0) -> str:
     """Color nodes by a numeric attribute using a gradient from (r/g/b)_min to (r/g/b)_max.
 
-    Works with degree, betweenness, pagerank, etc.
+    Works with degree, betweenness, pagerank, etc. column may be the id or the title shown
+    in Gephi. With plugin 1.4.0+, Gephi's Appearance panel is set to the same ranking and
+    colors (appearance_panel says whether it was).
     """
     return fmt(await gephi.request("POST", "/appearance/ranking/color",
                                    json_data={"column": column,
@@ -1233,6 +1240,9 @@ async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: flo
 
     Always do this before exporting or viewing — unsized nodes render as invisible
     specks. Degree with min 10, max 60 is a good default; scale up for large canvases.
+    column may be the id or the title shown in Gephi. With plugin 1.4.0+, Gephi's
+    Appearance panel is set to the same ranking and size range (appearance_panel says
+    whether it was).
     """
     return _fmt_styled(await gephi.request("POST", "/appearance/ranking/size",
                                            json_data={"column": column, "min_size": min_size,
@@ -1332,6 +1342,8 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     Leave distributedAttraction (Dissuade Hubs) off. It acts only on directed networks,
     pushes nodes that send many links but receive few to the edge, and costs cluster
     separation; use it only as a deliberate exploration view and say so in the caption.
+    With plugin 1.4.0+, the layout runs through Gephi's Layout panel, which shows the
+    algorithm, the settings used and whether it is running.
     After the run, call gephi_visual_qa with partition_column: partition.separation
     (lower = clearer groups) lets you compare settings. Change one parameter per rerun.
     A setting whose name matches no property is not applied: the result then carries
@@ -1905,6 +1917,13 @@ async def gephi_list_statistics() -> str:
 @_tool(name="gephi_run_statistic")
 async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -> str:
     """Run any available statistic by name — including installed plugin metrics.
+
+    With Gephi AI plugin 1.4.0+, statistics run through Gephi's Statistics panel, which shows
+    each one running, its result and its report, and lets the user cancel it. Dynamic
+    statistics (# Nodes, # Edges, Degree and Clustering Coefficient over time) need a network
+    with time data and params {"window": ..., "tick": ...} in the network's time units (the
+    width of each time slice and the step between slices); without them they are refused, and
+    the error gives the network's time range.
 
     `name` matches an entry from gephi_list_statistics (case-insensitive).
     `params`: optional {property: value} map set on the statistic before it runs

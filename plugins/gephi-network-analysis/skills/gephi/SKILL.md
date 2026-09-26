@@ -8,12 +8,12 @@ description: |
   analyze, style, teach from, or export a network in Gephi.
 metadata:
   author: Matt Artz
-  version: "1.17.2"
+  version: "1.17.3"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.17.2 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.17.3 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 113 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; fully-qualified names may include a server namespace) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -69,6 +69,13 @@ import/layout, center+select a cluster before discussing it); run layouts in
 pause after each visible change and invite their observations. The companion
 `teach-with-gephi` skill codifies the full pattern. Watching the instrument operate is the pedagogy — never
 do anything the viewer can't follow.
+
+With Gephi AI plugin 1.4.0+, Gephi's own panels show what you do: the Statistics panel
+shows each statistic running, its result and its report; the Layout panel shows the
+algorithm and the exact settings used; the Appearance panel shows the column and the
+colors or sizes applied. Point the viewer to them ("the Layout panel now shows the settings
+I used") and invite them to rerun or adjust a step by hand; a statistic can be cancelled
+from the Statistics panel. Columns can be named by id or by the title shown in Gephi.
 
 **The person can point back.** `gephi_get_selection` reads what they have selected
 in the Gephi window. Whenever they use deictic words about the canvas — "these",

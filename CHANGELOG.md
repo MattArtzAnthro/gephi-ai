@@ -4,6 +4,28 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.19.3 / Java plugin 1.4.0 / workflow packages 1.17.3
+
+### Added
+- **Gephi's panels show what Gephi AI does.** Statistics run through Gephi's Statistics
+  panel, which shows each one running, its result and its report, and lets you cancel it.
+  Layouts run through the Layout panel, which shows the algorithm, the exact settings used,
+  and whether it is running, with Stop working as usual. Coloring and sizing by a column set
+  the Appearance panel to the same column and colors or sizes, so clicking Apply there
+  reproduces the result. Results are unchanged.
+- Columns can be named by the title shown in Gephi as well as by their id, for coloring and
+  sizing.
+
+### Fixed
+- **Dynamic statistics now run properly, or say why they cannot.** Dynamic # Nodes, # Edges,
+  Degree and Clustering Coefficient used to report success without computing anything. They
+  now run over the network's timeline. They need a window and a step (tick) in the network's
+  time units; without them, or on a network with no time data, they are refused with a
+  message giving the network's time range, instead of starting a loop that never ends.
+- Extracting the giant component could leave the node table locked on graphs whose component
+  column has an unusual name, which froze Gephi's interface the next time a panel listed the
+  columns.
+
 ## Workflow packages 1.17.2
 
 ### Changed
