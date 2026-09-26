@@ -8,12 +8,12 @@ description: |
   analyze, style, teach from, or export a network in Gephi.
 metadata:
   author: Matt Artz
-  version: "1.15.1"
+  version: "1.16.0"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.15.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.16.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 113 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; fully-qualified names may include a server namespace) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -41,6 +41,8 @@ You have access to 113 MCP tools from the `gephi-mcp` server (tool names start w
   and both `full_node_count` and `visible_node_count`. Never present a number computed on a
   filtered subgraph as a fact about the whole network: surface the warning, name both counts, and
   ask whether the filter was intended. Reset with `gephi_reset_filters` if it was not.
+- **A modularity score alone never shows strong communities.** Random graphs with the same degrees score 0.3 to 0.6, and sparse, hub-heavy networks sit at the top of that range, so never call a partition "strong" or "clear" from the score and never use "above 0.3" as a threshold. Before naming communities or reporting them as findings, run `gephi_community_stability`. Report `mean_stability` in plain words ("accounts grouped together stay together about 40% of the time"), name only groups that are stable cores, and when `consensus_warning` appears, say the communities are loose and describe the stable cores instead.
+- **Reply, mention, citation and follower networks are mostly one-way.** Read `reciprocity` in `gephi_profile_graph` before calling a directed network a conversation. When few ties are returned, describe hubs as accounts people address, not as partners in an exchange.
 - **Never claim "scale-free" or "power law" from a heavy-tailed degree distribution** — power-law and log-normal fits are near-indistinguishable in practice, and the term smuggles in a universal-law claim (Jacomy 2020). Describe hub dominance as a characteristic of THIS network ("a few accounts concentrate most ties"), not as the signature of a law.
 - **Every final export ships with its story.** When handing over a finished map, always provide copy-ready caption text: data, layout and key settings, what size and color encode, and what the map does and does not license a reader to conclude. Circulating a network image without interpretive context ("storyletting") is the field's named failure mode — see references/reading-network-maps.md.
 - **The craft has citable sources; use them.** When a question goes deeper than the conversation can carry, recommend ONE matched open-access source (table in references/reading-network-maps.md). When a map is publication-bound, include the software citations in the caption offer (Gephi = Bastian et al. 2009; ForceAtlas 2 = Jacomy et al. 2014; modularity = Blondel et al. 2008; plugins per their own papers). Most users don't know their tools are citable scholarship.
@@ -223,7 +225,7 @@ those plugins never covered.
 - `gephi_compute_clustering_coefficient` → creates `clustering`
 - `gephi_compute_avg_path_length` → avg path length, diameter
 - `gephi_compute_hits` → creates `authority`, `hub` (lowercase column names)
-- `gephi_community_stability(runs=20, resolution=1.0)` → run community detection repeatedly and report which groups hold up: distinct partitions seen, a 0-1 stability score per node, the nodes that never settled, and a consensus partition written to its own column. **Run this before calling communities a finding** — Gephi reports one partition as though it were the answer, and it is one draw
+- `gephi_community_stability(runs=20, resolution=1.0)` → run community detection repeatedly and report which groups hold up: distinct partitions seen, `mean_stability` (the chance that nodes grouped together in one run are grouped together in another), the least stable nodes, stable cores (groups held together in 90% of runs), and a `consensus_warning` when the consensus is a chain rather than a community. Writes `stable_core` (-1 = no core), `consensus_community` and a per-node `community_stability` column. **Run this before calling communities a finding** — Gephi reports one partition as though it were the answer, and it is one draw
 - Statistics results may carry a `caveats` block naming a known Gephi defect that affects the number (e.g. the modularity resolution parameter is the reciprocal of the literature convention; centrality ignores edge weights). Read it out to the user rather than reporting the bare number
 
 ### Analysis & counterfactual

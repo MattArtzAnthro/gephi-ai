@@ -356,13 +356,14 @@ Complete catalog of all MCP tools for controlling Gephi Desktop.
 - **Params**: `{resolution?: float (1.0)}`
 - **Creates**: `modularity_class` (Integer) on nodes
 - **Returns**: `{success, modularity}`
-- **Notes**: Higher resolution = more communities. Use `gephi_color_by_partition` with `modularity_class` afterwards.
+- **Notes**: Higher resolution = more communities. Use `gephi_color_by_partition` with `modularity_class` afterwards. Gephi's modularity occasionally never converges (gephi#1630); with plugin 1.3.2+ such a run is stopped after 45 s (`GEPHI_MODULARITY_DEADLINE`) and repeated once, and `reruns_after_nonconvergence` says so.
 
 ### gephi_community_stability
-- **Method**: runs community detection `runs` times on the unchanged graph, reading the partition back between runs, and measures how often each pair of nodes lands together. Writes the consensus partition to its own column so the run already on the graph survives.
-- **Params**: `{runs: int (20), resolution: float (1.0), consensus_column: str ("consensus_community")}`.
-- **Returns**: `{success, runs, distinct_partitions, node_stability: {id: 0-1}, mean_stability, unstable_nodes: [{node, stability}], consensus_groups, consensus_column, caveats?}`.
-- **Notes**: use this BEFORE describing communities as a finding. Gephi reports one partition as though it were the answer; it is one draw. A node scores 1.0 when every co-membership relation came out the same way every time and 0.5 when its placement is undetermined. Fewer than 2 runs is refused, and a partition that cannot be read back is an error rather than an empty result, because empty is indistinguishable from stable.
+- **Method**: runs community detection `runs` times on the unchanged graph, reading the partition back between runs, and measures how often each pair of nodes lands together. Writes its results to their own columns so the run already on the graph survives.
+- **Params**: `{runs: int (20), resolution: float (1.0), consensus_column: str ("consensus_community"), core_column: str ("stable_core")}`.
+- **Returns**: `{success, runs, distinct_partitions, mean_stability, unstable_nodes: [{node, stability}], stable_cores: {threshold, cores, share_of_nodes, largest}, consensus_warning?, consensus_column, core_column, stability_column, reruns_after_nonconvergence?, caveats?}`. Graphs of 50 nodes or fewer also return `node_stability: {id: 0-1}` and `consensus_groups`; larger graphs return `consensus_group_sizes` and keep per-node values on the graph.
+- **Writes**: `stable_core` (core id, -1 for nodes in no core), `consensus_community`, `community_stability` (per node, 0-1).
+- **Notes**: use this BEFORE describing communities as a finding. Gephi reports one partition as though it were the answer; it is one draw. A node's stability is the chance that a node grouped with it in one run is grouped with it in another: 1.0 when its community-mates never change, 0.5 when half of them do. Stable cores are groups held together in at least 90% of runs. The consensus keeps pairs that agreed more often than not; on large sparse graphs those pairs chain into one giant group, and `consensus_warning` then says to read the stable cores instead. A run Gephi fails to finish is stopped and repeated (`reruns_after_nonconvergence`). Fewer than 2 runs is refused, and a partition that cannot be read back is an error rather than an empty result, because empty is indistinguishable from stable.
 
 ### gephi_compute_degree
 - **Method**: POST `/statistics/degree`
