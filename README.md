@@ -32,7 +32,7 @@ Built for researchers working across network science and AI.
 
 ## Install
 
-You need [Gephi Desktop](https://gephi.org) 0.11.1 or newer and an AI assistant. Most clients also need [uv](https://docs.astral.sh/uv/getting-started/installation/), which runs the server and manages Python for you; Claude Desktop brings its own.
+You need [Gephi Desktop](https://gephi.org) 0.11.1 or newer (0.11.3 recommended) and an AI assistant. Most clients also need [uv](https://docs.astral.sh/uv/getting-started/installation/), which runs the server and manages Python for you; Claude Desktop brings its own.
 
 ### 1. Add the plugin to Gephi
 

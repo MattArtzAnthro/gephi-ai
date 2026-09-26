@@ -4,6 +4,15 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Workflow packages 1.17.2
+
+### Changed
+- The macOS freeze when opening Gephi's Overview tab is fixed in Gephi 0.11.3. The assistant
+  now suggests updating instead of asking you to quit accessibility tools, which is only
+  needed on 0.11.2 and earlier.
+- The note on ForceAtlas 2 coordinates becoming invalid says Gephi 0.11.3 fixed one cause,
+  and the README and skill recommend Gephi 0.11.3.
+
 ## MCP server 1.19.2 / Java plugin 1.3.3 / workflow packages 1.17.1
 
 ### Fixed

@@ -5,15 +5,15 @@ description: |
   this skill provides workflows and best practices for the 113 Gephi AI tools.
   Triggered when the user mentions Gephi, network analysis, graph visualization,
   community detection, social network analysis, or graph metrics.
-compatibility: Requires Gephi Desktop 0.11.1+ running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.1+ (0.11.3 recommended) running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.17.1"
+  version: "1.17.2"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.17.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.17.2 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 113 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__gephi-mcp__gephi_*`) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -310,24 +310,19 @@ New in 0.11.1: `"node.label.avoidOverlap": true` prevents label collisions; `"no
 - **Label fonts render in graph-coordinate space and clamp weirdly.** A fixed point size vanishes on large layouts, and with `node.label.proportinalSize: false` Gephi clamps every label to its node's bounds (bigger fonts silently do nothing). For readable hub captions use `gephi_label_clusters` (proportional sizing + extent-scaled font handled for you); when hand-tuning, set proportional TRUE and scale the base font to the layout extent.
 - **Filters are destructive** — they permanently remove nodes/edges. An undo snapshot is taken automatically before each destructive tool (their results report `undo_available`), and `gephi_undo` restores the graph — but it is ONE level deep with no redo, so verify after each destructive step before taking the next. Single `gephi_remove_node`/`gephi_remove_edge` calls are NOT auto-snapshotted; call `gephi_snapshot` first before a risky sequence of small edits.
 - **High gravity (>3) compresses nodes** into a ball. Fix: run Random Layout (1 iteration), then re-run ForceAtlas 2.
-- **Opening the Overview tab can freeze Gephi on macOS (race, full force-quit
-  to recover).** Root cause captured by thread dump: the UI thread blocks
-  creating the OpenGL canvas while the macOS main thread blocks on an
-  accessibility query back to the UI thread — a mutual wait outside the graph
-  lock entirely (health reports graph_lock ok during it). The trigger is an
-  accessibility client polling the app during canvas creation: with Grammarly
-  Desktop running the freeze hit repeatedly, including on an empty workspace;
-  with it quit, the same click worked. Prevention: quit accessibility-polling
-  utilities (Grammarly Desktop and similar assistants) for the Gephi session.
-  Graph size and click timing do not reliably matter.
-- **Workspace switching can deadlock** — same render-deadlock cause as above; if the API hangs after a workspace switch, restart Gephi.
+- **On Gephi 0.11.2 and earlier, opening the Overview tab can freeze Gephi on macOS**
+  (force-quit to recover) when an accessibility tool such as Grammarly Desktop polls the
+  app while the graph canvas is created. It is fixed in Gephi 0.11.3: suggest updating.
+  On an older version, quit those tools for the Gephi session. `graph_lock` reports ok
+  during the freeze, because it happens outside the graph.
+- **Workspace switching can deadlock the renderer** — if the API hangs after a workspace switch, restart Gephi.
 - **`gephi_extract_giant_component` (and other writes after a layout) can deadlock Gephi** — highest-risk during heavy rendering. To contain outlier nodes that blow out the bounding box, prefer `strongGravityMode` with a small gravity (0.01, lower if a containing circle shows) over destructive filters.
 - **Press Ctrl+Shift+H in Gephi** to center the view on the graph after API operations — the API modifies data but doesn't move the viewport camera.
 - **`background.color` in preview settings is stored but Gephi's PNG exporter always writes white** — the Java plugin intercepts and composites the background color after export, but for reliable dark backgrounds use the Python post-processing workflow below.
 - **For dark backgrounds, use the dark-surface variant of the community palette** (see Styling Defaults) — palettes tuned for white surfaces lose contrast on dark ones and vice versa.
 - **`edge.opacity` 60 is the minimum for dark background compositing** — at 25% (default), edge pixels are too close to white to recover the original hue. Use 60% so compositing has enough signal.
 - **Knowledge graph bounding box blowout** — KGs with extreme betweenness variance (hub-and-spoke structure) produce outlier nodes that push the Gephi bounding box far outside the main cluster. `gephi_visual_qa` now detects this (`extent.outliers` lists the runaway nodes) and computes `suggested_export` from the main cloud, so export with the suggested dimensions before reaching for Python cropping. To pull outliers into frame instead: `strongGravityMode` with a small gravity (0.01 or lower). If post-processing anyway, centroid-crop (see Crop section below) — NOT alpha-threshold bounding box, which includes outlier nodes and returns full-canvas dimensions.
-- **ForceAtlas 2 can numerically explode, not just spread out** — observed once on a ~700-node/~1900-edge weighted graph with a high-weight hub, 1500 iterations: node coordinates reached `Infinity`/`NaN` (one node hit `1e37`), not just a large-but-finite bounding box. This is silent: the layout call still returns `success`. Sync runs of `gephi_run_layout` now check for this automatically — a `layout_exploded` block in the result means do NOT export or style; follow its fix. Async runs and older servers still need the manual `math.isfinite` check on exported positions. (The exact parameter combination that triggered it is unconfirmed — see the `/layout/run` request-key gotcha below, discovered afterward, which casts doubt on which properties were actually active for this run. Treat this as "FA2 can do this on some graphs," not as a specific combination to avoid.) Fix: reset with Random Layout and rerun rather than trying to nudge the exploded node back — the explosion wasn't confined to one node, it corrupted the whole layout. The profile's heavy-tailed-weights flag is the advance warning: log-transform weights or lower edgeWeightInfluence before laying out a graph that carries it.
+- **ForceAtlas 2 can explode numerically, not just spread out:** coordinates become `Infinity` or `NaN` while the call still reports success. Gephi 0.11.3 fixed one cause (nodes with zero net movement, gephi#3235), but it can still happen, especially on weighted graphs with a heavy hub. Sync runs of `gephi_run_layout` check for it: a `layout_exploded` block means do not export or style. Reset with Random Layout and rerun; the whole layout is affected, not one node. The profile's heavy-tailed-weights flag is the advance warning: log-transform weights or lower edgeWeightInfluence before laying out.
 - **`/layout/run`'s tuning values must be sent under the key `"properties"`, not `"params"`** — when driving the Gephi HTTP API directly (not through `gephi_run_layout`, which builds this correctly), a request with the wrong key returns `success: true` and runs the layout on its plugin defaults, silently discarding every custom value. There is no error to catch this. The tell: changing `scalingRatio`/`gravity` across a wide range and getting back nearly the same layout extent every time — a layout genuinely that insensitive to a parameter is itself the anomaly. Verify the request shape (or just use `gephi_run_layout`) before concluding a parameter doesn't matter for a given graph. The same applies to `"Noverlap"`'s `speed`/`ratio`/`margin`, which default to `0.0` — a full no-op, not a gentle setting.
 - **Size by degree, not betweenness, for KGs** — betweenness variance in hub-and-spoke KGs is so extreme (e.g., 0–74k) that 95% of nodes get minimum size. Degree has lower variance and produces more proportional sizing.
 - **Vivid source colors are required for white-background visibility** — "soft pastel" appearance on white comes from vivid node colors rendered at high opacity (not from literally pale colors). Pastel node colors (e.g., [227,185,216]) are near-white and disappear even at 90% opacity. Use fully saturated colors (e.g., [220,30,80], [150,30,220]) — at 100% opacity with thick edges they produce a vivid, readable graph. Reduce opacity only if the graph is dense enough that overlapping edges create unwanted solid blobs.
