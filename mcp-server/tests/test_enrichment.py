@@ -121,12 +121,15 @@ def test_assortativity_none_for_regular_graph():
     assert structural_profile(g)["degree"]["assortativity"] is None
 
 
-def test_disassortative_hub_graph_raises_dissuade_hubs_flag():
-    # big disassortative star (n >= 50 gate)
+def test_disassortative_hub_graph_flags_the_hub_halo_and_advises_against_dissuade_hubs():
+    # big disassortative star (n >= 50 gate). Dissuade Hubs only acts on directed networks and
+    # costs cluster separation, so the flag must not recommend it.
     nodes = [("hub", 0, 0)] + [(f"n{i}", i, 1) for i in range(60)]
     edges = [("hub", f"n{i}") for i in range(60)]
     p = structural_profile(make_graph(nodes, edges))
-    assert any("distributedAttraction" in f for f in p["flags"])
+    flag = next(f for f in p["flags"] if "disassortative" in f)
+    assert "leave distributedAttraction" in flag and "off" in flag
+    assert "enable" not in flag
 
 
 # ─── expected clustering baseline ────────────────────────────

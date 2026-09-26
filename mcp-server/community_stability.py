@@ -170,5 +170,5 @@ def consensus(runs: list[Partition]) -> dict[str, Any]:
         result["consensus_warning"] = (
             f"One consensus group holds {largest} of {n} nodes. Pairs that agreed more often than "
             f"not chain together into it, so it is not one community; the largest group that "
-            f"held in {STABLE_CORE:.0%} of runs has {largest_core} nodes. Read the stable cores.")
+            f"held in {STABLE_CORE:.0%} of runs has {largest_core} nodes. The communities are loose.")
     return result

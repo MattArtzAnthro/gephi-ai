@@ -1318,17 +1318,20 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
                            properties: dict[str, Any] | None = None, sync: bool = False) -> str:
     """Run a layout algorithm to position nodes.
 
-    For community readability with "ForceAtlas 2", start from the visual network
-    analysis reference config: {"linLogMode": true, "gravity": 0, "scalingRatio": <by
-    size>} (Venturini, Jacomy, and Jensen 2021). Pick the starting scalingRatio by
-    node count and expand only if cramped — starting high over-spreads (nodes render
-    as specks): under ~1k nodes start at 1-2; 1k-10k start at 2-4; above 10k start
-    at 4-8. Gravity only keeps disconnected components in frame (use 0.5-1.0 then);
-    raising it packs nodes into an unreadable central blob. To tighten or spread the
-    layout, adjust scalingRatio, not gravity. After the run, check gephi_visual_qa
-    (it flags over-spread) and iterate: central blob = lower gravity; hairball =
-    linLogMode on and raise scalingRatio; clusters too dense inside = raise
-    scalingRatio; over-spread warning = lower scalingRatio. One parameter per rerun.
+    For community readability with "ForceAtlas 2", lay out in two passes:
+    1. Tune with LinLog off: {"linLogMode": false, "scalingRatio": 10,
+       "strongGravityMode": true, "gravity": 0.01}, with barnesHutOptimization on above
+       ~1k nodes. Raise scalingRatio for more room. If a round containing circle shows,
+       lower gravity (0.001 or far below); strong gravity makes a network look denser.
+       For a quick look, this pass alone is enough.
+    2. For a final map, switch linLogMode on, divide scalingRatio by about 20, lower
+       gravity further, and run for thousands of iterations; large networks keep
+       improving for a long time. LinLog separates clusters best but converges slowly.
+    Leave distributedAttraction (Dissuade Hubs) off. It acts only on directed networks,
+    pushes nodes that send many links but receive few to the edge, and costs cluster
+    separation; use it only as a deliberate exploration view and say so in the caption.
+    After the run, call gephi_visual_qa with partition_column: partition.separation
+    (lower = clearer groups) lets you compare settings. Change one parameter per rerun.
 
     properties: optional {name: value} tuning map (gravity, scalingRatio, linLogMode,
     barnesHutOptimization, ...). sync=True waits until the layout finishes before
@@ -1693,11 +1696,14 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
     is grouped with it in another: 1.0 means its community-mates never change, 0.5 means half of
     them do. `mean_stability` is the same chance pooled over every pair.
 
-    Stable cores are the groups held together in at least 90% of runs, the groups a finding can
-    rest on; `stable_cores` gives their count, the share of nodes in one, and the largest sizes.
+    Stable cores are the groups held together in at least 90% of runs; `stable_cores` gives their
+    count, the share of nodes in one, and the largest sizes. Small stable cores appear even in a
+    randomly wired network, so their number or coverage is not evidence of community structure:
+    judge by `mean_stability` and by how large the biggest cores are, and name only large cores
+    whose members make sense together.
     The consensus keeps pairs that agreed more often than not. On large sparse graphs those pairs
     can chain into one group of nodes that are rarely together; `consensus_warning` says when,
-    and then the stable cores are the partition to read.
+    and then the communities are loose.
 
     Both are written to their own columns (`consensus_community`, and `stable_core` with -1 for
     nodes in no core) rather than overwriting `modularity_class`, so the run you already had
