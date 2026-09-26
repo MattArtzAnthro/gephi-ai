@@ -60,6 +60,7 @@ import org.gephi.preview.api.PreviewProperty;
 import org.gephi.preview.types.DependantColor;
 import org.gephi.preview.types.DependantOriginalColor;
 import org.gephi.preview.types.EdgeColor;
+import org.gephi.project.api.Project;
 import org.gephi.project.api.ProjectController;
 import org.gephi.project.api.Workspace;
 import org.gephi.statistics.spi.Statistics;
@@ -438,14 +439,39 @@ public class GephiControlService {
         });
     }
 
+    /**
+     * Saves the project and reports success only once the file is on disk. Gephi writes the
+     * file on the calling thread, so this runs off the interface thread to keep Gephi
+     * responsive; a save that failed or was cancelled leaves no new file, and says so.
+     */
     public JsonObject saveProject(String filePath) {
-        return runOnEDT(() -> {
-            try {
-                ProjectController pc = getProjectController();
-                pc.saveProject(pc.getCurrentProject(), new File(filePath));
-                return success("Project saved");
-            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
-        });
+        try {
+            ProjectController pc = getProjectController();
+            Project project = pc.getCurrentProject();
+            if (project == null) return error("No project open");
+            File file = new File(filePath).getAbsoluteFile();
+            long before = file.isFile() ? file.lastModified() : -1;
+            long started = System.currentTimeMillis();
+            pc.saveProject(project, file);
+            String problem = savedFileProblem(file, before, started);
+            if (problem != null) return error(problem);
+            JsonObject r = success("Project saved");
+            r.addProperty("file", file.getPath());
+            r.addProperty("bytes", file.length());
+            return r;
+        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+    }
+
+    /** Null when {@code file} holds a fresh save, else what went wrong. */
+    static String savedFileProblem(File file, long modifiedBefore, long started) {
+        String hint = " Gephi may have shown an error; check that the folder exists and is writable.";
+        if (!file.isFile()) return "The project was not saved: " + file.getPath() + " was not written." + hint;
+        if (file.length() == 0) return "The project was not saved: " + file.getPath() + " is empty." + hint;
+        // File times can be as coarse as two seconds, so only a file older than that counts as unchanged.
+        if (modifiedBefore >= 0 && file.lastModified() == modifiedBefore && modifiedBefore < started - 2000) {
+            return "The project was not saved: " + file.getPath() + " is unchanged." + hint;
+        }
+        return null;
     }
 
     public JsonObject getProjectInfo() {
@@ -705,22 +731,77 @@ public class GephiControlService {
         return queryNodes(attr, val, limit, offset, false);
     }
 
-    /** @param visible read the filtered visible graph instead of the full graph (see addViewInfo). */
     public JsonObject queryNodes(String attr, String val, int limit, int offset, boolean visible) {
+        return queryNodes(attr, val, null, null, null, limit, offset, visible);
+    }
+
+    /**
+     * Which nodes a value search keeps: {@code value} matches the whole value (text ignoring
+     * case, numbers by value), {@code contains} a part of the text, and {@code min} / {@code max}
+     * a numeric range. The column is found by id or by title. Null when no search was asked for.
+     */
+    static java.util.function.Predicate<Node> nodeMatcher(Column col, String value, String contains,
+                                                          Double min, Double max) {
+        if (value == null && contains == null && min == null && max == null) return null;
+        String needle = contains == null ? null : contains.toLowerCase(java.util.Locale.ROOT);
+        return n -> {
+            Object v = n.getAttribute(col);
+            if (v == null) return false;
+            if (value != null) {
+                if (v instanceof Number) {
+                    try {
+                        if (((Number) v).doubleValue() != Double.parseDouble(value.trim())) return false;
+                    } catch (NumberFormatException e) { return false; }
+                } else if (!v.toString().equalsIgnoreCase(value)) {
+                    return false;
+                }
+            }
+            if (needle != null && !v.toString().toLowerCase(java.util.Locale.ROOT).contains(needle)) return false;
+            if (min != null || max != null) {
+                if (!(v instanceof Number)) return false;
+                double d = ((Number) v).doubleValue();
+                if (min != null && d < min) return false;
+                if (max != null && d > max) return false;
+            }
+            return true;
+        };
+    }
+
+    /**
+     * Lists nodes, optionally only those whose {@code column} matches a value search (see
+     * nodeMatcher); {@code matches} then counts every match, not just the page returned.
+     * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
+     */
+    public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
+                                 int limit, int offset, boolean visible) {
         try {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = visible ? gm.getGraphVisible() : gm.getGraph();
+            java.util.function.Predicate<Node> keep = null;
+            if (value != null || contains != null || min != null || max != null) {
+                if (column == null) return error("Name the column to search with 'column'");
+                Column col = findColumn(gm.getNodeTable(), column);
+                if (col == null) return error("Column not found: " + column);
+                keep = nodeMatcher(col, value, contains, min, max);
+            }
             lockRead(g);
             try {
                 JsonArray arr = new JsonArray();
-                int count = 0, skip = 0;
+                int count = 0, skip = 0, matches = 0;
                 // toArray, not the live iterable: breaking out of an auto-locked
                 // iterator before exhaustion leaks its read hold permanently.
                 for (Node n : g.getNodes().toArray()) {
+                    if (keep != null) {
+                        if (!keep.test(n)) continue;
+                        matches++;
+                    }
                     if (skip++ < offset) continue;
-                    if (count >= limit) break;
+                    if (count >= limit) {
+                        if (keep == null) break;
+                        continue;
+                    }
                     JsonObject o = new JsonObject();
                     o.addProperty("id", n.getId().toString());
                     o.addProperty("label", n.getLabel());
@@ -753,6 +834,7 @@ public class GephiControlService {
                 JsonObject r = new JsonObject();
                 r.addProperty("success", true);
                 r.addProperty("total", g.getNodeCount());
+                if (keep != null) r.addProperty("matches", matches);
                 r.addProperty("count", count);
                 addViewInfo(r, gm, visible);
                 r.add("nodes", arr);
@@ -1182,7 +1264,8 @@ public class GephiControlService {
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                if (table.getColumn(name) != null) return error("Column already exists: " + name);
+                Column existing = findColumn(table, name);
+                if (existing != null) return error("Column already exists: " + existing.getTitle() + " (id " + existing.getId() + ")");
                 table.addColumn(name, cls);
             } finally { unlockWrite(g); }
             return success("Column '" + name + "' added");
@@ -1259,7 +1342,7 @@ public class GephiControlService {
     }
 
     static void ensureColumnAndSet(Table table, Object element, String key, Object value) {
-        Column col = table.getColumn(key);
+        Column col = findColumn(table, key);
         if (col == null) {
             Class<?> cls = String.class;
             if (value instanceof Number) {
@@ -1508,6 +1591,49 @@ public class GephiControlService {
         if (problem != null) r.addProperty("appearance_panel_note", problem);
     }
 
+    /** Twelve well-separated colours, given to the largest groups first. */
+    static final Color[] BASE_PALETTE = {
+        new Color(31, 119, 180), new Color(255, 127, 14), new Color(44, 160, 44),
+        new Color(214, 39, 40), new Color(148, 103, 189), new Color(140, 86, 75),
+        new Color(227, 119, 194), new Color(127, 127, 127), new Color(188, 189, 34),
+        new Color(23, 190, 207), new Color(174, 199, 232), new Color(255, 187, 120)
+    };
+
+    /**
+     * A colour per value, largest group first, so the most distinct colours go to the groups
+     * that cover most of the map. Past the twelve base colours every further group still gets
+     * its own colour: hues step by the golden angle, and saturation and brightness alternate so
+     * neighbouring hues stay apart.
+     */
+    static java.util.LinkedHashMap<String, Color> partitionPalette(Map<String, Integer> counts) {
+        List<Map.Entry<String, Integer>> order = new java.util.ArrayList<>(counts.entrySet());
+        order.sort((a, b) -> b.getValue().equals(a.getValue())
+            ? a.getKey().compareTo(b.getKey()) : Integer.compare(b.getValue(), a.getValue()));
+        java.util.LinkedHashMap<String, Color> palette = new java.util.LinkedHashMap<>();
+        int i = 0;
+        for (Map.Entry<String, Integer> e : order) {
+            palette.put(e.getKey(), paletteColor(i++));
+        }
+        return palette;
+    }
+
+    static Color paletteColor(int i) {
+        if (i < BASE_PALETTE.length) return BASE_PALETTE[i];
+        int k = i - BASE_PALETTE.length;
+        float hue = (float) ((0.13 + k * 0.618033988749895) % 1.0);
+        float saturation = new float[] {0.55f, 0.85f, 0.40f}[k % 3];
+        float brightness = new float[] {0.85f, 0.60f, 0.95f}[(k / 3) % 3];
+        return Color.getHSBColor(hue, saturation, brightness);
+    }
+
+    static void addPaletteNote(JsonObject r, int groups) {
+        if (groups > BASE_PALETTE.length) {
+            r.addProperty("palette_note", groups + " groups each have their own colour, but past "
+                + BASE_PALETTE.length + " neighbouring colours get hard to tell apart. Consider colouring"
+                + " only the largest groups, or filtering the small ones out first.");
+        }
+    }
+
     public JsonObject colorByPartition(String columnName, Map<String, int[]> colorMap) {
         Workspace ws = currentWorkspace();
         if (ws == null) return error("No project open");
@@ -1525,25 +1651,12 @@ public class GephiControlService {
                     palette.put(e.getKey(), new Color(c[0], c[1], c[2]));
                 }
             } else {
-                // Auto-generate palette
-                java.util.Set<String> values = new java.util.LinkedHashSet<>();
-                Node[] allNodes = graph.getNodes().toArray();
-                for (Node n : allNodes) {
+                java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+                for (Node n : graph.getNodes().toArray()) {
                     Object v = n.getAttribute(col);
-                    if (v != null) values.add(v.toString());
+                    if (v != null) counts.merge(v.toString(), 1, Integer::sum);
                 }
-
-                Color[] defaultPalette = {
-                    new Color(31, 119, 180), new Color(255, 127, 14), new Color(44, 160, 44),
-                    new Color(214, 39, 40), new Color(148, 103, 189), new Color(140, 86, 75),
-                    new Color(227, 119, 194), new Color(127, 127, 127), new Color(188, 189, 34),
-                    new Color(23, 190, 207), new Color(174, 199, 232), new Color(255, 187, 120)
-                };
-                int idx = 0;
-                for (String v : values) {
-                    palette.put(v, defaultPalette[idx % defaultPalette.length]);
-                    idx++;
-                }
+                palette.putAll(partitionPalette(counts));
             }
 
             int colored = 0;
@@ -1562,6 +1675,7 @@ public class GephiControlService {
             } finally { unlockWrite(graph); }
             JsonObject r = success("Colored " + colored + " nodes by " + columnName);
             r.addProperty("partitions", palette.size());
+            addPaletteNote(r, palette.size());
             reportPanel(r, showInAppearancePanel(ws, col,
                 org.gephi.appearance.plugin.PartitionElementColorTransformer.class,
                 f -> applyPaletteToPartition(((org.gephi.appearance.api.PartitionFunction) f).getPartition(),
@@ -2068,6 +2182,36 @@ public class GephiControlService {
      * Without the panel (headless, tests) the statistic runs directly. Returns true when the
      * deadline stopped it; throws when Gephi reports a failure or the run never finishes.
      */
+    /** Statistics running now, by the name Gephi shows for them, so a stop request can reach them. */
+    static final Map<Statistics, String> RUNNING_STATISTICS = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Statistics stopped by request, so their run is reported as stopped rather than finished. */
+    static final java.util.Set<Statistics> STOP_REQUESTED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Stops every statistic Gephi AI started that is still running. A stopped run writes
+     * nothing, so the columns keep their earlier values. Statistics that offer no way to stop
+     * them are named, so the user knows to wait or to stop them from Gephi.
+     */
+    public JsonObject stopStatistics() {
+        JsonArray stopped = new JsonArray();
+        JsonArray unstoppable = new JsonArray();
+        for (Map.Entry<Statistics, String> e : new java.util.ArrayList<>(RUNNING_STATISTICS.entrySet())) {
+            if (e.getKey() instanceof org.gephi.utils.longtask.spi.LongTask) {
+                STOP_REQUESTED.add(e.getKey());
+                ((org.gephi.utils.longtask.spi.LongTask) e.getKey()).cancel();
+                stopped.add(e.getValue());
+            } else {
+                unstoppable.add(e.getValue());
+            }
+        }
+        JsonObject r = success(stopped.size() + unstoppable.size() == 0 ? "No statistic is running"
+            : stopped.size() > 0 ? "Stopped " + stopped.size() + " statistic(s)"
+            : "The running statistic cannot be stopped; it will finish on its own");
+        r.add("stopped", stopped);
+        if (unstoppable.size() > 0) r.add("cannot_stop", unstoppable);
+        return r;
+    }
+
     static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
                                     org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
                                     java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
@@ -2211,9 +2355,23 @@ public class GephiControlService {
             // Execute, stopping it at the deadline when one was given
             String dynamicProblem = dynamicStatisticProblem(stat, gm);
             if (dynamicProblem != null) return error(dynamicProblem);
-            boolean stopped = executeStatistic(stat, gm, timeoutMs,
-                Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class),
-                this::onEdt);
+            boolean stopped;
+            boolean stoppedOnRequest;
+            RUNNING_STATISTICS.put(stat, matchedBuilder.getName());
+            try {
+                stopped = executeStatistic(stat, gm, timeoutMs,
+                    Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class),
+                    this::onEdt);
+            } finally {
+                RUNNING_STATISTICS.remove(stat);
+                stoppedOnRequest = STOP_REQUESTED.remove(stat);
+            }
+            if (stoppedOnRequest) {
+                JsonObject r = error(matchedBuilder.getName() + " was stopped before it finished;"
+                    + " its column was not updated.");
+                r.addProperty("stopped", true);
+                return r;
+            }
             if (stopped) {
                 // A cancelled run writes nothing, so the column still holds the previous run.
                 JsonObject r = error(matchedBuilder.getName() + " did not finish within "
@@ -3114,11 +3272,40 @@ public class GephiControlService {
         return importFile(filePath, null);
     }
 
-    /**
-     * Imports a file. {@code maxNodeSize} caps imported node sizes when set; when null the
-     * file's own sizes are preserved exactly, so an import followed by an export round-trips.
-     */
     public JsonObject importFile(String filePath, Float maxNodeSize) {
+        return importFile(filePath, maxNodeSize, null);
+    }
+
+    /** Collect up to {@code limit} import issues (level and message) from a report. */
+    static void addIssues(JsonArray out, org.gephi.io.importer.api.Report report, int limit) {
+        if (report == null) return;
+        for (org.gephi.io.importer.api.Issue issue : report.getIssuesList(limit)) {
+            if (out.size() >= limit) return;
+            JsonObject o = new JsonObject();
+            o.addProperty("level", String.valueOf(issue.getLevel()));
+            o.addProperty("message", issue.getMessage());
+            out.add(o);
+        }
+    }
+
+    private static Processor findProcessor(String simpleName) {
+        for (Processor p : Lookup.getDefault().lookupAll(Processor.class)) {
+            if (p.getClass().getSimpleName().equals(simpleName)) return p;
+        }
+        return null;
+    }
+
+    /**
+     * Imports a file. By default ({@code mode} null or "new_workspace") the file gets its own
+     * workspace, as in Gephi's own import dialog: a workspace's graph settings (time format, id
+     * type, weight type) are fixed when it is created, so a new one is made to match the file.
+     * An empty workspace that was open is then removed rather than left behind. "append" adds
+     * the file to the current workspace instead, and fails with Gephi's report when the settings
+     * do not match. The file's import warnings are returned as {@code import_issues}.
+     * {@code maxNodeSize} caps imported node sizes when set; when null the file's own sizes are
+     * preserved exactly, so an import followed by an export round-trips.
+     */
+    public JsonObject importFile(String filePath, Float maxNodeSize, String mode) {
         // Runs on the calling thread. Gephi's own import runs off the event dispatch thread,
         // and parsing a large file inside runOnEDT froze the UI and then blew its 15-second
         // budget, so the caller was told "Gephi's UI thread is unresponsive, fully quit and
@@ -3131,19 +3318,23 @@ public class GephiControlService {
                 Container c = ic.importFile(file);
                 if (c == null) return error("Import failed - unsupported format or empty file");
 
-                Workspace ws = currentWorkspace();
-                if (ws == null) {
-                    getProjectController().newProject();
-                    ws = currentWorkspace();
+                boolean append = "append".equalsIgnoreCase(mode);
+                if (mode != null && !append && !"new_workspace".equalsIgnoreCase(mode)
+                        && !"new".equalsIgnoreCase(mode)) {
+                    return error("Unknown import mode '" + mode + "': use \"new_workspace\" (the default)"
+                        + " or \"append\"");
                 }
+                ProjectController pc = getProjectController();
+                if (pc.getCurrentProject() == null) pc.newProject();
+                Workspace previous = currentWorkspace();
+                boolean previousEmpty = false;
+                if (previous != null) {
+                    Graph pg = getGraphController().getGraphModel(previous).getGraph();
+                    previousEmpty = pg.getNodeCount() == 0 && pg.getEdgeCount() == 0;
+                }
+                if (append && previous == null) return error("No workspace to append to");
 
-                Processor processor = null;
-                for (Processor p : Lookup.getDefault().lookupAll(Processor.class)) {
-                    if (p.getClass().getSimpleName().equals("DefaultProcessor")) {
-                        processor = p;
-                        break;
-                    }
-                }
+                Processor processor = findProcessor(append ? "AppendProcessor" : "DefaultProcessor");
                 if (processor == null) processor = Lookup.getDefault().lookup(Processor.class);
                 if (processor == null) return error("No processor found");
 
@@ -3156,7 +3347,24 @@ public class GephiControlService {
                 // container closes, and their sizes are kept as written.
                 c.getLoader().setAutoScale(false);
 
-                Workspace importedWs = ic.process(c, processor, ws);
+                JsonArray issues = new JsonArray();
+                addIssues(issues, c.getReport(), 20);
+                Workspace importedWs;
+                try {
+                    // A null workspace lets the processor create one whose settings match the file.
+                    importedWs = ic.process(c, processor, append ? previous : null);
+                } catch (Exception e) {
+                    JsonObject err = error("Import failed: " + e.getMessage());
+                    addIssues(issues, processor.getReport(), 20);
+                    if (issues.size() > 0) err.add("import_issues", issues);
+                    return err;
+                }
+                addIssues(issues, processor.getReport(), 20);
+                Workspace ws = importedWs != null ? importedWs : previous;
+                if (!append && previousEmpty && previous != null && previous != ws) {
+                    pc.deleteWorkspace(previous);
+                    pc.openWorkspace(ws);
+                }
 
                 // Optional, and off by default. Capping rewrites viz:size values the file
                 // actually carries, so importing and re-exporting would silently change the
@@ -3181,6 +3389,8 @@ public class GephiControlService {
                 Workspace effectiveWs = importedWs != null ? importedWs : ws;
                 Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
                 JsonObject r = success("Imported from " + file.getName());
+                r.addProperty("import_mode", append ? "append" : "new_workspace");
+                if (issues.size() > 0) r.add("import_issues", issues);
                 if (capped > 0) {
                     r.addProperty("nodes_size_capped", capped);
                     r.addProperty("max_node_size", maxNodeSize);
@@ -4086,7 +4296,7 @@ public class GephiControlService {
      */
     static JsonObject columnValueFrequenciesCore(GraphModel gm, String target, String columnId) {
         Table table = tableFor(gm, target);
-        Column col = table.getColumn(columnId);
+        Column col = findColumn(table, columnId);
         if (col == null) return error("Column not found: " + columnId);
         java.util.LinkedHashMap<String, Integer> freq = new java.util.LinkedHashMap<>();
         int total = 0;
@@ -4113,7 +4323,7 @@ public class GephiControlService {
      */
     static JsonObject detectDuplicatesCore(GraphModel gm, String target, String columnId, boolean caseSensitive) {
         Table table = tableFor(gm, target);
-        Column col = table.getColumn(columnId);
+        Column col = findColumn(table, columnId);
         if (col == null) return error("Column not found: " + columnId);
         java.util.LinkedHashMap<String, java.util.List<String>> groups = new java.util.LinkedHashMap<>();
         for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
@@ -4199,7 +4409,7 @@ public class GephiControlService {
         try {
             GraphModel gm = currentGraphModel();
             Graph graph = gm.getGraph();
-            Column col = gm.getEdgeTable().getColumn(columnName);
+            Column col = findColumn(gm.getEdgeTable(), columnName);
             if (col == null) return error("Edge column not found: " + columnName);
 
             java.util.Map<String, Color> palette = new java.util.LinkedHashMap<>();
@@ -4209,19 +4419,12 @@ public class GephiControlService {
                     palette.put(e.getKey(), new Color(c[0], c[1], c[2]));
                 }
             } else {
-                java.util.Set<String> values = new java.util.LinkedHashSet<>();
+                java.util.Map<String, Integer> counts = new java.util.HashMap<>();
                 for (Edge ed : graph.getEdges().toArray()) {
                     Object v = ed.getAttribute(col);
-                    if (v != null) values.add(v.toString());
+                    if (v != null) counts.merge(v.toString(), 1, Integer::sum);
                 }
-                Color[] defaultPalette = {
-                    new Color(31, 119, 180), new Color(255, 127, 14), new Color(44, 160, 44),
-                    new Color(214, 39, 40), new Color(148, 103, 189), new Color(140, 86, 75),
-                    new Color(227, 119, 194), new Color(127, 127, 127), new Color(188, 189, 34),
-                    new Color(23, 190, 207), new Color(174, 199, 232), new Color(255, 187, 120)
-                };
-                int idx = 0;
-                for (String v : values) { palette.put(v, defaultPalette[idx % defaultPalette.length]); idx++; }
+                palette.putAll(partitionPalette(counts));
             }
 
             int colored = 0;
@@ -4237,6 +4440,7 @@ public class GephiControlService {
             } finally { unlockWrite(graph); }
             JsonObject r = success("Colored " + colored + " edges by " + columnName);
             r.addProperty("partitions", palette.size());
+            addPaletteNote(r, palette.size());
             return r;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -4339,7 +4543,7 @@ public class GephiControlService {
             Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsController.class);
         if (acc == null) return error("No datalab controller available");
         Table table = tableFor(gm, target);
-        Column col = table.getColumn(columnId);
+        Column col = findColumn(table, columnId);
         if (col == null) return error("Column not found: " + columnId);
         try {
             java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(regex);

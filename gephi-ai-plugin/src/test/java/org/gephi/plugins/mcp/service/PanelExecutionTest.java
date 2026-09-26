@@ -136,6 +136,41 @@ class PanelExecutionTest {
         assertTrue(stat.ran.get());
     }
 
+    @Test
+    void aStopRequestCancelsTheRunningStatisticAndMarksItStopped() throws Exception {
+        SlowStat stat = new SlowStat(60_000);
+        GephiControlService.RUNNING_STATISTICS.put(stat, "Slow");
+        try {
+            Thread run = new Thread(() -> {
+                try {
+                    GephiControlService.executeStatistic(stat, null, 0, new FakeStatsUI(), DIRECT);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            run.start();
+            while (!stat.ran.get()) Thread.onSpinWait();
+
+            com.google.gson.JsonObject r = GephiControlService.getInstance().stopStatistics();
+
+            run.join(10_000);
+            assertFalse(run.isAlive(), "the statistic kept running after the stop");
+            assertTrue(stat.cancelled.get());
+            assertEquals("Slow", r.getAsJsonArray("stopped").get(0).getAsString());
+            assertTrue(GephiControlService.STOP_REQUESTED.contains(stat));
+        } finally {
+            GephiControlService.RUNNING_STATISTICS.remove(stat);
+            GephiControlService.STOP_REQUESTED.remove(stat);
+        }
+    }
+
+    @Test
+    void aStopWithNothingRunningSaysSo() {
+        com.google.gson.JsonObject r = GephiControlService.getInstance().stopStatistics();
+
+        assertTrue(r.get("message").getAsString().contains("No statistic"), r.toString());
+    }
+
     /** Records the order of controller calls and what the layout held at each. */
     static class FakeLayoutController implements LayoutController {
         final List<String> calls = new ArrayList<>();

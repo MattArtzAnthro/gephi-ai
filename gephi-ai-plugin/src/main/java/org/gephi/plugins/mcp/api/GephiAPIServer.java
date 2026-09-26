@@ -295,7 +295,9 @@ public class GephiAPIServer extends NanoHTTPD {
         if ("/graph/nodes".equals(uri) && Method.GET.equals(method)) {
             int limit = parseIntParam(params.get("limit"), 100);
             int offset = parseIntParam(params.get("offset"), 0);
-            return service.queryNodes(null, null, limit, offset, visibleParam(params, false));
+            return service.queryNodes(params.get("column"), params.get("value"), params.get("contains"),
+                doubleParamOrNull(params.get("min")), doubleParamOrNull(params.get("max")),
+                limit, offset, visibleParam(params, false));
         }
 
         if (uri.startsWith("/graph/node/get/") && Method.GET.equals(method)) {
@@ -559,6 +561,10 @@ public class GephiAPIServer extends NanoHTTPD {
             return service.computeModularity(res, timeoutMs);
         }
 
+        if ("/statistics/stop".equals(uri) && Method.POST.equals(method)) {
+            return service.stopStatistics();
+        }
+
         if ("/statistics/available".equals(uri) && Method.GET.equals(method)) {
             return service.listStatistics();
         }
@@ -790,22 +796,26 @@ public class GephiAPIServer extends NanoHTTPD {
 
         if ("/import/gexf".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/graphml".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/csv".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/file".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         return errorResult("Unknown endpoint: " + method + " " + uri);
@@ -817,6 +827,11 @@ public class GephiAPIServer extends NanoHTTPD {
      * response also states which view it used and whether a filter is active, so the two
      * can no longer disagree silently.
      */
+    static Double doubleParamOrNull(String v) {
+        if (v == null || v.isBlank()) return null;
+        try { return Double.parseDouble(v.trim()); } catch (NumberFormatException e) { return null; }
+    }
+
     static boolean visibleParam(Map<String, String> params, boolean dflt) {
         String v = params == null ? null : params.get("visible");
         if (v == null) return dflt;

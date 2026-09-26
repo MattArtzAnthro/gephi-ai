@@ -233,13 +233,14 @@ def _annotations_for(name: str) -> ToolAnnotations:
 # copy could show the copy. Only the tools that switch workspaces (a what-if and
 # gephi_compare_workspaces) hold reads back: they close a read gate for their whole call, so a
 # read never sees another workspace. A tool function called from inside another one runs
-# straight through, since its caller already holds the lock. gephi_stop_layout takes neither the
-# lock nor the gate: it has to reach Gephi while a sync layout holds the lock. asyncio primitives
+# straight through, since its caller already holds the lock. gephi_stop_layout and
+# gephi_stop_statistic take neither the lock nor the gate: they have to reach Gephi while the
+# layout or statistic they stop holds the lock. asyncio primitives
 # belong to the event loop they are first used in, so each running loop gets its own lock and
 # gate.
 _RUNS_ALONE_ANYWAY = {"gephi_whatif", "gephi_profile_graph"}
 _READS_DESPITE_ANNOTATION = {"gephi_session_receipt", "gephi_claim_record"}
-_NEVER_WAITS = {"gephi_stop_layout"}
+_NEVER_WAITS = {"gephi_stop_layout", "gephi_stop_statistic"}
 _HOLDS_BACK_READS = {"gephi_whatif", "gephi_compare_workspaces"}
 _TOOL_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
     weakref.WeakKeyDictionary())
@@ -400,6 +401,14 @@ class GephiClient:
                 response = await client.request(method=method, url=url, params=params, json=json_data)
                 response.raise_for_status()
                 return response.json()
+        except asyncio.CancelledError:
+            # The call was stopped from the chat. A statistic would keep computing in Gephi
+            # with nobody waiting for it, so it is stopped there too.
+            if runs_statistic(method, endpoint):
+                task = asyncio.get_running_loop().create_task(self.stop_statistics())
+                _BACKGROUND.add(task)
+                task.add_done_callback(_BACKGROUND.discard)
+            raise
         except httpx.ConnectError:
             return {"success": False, "error": f"Cannot connect to Gephi at {self.base_url}. Ensure Gephi is running with the MCP plugin installed."}
         except httpx.TimeoutException:
@@ -411,6 +420,19 @@ class GephiClient:
                 return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text}"}
         except Exception as e:
             return {"success": False, "error": f"Request failed: {str(e)}"}
+
+    async def stop_statistics(self) -> dict[str, Any]:
+        return await self.request("POST", "/statistics/stop", timeout=10)
+
+
+def runs_statistic(method: str, endpoint: str) -> bool:
+    """True for a request that starts a statistic in Gephi."""
+    return (method == "POST" and endpoint.startswith("/statistics/")
+            and endpoint not in ("/statistics/stop", "/statistics/available"))
+
+
+#: Stop requests sent after a cancelled call, kept referenced until they finish.
+_BACKGROUND: set[asyncio.Task[Any]] = set()
 
 gephi = GephiClient()
 
@@ -1005,11 +1027,25 @@ async def gephi_bulk_remove_nodes(ids: list[str]) -> str:
                                               json_data={"ids": ids}), undo))
 
 @_tool(name="gephi_query_nodes")
-async def gephi_query_nodes(limit: int = 100, offset: int = 0) -> str:
+async def gephi_query_nodes(limit: int = 100, offset: int = 0, column: str | None = None,
+                            value: str | None = None, contains: str | None = None,
+                            min: float | None = None, max: float | None = None) -> str:
     """List nodes with their attributes, positions, sizes, colors, and computed
     metrics, paginated. Use it to read values (a centrality column, a community
-    id, a label) for many nodes at once; gephi_get_node reads one."""
-    return fmt(await gephi.request("GET", "/graph/nodes", params={"limit": limit, "offset": offset}))
+    id, a label) for many nodes at once; gephi_get_node reads one.
+
+    To find nodes by value, name a `column` (its id or its title, e.g. "label",
+    "modularity_class", "Country") and one or more of: `value` (the whole value;
+    text ignores case, numbers compare by value), `contains` (part of the text),
+    `min` / `max` (a numeric range, inclusive). Only matching nodes are listed,
+    and `matches` counts all of them, not just this page. Example: every node in
+    community 3 is column="modularity_class", value="3"."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, val in (("column", column), ("value", value), ("contains", contains),
+                     ("min", min), ("max", max)):
+        if val is not None:
+            params[key] = val
+    return fmt(await gephi.request("GET", "/graph/nodes", params=params))
 
 @_tool(name="gephi_get_node")
 async def gephi_get_node(id: str) -> str:
@@ -1943,6 +1979,15 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
     return fmt(await gephi.request("POST", "/statistics/run",
                                    json_data=_body(name=name, params=params),
                                    timeout=SLOW_REQUEST_TIMEOUT))
+
+@_tool(name="gephi_stop_statistic")
+async def gephi_stop_statistic() -> str:
+    """Stop a statistic that is still running in Gephi (a slow betweenness, path length,
+    or plugin metric on a large network). The stopped run writes nothing, so the columns
+    keep their earlier values. Interrupting a statistic's call from the chat stops it in
+    Gephi as well; this tool is for a run started elsewhere or left running. Statistics
+    that offer no way to stop them are named in `cannot_stop`."""
+    return fmt(await gephi.stop_statistics())
 
 @_tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
@@ -3688,27 +3733,44 @@ def _claim_caption(rec: dict[str, Any]) -> str:
 
 # ─── Import ──────────────────────────────────────────────────
 
+def _import_body(file: str, mode: str | None, max_node_size: float | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"file": file}
+    if mode is not None:
+        body["mode"] = mode
+    if max_node_size is not None:
+        body["max_node_size"] = max_node_size
+    return body
+
 @_tool(name="gephi_import_gexf")
-async def gephi_import_gexf(file: str) -> str:
-    """Import a graph from a GEXF file. Merged with any existing graph."""
-    return fmt(await gephi.request("POST", "/import/gexf", json_data={"file": file}))
+async def gephi_import_gexf(file: str, mode: str | None = None) -> str:
+    """Import a graph from a GEXF file into a new workspace (see gephi_import_file for `mode`)."""
+    return fmt(await gephi.request("POST", "/import/gexf", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_graphml")
-async def gephi_import_graphml(file: str) -> str:
-    """Import a graph from a GraphML file."""
-    return fmt(await gephi.request("POST", "/import/graphml", json_data={"file": file}))
+async def gephi_import_graphml(file: str, mode: str | None = None) -> str:
+    """Import a graph from a GraphML file into a new workspace (see gephi_import_file for `mode`)."""
+    return fmt(await gephi.request("POST", "/import/graphml", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_csv")
-async def gephi_import_csv(file: str) -> str:
-    """Import a graph from a CSV file."""
-    return fmt(await gephi.request("POST", "/import/csv", json_data={"file": file}))
+async def gephi_import_csv(file: str, mode: str | None = None) -> str:
+    """Import a graph from a CSV file into a new workspace (see gephi_import_file for `mode`)."""
+    return fmt(await gephi.request("POST", "/import/csv", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_file")
-async def gephi_import_file(file: str, max_node_size: float | None = None) -> str:
+async def gephi_import_file(file: str, max_node_size: float | None = None,
+                           mode: str | None = None) -> str:
     """Import a graph from any supported format (GEXF, GraphML, GML, CSV, DOT, Pajek, ...).
 
     Auto-detected by extension. If the imported graph looks collapsed into a small
     cluster, the file's coordinates are very small; run a layout.
+
+    `mode`: by default ("new_workspace") the file opens in its own workspace, as it does
+    from Gephi's File > Open, so its time format and id type always fit. An empty workspace
+    that was open is removed; one holding a graph is kept, and gephi_switch_workspace returns
+    to it. "append" adds the file to the current workspace instead, for merging two files;
+    Gephi refuses when their settings differ (for example one has timestamps and the other
+    intervals). Warnings Gephi raised while reading the file come back as `import_issues`;
+    tell the user about any that matter, such as edges dropped for a missing node.
 
     No file path? (e.g. the user attached a spreadsheet/CSV/JSON/RDF in chat):
     parse the content yourself and build the graph with gephi_add_nodes +
@@ -3725,10 +3787,8 @@ async def gephi_import_file(file: str, max_node_size: float | None = None) -> st
     value) when a GEXF carries `viz:size` values large enough that a few nodes cover the
     whole map; the reply then reports how many nodes were changed.
     """
-    body: dict[str, Any] = {"file": file}
-    if max_node_size is not None:
-        body["max_node_size"] = max_node_size
-    return fmt(await gephi.request("POST", "/import/file", json_data=body))
+    return fmt(await gephi.request("POST", "/import/file",
+                                   json_data=_import_body(file, mode, max_node_size)))
 
 
 # ==================== Main Entry Point ====================
