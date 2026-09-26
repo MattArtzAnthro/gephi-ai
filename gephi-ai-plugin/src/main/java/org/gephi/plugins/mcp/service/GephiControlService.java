@@ -1616,7 +1616,7 @@ public class GephiControlService {
             }
             pendingLayoutProps = null;
             pendingLayoutAlgo = null;
-            if (properties != null) applyLayoutProperties(layout, properties);
+            java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
             final Layout fl = layout;
             final int iters = iterations > 0 ? iterations : 1000;
             if (!layoutRunning.compareAndSet(false, true)) return error("Layout already running");
@@ -1649,6 +1649,7 @@ public class GephiControlService {
             r.addProperty("success", true);
             r.addProperty("layout", algo);
             r.addProperty("status", "running");
+            reportUnapplied(r, unapplied, algo);
             return r;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
@@ -1717,10 +1718,20 @@ public class GephiControlService {
     }
 
     /** Match each Layout property against a caller-supplied key map and set it. */
-    private void applyLayoutProperties(Layout layout, Map<String, Object> properties) {
-        if (properties == null) return;
+    /**
+     * Apply layout properties by canonical key, display name or full canonical name (any case).
+     * Returns the keys that matched no property, in the order given, so a misspelled setting is
+     * reported instead of the layout silently running on its default.
+     */
+    static java.util.List<String> applyLayoutProperties(Layout layout, Map<String, Object> properties) {
+        java.util.List<String> unapplied = new java.util.ArrayList<>();
+        if (properties == null) return unapplied;
+        java.util.Set<String> matched = new java.util.HashSet<>();
         LayoutProperty[] props = layout.getProperties();
-        if (props == null) return;
+        if (props == null) {
+            unapplied.addAll(properties.keySet());
+            return unapplied;
+        }
         for (LayoutProperty prop : props) {
             String canonicalName = prop.getCanonicalName() != null ? prop.getCanonicalName() : "";
             String displayName = prop.getProperty().getDisplayName();
@@ -1730,18 +1741,14 @@ public class GephiControlService {
                 String[] parts = canonicalName.split("\\.");
                 if (parts.length >= 3) canonicalKey = parts[parts.length - 2];
             }
-            Object val = properties.get(canonicalKey);
-            if (val == null && !canonicalName.isEmpty()) val = properties.get(canonicalName);
-            if (val == null) val = properties.get(displayName);
-            if (val == null) {
-                for (Map.Entry<String, Object> e : properties.entrySet()) {
-                    String k = e.getKey();
-                    if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
-                            || k.equalsIgnoreCase(displayName)
-                            || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
-                        val = e.getValue();
-                        break;
-                    }
+            Object val = null;
+            for (Map.Entry<String, Object> e : properties.entrySet()) {
+                String k = e.getKey();
+                if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
+                        || k.equalsIgnoreCase(displayName)
+                        || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
+                    matched.add(k);
+                    if (val == null) val = e.getValue();
                 }
             }
             if (val != null) {
@@ -1753,6 +1760,18 @@ public class GephiControlService {
                 }
             }
         }
+        for (String k : properties.keySet()) if (!matched.contains(k)) unapplied.add(k);
+        return unapplied;
+    }
+
+    /** Adds unapplied_params and a warning to a layout response when any key matched nothing. */
+    private static void reportUnapplied(JsonObject r, java.util.List<String> unapplied, String algo) {
+        if (unapplied == null || unapplied.isEmpty()) return;
+        JsonArray ua = new JsonArray();
+        for (String k : unapplied) ua.add(k);
+        r.add("unapplied_params", ua);
+        r.addProperty("warning", "These settings match no property of " + algo
+            + " and were NOT applied: " + unapplied + ". Check the names with gephi_get_layout_properties.");
     }
 
     /**
@@ -1769,7 +1788,7 @@ public class GephiControlService {
             Layout layout = findLayout(algo);
             if (layout == null) return error("Layout not found: " + algo);
             layout.setGraphModel(currentGraphModel());
-            applyLayoutProperties(layout, properties);
+            java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
             pendingLayoutProps = properties;
             pendingLayoutAlgo = algo;
             JsonObject r = new JsonObject();
@@ -1778,6 +1797,7 @@ public class GephiControlService {
             r.addProperty("configured", true);
             r.addProperty("running", false);
             r.addProperty("note", "properties staged; the next run_layout of this algorithm applies them");
+            reportUnapplied(r, unapplied, algo);
             return r;
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
