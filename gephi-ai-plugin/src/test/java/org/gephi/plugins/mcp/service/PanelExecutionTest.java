@@ -57,7 +57,9 @@ class PanelExecutionTest {
         final AtomicBoolean cancelled = new AtomicBoolean();
         final AtomicBoolean ran = new AtomicBoolean();
 
-        SlowStat(long millis) { this.millis = millis; }
+        SlowStat(long millis) {
+            this.millis = millis;
+        }
 
         @Override public void execute(GraphModel gm) {
             ran.set(true);
@@ -66,16 +68,24 @@ class PanelExecutionTest {
                 Thread.onSpinWait();
             }
         }
-        @Override public String getReport() { return ""; }
-        @Override public boolean cancel() { cancelled.set(true); return true; }
-        @Override public void setProgressTicket(ProgressTicket t) {}
+        @Override public String getReport() {
+            return "";
+        }
+        @Override public boolean cancel() {
+            cancelled.set(true);
+            return true;
+        }
+        @Override public void setProgressTicket(ProgressTicket t) {
+        }
     }
 
     /** Runs the statistic on its own thread and reports back, as Gephi's panel controller does. */
     static class FakeStatsUI implements StatisticsControllerUI {
         Throwable failWith;
 
-        @Override public void execute(Statistics s) { execute(s, null); }
+        @Override public void execute(Statistics s) {
+            execute(s, null);
+        }
 
         @Override public void execute(Statistics s, LongTaskListener listener) {
             new Thread(() -> {
@@ -93,7 +103,8 @@ class PanelExecutionTest {
             }).start();
         }
 
-        @Override public void setStatisticsUIVisible(StatisticsUI ui, boolean visible) {}
+        @Override public void setStatisticsUIVisible(StatisticsUI ui, boolean visible) {
+        }
     }
 
     @Test
@@ -180,24 +191,44 @@ class PanelExecutionTest {
         final List<String> calls = new ArrayList<>();
         Layout selected;
 
-        @Override public LayoutModel getModel() { return null; }
-        @Override public LayoutModel getModel(Workspace w) { return null; }
+        @Override public LayoutModel getModel() {
+            return null;
+        }
+        @Override public LayoutModel getModel(Workspace w) {
+            return null;
+        }
         @Override public void setLayout(Layout l) {
             selected = l;
             calls.add("setLayout linLog=" + value(l, "linLogMode"));
         }
-        @Override public void executeLayout() { calls.add("execute"); }
-        @Override public void executeLayout(int n) { calls.add("execute " + n); }
-        public void executeLayout(Layout l) { calls.add("executeNow"); }
-        @Override public boolean canExecute() { return true; }
-        @Override public void stopLayout() { calls.add("stop"); }
-        @Override public boolean canStop() { return false; }
+        @Override public void executeLayout() {
+            calls.add("execute");
+        }
+        @Override public void executeLayout(int n) {
+            calls.add("execute " + n);
+        }
+        public void executeLayout(Layout l) {
+            calls.add("executeNow");
+        }
+        @Override public boolean canExecute() {
+            return true;
+        }
+        @Override public void stopLayout() {
+            calls.add("stop");
+        }
+        @Override public boolean canStop() {
+            return false;
+        }
     }
 
     static Object value(Layout layout, String key) {
         for (LayoutProperty p : layout.getProperties()) {
             if (p.getCanonicalName() != null && p.getCanonicalName().contains("." + key + ".")) {
-                try { return p.getProperty().getValue(); } catch (Exception e) { return null; }
+                try {
+                    return p.getProperty().getValue();
+                } catch (Exception e) {
+                    return null;
+                }
             }
         }
         return null;
@@ -228,7 +259,11 @@ class PanelExecutionTest {
         layout.resetPropertiesValues();
         for (LayoutProperty p : layout.getProperties()) {
             if (p.getCanonicalName().contains(".linLogMode.")) {
-                try { p.getProperty().setValue(true); } catch (Exception e) { throw new AssertionError(e); }
+                try {
+                    p.getProperty().setValue(true);
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
             }
         }
 
@@ -242,19 +277,39 @@ class PanelExecutionTest {
         double window = 1;
         double tick = 1;
 
-        FakeDynamicStat() {}
-        FakeDynamicStat(double window, double tick) { this.window = window; this.tick = tick; }
+        FakeDynamicStat() {
+        }
+        FakeDynamicStat(double window, double tick) {
+            this.window = window;
+            this.tick = tick;
+        }
 
-        @Override public void execute(GraphModel gm) {}
-        @Override public String getReport() { return ""; }
-        @Override public void loop(org.gephi.graph.api.GraphView v, org.gephi.graph.api.Interval i) {}
-        @Override public void end() {}
-        @Override public double getWindow() { return window; }
-        @Override public void setWindow(double w) { window = w; }
-        @Override public double getTick() { return tick; }
-        @Override public void setTick(double t) { tick = t; }
-        @Override public org.gephi.graph.api.Interval getBounds() { return null; }
-        @Override public void setBounds(org.gephi.graph.api.Interval b) {}
+        @Override public void execute(GraphModel gm) {
+        }
+        @Override public String getReport() {
+            return "";
+        }
+        @Override public void loop(org.gephi.graph.api.GraphView v, org.gephi.graph.api.Interval i) {
+        }
+        @Override public void end() {
+        }
+        @Override public double getWindow() {
+            return window;
+        }
+        @Override public void setWindow(double w) {
+            window = w;
+        }
+        @Override public double getTick() {
+            return tick;
+        }
+        @Override public void setTick(double t) {
+            tick = t;
+        }
+        @Override public org.gephi.graph.api.Interval getBounds() {
+            return null;
+        }
+        @Override public void setBounds(org.gephi.graph.api.Interval b) {
+        }
     }
 
     @Test
@@ -294,7 +349,7 @@ class PanelExecutionTest {
         // Gephi's dynamic statistics start with window 0 and tick 0; its settings dialog fills
         // them in. Run with tick 0, Gephi's loop never advances.
         String problem = GephiControlService.dynamicStatisticProblem(new FakeDynamicStat(0, 0),
-                                                                     timedNetwork(1990, 2000));
+            timedNetwork(1990, 2000));
 
         assertTrue(problem != null && problem.contains("tick") && problem.contains("1990")
             && problem.contains("2000"), String.valueOf(problem));
@@ -303,7 +358,7 @@ class PanelExecutionTest {
     @Test
     void aWindowWiderThanTheNetworksTimeSpanIsRefused() {
         String problem = GephiControlService.dynamicStatisticProblem(new FakeDynamicStat(50, 1),
-                                                                     timedNetwork(1990, 2000));
+            timedNetwork(1990, 2000));
 
         assertTrue(problem != null && problem.contains("window"), String.valueOf(problem));
     }
@@ -311,7 +366,7 @@ class PanelExecutionTest {
     @Test
     void aDynamicStatisticWithAWindowAndStepInsideTheSpanRuns() {
         assertEquals(null, GephiControlService.dynamicStatisticProblem(new FakeDynamicStat(2, 1),
-                                                                       timedNetwork(1990, 2000)));
+            timedNetwork(1990, 2000)));
     }
 
     @Test

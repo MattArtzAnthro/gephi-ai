@@ -91,7 +91,8 @@ public class GephiControlService {
     // after it actually succeeds (the view may not be started at the first attempt).
     private volatile boolean rectangleAutoEnabled = false;
 
-    private GephiControlService() {}
+    private GephiControlService() {
+    }
 
     public static synchronized GephiControlService getInstance() {
         if (instance == null) {
@@ -117,16 +118,26 @@ public class GephiControlService {
      * that this will become an error.
      */
     private static <T> T onProjectThread(Callable<T> work) {
-        try { return work.call(); }
-        catch (RuntimeException e) { throw e; }
-        catch (Exception e) { throw new RuntimeException(e); }
+        try {
+            return work.call();
+        }
+        catch (RuntimeException e) {
+            throw e;
+        }
+        catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @SuppressWarnings("unchecked")
     private <T> T runOnEDT(Callable<T> callable) {
         if (SwingUtilities.isEventDispatchThread()) {
-            try { return callable.call(); }
-            catch (Exception e) { throw new RuntimeException(e); }
+            try {
+                return callable.call();
+            }
+            catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
         // Bounded wait: invokeAndWait parks forever when the EDT is wedged (the
         // "health answers but nothing else does" symptom). Fail fast with guidance
@@ -135,9 +146,15 @@ public class GephiControlService {
         final Exception[] exception = new Exception[1];
         final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
         SwingUtilities.invokeLater(() -> {
-            try { result[0] = callable.call(); }
-            catch (Exception e) { exception[0] = e; }
-            finally { done.countDown(); }
+            try {
+                result[0] = callable.call();
+            }
+            catch (Exception e) {
+                exception[0] = e;
+            }
+            finally {
+                done.countDown();
+            }
         });
         try {
             if (!done.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -198,7 +215,11 @@ public class GephiControlService {
         boolean acquired = false;
         try {
             java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl = writeLockHandle(g);
-            if (wl == null) { g.writeLock(); acquired = true; return; }
+            if (wl == null) {
+                g.writeLock();
+                acquired = true;
+                return;
+            }
             long deadline = System.nanoTime() + 15_000_000_000L;
             while (!wl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 if (System.nanoTime() > deadline) {
@@ -252,7 +273,10 @@ public class GephiControlService {
      */
     static void lockRead(Graph g) {
         java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
-        if (rl == null) { g.readLock(); return; }
+        if (rl == null) {
+            g.readLock();
+            return;
+        }
         long deadline = System.nanoTime() + 10_000_000_000L;
         try {
             while (!rl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
@@ -462,7 +486,10 @@ public class GephiControlService {
             // File>Open closes first.
             if (pc.hasCurrentProject()) {
                 clearFilterQueriesBeforeClosing();
-                onProjectThread(() -> { pc.closeCurrentProject(); return null; });
+                onProjectThread(() -> {
+                    pc.closeCurrentProject();
+                    return null;
+                });
             }
             // openProject(File) off the EDT: it blocks on a LongTaskExecutor Future
             // whose completion needs a free EDT.
@@ -523,7 +550,9 @@ public class GephiControlService {
             r.addProperty("file", file.getPath());
             r.addProperty("bytes", file.length());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /** Null when {@code file} holds a fresh save, else what went wrong. */
@@ -577,7 +606,9 @@ public class GephiControlService {
                 JsonObject r = success("Workspace created");
                 r.addProperty("workspace_id", ws.getId());
                 return r;
-            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) {
+                return error("Failed: " + e.getMessage());
+            }
         });
     }
 
@@ -663,7 +694,9 @@ public class GephiControlService {
                         JsonObject r = success("Workspace duplicated");
                         r.addProperty("workspace_id", copy.getId());
                         return r;
-                    } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+                    } catch (Exception e) {
+                        return error("Failed: " + e.getMessage());
+                    }
                 }
                 i++;
             }
@@ -683,7 +716,9 @@ public class GephiControlService {
                     try {
                         pc.renameWorkspace(ws, name);
                         return success("Workspace renamed to: " + name);
-                    } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+                    } catch (Exception e) {
+                        return error("Failed: " + e.getMessage());
+                    }
                 }
                 i++;
             }
@@ -724,8 +759,12 @@ public class GephiControlService {
                 JsonObject r = success("Node added");
                 r.addProperty("node_id", id);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject addNodes(List<Map<String, Object>> nodes) {
@@ -746,7 +785,10 @@ public class GephiControlService {
             try {
                 for (Map<String, Object> nd : nodes) {
                     String id = (String) nd.get("id");
-                    if (id == null || g.getNode(id) != null) { skipped++; continue; }
+                    if (id == null || g.getNode(id) != null) {
+                        skipped++;
+                        continue;
+                    }
                     String label = (String) nd.getOrDefault("label", id);
                     Node n = gm.factory().newNode(id);
                     n.setLabel(label);
@@ -769,8 +811,12 @@ public class GephiControlService {
                 r.addProperty("added", added);
                 r.addProperty("skipped", skipped);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject removeNode(String id) {
@@ -791,8 +837,12 @@ public class GephiControlService {
                 JsonObject r = success("Node removed");
                 r.addProperty("edges_removed", edgesRemoved);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject bulkRemoveNodes(List<String> ids) {
@@ -808,7 +858,10 @@ public class GephiControlService {
                 int notFound = 0;
                 for (String id : ids) {
                     Node n = g.getNode(id);
-                    if (n == null) { notFound++; continue; }
+                    if (n == null) {
+                        notFound++;
+                        continue;
+                    }
                     g.removeNode(n);
                     removed++;
                 }
@@ -817,8 +870,12 @@ public class GephiControlService {
                 r.addProperty("removed", removed);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject queryNodes(String attr, String val, int limit, int offset) {
@@ -834,7 +891,7 @@ public class GephiControlService {
      * without a value always come last, so a sorted first page is the top of the graph.
      */
     static <T> List<T> sortByValue(List<T> items, java.util.function.Function<T, Object> value,
-                                   boolean descending) {
+        boolean descending) {
         java.util.Comparator<Object> byValue = (a, b) -> {
             if (a instanceof Number && b instanceof Number) {
                 return Double.compare(((Number) a).doubleValue(), ((Number) b).doubleValue());
@@ -879,7 +936,7 @@ public class GephiControlService {
      * a numeric range. The column is found by id or by title. Null when no search was asked for.
      */
     static java.util.function.Predicate<Node> nodeMatcher(Column col, String value, String contains,
-                                                          Double min, Double max) {
+        Double min, Double max) {
         if (value == null && contains == null && min == null && max == null) {
             return null;
         }
@@ -895,7 +952,9 @@ public class GephiControlService {
                         if (((Number) v).doubleValue() != Double.parseDouble(value.trim())) {
                             return false;
                         }
-                    } catch (NumberFormatException e) { return false; }
+                    } catch (NumberFormatException e) {
+                        return false;
+                    }
                 } else if (!v.toString().equalsIgnoreCase(value)) {
                     return false;
                 }
@@ -925,7 +984,7 @@ public class GephiControlService {
      * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
      */
     public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
-                                 int limit, int offset, boolean visible) {
+        int limit, int offset, boolean visible) {
         return queryNodes(column, value, contains, min, max, limit, offset, visible, null, true, null);
     }
 
@@ -936,8 +995,8 @@ public class GephiControlService {
      * plus its id, label and degree, which keeps a long listing small.
      */
     public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
-                                 int limit, int offset, boolean visible, String sortBy,
-                                 boolean descending, String columns) {
+        int limit, int offset, boolean visible, String sortBy,
+        boolean descending, String columns) {
         try {
             Workspace ws = currentWorkspace();
             if (ws == null) {
@@ -977,7 +1036,7 @@ public class GephiControlService {
                     final Column sc = sortCol;
                     final Graph sg = g;
                     nodes = sortByValue(nodes, n -> sc == null ? (Object) sg.getDegree(n) : n.getAttribute(sc),
-                                        descending);
+                        descending);
                 }
                 for (Node n : nodes) {
                     if (keep != null) {
@@ -1051,8 +1110,12 @@ public class GephiControlService {
                 addViewInfo(r, gm, visible);
                 r.add("nodes", arr);
                 return r;
-            } finally { g.readUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                g.readUnlock();
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject getNode(String id) {
@@ -1098,7 +1161,9 @@ public class GephiControlService {
             r.addProperty("success", true);
             r.add("node", o);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodeLabel(String id, String label) {
@@ -1116,8 +1181,12 @@ public class GephiControlService {
                 }
                 n.setLabel(label);
                 return success("Label set");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodePosition(String id, float x, float y) {
@@ -1136,8 +1205,12 @@ public class GephiControlService {
                 n.setX(x);
                 n.setY(y);
                 return success("Position set");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject batchSetPositions(List<Map<String, Object>> positions) {
@@ -1154,7 +1227,10 @@ public class GephiControlService {
                 for (Map<String, Object> pos : positions) {
                     String id = (String) pos.get("id");
                     Node n = g.getNode(id);
-                    if (n == null) { notFound++; continue; }
+                    if (n == null) {
+                        notFound++;
+                        continue;
+                    }
                     n.setX(((Number) pos.get("x")).floatValue());
                     n.setY(((Number) pos.get("y")).floatValue());
                     set++;
@@ -1164,8 +1240,12 @@ public class GephiControlService {
                 r.addProperty("set", set);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Edge Operations ─────────────────────────────────────────────
@@ -1196,7 +1276,7 @@ public class GephiControlService {
      * AND a "coauthor" edge at once, while a second "cites" A→B is still blocked.
      */
     static JsonObject addEdgeToModel(GraphModel gm, String src, String tgt, Double weight,
-                                     boolean directed, String edgeType) {
+        boolean directed, String edgeType) {
         try {
             Graph g = gm.getGraph();
             lockWrite(g);
@@ -1223,8 +1303,12 @@ public class GephiControlService {
                     g.addEdge(gm.factory().newEdge(s, t, directed ? 1 : 0, w, directed));
                 }
                 return success("Edge added");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject addEdges(List<Map<String, Object>> edges) {
@@ -1246,10 +1330,16 @@ public class GephiControlService {
                 for (Map<String, Object> ed : edges) {
                     String src = (String) ed.get("source");
                     String tgt = (String) ed.get("target");
-                    if (src == null || tgt == null) { skipped++; continue; }
+                    if (src == null || tgt == null) {
+                        skipped++;
+                        continue;
+                    }
                     Node s = g.getNode(src);
                     Node t = g.getNode(tgt);
-                    if (s == null || t == null) { skipped++; continue; }
+                    if (s == null || t == null) {
+                        skipped++;
+                        continue;
+                    }
                     Double w = ed.containsKey("weight") ? ((Number) ed.get("weight")).doubleValue() : 1.0;
                     boolean directed = !ed.containsKey("directed") || Boolean.TRUE.equals(ed.get("directed"));
                     Object edgeTypeObj = ed.get("edge_type");
@@ -1257,9 +1347,15 @@ public class GephiControlService {
                     int type;
                     if (edgeType != null && !edgeType.isEmpty()) {
                         type = gm.addEdgeType(edgeType);
-                        if (g.getEdge(s, t, type) != null) { skipped++; continue; }
+                        if (g.getEdge(s, t, type) != null) {
+                            skipped++;
+                            continue;
+                        }
                     } else {
-                        if (findEdge(g, s, t) != null) { skipped++; continue; }
+                        if (findEdge(g, s, t) != null) {
+                            skipped++;
+                            continue;
+                        }
                         type = directed ? 1 : 0;
                     }
                     Edge e = gm.factory().newEdge(s, t, type, w, directed);
@@ -1283,8 +1379,12 @@ public class GephiControlService {
                 r.addProperty("added", added);
                 r.addProperty("skipped", skipped);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject removeEdge(String source, String target) {
@@ -1307,8 +1407,12 @@ public class GephiControlService {
                 }
                 g.removeEdge(e);
                 return success("Edge removed");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeWeight(String source, String target, double weight) {
@@ -1331,8 +1435,12 @@ public class GephiControlService {
                 }
                 e.setWeight(weight);
                 return success("Weight set to " + weight);
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeLabel(String source, String target, String label) {
@@ -1355,8 +1463,12 @@ public class GephiControlService {
                 }
                 e.setLabel(label);
                 return success("Edge label set");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject queryEdges(int limit, int offset) {
@@ -1430,8 +1542,12 @@ public class GephiControlService {
                 addViewInfo(r, gm, visible);
                 r.add("edges", arr);
                 return r;
-            } finally { g.readUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                g.readUnlock();
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Graph Stats ─────────────────────────────────────────────────
@@ -1492,8 +1608,12 @@ public class GephiControlService {
                 r.addProperty("is_directed", gm.isDirected());
                 addViewInfo(r, gm, visible);
                 return r;
-            } finally { g.readUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                g.readUnlock();
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Graph Type ──────────────────────────────────────────────────
@@ -1511,7 +1631,9 @@ public class GephiControlService {
             r.addProperty("undirected", gm.isUndirected());
             r.addProperty("mixed", gm.isMixed());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Attribute / Column Management ───────────────────────────────
@@ -1538,7 +1660,9 @@ public class GephiControlService {
             r.addProperty("target", target);
             r.add("columns", arr);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject addColumn(String name, String type, String target) {
@@ -1570,9 +1694,13 @@ public class GephiControlService {
                     return error("Column already exists: " + existing.getTitle() + " (id " + existing.getId() + ")");
                 }
                 table.addColumn(name, cls);
-            } finally { unlockWrite(g); }
+            } finally {
+                unlockWrite(g);
+            }
             return success("Column '" + name + "' added");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodeAttributes(String id, Map<String, Object> attrs) {
@@ -1593,8 +1721,12 @@ public class GephiControlService {
                     ensureColumnAndSet(gm.getNodeTable(), n, e.getKey(), e.getValue());
                 }
                 return success("Attributes set on node " + id);
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject batchSetNodeAttributes(List<Map<String, Object>> updates) {
@@ -1612,7 +1744,10 @@ public class GephiControlService {
                 for (Map<String, Object> update : updates) {
                     String id = (String) update.get("id");
                     Node n = g.getNode(id);
-                    if (n == null) { notFound++; continue; }
+                    if (n == null) {
+                        notFound++;
+                        continue;
+                    }
                     @SuppressWarnings("unchecked")
                     Map<String, Object> attrs = (Map<String, Object>) update.get("attributes");
                     if (attrs != null) {
@@ -1627,8 +1762,12 @@ public class GephiControlService {
                 r.addProperty("set", set);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeAttributes(String source, String target, Map<String, Object> attrs) {
@@ -1654,8 +1793,12 @@ public class GephiControlService {
                     ensureColumnAndSet(gm.getEdgeTable(), e, entry.getKey(), entry.getValue());
                 }
                 return success("Attributes set on edge");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     static void ensureColumnAndSet(Table table, Object element, String key, Object value) {
@@ -1710,7 +1853,8 @@ public class GephiControlService {
             if (targetType == Boolean.class) {
                 return Boolean.parseBoolean(s);
             }
-        } catch (Exception e) { /* fall through */ }
+        } catch (Exception e) { /* fall through */
+        }
         return s;
     }
 
@@ -1719,13 +1863,22 @@ public class GephiControlService {
             return null;
         }
         switch (type.toLowerCase()) {
-            case "string": return String.class;
-            case "integer": case "int": return Integer.class;
-            case "double": return Double.class;
-            case "float": return Float.class;
-            case "boolean": case "bool": return Boolean.class;
-            case "long": return Long.class;
-            default: return null;
+            case "string":
+                return String.class;
+            case "integer":
+            case "int":
+                return Integer.class;
+            case "double":
+                return Double.class;
+            case "float":
+                return Float.class;
+            case "boolean":
+            case "bool":
+                return Boolean.class;
+            case "long":
+                return Long.class;
+            default:
+                return null;
         }
     }
 
@@ -1752,7 +1905,9 @@ public class GephiControlService {
             }
             n.setColor(new Color(r, g, b, a));
             return success("Node color set");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodeSize(String id, float size) {
@@ -1768,7 +1923,9 @@ public class GephiControlService {
             }
             n.setSize(size);
             return success("Node size set to " + size);
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /*
@@ -1802,8 +1959,12 @@ public class GephiControlService {
                 }
                 e.setColor(new Color(r, g, b, a));
                 return success("Edge color set");
-            } finally { unlockWrite(graph); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(graph);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject batchSetNodeColors(List<Map<String, Object>> nodeColors) {
@@ -1818,7 +1979,10 @@ public class GephiControlService {
             for (Map<String, Object> nc : nodeColors) {
                 String id = (String) nc.get("id");
                 Node n = graph.getNode(id);
-                if (n == null) { notFound++; continue; }
+                if (n == null) {
+                    notFound++;
+                    continue;
+                }
                 int r = ((Number) nc.get("r")).intValue();
                 int g = ((Number) nc.get("g")).intValue();
                 int b = ((Number) nc.get("b")).intValue();
@@ -1831,7 +1995,9 @@ public class GephiControlService {
             res.addProperty("set", set);
             res.addProperty("not_found", notFound);
             return res;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject resetAppearance(int r, int g, int b, float size) {
@@ -1849,7 +2015,9 @@ public class GephiControlService {
                 n.setSize(size);
             }
             return success("Appearance reset for all nodes");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Appearance: Color/Size by Attribute ─────────────────────────
@@ -1876,7 +2044,9 @@ public class GephiControlService {
         return null;
     }
 
-    private static int clamp255(int v) { return Math.max(0, Math.min(255, v)); }
+    private static int clamp255(int v) {
+        return Math.max(0, Math.min(255, v));
+    }
 
     /**
      * Give a partition the exact colours Gephi AI applied, matched by the value's text as the
@@ -1884,7 +2054,7 @@ public class GephiControlService {
      * many values were set.
      */
     static int applyPaletteToPartition(org.gephi.appearance.api.Partition partition, Graph graph,
-                                       Map<String, Color> palette) {
+        Map<String, Color> palette) {
         int set = 0;
         for (Object value : partition.getValues(graph)) {
             Color c = palette.get(String.valueOf(value));
@@ -1908,19 +2078,21 @@ public class GephiControlService {
                 }
             }
             return n;
-        } finally { visible.readUnlock(); }
+        } finally {
+            visible.readUnlock();
+        }
     }
 
     /** A two-stop colour ranking from the minimum colour to the maximum, as Gephi AI applies it. */
     static void configureRankingColor(org.gephi.appearance.plugin.RankingElementColorTransformer t,
-                                      Color min, Color max) {
+        Color min, Color max) {
         t.setColors(new Color[]{min, max});
         t.setColorPositions(new float[]{0f, 1f});
     }
 
     /** A size ranking from the minimum size to the maximum, as Gephi AI applies it. */
     static void configureRankingSize(org.gephi.appearance.plugin.RankingSizeTransformer<?> t,
-                                     float min, float max) {
+        float min, float max) {
         t.setMinSize(min);
         t.setMaxSize(max);
     }
@@ -1933,8 +2105,8 @@ public class GephiControlService {
      * such function for the column.
      */
     private org.gephi.appearance.api.Function applyAppearance(Workspace ws, Column col, boolean edges,
-            Class<? extends org.gephi.appearance.spi.Transformer> transformer,
-            java.util.function.Consumer<org.gephi.appearance.api.Function> configure) {
+        Class<? extends org.gephi.appearance.spi.Transformer> transformer,
+        java.util.function.Consumer<org.gephi.appearance.api.Function> configure) {
         org.gephi.appearance.api.AppearanceController ac =
             Lookup.getDefault().lookup(org.gephi.appearance.api.AppearanceController.class);
         org.gephi.appearance.api.AppearanceModel am = ac == null ? null : ac.getModel(ws);
@@ -2082,7 +2254,7 @@ public class GephiControlService {
             org.gephi.appearance.api.Function f = applyAppearance(ws, col, false,
                 org.gephi.appearance.plugin.PartitionElementColorTransformer.class,
                 fn -> applyPaletteToPartition(((org.gephi.appearance.api.PartitionFunction) fn).getPartition(),
-                                              fn.getGraph(), palette));
+                    fn.getGraph(), palette));
             if (f == null) {
                 return noAppearanceFunction("partition colouring", col);
             }
@@ -2093,7 +2265,9 @@ public class GephiControlService {
             addViewInfo(r, gm, true);
             reportPanel(r, showInAppearancePanel(f));
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -2119,7 +2293,9 @@ public class GephiControlService {
                     }
                 }
             }
-        } finally { g.readUnlock(); }
+        } finally {
+            g.readUnlock();
+        }
         return min == Double.POSITIVE_INFINITY ? null : new double[]{min, max};
     }
 
@@ -2183,7 +2359,9 @@ public class GephiControlService {
             addViewInfo(res, gm, true);
             reportPanel(res, showInAppearancePanel(f));
             return res;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -2258,7 +2436,9 @@ public class GephiControlService {
                         sized++;
                     }
                 }
-            } finally { unlockWrite(graph); }
+            } finally {
+                unlockWrite(graph);
+            }
             JsonObject res = success("Sized " + sized + " nodes by " + columnName);
             res.addProperty("min_value", min);
             res.addProperty("max_value", max);
@@ -2268,7 +2448,9 @@ public class GephiControlService {
             reportPanel(res, "Gephi's Appearance panel has no cap, so it was left as it was;"
                 + " reapplying the ranking there would undo the cap.");
             return res;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Layout ──────────────────────────────────────────────────────
@@ -2311,7 +2493,9 @@ public class GephiControlService {
             r.addProperty("status", "running");
             reportUnapplied(r, unapplied, algo);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject stopLayout() {
@@ -2384,7 +2568,9 @@ public class GephiControlService {
             r.addProperty("algorithm", algo);
             r.add("properties", arr);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /** Match each Layout property against a caller-supplied key map and set it. */
@@ -2419,8 +2605,8 @@ public class GephiControlService {
             for (Map.Entry<String, Object> e : properties.entrySet()) {
                 String k = e.getKey();
                 if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
-                        || k.equalsIgnoreCase(displayName)
-                        || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
+                    || k.equalsIgnoreCase(displayName)
+                    || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
                     matched.add(k);
                     if (val == null) {
                         val = e.getValue();
@@ -2431,8 +2617,12 @@ public class GephiControlService {
                 Class<?> type = prop.getProperty().getValueType();
                 Object converted = convertLayoutProperty(val, type);
                 if (converted != null) {
-                    try { prop.getProperty().setValue(converted); }
-                    catch (Exception e) { LOGGER.log(Level.WARNING, "Set layout property failed", e); }
+                    try {
+                        prop.getProperty().setValue(converted);
+                    }
+                    catch (Exception e) {
+                        LOGGER.log(Level.WARNING, "Set layout property failed", e);
+                    }
                 }
             }
         }
@@ -2487,7 +2677,9 @@ public class GephiControlService {
             r.addProperty("note", "properties staged; the next run_layout of this algorithm applies them");
             reportUnapplied(r, unapplied, algo);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     static Object convertLayoutProperty(Object val, Class<?> type) {
@@ -2514,7 +2706,8 @@ public class GephiControlService {
             if (type == String.class) {
                 return s;
             }
-        } catch (Exception e) { /* fall through */ }
+        } catch (Exception e) { /* fall through */
+        }
         return null;
     }
 
@@ -2532,7 +2725,8 @@ public class GephiControlService {
             o.addProperty("name", sb.getName());
             try {
                 o.addProperty("id", sb.getStatistics().getClass().getSimpleName());
-            } catch (Throwable t) { /* name alone is enough */ }
+            } catch (Throwable t) { /* name alone is enough */
+            }
             arr.add(o);
         }
         JsonObject r = new JsonObject();
@@ -2548,18 +2742,31 @@ public class GephiControlService {
 
     private static final org.gephi.utils.progress.ProgressTicket NOOP_TICKET =
         new org.gephi.utils.progress.ProgressTicket() {
-            public void finish() {}
-            public void finish(String s) {}
-            public void progress() {}
-            public void progress(int i) {}
-            public void progress(String s) {}
-            public void progress(String s, int i) {}
-            public String getDisplayName() { return "MCP statistic"; }
-            public void setDisplayName(String s) {}
-            public void start() {}
-            public void start(int i) {}
-            public void switchToDeterminate(int i) {}
-            public void switchToIndeterminate() {}
+            public void finish() {
+            }
+            public void finish(String s) {
+            }
+            public void progress() {
+            }
+            public void progress(int i) {
+            }
+            public void progress(String s) {
+            }
+            public void progress(String s, int i) {
+            }
+            public String getDisplayName() {
+                return "MCP statistic";
+            }
+            public void setDisplayName(String s) {
+            }
+            public void start() {
+            }
+            public void start(int i) {
+            }
+            public void switchToDeterminate(int i) {
+            }
+            public void switchToIndeterminate() {
+            }
         };
 
     /** Cancels statistics that overrun their deadline. One daemon thread serves every run. */
@@ -2577,7 +2784,7 @@ public class GephiControlService {
      * ends the run and releases the graph lock it holds.
      */
     static boolean runWithDeadline(Runnable work, org.gephi.utils.longtask.spi.LongTask task,
-                                   long timeoutMs) {
+        long timeoutMs) {
         if (timeoutMs <= 0) {
             work.run();
             return false;
@@ -2674,12 +2881,12 @@ public class GephiControlService {
     }
 
     static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
-                                    org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
-                                    java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
+        org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
+        java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
         if (panel == null) {
             if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
                 return runWithDeadline(() -> stat.execute(gm),
-                                       (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
+                    (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
             }
             stat.execute(gm);
             return false;
@@ -2730,9 +2937,9 @@ public class GephiControlService {
      * setting names that matched no property.
      */
     static java.util.List<String> startLayoutThroughController(org.gephi.layout.api.LayoutController lc,
-                                                          Layout layout, Map<String, Object> properties,
-                                                          int iterations,
-                                                          java.util.function.Consumer<Runnable> onEdt) {
+        Layout layout, Map<String, Object> properties,
+        int iterations,
+        java.util.function.Consumer<Runnable> onEdt) {
         java.util.List<String> unapplied = new java.util.ArrayList<>();
         onEdt.accept(() -> {
             lc.setLayout(layout);
@@ -2788,7 +2995,8 @@ public class GephiControlService {
                             matchedBuilder = sb;
                             break;
                         }
-                    } catch (Exception e) { /* skip */ }
+                    } catch (Exception e) { /* skip */
+                    }
                 }
             }
             if (matchedBuilder == null) {
@@ -2848,8 +3056,8 @@ public class GephiControlService {
                 JsonObject r = error(matchedBuilder.getName() + " did not finish within "
                     + (timeoutMs / 1000) + " s and was stopped; its column was not updated."
                     + ("Modularity".equals(builderName)
-                        ? " Gephi's modularity occasionally never converges (gephi#1630);"
-                          + " running it again usually finishes normally." : ""));
+                    ? " Gephi's modularity occasionally never converges (gephi#1630);"
+                    + " running it again usually finishes normally." : ""));
                 r.addProperty("stopped", true);
                 return r;
             }
@@ -2891,7 +3099,8 @@ public class GephiControlService {
                     r.addProperty("report_available", true);
                     r.addProperty("report_html", report);
                 }
-            } catch (Exception e) { /* no report */ }
+            } catch (Exception e) { /* no report */
+            }
 
             return r;
         } catch (Exception e) {
@@ -2987,8 +3196,11 @@ public class GephiControlService {
             } else if (val != null) {
                 r.addProperty(jsonKey, val.toString());
             }
-        } catch (NoSuchMethodException e) { /* method not available for this statistic */ }
-        catch (Exception e) { LOGGER.fine("Could not get " + getter + ": " + e.getMessage()); }
+        } catch (NoSuchMethodException e) { /* method not available for this statistic */
+        }
+        catch (Exception e) {
+            LOGGER.fine("Could not get " + getter + ": " + e.getMessage());
+        }
     }
 
     public JsonObject computeModularity(double resolution) {
@@ -3069,12 +3281,16 @@ public class GephiControlService {
                     g.removeNode(n);
                 }
             }
-            finally { unlockWrite(g); }
+            finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Filtered by degree [" + minDegree + ", " + maxDegree + "]");
             r.addProperty("removed", toRemove.size());
             r.addProperty("remaining_nodes", g.getNodeCount());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject filterByEdgeWeight(double minWeight, double maxWeight, boolean dryRun) {
@@ -3105,12 +3321,16 @@ public class GephiControlService {
                     g.removeEdge(e);
                 }
             }
-            finally { unlockWrite(g); }
+            finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Filtered edges by weight [" + minWeight + ", " + maxWeight + "]");
             r.addProperty("removed", toRemove.size());
             r.addProperty("remaining_edges", g.getEdgeCount());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Preview Settings ────────────────────────────────────────────
@@ -3193,7 +3413,8 @@ public class GephiControlService {
                     Color c = (Color) bgVal;
                     settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
 
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
@@ -3434,7 +3655,9 @@ public class GephiControlService {
             JsonObject r = success("Exported to " + filePath);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     /** GEXF export returned inline as a string — no file round-trip. */
@@ -3470,7 +3693,9 @@ public class GephiControlService {
             addViewInfo(r, currentGraphModel(), visible);
             r.addProperty("content", sw.toString());
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportPng(String filePath, int w, int h) {
@@ -3522,7 +3747,9 @@ public class GephiControlService {
             }
 
             return success("Exported to " + filePath);
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     /** The workspace's preview background color, or null when none is available. */
@@ -3620,7 +3847,7 @@ public class GephiControlService {
      * Returns the final observed size (may differ from expected on timeout).
      */
     private static int waitForSelectionCount(
-            org.gephi.visualization.api.VisualizationController vc, int expected, long timeoutMs) {
+        org.gephi.visualization.api.VisualizationController vc, int expected, long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         int last = -1;
         while (System.currentTimeMillis() < deadline) {
@@ -3629,7 +3856,9 @@ public class GephiControlService {
             if (last == expected) {
                 return last;
             }
-            try { Thread.sleep(30); } catch (InterruptedException e) {
+            try {
+                Thread.sleep(30);
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return last;
             }
@@ -3649,10 +3878,14 @@ public class GephiControlService {
         lockRead(g);
         try {
             for (Node n : g.getNodes().toArray()) {
-                minX = Math.min(minX, n.x()); maxX = Math.max(maxX, n.x());
-                minY = Math.min(minY, n.y()); maxY = Math.max(maxY, n.y());
+                minX = Math.min(minX, n.x());
+                maxX = Math.max(maxX, n.x());
+                minY = Math.min(minY, n.y());
+                maxY = Math.max(maxY, n.y());
             }
-        } finally { g.readUnlock(); }
+        } finally {
+            g.readUnlock();
+        }
         return maxX - minX > maxY - minY;
     }
 
@@ -3694,7 +3927,9 @@ public class GephiControlService {
             return r;
         } catch (IllegalArgumentException e) {
             return error("Export failed: graph nodes may not be positioned — run a layout first");
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportSvg(String filePath) {
@@ -3715,7 +3950,9 @@ public class GephiControlService {
             }
             ec.exportFile(new File(filePath), exporter);
             return success("Exported to " + filePath);
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportGraphml(String filePath) {
@@ -3742,7 +3979,9 @@ public class GephiControlService {
             JsonObject r = success("Exported to " + filePath);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportCsv(String filePath, String separator, String target) {
@@ -3762,7 +4001,7 @@ public class GephiControlService {
             GraphModel gm = currentGraphModel();
             String csvText = buildCsv(gm, separator, target);
             try (java.io.Writer fw = new java.io.OutputStreamWriter(
-                    new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
+                     new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
                 fw.write(csvText);
             }
             JsonObject r = success("Exported to " + filePath);
@@ -3794,7 +4033,7 @@ public class GephiControlService {
                 try {
                     for (Node n : g.getNodes().toArray()) {
                         sb.append(csv(String.valueOf(n.getId()), sep)).append(sep)
-                          .append(csv(n.getLabel() != null ? n.getLabel() : "", sep));
+                            .append(csv(n.getLabel() != null ? n.getLabel() : "", sep));
                         for (Column col : gm.getNodeTable()) {
                             if (!col.isProperty()) {
                                 Object v = n.getAttribute(col);
@@ -3803,7 +4042,9 @@ public class GephiControlService {
                         }
                         sb.append("\n");
                     }
-                } finally { g.readUnlock(); }
+                } finally {
+                    g.readUnlock();
+                }
             }
 
             if ("edges".equalsIgnoreCase(target) || "both".equalsIgnoreCase(target)) {
@@ -3821,8 +4062,8 @@ public class GephiControlService {
                 try {
                     for (Edge e : g.getEdges().toArray()) {
                         sb.append(csv(String.valueOf(e.getSource().getId()), sep)).append(sep)
-                          .append(csv(String.valueOf(e.getTarget().getId()), sep)).append(sep)
-                          .append(csv(String.valueOf(e.getWeight()), sep));
+                            .append(csv(String.valueOf(e.getTarget().getId()), sep)).append(sep)
+                            .append(csv(String.valueOf(e.getWeight()), sep));
                         for (Column col : gm.getEdgeTable()) {
                             if (!col.isProperty()) {
                                 Object v = e.getAttribute(col);
@@ -3831,7 +4072,9 @@ public class GephiControlService {
                         }
                         sb.append("\n");
                     }
-                } finally { g.readUnlock(); }
+                } finally {
+                    g.readUnlock();
+                }
             }
         }
         return sb.toString();
@@ -3847,7 +4090,7 @@ public class GephiControlService {
             value = "";
         }
         boolean needsQuote = value.contains(sep) || value.contains("\"")
-                || value.contains("\n") || value.contains("\r");
+            || value.contains("\n") || value.contains("\r");
         return needsQuote ? "\"" + value.replace("\"", "\"\"") + "\"" : value;
     }
 
@@ -3915,7 +4158,7 @@ public class GephiControlService {
 
                 boolean append = "append".equalsIgnoreCase(mode);
                 if (mode != null && !append && !"new_workspace".equalsIgnoreCase(mode)
-                        && !"new".equalsIgnoreCase(mode)) {
+                    && !"new".equalsIgnoreCase(mode)) {
                     return error("Unknown import mode '" + mode + "': use \"new_workspace\" (the default)"
                         + " or \"append\"");
                 }
@@ -3962,7 +4205,7 @@ public class GephiControlService {
                 } catch (Exception e) {
                     JsonObject err = error("Import failed: " + e.getMessage() + (append
                         ? ". The file's time format or id type differs from this workspace's; import it"
-                          + " without mode \"append\" to open it in its own workspace." : ""));
+                        + " without mode \"append\" to open it in its own workspace." : ""));
                     addIssues(issues, processor.getReport(), 20);
                     if (issues.size() > 0) {
                         err.add("import_issues", issues);
@@ -4022,7 +4265,9 @@ public class GephiControlService {
                 r.addProperty("node_count", g.getNodeCount());
                 r.addProperty("edge_count", g.getEdgeCount());
                 return r;
-            } catch (Exception e) { return error("Import failed: " + e.getMessage()); }
+            } catch (Exception e) {
+                return error("Import failed: " + e.getMessage());
+            }
         }
     }
 
@@ -4045,8 +4290,12 @@ public class GephiControlService {
                 r.addProperty("nodes_removed", nodeCount);
                 r.addProperty("edges_removed", edgeCount);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /** Nodes with no ties at all, which remove-isolates deletes. Reads only; call under a lock. */
@@ -4081,7 +4330,9 @@ public class GephiControlService {
                     r.addProperty("would_remove", count);
                     r.addProperty("remaining_nodes", g.getNodeCount() - count);
                     return r;
-                } finally { g.readUnlock(); }
+                } finally {
+                    g.readUnlock();
+                }
             }
             java.util.List<Node> isolates;
             lockWrite(g);
@@ -4090,12 +4341,16 @@ public class GephiControlService {
                 for (Node n : isolates) {
                     g.removeNode(n);
                 }
-            } finally { unlockWrite(g); }
+            } finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Removed " + isolates.size() + " isolated nodes");
             r.addProperty("removed", isolates.size());
             r.addProperty("remaining_nodes", g.getNodeCount());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject extractEgoNetwork(String nodeId, int depth) {
@@ -4145,13 +4400,17 @@ public class GephiControlService {
                 for (Node n : toRemove) {
                     g.removeNode(n);
                 }
-            } finally { unlockWrite(g); }
+            } finally {
+                unlockWrite(g);
+            }
 
             JsonObject r = success("Ego network extracted for " + nodeId);
             r.addProperty("kept_nodes", keep.size());
             r.addProperty("removed_nodes", toRemove.size());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject extractGiantComponent() {
@@ -4231,13 +4490,17 @@ public class GephiControlService {
                     g.removeNode(n);
                 }
             }
-            finally { unlockWrite(g); }
+            finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Giant component extracted");
             r.addProperty("kept_nodes", giantSize);
             r.addProperty("removed_nodes", toRemove.size());
             r.addProperty("component_count", componentSizes.size());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeThicknessByWeight(float minThickness, float maxThickness) {
@@ -4297,9 +4560,13 @@ public class GephiControlService {
             lockWrite(g);
             try {
                 gm.setVisibleView(null);
-            } finally { unlockWrite(g); }
+            } finally {
+                unlockWrite(g);
+            }
             return success("Filters reset - full graph view restored");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Shutdown ────────────────────────────────────────────────────
@@ -4553,8 +4820,8 @@ public class GephiControlService {
      * highlight) and set zoom. No-op modes never touch the graph write lock.
      */
     public JsonObject focusView(String mode, String nodeId, String source, String target,
-                                Double x, Double y, Double w, Double h,
-                                Double zoom, java.util.List<String> select) {
+        Double x, Double y, Double w, Double h,
+        Double zoom, java.util.List<String> select) {
         org.gephi.visualization.api.VisualizationController vc =
             Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
         if (vc == null) {
@@ -4777,7 +5044,8 @@ public class GephiControlService {
                 if (bs != null) {
                     java.util.Collections.addAll(out, bs);
                 }
-            } catch (Exception ignore) { /* some category builders need a specific state */ }
+            } catch (Exception ignore) { /* some category builders need a specific state */
+            }
         }
         return out;
     }
@@ -4791,7 +5059,10 @@ public class GephiControlService {
     private java.util.List<Map.Entry<String, FilterBuilder>> namedFilterBuilders(Workspace ws) {
         java.util.List<Map.Entry<String, FilterBuilder>> out = new java.util.ArrayList<>();
         for (FilterBuilder b : Lookup.getDefault().lookupAll(FilterBuilder.class)) {
-            try { out.add(Map.entry(plainText(b.getName()), b)); } catch (Exception ignore) {}
+            try {
+                out.add(Map.entry(plainText(b.getName()), b));
+            } catch (Exception ignore) {
+            }
         }
         for (CategoryBuilder cb : Lookup.getDefault().lookupAll(CategoryBuilder.class)) {
             try {
@@ -4804,7 +5075,8 @@ public class GephiControlService {
                     String name = plainText(b.getName());
                     out.add(Map.entry(category == null ? name : plainText(category) + ": " + name, b));
                 }
-            } catch (Exception ignore) { /* some category builders need a specific state */ }
+            } catch (Exception ignore) { /* some category builders need a specific state */
+            }
         }
         return out;
     }
@@ -4832,7 +5104,8 @@ public class GephiControlService {
                 if (byLabel == null && name.equalsIgnoreCase(e.getValue().getName())) {
                     byLabel = e.getValue();
                 }
-            } catch (Exception ignore) {}
+            } catch (Exception ignore) {
+            }
         }
         return byLabel;
     }
@@ -4880,8 +5153,14 @@ public class GephiControlService {
             FilterBuilder b = e.getValue();
             JsonObject o = new JsonObject();
             o.addProperty("name", e.getKey());
-            try { o.addProperty("category", b.getCategory() == null ? null : b.getCategory().getName()); } catch (Exception ignore) {}
-            try { o.addProperty("description", b.getDescription()); } catch (Exception ignore) {}
+            try {
+                o.addProperty("category", b.getCategory() == null ? null : b.getCategory().getName());
+            } catch (Exception ignore) {
+            }
+            try {
+                o.addProperty("description", b.getDescription());
+            } catch (Exception ignore) {
+            }
             // Introspect the filter's settable properties so callers know what params to pass.
             try {
                 Filter f = b.getFilter(ws);
@@ -4895,7 +5174,8 @@ public class GephiControlService {
                     }
                     o.add("properties", props);
                 }
-            } catch (Exception ignore) { /* introspection best-effort */ }
+            } catch (Exception ignore) { /* introspection best-effort */
+            }
             arr.add(o);
         }
         JsonObject r = success("Filters listed");
@@ -4943,7 +5223,10 @@ public class GephiControlService {
                 FilterProperty match = null;
                 if (props != null) {
                     for (FilterProperty p : props) {
-                        if (e.getKey().equalsIgnoreCase(p.getName())) { match = p; break; }
+                        if (e.getKey().equalsIgnoreCase(p.getName())) {
+                            match = p;
+                            break;
+                        }
                     }
                 }
                 if (match == null) {
@@ -4955,8 +5238,12 @@ public class GephiControlService {
                     return error("Could not coerce '" + e.getKey() + "' to " + match.getValueType().getSimpleName()
                         + " (Range wants a [lo, hi] pair)");
                 }
-                try { match.setValue(converted); }
-                catch (Exception ex) { return error("Failed to set '" + e.getKey() + "': " + ex.getMessage()); }
+                try {
+                    match.setValue(converted);
+                }
+                catch (Exception ex) {
+                    return error("Failed to set '" + e.getKey() + "': " + ex.getMessage());
+                }
             }
         }
 
@@ -4997,7 +5284,9 @@ public class GephiControlService {
                 lockWrite(lockGraph);
                 try {
                     fc.filterVisible(query);
-                } finally { unlockWrite(lockGraph); }
+                } finally {
+                    unlockWrite(lockGraph);
+                }
                 r = success("Filter applied to the visible graph");
                 r.addProperty("nodes_before", nodesBefore);
                 r.addProperty("edges_before", edgesBefore);
@@ -5020,7 +5309,9 @@ public class GephiControlService {
                 lockWrite(lockGraph);
                 try {
                     fc.exportToNewWorkspace(query);
-                } finally { unlockWrite(lockGraph); }
+                } finally {
+                    unlockWrite(lockGraph);
+                }
                 r = success("Filtered subgraph exported to a new workspace");
                 break;
             case "column":
@@ -5030,7 +5321,9 @@ public class GephiControlService {
                 lockWrite(lockGraph);
                 try {
                     fc.exportToColumn(column, query);
-                } finally { unlockWrite(lockGraph); }
+                } finally {
+                    unlockWrite(lockGraph);
+                }
                 r = success("Filter membership written to boolean column: " + column);
                 r.addProperty("column", column);
                 break;
@@ -5110,8 +5403,12 @@ public class GephiControlService {
                     return "Could not coerce '" + e.getKey() + "' to " + match.getValueType().getSimpleName()
                         + " (Range wants a [lo, hi] pair)";
                 }
-                try { match.setValue(converted); }
-                catch (Exception ex) { return "Failed to set '" + e.getKey() + "': " + ex.getMessage(); }
+                try {
+                    match.setValue(converted);
+                }
+                catch (Exception ex) {
+                    return "Failed to set '" + e.getKey() + "': " + ex.getMessage();
+                }
             }
         }
         return filter;
@@ -5134,7 +5431,7 @@ public class GephiControlService {
      */
     @SuppressWarnings("unchecked")
     public JsonObject applyFilters(java.util.List<Map<String, Object>> specs, String combine, String action,
-                                   String column, boolean dryRun) {
+        String column, boolean dryRun) {
         FilterController fc = Lookup.getDefault().lookup(FilterController.class);
         if (fc == null) {
             return error("No filter controller available");
@@ -5206,7 +5503,11 @@ public class GephiControlService {
         if (dryRun) {
             org.gephi.graph.api.GraphView view;
             lockWrite(lockGraph);
-            try { view = fc.filter(query); } finally { unlockWrite(lockGraph); }
+            try {
+                view = fc.filter(query);
+            } finally {
+                unlockWrite(lockGraph);
+            }
             Graph kept = gm.getGraph(view);
             r = success("Dry run: nothing was changed");
             r.addProperty("nodes_kept", kept.getNodeCount());
@@ -5221,11 +5522,18 @@ public class GephiControlService {
             lockWrite(lockGraph);
             try {
                 switch (act) {
-                    case "new_workspace": fc.exportToNewWorkspace(query); break;
-                    case "column": fc.exportToColumn(column, query); break;
-                    default: fc.filterVisible(query);
+                    case "new_workspace":
+                        fc.exportToNewWorkspace(query);
+                        break;
+                    case "column":
+                        fc.exportToColumn(column, query);
+                        break;
+                    default:
+                        fc.filterVisible(query);
                 }
-            } finally { unlockWrite(lockGraph); }
+            } finally {
+                unlockWrite(lockGraph);
+            }
             if (act.equals("select")) {
                 r = success("Filters applied to the visible graph");
                 boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
@@ -5262,7 +5570,7 @@ public class GephiControlService {
 
     /** {@code checkOnly}: report whether the change would be refused, without changing anything. */
     public JsonObject setTimeFromColumns(String target, String startName, String endName, String dateFormat,
-                                         boolean checkOnly) {
+        boolean checkOnly) {
         GraphModel gm = currentGraphModel();
         if (gm == null) {
             return error("No workspace open");
@@ -5294,8 +5602,12 @@ public class GephiControlService {
                 return error("The columns hold text, so give 'date_format' as a Java date pattern,"
                     + " for example \"yyyy-MM-dd\" or \"dd/MM/yyyy\"");
             }
-            try { new java.text.SimpleDateFormat(dateFormat); }
-            catch (IllegalArgumentException e) { return error("Not a date pattern: " + dateFormat); }
+            try {
+                new java.text.SimpleDateFormat(dateFormat);
+            }
+            catch (IllegalArgumentException e) {
+                return error("Not a date pattern: " + dateFormat);
+            }
         }
         if (checkOnly) {
             return success("Ready");
@@ -5317,7 +5629,9 @@ public class GephiControlService {
             }
         } catch (Exception e) {
             return error("Could not set time from the columns: " + e.getMessage());
-        } finally { unlockWrite(g); }
+        } finally {
+            unlockWrite(g);
+        }
         JsonObject r = success("Time set on " + withTime + " " + ("edge".equalsIgnoreCase(target) ? "edges" : "nodes"));
         r.addProperty("with_time", withTime);
         org.gephi.graph.api.Interval b = gm.getTimeBounds();
@@ -5340,7 +5654,7 @@ public class GephiControlService {
      * workspace stores time; an element with no time data counts as always present.
      */
     static boolean presentIn(org.gephi.graph.api.Element e, double low, double high,
-                             org.gephi.graph.api.TimeRepresentation rep) {
+        org.gephi.graph.api.TimeRepresentation rep) {
         if (rep == org.gephi.graph.api.TimeRepresentation.INTERVAL) {
             org.gephi.graph.api.Interval[] intervals = e.getIntervals();
             if (intervals.length == 0) {
@@ -5400,7 +5714,9 @@ public class GephiControlService {
                     dropEdges.add(e.getId());
                 }
             }
-        } finally { g.readUnlock(); }
+        } finally {
+            g.readUnlock();
+        }
         String name = workspaceName(source) + " " + fmtTime(low) + "–" + fmtTime(high);
         Workspace[] made = new Workspace[1];
         onProjectThread(() -> {
@@ -5417,7 +5733,9 @@ public class GephiControlService {
                         tg.removeEdge(e);
                     }
                 }
-            } finally { tg.writeUnlock(); }
+            } finally {
+                tg.writeUnlock();
+            }
             pc.renameWorkspace(made[0], name);
             pc.openWorkspace(made[0]);
             return null;
@@ -5448,7 +5766,10 @@ public class GephiControlService {
         final long tiedPaths;
 
         PathResult(java.util.List<Node> nodes, java.util.List<Edge> edges, double length, long tiedPaths) {
-            this.nodes = nodes; this.edges = edges; this.length = length; this.tiedPaths = tiedPaths;
+            this.nodes = nodes;
+            this.edges = edges;
+            this.length = length;
+            this.tiedPaths = tiedPaths;
         }
     }
 
@@ -5521,7 +5842,7 @@ public class GephiControlService {
     }
 
     public JsonObject findShortestPath(String fromId, String toId, String weighting, boolean followDirection,
-                                       String markColumn) {
+        String markColumn) {
         GraphModel gm = currentGraphModel();
         if (gm == null) {
             return error("No workspace open");
@@ -5544,7 +5865,9 @@ public class GephiControlService {
             }
             path = from == to ? new PathResult(java.util.List.of(from), java.util.List.of(), 0, 1)
                 : shortestPath(g, from, to, w, followDirection);
-        } finally { g.readUnlock(); }
+        } finally {
+            g.readUnlock();
+        }
         if (path == null) {
             JsonObject r = success("No path from " + fromId + " to " + toId
                 + (followDirection && gm.isDirected() ? " following edge directions" : ""));
@@ -5588,7 +5911,9 @@ public class GephiControlService {
                 for (Edge e : g.getEdges().toArray()) {
                     e.setAttribute(ec, onPath.contains(e));
                 }
-            } finally { unlockWrite(g); }
+            } finally {
+                unlockWrite(g);
+            }
             r.addProperty("mark_column", markColumn);
         }
         return r;
@@ -5602,13 +5927,13 @@ public class GephiControlService {
      * "fill_empty" writes {@code value} where the column is empty; "clear" empties it.
      */
     public JsonObject editColumn(String target, String columnName, String action, String value,
-                                 String type, String newName) {
+        String type, String newName) {
         return editColumn(target, columnName, action, value, type, newName, false);
     }
 
     /** {@code checkOnly}: report whether the edit would be refused, without changing anything. */
     public JsonObject editColumn(String target, String columnName, String action, String value,
-                                 String type, String newName, boolean checkOnly) {
+        String type, String newName, boolean checkOnly) {
         GraphModel gm = currentGraphModel();
         if (gm == null) {
             return error("No workspace open");
@@ -5733,7 +6058,9 @@ public class GephiControlService {
             }
         } catch (Exception e) {
             return error("Failed: " + e.getMessage());
-        } finally { unlockWrite(g); }
+        } finally {
+            unlockWrite(g);
+        }
     }
 
     private static int countValues(GraphModel gm, String target, Column col) {
@@ -5934,7 +6261,7 @@ public class GephiControlService {
             org.gephi.appearance.api.Function f = applyAppearance(ws, col, true,
                 org.gephi.appearance.plugin.PartitionElementColorTransformer.class,
                 fn -> applyPaletteToPartition(((org.gephi.appearance.api.PartitionFunction) fn).getPartition(),
-                                              fn.getGraph(), palette));
+                    fn.getGraph(), palette));
             if (f == null) {
                 return noAppearanceFunction("edge partition colouring", col);
             }
@@ -5944,7 +6271,9 @@ public class GephiControlService {
             addPaletteNote(r, palette.size());
             addViewInfo(r, gm, true);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -5983,7 +6312,9 @@ public class GephiControlService {
             r.addProperty("format", format);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     // ─── Timeline / dynamic (Group G) ────────────────────────────────
@@ -6008,7 +6339,9 @@ public class GephiControlService {
                 r.addProperty("time_max", b.getHigh());
             }
             r.addProperty("time_format", String.valueOf(gm.getTimeFormat()));
-        } catch (Exception e) { r.addProperty("bounds_error", e.getMessage()); }
+        } catch (Exception e) {
+            r.addProperty("bounds_error", e.getMessage());
+        }
         org.gephi.timeline.api.TimelineController tc =
             Lookup.getDefault().lookup(org.gephi.timeline.api.TimelineController.class);
         if (tc != null) {
@@ -6030,7 +6363,9 @@ public class GephiControlService {
                         r.addProperty("interval_end", tm.getIntervalEnd());
                     }
                 }
-            } catch (Exception e) { r.addProperty("timeline_error", e.getMessage()); }
+            } catch (Exception e) {
+                r.addProperty("timeline_error", e.getMessage());
+            }
         } else {
             r.addProperty("timeline_controller", "unavailable");
         }

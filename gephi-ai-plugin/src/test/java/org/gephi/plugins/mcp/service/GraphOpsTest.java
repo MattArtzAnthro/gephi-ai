@@ -332,9 +332,13 @@ class GraphOpsTest {
     void batchAddHonorsPerEdgeType() {
         GraphModel gm = modelWithNodes("a", "b");
         Map<String, Object> e1 = new LinkedHashMap<>();
-        e1.put("source", "a"); e1.put("target", "b"); e1.put("edge_type", "cites");
+        e1.put("source", "a");
+        e1.put("target", "b");
+        e1.put("edge_type", "cites");
         Map<String, Object> e2 = new LinkedHashMap<>();
-        e2.put("source", "a"); e2.put("target", "b"); e2.put("edge_type", "coauthor");
+        e2.put("source", "a");
+        e2.put("target", "b");
+        e2.put("edge_type", "coauthor");
         JsonObject r = GephiControlService.addEdgesToModel(gm, List.of(e1, e2));
         assertEquals(2, r.get("added").getAsInt());
         assertEquals(2, gm.getGraph().getEdgeCount());

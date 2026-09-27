@@ -46,7 +46,7 @@ class NodeSearchTest {
     }
 
     private static List<String> find(GraphModel gm, String column, String value, String contains,
-                                     Double min, Double max) {
+        Double min, Double max) {
         Column col = GephiControlService.findColumn(gm.getNodeTable(), column);
         Predicate<Node> keep = GephiControlService.nodeMatcher(col, value, contains, min, max);
         return gm.getGraph().getNodes().toCollection().stream().filter(keep)

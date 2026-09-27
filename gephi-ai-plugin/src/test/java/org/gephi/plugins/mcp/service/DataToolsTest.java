@@ -54,7 +54,7 @@ class DataToolsTest {
         gm.getNodeTable().addColumn("joined", Integer.class);
         Graph g = gm.getUndirectedGraph();
         Object[][] rows = {{"a", "x", "1.5", 1990}, {"b", "x", "oops", 1994}, {"c", "y", null, 1998},
-                           {"d", "y", "4", 1999}, {"e", "x", "2", 1991}};
+            {"d", "y", "4", 1999}, {"e", "x", "2", 1991}};
         for (Object[] row : rows) {
             Node n = gm.factory().newNode(row[0]);
             n.setAttribute("group", row[1]);
@@ -146,7 +146,7 @@ class DataToolsTest {
         Map<String, Object> degree3 = Map.of("name", "Degree Range", "params", Map.of("range", List.of(3, 100)));
         Map<String, Object> groupX = Map.of("name", "Equal: group String (Node)", "params", Map.of("pattern", "x"));
         Map<String, Object> notX = Map.of("name", "Equal: group String (Node)", "params", Map.of("pattern", "x"),
-                                          "exclude", true);
+            "exclude", true);
 
         // degree 3: b, c, e. group x: a, b, e.
         assertEquals(2, kept(service.applyFilters(List.of(degree3, groupX), "all", null, null, true)));

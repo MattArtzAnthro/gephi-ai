@@ -46,19 +46,42 @@ class AppearancePanelTest {
         final List<Object> values;
         final Map<Object, Color> colors = new HashMap<>();
 
-        FakePartition(Object... values) { this.values = List.of(values); }
+        FakePartition(Object... values) {
+            this.values = List.of(values);
+        }
 
-        @Override public Collection getValues(Graph g) { return values; }
-        @Override public Collection getSortedValues(Graph g) { return values; }
-        @Override public int getElementCount(Graph g) { return values.size(); }
-        @Override public int count(Object v, Graph g) { return 1; }
-        @Override public Object getValue(Element e, Graph g) { return null; }
-        @Override public Color getColor(Object v) { return colors.get(v); }
-        @Override public void setColor(Object v, Color c) { colors.put(v, c); }
-        @Override public void setColors(Graph g, Color[] c) {}
-        @Override public float percentage(Object v, Graph g) { return 0; }
-        @Override public int size(Graph g) { return values.size(); }
-        @Override public Column getColumn() { return null; }
+        @Override public Collection getValues(Graph g) {
+            return values;
+        }
+        @Override public Collection getSortedValues(Graph g) {
+            return values;
+        }
+        @Override public int getElementCount(Graph g) {
+            return values.size();
+        }
+        @Override public int count(Object v, Graph g) {
+            return 1;
+        }
+        @Override public Object getValue(Element e, Graph g) {
+            return null;
+        }
+        @Override public Color getColor(Object v) {
+            return colors.get(v);
+        }
+        @Override public void setColor(Object v, Color c) {
+            colors.put(v, c);
+        }
+        @Override public void setColors(Graph g, Color[] c) {
+        }
+        @Override public float percentage(Object v, Graph g) {
+            return 0;
+        }
+        @Override public int size(Graph g) {
+            return values.size();
+        }
+        @Override public Column getColumn() {
+            return null;
+        }
     }
 
     @Test

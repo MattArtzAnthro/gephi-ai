@@ -67,7 +67,7 @@ public class GephiAPIServer implements HttpHandler {
             // is how a malicious web page would try to reach 127.0.0.1 via a rebound
             // hostname. Requests with no Host header (e.g. raw curl) are allowed.
             if (!isNonBrowserRequest(exchange.getRequestHeaders().getFirst("Origin"),
-                                     exchange.getRequestHeaders().getFirst("Sec-Fetch-Site"))) {
+                exchange.getRequestHeaders().getFirst("Sec-Fetch-Site"))) {
                 JsonObject error = new JsonObject();
                 error.addProperty("success", false);
                 error.addProperty("error", "Forbidden: this API is not reachable from a browser");
@@ -948,7 +948,7 @@ public class GephiAPIServer implements HttpHandler {
         if ("/export/gexf".equals(uri) && "POST".equals(method)) {
             // no "file" (or inline:true) -> return the GEXF as a string in "content"
             if (body == null || !body.has("file")
-                    || (body.has("inline") && body.get("inline").getAsBoolean())) {
+                || (body.has("inline") && body.get("inline").getAsBoolean())) {
                 return service.exportGexfContent(visibleBody(body, true));
             }
             return service.exportGexf(body.get("file").getAsString(), visibleBody(body, true));
@@ -1060,7 +1060,11 @@ public class GephiAPIServer implements HttpHandler {
         if (v == null || v.isBlank()) {
             return null;
         }
-        try { return Double.parseDouble(v.trim()); } catch (NumberFormatException e) { return null; }
+        try {
+            return Double.parseDouble(v.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     static boolean visibleParam(Map<String, String> params, boolean dflt) {
@@ -1130,7 +1134,8 @@ public class GephiAPIServer implements HttpHandler {
             if (module != null && module.getSpecificationVersion() != null) {
                 return module.getSpecificationVersion().toString();
             }
-        } catch (Throwable ignore) { /* outside Gephi's module system */ }
+        } catch (Throwable ignore) { /* outside Gephi's module system */
+        }
         try {
             java.net.URL jar = api.getProtectionDomain().getCodeSource().getLocation();
             try (java.util.jar.JarFile f = new java.util.jar.JarFile(new java.io.File(jar.toURI()))) {
@@ -1165,8 +1170,12 @@ public class GephiAPIServer implements HttpHandler {
         if (value == null) {
             return defaultValue;
         }
-        try { return Integer.parseInt(value); }
-        catch (NumberFormatException e) { return defaultValue; }
+        try {
+            return Integer.parseInt(value);
+        }
+        catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     private JsonObject errorResult(String message) {

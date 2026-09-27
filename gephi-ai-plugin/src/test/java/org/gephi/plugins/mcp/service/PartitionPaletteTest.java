@@ -65,7 +65,7 @@ class PartitionPaletteTest {
     @Test
     void theFirstEightGroupsGetTheValidatedColoursInSizeOrder() {
         int[][] validated = {{42, 120, 214}, {237, 161, 0}, {0, 131, 0}, {232, 123, 164},
-                             {74, 58, 167}, {227, 73, 72}, {27, 175, 122}, {235, 104, 52}};
+            {74, 58, 167}, {227, 73, 72}, {27, 175, 122}, {235, 104, 52}};
         Map<String, Integer> counts = new HashMap<>();
         for (int i = 0; i < 8; i++) {
             counts.put("g" + i, 10 + i);

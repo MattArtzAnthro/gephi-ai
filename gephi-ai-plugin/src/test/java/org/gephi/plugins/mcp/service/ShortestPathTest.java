@@ -54,7 +54,7 @@ class ShortestPathTest {
     }
 
     private static GephiControlService.PathResult path(GraphModel gm, String from, String to,
-                                                       String weighting, boolean follow) {
+        String weighting, boolean follow) {
         Graph g = gm.getGraph();
         return GephiControlService.shortestPath(g, g.getNode(from), g.getNode(to), weighting, follow);
     }

@@ -40,9 +40,9 @@ public final class BindFailureNotifier {
             return;
         }
         NotifyDescriptor descriptor =
-                new NotifyDescriptor.Message(message, NotifyDescriptor.ERROR_MESSAGE);
+            new NotifyDescriptor.Message(message, NotifyDescriptor.ERROR_MESSAGE);
         descriptor.setTitle(NbBundle.getMessage(BindFailureNotifier.class,
-                "BindFailureNotifier.title"));
+            "BindFailureNotifier.title"));
         DialogDisplayer.getDefault().notifyLater(descriptor);
     }
 }

@@ -34,14 +34,22 @@ class PanelResultTest {
 
     static class Quality implements Statistics {
         final double value;
-        Quality(double value) { this.value = value; }
-        @Override public void execute(GraphModel graphModel) { }
-        @Override public String getReport() { return ""; }
+        Quality(double value) {
+            this.value = value;
+        }
+        @Override public void execute(GraphModel graphModel) {
+        }
+        @Override public String getReport() {
+            return "";
+        }
     }
 
     static class Other implements Statistics {
-        @Override public void execute(GraphModel graphModel) { }
-        @Override public String getReport() { return ""; }
+        @Override public void execute(GraphModel graphModel) {
+        }
+        @Override public String getReport() {
+            return "";
+        }
     }
 
     static class QualityUI implements StatisticsUI {
@@ -59,21 +67,37 @@ class PanelResultTest {
             }
             return shown == null || shown.isBlank() ? shown : shown + " for " + ((Quality) statistics).value;
         }
-        @Override public JPanel getSettingsPanel() { return null; }
-        @Override public void setup(Statistics statistics) { }
-        @Override public void unsetup() { }
-        @Override public Class<? extends Statistics> getStatisticsClass() { return forClass; }
-        @Override public String getValue() { return "stale"; }
-        @Override public String getDisplayName() { return "Quality"; }
-        @Override public String getShortDescription() { return ""; }
-        @Override public String getCategory() { return StatisticsUI.CATEGORY_NETWORK_OVERVIEW; }
-        @Override public int getPosition() { return 0; }
+        @Override public JPanel getSettingsPanel() {
+            return null;
+        }
+        @Override public void setup(Statistics statistics) {
+        }
+        @Override public void unsetup() {
+        }
+        @Override public Class<? extends Statistics> getStatisticsClass() {
+            return forClass;
+        }
+        @Override public String getValue() {
+            return "stale";
+        }
+        @Override public String getDisplayName() {
+            return "Quality";
+        }
+        @Override public String getShortDescription() {
+            return "";
+        }
+        @Override public String getCategory() {
+            return StatisticsUI.CATEGORY_NETWORK_OVERVIEW;
+        }
+        @Override public int getPosition() {
+            return 0;
+        }
     }
 
     @Test
     void theUiForTheStatisticGivesItsResultForThisRun() {
         List<StatisticsUI> uis = List.of(new QualityUI(Other.class, "wrong", false),
-                                         new QualityUI(Quality.class, "Q", false));
+            new QualityUI(Quality.class, "Q", false));
         assertEquals("Q for 0.5", GephiControlService.panelResult(new Quality(0.5), uis));
     }
 

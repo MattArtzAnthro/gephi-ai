@@ -88,7 +88,7 @@ class ImportRoundTripTest {
             float y = (Float) row[2];
             float size = (Float) row[3];
             if (Math.abs(n.x() - x) > TOLERANCE || Math.abs(n.y() - y) > TOLERANCE
-                    || Math.abs(n.size() - size) > TOLERANCE) {
+                || Math.abs(n.size() - size) > TOLERANCE) {
                 mismatches.append(String.format(
                     "%n  %s: file (%.2f, %.2f) size %.2f, imported (%.2f, %.2f) size %.2f",
                     row[0], x, y, size, n.x(), n.y(), n.size()));

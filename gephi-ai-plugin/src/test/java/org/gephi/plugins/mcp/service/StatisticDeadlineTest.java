@@ -39,8 +39,12 @@ class StatisticDeadlineTest {
                 Thread.onSpinWait();
             }
         }
-        @Override public boolean cancel() { cancelled.set(true); return true; }
-        @Override public void setProgressTicket(ProgressTicket t) {}
+        @Override public boolean cancel() {
+            cancelled.set(true);
+            return true;
+        }
+        @Override public void setProgressTicket(ProgressTicket t) {
+        }
     }
 
     @Test
@@ -58,7 +62,8 @@ class StatisticDeadlineTest {
     @Test
     void aTaskThatFinishesInTimeIsNotReportedAsStoppedOrCancelledLater() throws Exception {
         Spinner s = new Spinner();
-        boolean stopped = GephiControlService.runWithDeadline(() -> {}, s, 200);
+        boolean stopped = GephiControlService.runWithDeadline(() -> {
+        }, s, 200);
         Thread.sleep(400);
 
         assertFalse(stopped);
@@ -68,7 +73,8 @@ class StatisticDeadlineTest {
     @Test
     void noDeadlineMeansNoWatchdog() {
         Spinner s = new Spinner();
-        assertFalse(GephiControlService.runWithDeadline(() -> {}, s, 0));
+        assertFalse(GephiControlService.runWithDeadline(() -> {
+        }, s, 0));
         assertFalse(s.cancelled.get());
     }
 }
