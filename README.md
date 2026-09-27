@@ -183,16 +183,21 @@ AI assistant  →  MCP server (Python)  →  HTTP on 127.0.0.1:8080  →  Gephi 
 
 ## Development
 
-The Gephi plugin needs JDK 11 or newer and Maven:
+The Gephi plugin needs JDK 17 or newer (Gephi 0.11.3's libraries are Java 17) and Maven:
 
 ```bash
 cd gephi-ai-plugin
-mvn clean package    # builds target/gephi-ai-<version>.nbm and copies it into Gephi's modules folder
+mvn clean package    # builds target/gephi-ai-<version>.nbm and copies its jar into Gephi's modules folder
 ```
 
-Fully quit and reopen Gephi after every rebuild. Replacing the plugin while Gephi runs can crash it without a clear error.
+Fully quit and reopen Gephi after every rebuild. Replacing the plugin while Gephi runs can crash it without a clear error. The build copies only the module jar; when the bundled libraries change, install the whole `.nbm` (RELEASING.md, step 3).
 
-The MCP server is a standard Python package in `mcp-server/`, tested with `pytest` and linted with `ruff`. Release steps are in [RELEASING.md](RELEASING.md).
+Every build checks the plugin before it compiles and tests it:
+
+- **Checkstyle** runs with Gephi core's own configuration (`gephi-ai-plugin/checkstyle.xml`), and any violation fails the build.
+- **`SourceRulesTest`** holds the rules that keep the plugin from freezing Gephi: graph locks released in `finally`, no loops over live graph iterators, no project changes or graph reads on the interface thread, named daemon threads, and the licence header on every file.
+
+The MCP server is a standard Python package in `mcp-server/`, tested with `pytest`, linted with `ruff`, and type-checked with `mypy`. The release scripts are checked with `shellcheck`, and the CI workflow with `actionlint`. On a pull request, CI also runs `scripts/check-fix-tests.sh`, which warns about a `fix` commit that changes no test. The live smoke test (`mcp-server/tests/live_smoke_test.py`) drives every tool against a running Gephi; its docstring gives the command for a separate test Gephi. Release steps are in [RELEASING.md](RELEASING.md).
 
 ## Citation
 

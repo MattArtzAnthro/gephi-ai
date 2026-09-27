@@ -115,7 +115,7 @@ def _semver(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3])
 
 
-def _is_behind(installed: str, latest: str) -> bool:
+def _is_behind(installed: str | None, latest: str | None) -> bool:
     if not installed or not latest:
         return False
     try:
@@ -764,7 +764,7 @@ async def _discard_late_copy(before_ids: set[Any], orig: dict[str, Any]) -> dict
     while True:
         wss = await _workspaces()
         new = _new_ids(before_ids, wss) if wss is not None else []
-        if len(new) == 1:
+        if wss is not None and len(new) == 1:
             candidate = next(w for w in wss if w.get("id") == new[0])
             if not _looks_like_copy(candidate, orig):
                 return {"on_original": _is_current(wss, orig_id),
@@ -2550,6 +2550,8 @@ async def gephi_export_legend(file: str) -> str:
         resolved.append({**item, "groups": groups} if groups else item)
 
     document = legend_document(resolved)
+    if document is None:  # cannot happen: resolved holds every item, and items is not empty
+        return fmt({"success": False, "error": "Nothing to put in a legend."})
     try:
         Path(file).write_text(document, encoding="utf-8")
     except OSError as exc:

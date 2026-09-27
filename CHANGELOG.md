@@ -17,7 +17,13 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   and every Java file carries the licence header.
 - **Fix commits carry tests:** `scripts/check-fix-tests.sh`, run on pull requests, warns about a
   `fix` commit that changes no test.
+- **Type checking and script checks.** `mypy` runs in CI; it had been configured but could not
+  parse numpy's stubs at the 3.10 target, so it never ran. Its findings are fixed. The release
+  scripts pass `shellcheck` and the CI workflow passes `actionlint`, both now in CI.
 - Two Javadoc comments that had drifted off their methods are back in place.
+- The docs cover the checks. The README's Development section had said JDK 11; Gephi 0.11.3's
+  libraries need JDK 17. The tool reference now describes `gephi_version`, `panel_result`,
+  colouring under a filter, and the screenshot change from 1.21.0.
 
 ## MCP server 1.21.0 / Java plugin 1.5.0 / workflow packages 1.19.0
 

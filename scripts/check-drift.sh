@@ -17,8 +17,7 @@
 #                                        # origin/main. Never touches git commit/
 #                                        # push/publish — those stay manual.
 set -uo pipefail
-cd "$(dirname "$0")/.."
-REPO="$(pwd)"
+cd "$(dirname "$0")/.." || exit 1
 
 FIX_CLONES=0
 [ "${1:-}" = "--fix-clones" ] && FIX_CLONES=1
@@ -35,7 +34,7 @@ echo "-- dev repo --"
 DIRTY="$(git status --porcelain)"
 if [ -n "$DIRTY" ]; then
   note "uncommitted changes present:"
-  echo "$DIRTY" | sed 's/^/      /'
+  while IFS= read -r line; do echo "      $line"; done <<< "$DIRTY"
 else
   ok "working tree clean"
 fi
@@ -110,12 +109,12 @@ echo ""
 # single download path now, so the check is inverted: finding one here means someone
 # reintroduced a copy that will drift the same way.
 echo "-- repo-root .nbm --"
-ROOT_NBM_COUNT=$(ls -1 gephi-ai-*.nbm 2>/dev/null | wc -l | tr -d ' ')
+ROOT_NBM_COUNT=$(find . -maxdepth 1 -name 'gephi-ai-*.nbm' | wc -l | tr -d ' ')
 if [ "$ROOT_NBM_COUNT" = "0" ]; then
   ok "no .nbm at the repo root; releases are the single download path"
 else
   note "$ROOT_NBM_COUNT .nbm at the repo root. Binaries here go stale and stay in git history forever — attach it to the GitHub release instead:"
-  ls -1 gephi-ai-*.nbm | sed 's/^/      /'
+  find . -maxdepth 1 -name 'gephi-ai-*.nbm' | sed 's|^\./|      |'
 fi
 echo ""
 

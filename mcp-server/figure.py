@@ -312,7 +312,7 @@ def compose(map_image: Image.Image, title: str, subtitle: str | None,
     """Lays out title, map and legend on one canvas and trims the surplus."""
     scaled = map_image.convert("RGB")
     scaled = scaled.resize((map_width, max(1, int(scaled.height * map_width / scaled.width))),
-                           Image.LANCZOS)
+                           Image.Resampling.LANCZOS)
     top = 215 if subtitle else 165
     height = max(scaled.height + top, _legend_height(channels, notes) + top) + pad
     width = pad + map_width + 50 + legend_width + pad
@@ -354,7 +354,7 @@ def detail_page(map_image: Image.Image, boxes: dict[str, tuple[int, int, int, in
             continue
         scale = min(cell / crop.width, cell / crop.height)
         crop = crop.resize((max(1, int(crop.width * scale)), max(1, int(crop.height * scale))),
-                           Image.LANCZOS)
+                           Image.Resampling.LANCZOS)
         cx = pad + (i % columns) * (cell + 50)
         cy = top + (i // columns) * (cell + 90)
         tile = Image.new("RGB", (cell, cell), "white")
@@ -377,7 +377,7 @@ def letter_page(image: Image.Image, dpi: int = 300, margin_in: float = 0.5) -> I
     return sheet
 
 
-def write(pages: Iterable[Image.Image], base: Path, dpi: int = 300) -> dict[str, str]:
+def write(pages: Iterable[Image.Image], base: Path, dpi: int = 300) -> dict[str, str | int]:
     """Writes the first page as PNG and every page into one PDF of US Letter sheets."""
     pages = list(pages)
     png = base.with_suffix(".png")

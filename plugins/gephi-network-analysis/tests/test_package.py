@@ -5,7 +5,6 @@ from pathlib import Path
 
 import yaml
 
-
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
@@ -180,6 +179,13 @@ class CodexPluginPackageTests(unittest.TestCase):
         server = (REPO_ROOT / "mcp-server/gephi_mcp.py").read_text(encoding="utf-8")
         registered = set(re.findall(r'@_tool\(name="(gephi_[a-z0-9_]+)"', server))
         self.assertTrue(registered, "found no @_tool registrations to compare against")
+        # Reply fields that share the prefix, as in mcp-server/tests/test_repo_docs.py. Each
+        # must really be a field, not a misremembered tool.
+        reply_fields = {"gephi_version"}
+        java = "\n".join(p.read_text(encoding="utf-8")
+                         for p in (REPO_ROOT / "gephi-ai-plugin/src/main/java").rglob("*.java"))
+        self.assertTrue(all(f'"{f}"' in java for f in reply_fields), "a listed reply field is not in the plugin")
+        registered |= reply_fields
         for path in sorted((PLUGIN_ROOT / "skills").rglob("*.md")):
             named = set(re.findall(r"\bgephi_[a-z0-9_]+", path.read_text(encoding="utf-8")))
             unknown = named - registered

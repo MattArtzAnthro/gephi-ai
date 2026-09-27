@@ -147,6 +147,12 @@ def test_no_skill_or_reference_names_a_tool_that_does_not_exist():
     server = (REPO / "mcp-server" / "gephi_mcp.py").read_text(encoding="utf-8")
     registered = set(re.findall(r'@_tool\(name="(gephi_[a-z0-9_]+)"', server))
     assert registered, "found no @_tool registrations to compare against"
+    # Reply fields that share the prefix. Each must really be a field, not a misremembered tool.
+    reply_fields = {"gephi_version"}
+    java = "\n".join(p.read_text(encoding="utf-8")
+                     for p in (REPO / "gephi-ai-plugin" / "src" / "main" / "java").rglob("*.java"))
+    assert all(f'"{f}"' in java for f in reply_fields), "a listed reply field is not in the plugin"
+    registered |= reply_fields
 
     surfaces = list((REPO / "plugins" / "claude-code").rglob("*.md"))
     assert surfaces, "found no Claude plugin markdown to check"
