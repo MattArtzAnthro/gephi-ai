@@ -578,6 +578,41 @@ async def main():
           "[whatif] path length and the largest component's share are diffed",
           diffed or what.get("detail", what.get("error")))
 
+    # Colouring goes through Gephi's Appearance API, as the panel's Apply button does: with a
+    # filter on, only the visible nodes change. PDFs are US Letter, turned to suit the layout.
+    # A statistic reports the line Gephi's Statistics panel shows for it.
+    async def rgb(node_id):
+        n = json.loads(await g.gephi_get_node(node_id))
+        n = n.get("node", n)
+        c = n.get("color", n)
+        return (c.get("r"), c.get("g"), c.get("b"))
+
+    await g.gephi_new_workspace()
+    await g.gephi_add_nodes([{"id": i, "label": i, "attributes": {"grp": grp}}
+                             for i, grp in (("a", "x"), ("b", "x"), ("c", "y"), ("d", "y"))])
+    await g.gephi_add_edges([{"source": "a", "target": "b"}, {"source": "b", "target": "c"}])
+    await g.gephi_batch_set_positions([{"id": "a", "x": -400, "y": 0}, {"id": "b", "x": 400, "y": 40},
+                                       {"id": "c", "x": 0, "y": -20}, {"id": "d", "x": 10, "y": 10}])
+    hidden_before = await rgb("d")
+    await g.gephi_apply_filter("Giant Component", action="visible")
+    scoped = json.loads(await g.gephi_color_by_partition("grp"))
+    check(scoped.get("filter_active") is True and scoped.get("view") == "visible"
+          and await rgb("d") == hidden_before and await rgb("a") != hidden_before,
+          "[appearance] with a filter on, colouring changes only the visible nodes",
+          {k: scoped.get(k) for k in ("message", "view", "filter_active", "error")})
+    await g.gephi_reset_filters()
+    wide = json.loads(await g.gephi_export_pdf("/tmp/smoke_wide.pdf"))
+    await g.gephi_batch_set_positions([{"id": "a", "x": 0, "y": -400}, {"id": "b", "x": 40, "y": 400},
+                                       {"id": "c", "x": -20, "y": 0}, {"id": "d", "x": 10, "y": 10}])
+    tall = json.loads(await g.gephi_export_pdf("/tmp/smoke_tall.pdf"))
+    check("landscape" in wide.get("page", "") and "portrait" in tall.get("page", ""),
+          "[pdf] US Letter, landscape for a wide layout and portrait for a tall one",
+          (wide.get("page"), tall.get("page"), wide.get("error"), tall.get("error")))
+    density = json.loads(await g.gephi_run_statistic("Density"))
+    check(density.get("success") is True and density.get("panel_result"),
+          "[statistics] the Statistics panel's result line is reported",
+          (density.get("panel_result"), density.get("error")))
+
     # Gephi's own log: this run must add no interface-thread warnings (Gephi 0.11.3 says
     # those become errors) and no errors raised inside Gephi.
     log_after = gephi_log()

@@ -141,14 +141,30 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
             behind.append({"component": "gephi-ai plugin + server",
                            "installed": __version__, "latest": latest["server"]})
         nbm = health.get("version")  # Gephi plugin version from /health
+        # The Gephi the newest plugin needs. Gephi refuses to install a plugin built for a
+        # newer Gephi, so an older Gephi has to be updated first.
+        needs = latest.get("nbm_needs_gephi")
+        gephi_version = health.get("gephi_version")  # plugins before 1.5.0 do not send it
+        first = ""
         if _is_behind(nbm, latest.get("nbm")):
-            behind.append({"component": "Gephi Desktop plugin (.nbm)",
-                           "installed": nbm, "latest": latest["nbm"]})
+            entry = {"component": "Gephi Desktop plugin (.nbm)",
+                     "installed": nbm, "latest": latest["nbm"]}
+            if needs:
+                entry["needs_gephi"] = needs
+                if gephi_version and _is_behind(gephi_version, needs):
+                    first = (f"Update Gephi to {needs} or newer first (this is Gephi "
+                             f"{gephi_version}; download it from gephi.org), then the "
+                             "plugin: Gephi will not install it on an older version. ")
+                elif not gephi_version:
+                    first = (f"The newest Gephi plugin needs Gephi {needs} or newer: check "
+                             "Help > About in Gephi and update Gephi from gephi.org first "
+                             "if it is older. ")
+            behind.append(entry)
         if behind:
             result = {
                 "available": True,
                 "behind": behind,
-                "how_to_update": (
+                "how_to_update": first + (
                     "Claude Code: run `claude plugin update "
                     "gephi-network-analysis@gephi-ai`, then restart. "
                     "Claude Desktop: download the newest .mcpb from the Releases "
@@ -851,7 +867,8 @@ async def gephi_health_check() -> str:
     Also reports `server_version` (the MCP server) alongside `version` (the Gephi
     plugin), plus a freshness signal checked once per session: `update` when the
     install is behind the latest release (tell the user once, plainly, with the
-    how_to_update step), or `up_to_date: true` when it is current. Neither appears
+    how_to_update step; when the newest Gephi plugin needs a newer Gephi, that step says to
+    update Gephi first), or `up_to_date: true` when it is current. Neither appears
     if the check can't reach the network (then say nothing about versions).
     """
     health = await gephi.request("GET", "/health")
@@ -2040,6 +2057,9 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
     node/edge columns as usual (check gephi_list_columns, then size or color by
     the new column). This is the plugin-ecosystem passthrough: install a metric
     plugin in Gephi (Tools > Plugins) and it is immediately runnable here.
+    `panel_result` (plugin 1.5.0+) is the line Gephi's Statistics panel shows for the run,
+    when the statistic gives one: the headline for a plugin metric with no named field in the
+    reply. It is display text and may be rounded; prefer the named fields when both exist.
 
     Plugin statistics configured by a UI dialog usually NEED params (their
     fields start null/zero). Verified example, the CWTS Leiden plugin:
@@ -2549,7 +2569,7 @@ async def gephi_export_figure(
     width: int = 2400,
     height: int = 2400,
 ) -> str:
-    """Write the map and its legend as one figure, as a PDF and a PNG at 300 dpi.
+    """Write the map and its legend as one figure, as a PDF on US Letter pages and a PNG at 300 dpi.
 
     gephi_export_png writes a map with no key and gephi_export_legend writes a key with no
     map; joining them has been left to whoever is driving, so the caveats that make a figure
@@ -2838,10 +2858,10 @@ async def gephi_export_screenshot(file: str, scale: int = 2, transparent_backgro
                                               "transparent_background": transparent_background}))
 
 @_tool(name="gephi_export_pdf")
-async def gephi_export_pdf(file: str, width: int | None = None, height: int | None = None) -> str:
-    """Export the graph visualization as PDF (page size auto-detected if omitted)."""
-    return fmt(await gephi.request("POST", "/export/pdf",
-                                   json_data=_body(file=file, width=width, height=height)))
+async def gephi_export_pdf(file: str) -> str:
+    """Export the graph visualization as a PDF on a US Letter page: landscape (11 x 8.5 in) when
+    the layout is wider than it is tall, portrait (8.5 x 11 in) otherwise."""
+    return fmt(await gephi.request("POST", "/export/pdf", json_data={"file": file}))
 
 @_tool(name="gephi_export_svg")
 async def gephi_export_svg(file: str) -> str:

@@ -62,9 +62,15 @@ if [ -n "$NEW_JAVA" ] && [ "$NEW_JAVA" != "$OLD_JAVA" ]; then
   echo "java    $OLD_JAVA -> $NEW_JAVA"
   sedi "s|<version>$OLD_JAVA</version>|<version>$NEW_JAVA</version>|" gephi-ai-plugin/pom.xml
   sedi "s/gephi-ai-$OLD_JAVA\.nbm/gephi-ai-$NEW_JAVA.nbm/g" README.md
-  sedi "s/Gephi AI Plugin ($OLD_JAVA+)/Gephi AI Plugin ($NEW_JAVA+)/" plugins/claude-code/skills/gephi/SKILL.md
+  # Any version, not just OLD_JAVA: matching only the current one let this line fall behind once
+  # and then never match again.
+  sedi -E "s/Gephi AI Plugin \([0-9]+\.[0-9]+\.[0-9]+\+\)/Gephi AI Plugin ($NEW_JAVA+)/" plugins/claude-code/skills/gephi/SKILL.md
   jset latest.json nbm "$NEW_JAVA"
 fi
+# The Gephi the plugin is built against is the oldest Gephi that will install it; the health
+# check reads it before advising a plugin update.
+GEPHI_MIN=$(grep -m1 -oE '<gephi.version>[^<]+' gephi-ai-plugin/pom.xml | sed 's/<gephi.version>//')
+[ -n "$NEW_JAVA" ] && jset latest.json nbm_needs_gephi "$GEPHI_MIN"
 
 if [ -n "$NEW_PLUGIN" ] && [ "$NEW_PLUGIN" != "$OLD_PLUGIN" ]; then
   echo "plugin  $OLD_PLUGIN -> $NEW_PLUGIN"
@@ -109,6 +115,8 @@ else
 fi
 check "README nbm"         "$(grep -oE 'gephi-ai-[0-9.]+\.nbm' README.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
 check "latest.json nbm"    "$(python3 -c "import json;print(json.load(open('latest.json'))['nbm'])")" "$J"
+check "SKILL plugin minimum" "$(grep -oE 'Gephi AI Plugin \([0-9.]+\+\)' plugins/claude-code/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
+check "latest.json nbm_needs_gephi" "$(python3 -c "import json;print(json.load(open('latest.json')).get('nbm_needs_gephi', ''))")" "$GEPHI_MIN"
 check "SKILL version"      "$(grep -m1 'version:' plugins/claude-code/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
 check "Codex manifest"     "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.codex-plugin/plugin.json'))['version'])")" "$P"
 check "Codex SKILL"        "$(grep -m1 'version:' plugins/gephi-network-analysis/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"

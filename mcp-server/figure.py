@@ -365,12 +365,25 @@ def detail_page(map_image: Image.Image, boxes: dict[str, tuple[int, int, int, in
     return canvas
 
 
+def letter_page(image: Image.Image, dpi: int = 300, margin_in: float = 0.5) -> Image.Image:
+    """Centres an image on a US Letter sheet, landscape when the image is wider than tall."""
+    wide = image.width > image.height
+    sheet = Image.new("RGB", (int((11 if wide else 8.5) * dpi), int((8.5 if wide else 11) * dpi)), "white")
+    room_w, room_h = sheet.width - 2 * margin_in * dpi, sheet.height - 2 * margin_in * dpi
+    scale = min(room_w / image.width, room_h / image.height)
+    fitted = image.convert("RGB").resize(
+        (max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
+    sheet.paste(fitted, ((sheet.width - fitted.width) // 2, (sheet.height - fitted.height) // 2))
+    return sheet
+
+
 def write(pages: Iterable[Image.Image], base: Path, dpi: int = 300) -> dict[str, str]:
-    """Writes the first page as PNG and every page into one PDF."""
+    """Writes the first page as PNG and every page into one PDF of US Letter sheets."""
     pages = list(pages)
     png = base.with_suffix(".png")
     pdf = base.with_suffix(".pdf")
     pages[0].save(png, dpi=(dpi, dpi))
-    pages[0].save(pdf, "PDF", resolution=float(dpi),
-                  save_all=len(pages) > 1, append_images=pages[1:])
+    sheets = [letter_page(p, dpi) for p in pages]
+    sheets[0].save(pdf, "PDF", resolution=float(dpi),
+                   save_all=len(sheets) > 1, append_images=sheets[1:])
     return {"png": str(png), "pdf": str(pdf), "pages": len(pages)}

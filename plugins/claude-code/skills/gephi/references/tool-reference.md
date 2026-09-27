@@ -640,7 +640,8 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_export_pdf
 - **Method**: POST `/export/pdf`
-- **Params**: `{file: str, width?: int, height?: int}`
+- **Params**: `{file: str}`
+- **Notes**: Always a US Letter page, landscape (11 x 8.5 in) when the layout is wider than it is tall and portrait (8.5 x 11 in) otherwise; the reply's `page` says which. Plugins before 1.5.0 write A4.
 
 ### gephi_export_svg
 - **Method**: POST `/export/svg`

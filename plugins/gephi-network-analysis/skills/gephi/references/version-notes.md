@@ -7,7 +7,8 @@ item applies.
 
 ## Gephi Desktop
 
-- **0.11.1 or later** is required. It adds the `harmonicclosnesscentrality` column (from
+- **0.11.3 or later** is required by plugin 1.5.0 and later; earlier plugins run on **0.11.1
+  or later**. 0.11.1 adds the `harmonicclosnesscentrality` column (from
   `gephi_compute_betweenness`) and the label preview settings `node.label.avoidOverlap` and
   `node.label.overlapGridSize`.
 - **0.11.2 and earlier, on macOS:** opening the Overview tab can freeze Gephi (force-quit to
@@ -43,3 +44,9 @@ item applies.
   (`appearance_panel` in the reply says whether it was set). Columns can be named by the
   title shown in Gephi as well as by id. On earlier plugins, none of this shows in Gephi's
   panels, so do not point the viewer to them. Sorting and choosing columns in `gephi_query_nodes`, the `cap` in `gephi_size_by_ranking`, and a dry run of `gephi_remove_isolates` also need 1.4.0; on an older plugin the server refuses them rather than let the plugin ignore them.
+- **1.5.0 and later:** requires Gephi 0.11.3. Colouring and sizing go through Gephi's
+  Appearance API, as the panel's Apply button does: with a filter on, only the visible nodes
+  or edges change (`view` and `filter_active` in the reply say so), and in a partial `colors`
+  map the values left out take Gephi's default grey. A capped `gephi_size_by_ranking` is the
+  exception and sizes every node. Screenshots are written straight to the file and no longer
+  touch the toolbar's screenshot settings.
