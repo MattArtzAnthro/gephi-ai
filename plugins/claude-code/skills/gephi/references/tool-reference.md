@@ -173,9 +173,9 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_query_nodes
 - **Method**: GET `/graph/nodes`
-- **Params**: `{limit?: int (100), offset?: int (0), column?: str, value?: str, contains?: str, min?: float, max?: float}`
-- **Returns**: `{success, total, matches?, count, nodes: [{id, label, x, y, size, degree, r, g, b, a, attributes}]}`
-- **Notes**: Pages in id order and has no sort. Every node comes back with all its columns, keyed by column title, so a large `limit` can overflow. To rank nodes on a metric, call `gephi_query_nodes` with `column` set to the metric and `min` set to a cutoff, with `limit` 20 or less, and raise or lower the cutoff until about ten nodes match (`matches` gives the total). To find nodes by value, name a `column` (id or title) with `value` (whole value; text ignores case), `contains` (part of the text), and/or `min`/`max` (inclusive numeric range); `matches` counts every match, not just the page.
+- **Params**: `{limit?: int (100), offset?: int (0), column?: str, value?: str, contains?: str, min?: float, max?: float, sort_by?: str, descending?: bool (true), columns?: [str]}`
+- **Returns**: `{success, total, matches?, sorted_by?, descending?, count, nodes: [{id, label, x, y, size, degree, r, g, b, a, attributes}]}`; with `columns`, each node carries only id, label, degree and those attributes
+- **Notes**: `sort_by` (a column id or title, or "degree") orders the matching nodes before paging, largest first unless `descending` is false, so `limit=10` is the top ten of the whole graph; nodes without a value come last. `columns` keeps each node to the attributes named, which keeps a long listing small; without it every column comes back, keyed by title, and a large `limit` can overflow. Example: `{sort_by: "pageranks", columns: ["pageranks"], limit: 10}`.
 
 ### gephi_get_node
 - **Method**: GET `/graph/node/get/{id}`
@@ -459,6 +459,12 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Returns**: `{success, edits_applied, diff: [{metric, before, after, delta}], cleanup: {scratch_deleted, returned_to_workspace_id}}`. `diff` covers nodes, edges, density, degree, components, the share of nodes in the largest component, isolates, modularity, clustering (+ path length/diameter when `include_slow`).
 - **Notes**: for robustness / "what would happen if X were removed" claims. Cleanup is guaranteed even if an edit fails (the scratch copy is always deleted); on a failed edit the run stops and reports the failure with no diff. Returns measurements, not conclusions: narrate them, and treat a counterfactual on a small/skewed graph with the same caution as any single sample. See references/claim-verification.md.
 
+### gephi_compare_partitions
+- **Method**: reads the graph and compares two groupings of the same nodes; writes nothing
+- **Params**: `{column: str, against: str}`: node columns by id or by the title shown in Gephi
+- **Returns**: `{success, column, against, compared, left_out, adjusted_rand, normalized_mutual_information, table: {group: {value: count}}, groups: [{group, size, mostly, share}]}`
+- **Notes**: for "do the detected communities match the factions, departments, or sites?". Read `groups` first: for each group in `column`, the `against` value most of its members hold and the share that do. `adjusted_rand` is 1 for the same grouping and about 0 for chance, and can go below 0 (Hubert and Arabie 1985); `normalized_mutual_information` runs from 0 (one grouping says nothing about the other) to 1 (Danon et al. 2005). Group names do not matter. State no verdict from a score alone, and check community stability before reading detected groups.
+
 ### gephi_compare_nodes
 - **Method**: reads both nodes (`GET /graph/node/get/{id}`) and compares one metric
 - **Params**: `{id_a: str, id_b: str, metric: str}`. `metric` is a node attribute (`"Betweenness Centrality"`, `"Degree"`, `"pageranks"`, `"frequency"`) or a built-in field (`"size"`); attributes are checked before top-level fields
@@ -484,9 +490,10 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Notes**: `mode_column` names the attribute separating the two kinds of node: Gephi has no concept of a mode, so it must be told. A column holding more than two distinct values is refused rather than guessed at.
 
 ### gephi_bipartite_projection
-- **Method**: collapses a two-mode network onto one mode, joining nodes that share a partner and weighting by how many they share, then builds the result in a NEW workspace. The original is untouched.
-- **Params**: `{mode_column: str, keep: str, workspace_name?: str}`.
-- **Returns**: `{success, nodes, edges, kept_mode, warning?, within_mode_edges?}`.
+- **Method**: collapses a two-mode network onto one mode, joining nodes that share a partner, then builds the result in a NEW workspace. The original is untouched.
+- **Params**: `{mode_column: str, keep: str, workspace_name?: str, weighting?: "shared" | "jaccard" | "newman" ("shared")}`.
+- **Returns**: `{success, nodes, edges, kept_mode, weighting, warning?, within_mode_edges?}`.
+- **Weighting**: "shared" counts the partners two nodes share; "jaccard" divides that by all the partners either has, so the most active people do not dominate "who is closest"; "newman" counts each shared partner as 1/(its members - 1), so a small meeting ties people more closely than a large gathering (Newman 2001, the usual choice for coauthorship). Say which weighting a reported tie uses.
 - **Notes**: the standard way to analyse two-mode data (people by events, authors by concepts) as a social network; Gephi cannot do it at all. Nodes sharing no partner are kept with no edges, because dropping them would quietly remove people from the network. An edge joining two nodes of the same mode means the data is not bipartite; those edges are ignored and reported.
 
 ## Filters
@@ -505,9 +512,9 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_remove_isolates
 - **Method**: POST `/filter/remove-isolates`
-- **Params**: `{}` (empty)
-- **Returns**: `{success, removed, remaining_nodes}`
-- **Notes**: Removes all nodes with degree 0. Destructive, with no `dry_run`; takes an undo snapshot first (`gephi_undo` reverses it). To count isolates first, compute degree and call `gephi_query_nodes(column="degree", max=0, limit=1)`; `matches` gives the count.
+- **Params**: `{dry_run?: bool (false)}`
+- **Returns**: `{success, removed, remaining_nodes}`; with `dry_run`, `{success, dry_run, would_remove, remaining_nodes}` and nothing changes
+- **Notes**: Removes all nodes with degree 0. Destructive; takes an undo snapshot first (`gephi_undo` reverses it). Run with `dry_run` first and say how many would go: isolates can be a finding, not noise.
 
 ### gephi_extract_ego_network
 - **Method**: POST `/filter/ego-network`

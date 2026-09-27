@@ -16,7 +16,7 @@ before the layout step.
 ## Rules this command must keep
 
 - **Session start.** Start with `gephi_health_check`. Then check which workspace is open (`gephi_list_workspaces`) and whether a filter is active (`filter_active` in replies): a filter from an earlier conversation stays on, and exports and checks then see only what it shows.
-- **Ranking.** To rank nodes on a metric, call `gephi_query_nodes` with `column` set to the metric and `min` set to a cutoff, with `limit` 20 or less, and raise or lower the cutoff until about ten nodes match (`matches` gives the total). A large `limit` returns every column of every node and can overflow.
+- **Ranking.** To rank nodes on a metric, call `gephi_query_nodes` with `sort_by` set to the metric, `columns` set to the few columns you need, and `limit` about 10: nodes are ordered before paging, so the first page is the top of the whole graph. Without `columns`, every attribute of every node comes back and a long listing can overflow.
 - **No scale-free label.** Never call a heavy-tailed degree distribution "scale-free" or a "power law": those fits are near-indistinguishable from log-normal in practice and smuggle in a universal-law claim (Jacomy 2020; Broido and Clauset 2019). Describe hub dominance as a property of this network.
 - **Eigenvector caveat.** Gephi's eigenvector centrality can rank nodes differently from a standard calculation. Never rank on it alone: compare it with PageRank, and report a node as an authority only when the two agree.
 

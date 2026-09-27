@@ -311,7 +311,8 @@ public class GephiAPIServer extends NanoHTTPD {
             int offset = parseIntParam(params.get("offset"), 0);
             return service.queryNodes(params.get("column"), params.get("value"), params.get("contains"),
                 doubleParamOrNull(params.get("min")), doubleParamOrNull(params.get("max")),
-                limit, offset, visibleParam(params, false));
+                limit, offset, visibleParam(params, false), params.get("sort_by"),
+                !"false".equalsIgnoreCase(params.get("descending")), params.get("columns"));
         }
 
         if (uri.startsWith("/graph/node/get/") && Method.GET.equals(method)) {
@@ -648,7 +649,7 @@ public class GephiAPIServer extends NanoHTTPD {
         }
 
         if ("/filter/remove-isolates".equals(uri) && Method.POST.equals(method)) {
-            return service.removeIsolates();
+            return service.removeIsolates(body != null && body.has("dry_run") && body.get("dry_run").getAsBoolean());
         }
 
         if ("/filter/ego-network".equals(uri) && Method.POST.equals(method)) {

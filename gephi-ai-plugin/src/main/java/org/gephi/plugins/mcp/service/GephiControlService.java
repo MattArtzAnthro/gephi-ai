@@ -825,6 +825,43 @@ public class GephiControlService {
     }
 
     /**
+     * Items ordered by a value: numbers by size, anything else as text ignoring case. Items
+     * without a value always come last, so a sorted first page is the top of the graph.
+     */
+    static <T> List<T> sortByValue(List<T> items, java.util.function.Function<T, Object> value,
+                                   boolean descending) {
+        java.util.Comparator<Object> byValue = (a, b) -> {
+            if (a instanceof Number && b instanceof Number) {
+                return Double.compare(((Number) a).doubleValue(), ((Number) b).doubleValue());
+            }
+            return a.toString().compareToIgnoreCase(b.toString());
+        };
+        java.util.Comparator<Object> order = descending ? byValue.reversed() : byValue;
+        List<T> sorted = new java.util.ArrayList<>(items);
+        sorted.sort((x, y) -> {
+            Object a = value.apply(x), b = value.apply(y);
+            if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
+            return order.compare(a, b);
+        });
+        return sorted;
+    }
+
+    /** The requested attribute columns, lower-cased; null means every column. */
+    static java.util.Set<String> wantedColumns(String columns) {
+        if (columns == null || columns.isBlank()) return null;
+        java.util.Set<String> wanted = new java.util.HashSet<>();
+        for (String c : columns.split(",")) {
+            if (!c.isBlank()) wanted.add(c.trim().toLowerCase(java.util.Locale.ROOT));
+        }
+        return wanted.isEmpty() ? null : wanted;
+    }
+
+    static boolean isWanted(java.util.Set<String> wanted, String id, String title) {
+        return wanted == null || wanted.contains(id.toLowerCase(java.util.Locale.ROOT))
+            || (title != null && wanted.contains(title.toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    /**
      * Which nodes a value search keeps: {@code value} matches the whole value (text ignoring
      * case, numbers by value), {@code contains} a part of the text, and {@code min} / {@code max}
      * a numeric range. The column is found by id or by title. Null when no search was asked for.
@@ -863,6 +900,18 @@ public class GephiControlService {
      */
     public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
                                  int limit, int offset, boolean visible) {
+        return queryNodes(column, value, contains, min, max, limit, offset, visible, null, true, null);
+    }
+
+    /**
+     * As above, and with {@code sortBy} (a column id or title, or "degree") the matching nodes
+     * are ordered before paging, largest first unless {@code descending} is false. With
+     * {@code columns} (comma-separated ids or titles) each node carries only those attributes
+     * plus its id, label and degree, which keeps a long listing small.
+     */
+    public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
+                                 int limit, int offset, boolean visible, String sortBy,
+                                 boolean descending, String columns) {
         try {
             Workspace ws = currentWorkspace();
             if (ws == null) return error("No project open");
@@ -875,13 +924,26 @@ public class GephiControlService {
                 if (col == null) return error("Column not found: " + column);
                 keep = nodeMatcher(col, value, contains, min, max);
             }
+            Column sortCol = null;
+            if (sortBy != null && !"degree".equalsIgnoreCase(sortBy)) {
+                sortCol = findColumn(gm.getNodeTable(), sortBy);
+                if (sortCol == null) return error("Column not found for sort_by: " + sortBy);
+            }
+            java.util.Set<String> wanted = wantedColumns(columns);
             lockRead(g);
             try {
                 JsonArray arr = new JsonArray();
                 int count = 0, skip = 0, matches = 0;
                 // toArray, not the live iterable: breaking out of an auto-locked
                 // iterator before exhaustion leaks its read hold permanently.
-                for (Node n : g.getNodes().toArray()) {
+                List<Node> nodes = java.util.Arrays.asList(g.getNodes().toArray());
+                if (sortBy != null) {
+                    final Column sc = sortCol;
+                    final Graph sg = g;
+                    nodes = sortByValue(nodes, n -> sc == null ? (Object) sg.getDegree(n) : n.getAttribute(sc),
+                                        descending);
+                }
+                for (Node n : nodes) {
                     if (keep != null) {
                         if (!keep.test(n)) continue;
                         matches++;
@@ -894,21 +956,24 @@ public class GephiControlService {
                     JsonObject o = new JsonObject();
                     o.addProperty("id", n.getId().toString());
                     o.addProperty("label", n.getLabel());
-                    o.addProperty("x", n.x());
-                    o.addProperty("y", n.y());
-                    o.addProperty("size", n.size());
+                    if (wanted == null) {
+                        o.addProperty("x", n.x());
+                        o.addProperty("y", n.y());
+                        o.addProperty("size", n.size());
+                    }
                     o.addProperty("degree", g.getDegree(n));
                     Color c = n.getColor();
-                    if (c != null) {
+                    if (c != null && wanted == null) {
                         o.addProperty("r", c.getRed());
                         o.addProperty("g", c.getGreen());
                         o.addProperty("b", c.getBlue());
                         o.addProperty("a", c.getAlpha());
                     }
-                    // Include all custom attributes
+                    // Custom attributes: every one, or only those asked for
                     JsonObject attrs = new JsonObject();
                     for (Column col : gm.getNodeTable()) {
                         if (col.isProperty()) continue; // skip built-in
+                        if (!isWanted(wanted, col.getId(), col.getTitle())) continue;
                         Object v = n.getAttribute(col);
                         if (v != null) {
                             if (v instanceof Number) attrs.addProperty(col.getTitle(), (Number) v);
@@ -924,6 +989,10 @@ public class GephiControlService {
                 r.addProperty("success", true);
                 r.addProperty("total", g.getNodeCount());
                 if (keep != null) r.addProperty("matches", matches);
+                if (sortBy != null) {
+                    r.addProperty("sorted_by", sortCol == null ? "degree" : sortCol.getTitle());
+                    r.addProperty("descending", descending);
+                }
                 r.addProperty("count", count);
                 addViewInfo(r, gm, visible);
                 r.add("nodes", arr);
@@ -3592,17 +3661,40 @@ public class GephiControlService {
         } catch (Exception e) { return error("Failed: " + e.getMessage()); }
     }
 
+    /** Nodes with no ties at all, which remove-isolates deletes. Reads only; call under a lock. */
+    static java.util.List<Node> isolatedNodes(Graph g) {
+        java.util.List<Node> isolates = new java.util.ArrayList<>();
+        for (Node n : g.getNodes().toArray()) {
+            if (g.getDegree(n) == 0) isolates.add(n);
+        }
+        return isolates;
+    }
+
     public JsonObject removeIsolates() {
+        return removeIsolates(false);
+    }
+
+    /** Remove every node with no ties, or with {@code dryRun} only count them and change nothing. */
+    public JsonObject removeIsolates(boolean dryRun) {
         Workspace ws = currentWorkspace();
         if (ws == null) return error("No project open");
         try {
             Graph g = currentGraphModel().getGraph();
-            java.util.List<Node> isolates = new java.util.ArrayList<>();
+            if (dryRun) {
+                lockRead(g);
+                try {
+                    int count = isolatedNodes(g).size();
+                    JsonObject r = success("Would remove " + count + " isolated nodes");
+                    r.addProperty("dry_run", true);
+                    r.addProperty("would_remove", count);
+                    r.addProperty("remaining_nodes", g.getNodeCount() - count);
+                    return r;
+                } finally { g.readUnlock(); }
+            }
+            java.util.List<Node> isolates;
             lockWrite(g);
             try {
-                for (Node n : g.getNodes().toArray()) {
-                    if (g.getDegree(n) == 0) isolates.add(n);
-                }
+                isolates = isolatedNodes(g);
                 for (Node n : isolates) g.removeNode(n);
             } finally { unlockWrite(g); }
             // Refresh preview so exports reflect the filtered graph (EDT hop; outside the lock)

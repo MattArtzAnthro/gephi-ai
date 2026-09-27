@@ -16,7 +16,7 @@ before choosing the method.
 
 - **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step and remove or overwrite nothing. At the end, give one short line for each choice that changed the result, under "Choices I made"; leave the section out when every step used its obvious default. If there is no input to work on, stop and say what is needed.
 - **Session start.** Start with `gephi_health_check`. Then check which workspace is open (`gephi_list_workspaces`) and whether a filter is active (`filter_active` in replies): a filter from an earlier conversation stays on, and exports and checks then see only what it shows.
-- **Ranking.** To rank nodes on a metric, call `gephi_query_nodes` with `column` set to the metric and `min` set to a cutoff, with `limit` 20 or less, and raise or lower the cutoff until about ten nodes match (`matches` gives the total). A large `limit` returns every column of every node and can overflow.
+- **Ranking.** To rank nodes on a metric, call `gephi_query_nodes` with `sort_by` set to the metric, `columns` set to the few columns you need, and `limit` about 10: nodes are ordered before paging, so the first page is the top of the whole graph. Without `columns`, every attribute of every node comes back and a long listing can overflow.
 - **Stability.** Run `gephi_community_stability` before naming, captioning, or colouring by groups, and say how stable they are.
 
 ## Workflow

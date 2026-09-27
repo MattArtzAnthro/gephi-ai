@@ -17,7 +17,7 @@ Built for researchers working across network science and AI.
 <details>
 <summary>Full feature list</summary>
 
-- 119 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
+- 120 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
 - One-level undo: destructive operations snapshot the workspace first, so `gephi_undo` brings the graph back
 - Measured layout quality: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separate, and numerically exploded layouts are caught instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, and click a node to ask about it)
@@ -147,13 +147,13 @@ The health check tells you once per session when something is out of date.
 
 The plugin's API listens on `127.0.0.1` only and refuses requests from browsers and from non-local host names. It has no authentication, so any program running under your account can use it. Do not expose port 8080.
 
-## Tools (119)
+## Tools (120)
 
 | Category | Count | Examples |
 |----------|-------|---------|
 | Project & Workspace | 12 | `gephi_create_project`, `gephi_save_project`, `gephi_duplicate_workspace`, `gephi_snapshot`, `gephi_undo` |
 | Graph Construction | 18 | `gephi_add_nodes`, `gephi_add_edges`, `gephi_query_nodes`, `gephi_get_node`, `gephi_text_to_network`, `gephi_bipartite_projection` (two-mode to one-mode) |
-| Statistics & Analysis | 20 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric), `gephi_find_shortest_path`, `gephi_whatif` (counterfactual), `gephi_compare_nodes`, `gephi_community_stability` (are the communities real?), `gephi_compare_workspaces` (what changed between two versions) |
+| Statistics & Analysis | 21 | `gephi_compute_modularity`, `gephi_run_statistic` (any installed metric), `gephi_compare_partitions` (detected groups against known ones), `gephi_find_shortest_path`, `gephi_whatif` (counterfactual), `gephi_compare_nodes`, `gephi_community_stability` (are the communities real?), `gephi_compare_workspaces` (what changed between two versions) |
 | Layout | 9 | `gephi_run_layout`, `gephi_get_layout_properties`, `gephi_community_layout`, `gephi_similarity_layout`, `gephi_bipartite_layout` |
 | Appearance | 11 | `gephi_color_by_partition`, `gephi_color_edges_by_partition`, `gephi_size_by_ranking`, `gephi_label_clusters` |
 | Filtering | 11 | `gephi_filter_by_degree`, `gephi_extract_backbone`, `gephi_list_filters`, `gephi_apply_filter` (any filter, by name), `gephi_apply_filters` (several combined) |

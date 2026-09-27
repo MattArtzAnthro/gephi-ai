@@ -177,10 +177,10 @@ async def test_export_screenshot_overrides(rec):
     }
 
 
-def test_all_119_tools_registered():
+def test_all_120_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 119, f"expected 119 tools, found {len(names)}"
+    assert len(names) == 120, f"expected 120 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -192,7 +192,7 @@ def test_all_119_tools_registered():
         "gephi_detect_duplicates", "gephi_merge_nodes", "gephi_create_regex_column",
         "gephi_color_edges_by_partition", "gephi_export",
         "gephi_get_timeline", "gephi_snapshot", "gephi_undo",
-        "gephi_export_screenshot", "gephi_community_stability", "gephi_export_legend", "gephi_session_receipt", "gephi_compare_workspaces", "gephi_bipartite_layout", "gephi_bipartite_projection",
+        "gephi_export_screenshot", "gephi_community_stability", "gephi_export_legend", "gephi_session_receipt", "gephi_compare_workspaces", "gephi_compare_partitions", "gephi_bipartite_layout", "gephi_bipartite_projection",
     ):
         assert expected in names, f"{expected} not registered"
 
@@ -753,3 +753,21 @@ async def test_eigenvector_runs_long_enough_to_converge_by_default(rec):
     await out_of(gephi_mcp.gephi_compute_eigenvector, iterations=5000)
     call = [c for c in rec.calls if c["endpoint"] == "/statistics/run"][-1]
     assert call["json"]["params"] == {"numRuns": 5000}
+
+
+async def test_query_nodes_can_sort_and_trim_columns(rec):
+    await out_of(gephi_mcp.gephi_query_nodes, limit=10, sort_by="pageranks",
+                 columns=["pageranks", "Degree"])
+    params = rec.last["params"]
+    assert params["sort_by"] == "pageranks" and params["descending"] == "true"
+    assert params["columns"] == "pageranks,Degree"
+    await out_of(gephi_mcp.gephi_query_nodes, sort_by="degree", descending=False)
+    assert rec.last["params"]["descending"] == "false"
+    await out_of(gephi_mcp.gephi_query_nodes)
+    assert "sort_by" not in rec.last["params"] and "columns" not in rec.last["params"]
+
+
+async def test_remove_isolates_dry_run_counts_without_a_snapshot(rec):
+    await out_of(gephi_mcp.gephi_remove_isolates, dry_run=True)
+    assert [c["endpoint"] for c in rec.calls] == ["/filter/remove-isolates"]
+    assert rec.last["json"] == {"dry_run": True}

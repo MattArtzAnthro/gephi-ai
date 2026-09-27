@@ -126,3 +126,49 @@ async def test_an_unreadable_workspace_is_reported_rather_than_compared_as_empty
 
     assert out["success"] is False
     assert "workspace 0" in out["error"].lower()
+
+
+async def test_a_projection_sends_the_weighting_it_was_asked_for(rec):
+    rec.responses = [{"success": True, "content": gexf(
+        {"ann": "person", "bo": "person", "e1": "event", "e2": "event"},
+        [("ann", "e1"), ("ann", "e2"), ("bo", "e2")])}]
+
+    out = json.loads(await gephi_mcp.gephi_bipartite_projection(
+        mode_column="kind", keep="person", weighting="jaccard"))
+
+    assert out["weighting"] == "jaccard"
+    assert rec.sent_to("/graph/edges/add")[0]["edges"][0]["weight"] == 0.5
+
+
+def two_column_gexf(rows):
+    """Nodes carrying a detected community (column id modularity_class) and a known group."""
+    ns = "".join(f'<node id="{k}"><attvalues><attvalue for="modularity_class" value="{m}"/>'
+                 f'<attvalue for="club" value="{c}"/></attvalues></node>' for k, m, c in rows)
+    return textwrap.dedent("""\
+        <?xml version="1.0" encoding="UTF-8"?>
+        <gexf xmlns="http://gexf.net/1.3" version="1.3"><graph defaultedgetype="undirected">
+        <attributes class="node"><attribute id="modularity_class" title="Modularity Class" type="integer"/>
+        <attribute id="club" title="club" type="string"/></attributes>
+        <nodes>%s</nodes><edges></edges></graph></gexf>
+        """) % ns
+
+
+async def test_compare_partitions_reads_both_columns_by_id_or_title(rec):
+    rec.responses = [{"success": True, "content": two_column_gexf(
+        [("a", 0, "Mr. Hi"), ("b", 0, "Mr. Hi"), ("c", 1, "Officer"), ("d", 1, "Officer")])}]
+
+    out = json.loads(await gephi_mcp.gephi_compare_partitions(
+        column="Modularity Class", against="club"))
+
+    assert out["success"] is True
+    assert out["adjusted_rand"] == 1.0 and out["compared"] == 4
+    assert {g["group"]: g["mostly"] for g in out["groups"]} == {"0": "Mr. Hi", "1": "Officer"}
+
+
+async def test_compare_partitions_names_a_column_that_is_not_there(rec):
+    rec.responses = [{"success": True, "content": two_column_gexf([("a", 0, "Mr. Hi")])}]
+
+    out = json.loads(await gephi_mcp.gephi_compare_partitions(column="modularity_class",
+                                                              against="faction"))
+
+    assert out["success"] is False and "faction" in out["error"]

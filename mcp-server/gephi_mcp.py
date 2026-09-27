@@ -38,10 +38,11 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gephi_mcp_viewer
 import text_network
-from bipartite import bipartite_positions, project_bipartite, split_modes
+from bipartite import bipartite_positions, column_value, project_bipartite, split_modes
 from community_stability import consensus
 from graph_diff import diff_graphs
 from legend import legend_document
+from partition_match import compare_partitions
 from session_ledger import Ledger
 from stats_integrity import (
     GraphFacts,
@@ -197,6 +198,7 @@ _READ_ONLY = {
     "gephi_list_filters", "gephi_get_timeline", "gephi_column_value_frequencies",
     "gephi_detect_duplicates", "gephi_get_preview_settings", "gephi_get_perspective",
     "gephi_get_selection", "gephi_view_graph", "gephi_whatif", "gephi_compare_nodes",
+    "gephi_compare_partitions",
 }
 _DESTRUCTIVE = {
     "gephi_create_project", "gephi_open_project", "gephi_delete_workspace",
@@ -1048,7 +1050,9 @@ async def gephi_bulk_remove_nodes(ids: list[str]) -> str:
 @_tool(name="gephi_query_nodes")
 async def gephi_query_nodes(limit: int = 100, offset: int = 0, column: str | None = None,
                             value: str | None = None, contains: str | None = None,
-                            min: float | None = None, max: float | None = None) -> str:
+                            min: float | None = None, max: float | None = None,
+                            sort_by: str | None = None, descending: bool = True,
+                            columns: list[str] | None = None) -> str:
     """List nodes with their attributes, positions, sizes, colors, and computed
     metrics, paginated. Use it to read values (a centrality column, a community
     id, a label) for many nodes at once; gephi_get_node reads one.
@@ -1058,12 +1062,22 @@ async def gephi_query_nodes(limit: int = 100, offset: int = 0, column: str | Non
     text ignores case, numbers compare by value), `contains` (part of the text),
     `min` / `max` (a numeric range, inclusive). Only matching nodes are listed,
     and `matches` counts all of them, not just this page. Example: every node in
-    community 3 is column="modularity_class", value="3"."""
+    community 3 is column="modularity_class", value="3".
+
+    To rank, pass `sort_by` (a column id or title, or "degree"): nodes are ordered
+    largest first (descending=False for smallest first) before paging, so limit=10
+    is the top ten of the whole graph. Nodes without a value come last. Pass
+    `columns` to return only those attributes (plus id, label and degree), which
+    keeps long listings small: sort_by="pageranks", columns=["pageranks"], limit=10."""
     params: dict[str, Any] = {"limit": limit, "offset": offset}
     for key, val in (("column", column), ("value", value), ("contains", contains),
-                     ("min", min), ("max", max)):
+                     ("min", min), ("max", max), ("sort_by", sort_by)):
         if val is not None:
             params[key] = val
+    if sort_by is not None:
+        params["descending"] = "true" if descending else "false"
+    if columns:
+        params["columns"] = ",".join(columns)
     return fmt(await gephi.request("GET", "/graph/nodes", params=params))
 
 @_tool(name="gephi_get_node")
@@ -2138,9 +2152,12 @@ async def gephi_filter_by_edge_weight(min: float = 0, max: float = 0, dry_run: b
     return fmt(_with_undo(result, undo) if not dry_run else result)
 
 @_tool(name="gephi_remove_isolates")
-async def gephi_remove_isolates() -> str:
+async def gephi_remove_isolates(dry_run: bool = False) -> str:
     """Remove all isolated nodes (degree 0). Destructive; auto-snapshots first
-    (gephi_undo reverses it)."""
+    (gephi_undo reverses it). dry_run=True counts them (would_remove) and changes
+    nothing. Isolates can be a finding, so say what would go before removing them."""
+    if dry_run:
+        return fmt(await gephi.request("POST", "/filter/remove-isolates", json_data={"dry_run": True}))
     undo = await _auto_snapshot("remove_isolates")
     return fmt(_with_undo(await gephi.request("POST", "/filter/remove-isolates"), undo))
 
@@ -3380,6 +3397,43 @@ async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
             await gephi.request("POST", "/workspace/switch", json_data={"index": original})
 
 
+@_tool(name="gephi_compare_partitions")
+async def gephi_compare_partitions(column: str, against: str) -> str:
+    """How far two groupings of the same nodes agree: detected communities against a grouping
+    the person already has (factions, departments, field sites), or two detection runs.
+
+    column and against are node columns, by id or by the title shown in Gephi (for example
+    column="modularity_class", against="department"). Returns:
+    - groups: for each group in `column`, the `against` value most of its members hold and the
+      share that do. Read this first; it says which detected group matches what.
+    - table: how many nodes fall in each combination.
+    - adjusted_rand: how often two nodes grouped together in one are together in the other,
+      corrected for chance: 1 is the same grouping, about 0 is what chance gives, and it can
+      go below 0 (Hubert and Arabie 1985).
+    - normalized_mutual_information: how much knowing one grouping tells about the other,
+      from 0 (nothing) to 1 (everything) (Danon et al. 2005).
+    Group names do not matter to either score. Nodes missing either value are left out and
+    counted in left_out. Report the scores with the table, and state no verdict ("strong",
+    "clear") from a score alone: check community stability before reading detected groups.
+    """
+    graph = await _read_graph()
+    if graph is None:
+        return fmt({"success": False, "error": "Could not read the current graph."})
+    nodes = graph.get("nodes", [])
+    for name in (column, against):
+        if not any(column_value(n.get("attributes"), name) is not None for n in nodes):
+            return fmt({"success": False,
+                        "error": f"No node has a value in {name!r}. Check the column with "
+                                 "gephi_get_columns; run the statistic first if it is a "
+                                 "detected grouping."})
+    try:
+        result = compare_partitions((column_value(n.get("attributes"), column),
+                                     column_value(n.get("attributes"), against)) for n in nodes)
+    except ValueError as exc:
+        return fmt({"success": False, "error": str(exc)})
+    return fmt({"success": True, "column": column, "against": against, **result})
+
+
 @_tool(name="gephi_compare_workspaces")
 async def gephi_compare_workspaces(before: int, after: int, compare: str | None = None,
                                    directed: bool = False) -> str:
@@ -3443,12 +3497,18 @@ async def gephi_bipartite_layout(mode_column: str, separation: float = 600.0,
 
 @_tool(name="gephi_bipartite_projection")
 async def gephi_bipartite_projection(mode_column: str, keep: str,
-                                     workspace_name: str | None = None) -> str:
+                                     workspace_name: str | None = None,
+                                     weighting: str = "shared") -> str:
     """Collapse a two-mode network onto one mode, in a new workspace.
 
-    Two people who attended the same event become connected, weighted by how many events they
-    shared. This is the standard way to analyse two-mode data as a social network, and Gephi
-    cannot do it at all.
+    Two people who attended the same event become connected. This is the standard way to
+    analyse two-mode data as a social network, and Gephi cannot do it at all.
+
+    weighting sets the tie strength: "shared" (default) counts the events two people shared;
+    "jaccard" divides that by all the events either attended, so people who attend everything
+    do not dominate "who is closest"; "newman" counts each shared event as 1/(attendees - 1),
+    so a small meeting ties people more closely than a large gathering (Newman 2001, the usual
+    choice for coauthorship). Say which weighting was used when reporting ties.
 
     Nodes sharing no partner are kept with no edges. Dropping them would quietly remove people
     from the network, which produces a different graph rather than a tidier one.
@@ -3460,7 +3520,7 @@ async def gephi_bipartite_projection(mode_column: str, keep: str,
     if graph is None:
         return fmt({"success": False, "error": "Could not read the current graph."})
     try:
-        projected = project_bipartite(graph, mode_column, keep=keep)
+        projected = project_bipartite(graph, mode_column, keep=keep, weighting=weighting)
     except ValueError as exc:
         return fmt({"success": False, "error": str(exc)})
 
@@ -3484,7 +3544,7 @@ async def gephi_bipartite_projection(mode_column: str, keep: str,
                                                   "weight": e["weight"], "directed": False}
                                                  for e in projected["edges"]]})
     result = {"success": True, "nodes": len(projected["nodes"]),
-              "edges": len(projected["edges"]), "kept_mode": keep}
+              "edges": len(projected["edges"]), "kept_mode": keep, "weighting": weighting}
     if projected.get("warning"):
         result["warning"] = projected["warning"]
         result["within_mode_edges"] = projected["within_mode_edges"]

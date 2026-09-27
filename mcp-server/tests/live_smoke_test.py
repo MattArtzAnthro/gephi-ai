@@ -497,6 +497,25 @@ async def main():
     check(capped.get("success") is True and capped.get("nodes_at_cap", 0) > 0,
           "[size cap] nodes at or above the cap share the largest size",
           (capped.get("nodes_at_cap"), capped.get("error")))
+    top = json.loads(await g.gephi_query_nodes(sort_by="degree", columns=["team"], limit=3))
+    every = json.loads(await g.gephi_query_nodes(columns=["team"], limit=2000))
+    most = max(n["degree"] for n in every.get("nodes", [{"degree": -1}]))
+    degrees = [n["degree"] for n in top.get("nodes", [])]
+    check(degrees and degrees[0] == most and degrees == sorted(degrees, reverse=True)
+          and "x" not in top["nodes"][0] and set(top["nodes"][0].get("attributes", {})) <= {"team"},
+          "[query] sort_by gives the top of the whole graph; columns trims each node",
+          (degrees, most))
+    await g.gephi_compute_modularity()
+    agree = json.loads(await g.gephi_compare_partitions("modularity_class", "team"))
+    check(agree.get("success") is True and agree.get("compared") == 1000
+          and -1 <= agree.get("adjusted_rand", 9) <= 1 and agree.get("groups"),
+          "[partitions] detected communities compared with a known grouping",
+          (agree.get("adjusted_rand"), agree.get("error")))
+    before = await stats_nodes()
+    isolates = json.loads(await g.gephi_remove_isolates(dry_run=True))
+    check(isolates.get("dry_run") is True and "would_remove" in isolates
+          and await stats_nodes() == before,
+          "[isolates] a dry run counts and removes nothing", isolates.get("would_remove"))
     part = json.loads(await g.gephi_color_by_partition("team"))
     check(part.get("success") is True, "[palette] color_by_partition", part.get("palette_note", ""))
     path = json.loads(await g.gephi_find_shortest_path("n0", "n999", follow_direction=False))

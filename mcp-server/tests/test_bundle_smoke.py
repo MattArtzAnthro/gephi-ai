@@ -68,5 +68,5 @@ async def test_bundle_entry_point_serves_every_tool():
     assert init.server_info.name == "gephi_mcp"
     # uv caches the build of this checkout by its version, so after adding a tool without a
     # version bump the count comes from the old build: rerun with UV_NO_CACHE=1.
-    assert len(tools) == 119, (f"expected 119 tools, found {len(tools)}"
+    assert len(tools) == 120, (f"expected 120 tools, found {len(tools)}"
                                " (a stale uv build? rerun with UV_NO_CACHE=1)")

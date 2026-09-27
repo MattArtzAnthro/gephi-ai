@@ -7,6 +7,17 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 ## Unreleased
 
 ### Added
+- **Rank nodes in one call.** `gephi_query_nodes` takes `sort_by` (a column or "degree") and
+  orders nodes before paging, so `limit=10` is the top ten of the whole graph. `columns`
+  returns only the attributes named, which keeps long listings small.
+- **Compare two groupings.** New tool `gephi_compare_partitions` sets detected communities
+  against a grouping the person already has (factions, departments, sites): which known value
+  each group mostly holds, the cross-table, and two agreement scores (adjusted Rand index and
+  normalized mutual information). 120 tools.
+- **Weighted two-mode projections.** `gephi_bipartite_projection` takes `weighting`: "jaccard"
+  keeps the most active people from dominating who looks closest, and "newman" counts a small
+  shared event for more than a large one (Newman 2001).
+- `gephi_remove_isolates` takes `dry_run` to count isolates before removing them.
 - **Cap node sizes.** `gephi_size_by_ranking` takes `cap`: every node at or above it gets
   the largest size, so a few outliers (a mailing list with ten times anyone's contacts) no
   longer shrink every other node. The reply counts the nodes at the cap and the legend
