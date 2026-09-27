@@ -226,6 +226,8 @@ public class GephiAPIServer implements HttpHandler {
             result.addProperty("success", true);
             result.addProperty("service", "Gephi AI API");
             result.addProperty("version", moduleVersion());
+            String gephi = gephiVersion();
+            if (gephi != null) result.addProperty("gephi_version", gephi);
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -987,6 +989,29 @@ public class GephiAPIServer implements HttpHandler {
         String fromPackage = GephiAPIServer.class.getPackage() == null
             ? null : GephiAPIServer.class.getPackage().getImplementationVersion();
         return fromPackage != null ? fromPackage : "unknown";
+    }
+
+    /**
+     * The running Gephi's version: the specification version of its project API module, which
+     * Gephi releases carry as the Gephi version. Null when it cannot be read. Outside Gephi's
+     * module system (unit tests) it is read from that module's jar manifest.
+     */
+    static String gephiVersion() {
+        Class<?> api = org.gephi.project.api.ProjectController.class;
+        try {
+            org.openide.modules.ModuleInfo module = org.openide.modules.Modules.getDefault().ownerOf(api);
+            if (module != null && module.getSpecificationVersion() != null) {
+                return module.getSpecificationVersion().toString();
+            }
+        } catch (Throwable ignore) { /* outside Gephi's module system */ }
+        try {
+            java.net.URL jar = api.getProtectionDomain().getCodeSource().getLocation();
+            try (java.util.jar.JarFile f = new java.util.jar.JarFile(new java.io.File(jar.toURI()))) {
+                return f.getManifest().getMainAttributes().getValue("OpenIDE-Module-Specification-Version");
+            }
+        } catch (Exception ignore) {
+            return null;
+        }
     }
 
     /** An optional float from a JSON body, or null when absent or not a number. */

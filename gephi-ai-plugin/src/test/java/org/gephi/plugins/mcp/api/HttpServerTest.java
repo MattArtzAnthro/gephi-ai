@@ -95,6 +95,13 @@ class HttpServerTest {
     }
 
     @Test
+    void healthReportsTheGephiVersion() throws Exception {
+        // The server compares it with the Gephi the newest plugin needs before advising an update.
+        String r = get("/health");
+        assertTrue(r.matches("(?s).*\"gephi_version\": \"\\d+\\.\\d+(\\.\\d+)?\".*"), r);
+    }
+
+    @Test
     void optionsIsAnsweredWithNoBody() throws Exception {
         String[] r = send("OPTIONS /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
         assertEquals("200", r[0]);

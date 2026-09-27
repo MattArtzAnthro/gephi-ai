@@ -86,6 +86,61 @@ def test_bump_version_moves_every_bundle_pin(tmp_path):
         assert f"gephi-ai=={new}" in args, mcp_json
 
 
+def _pom_gephi_version(root):
+    return re.search(r"<gephi.version>([^<]+)</gephi.version>",
+                     (root / "gephi-ai-plugin/pom.xml").read_text()).group(1)
+
+
+def test_a_java_bump_records_the_gephi_the_plugin_needs(tmp_path):
+    # Gephi refuses a plugin built for a newer Gephi, so the health check has to know the
+    # minimum before advising an update. It comes from the POM, the build's source of truth.
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    latest = json.loads((tmp_path / "latest.json").read_text())
+    latest["nbm_needs_gephi"] = "0.0.1"
+    (tmp_path / "latest.json").write_text(json.dumps(latest))
+    major, minor, patch = latest["nbm"].split(".")
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh", "--java", f"{major}.{minor}.{int(patch) + 1}"],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    written = json.loads((tmp_path / "latest.json").read_text())["nbm_needs_gephi"]
+    assert written == _pom_gephi_version(tmp_path)
+
+
+def test_a_java_bump_moves_the_skills_plugin_minimum_even_when_it_was_stale(tmp_path):
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    skill = tmp_path / "plugins/claude-code/skills/gephi/SKILL.md"
+    skill.write_text(re.sub(r"Gephi AI Plugin \([0-9.]+\+\)", "Gephi AI Plugin (0.0.1+)", skill.read_text()))
+    major, minor, patch = json.loads((tmp_path / "latest.json").read_text())["nbm"].split(".")
+    new = f"{major}.{minor}.{int(patch) + 1}"
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh", "--java", new],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert f"Gephi AI Plugin ({new}+)" in skill.read_text()
+
+
+def test_the_bump_check_catches_a_stale_gephi_minimum(tmp_path):
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    latest = json.loads((tmp_path / "latest.json").read_text())
+    latest["nbm_needs_gephi"] = "0.0.1"
+    (tmp_path / "latest.json").write_text(json.dumps(latest))
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh"],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode != 0
+    assert "latest.json nbm_needs_gephi" in run.stdout
+
+
 def test_build_mcpb_refuses_a_version_the_bundle_does_not_pin(tmp_path):
     _need("bash")
     _copy_tree(BUILD_FILES, tmp_path)

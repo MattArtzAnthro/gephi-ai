@@ -311,3 +311,57 @@ async def test_freshness_current_returns_available_false(monkeypatch):
     monkeypatch.setattr(g.httpx, "AsyncClient", _Client)
     r = await g._check_freshness({"version": "1.2.15"})
     assert r == {"available": False}  # checked and current, distinct from None
+
+
+def _latest(monkeypatch, g, published):
+    g._freshness_cache.clear()
+    monkeypatch.delenv("GEPHI_SKIP_UPDATE_CHECK", raising=False)
+    monkeypatch.setattr(g, "__version__", published["server"])
+
+    class _Resp:
+        def json(self):
+            return published
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url): return _Resp()
+
+    monkeypatch.setattr(g.httpx, "AsyncClient", _Client)
+
+
+LATEST_NEEDS_0113 = {"server": "1.0.0", "nbm": "1.5.0", "nbm_needs_gephi": "0.11.3"}
+
+
+async def test_an_older_gephi_is_told_to_update_gephi_before_the_plugin(monkeypatch):
+    import gephi_mcp as g
+    _latest(monkeypatch, g, LATEST_NEEDS_0113)
+    r = await g._check_freshness({"version": "1.4.0", "gephi_version": "0.11.2"})
+    nbm = next(b for b in r["behind"] if "Gephi Desktop plugin" in b["component"])
+    assert nbm["needs_gephi"] == "0.11.3"
+    assert r["how_to_update"].startswith("Update Gephi to 0.11.3 or newer first")
+    assert "0.11.2" in r["how_to_update"]
+
+
+async def test_an_unknown_gephi_version_gets_the_requirement_and_how_to_check(monkeypatch):
+    import gephi_mcp as g
+    _latest(monkeypatch, g, LATEST_NEEDS_0113)
+    r = await g._check_freshness({"version": "1.4.0"})  # plugins before 1.5.0 send no gephi_version
+    assert "needs Gephi 0.11.3 or newer" in r["how_to_update"]
+    assert "Help > About" in r["how_to_update"]
+
+
+async def test_a_new_enough_gephi_gets_the_plain_update_advice(monkeypatch):
+    import gephi_mcp as g
+    _latest(monkeypatch, g, LATEST_NEEDS_0113)
+    r = await g._check_freshness({"version": "1.4.0", "gephi_version": "0.11.3"})
+    assert "Gephi 0.11.3" not in r["how_to_update"]
+    assert r["how_to_update"].startswith("Claude Code:")
+
+
+async def test_no_requirement_published_changes_nothing(monkeypatch):
+    import gephi_mcp as g
+    _latest(monkeypatch, g, {"server": "1.0.0", "nbm": "1.5.0"})
+    r = await g._check_freshness({"version": "1.4.0", "gephi_version": "0.11.1"})
+    assert r["how_to_update"].startswith("Claude Code:")

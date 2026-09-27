@@ -141,14 +141,30 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
             behind.append({"component": "gephi-ai plugin + server",
                            "installed": __version__, "latest": latest["server"]})
         nbm = health.get("version")  # Gephi plugin version from /health
+        # The Gephi the newest plugin needs. Gephi refuses to install a plugin built for a
+        # newer Gephi, so an older Gephi has to be updated first.
+        needs = latest.get("nbm_needs_gephi")
+        gephi_version = health.get("gephi_version")  # plugins before 1.5.0 do not send it
+        first = ""
         if _is_behind(nbm, latest.get("nbm")):
-            behind.append({"component": "Gephi Desktop plugin (.nbm)",
-                           "installed": nbm, "latest": latest["nbm"]})
+            entry = {"component": "Gephi Desktop plugin (.nbm)",
+                     "installed": nbm, "latest": latest["nbm"]}
+            if needs:
+                entry["needs_gephi"] = needs
+                if gephi_version and _is_behind(gephi_version, needs):
+                    first = (f"Update Gephi to {needs} or newer first (this is Gephi "
+                             f"{gephi_version}; download it from gephi.org), then the "
+                             "plugin: Gephi will not install it on an older version. ")
+                elif not gephi_version:
+                    first = (f"The newest Gephi plugin needs Gephi {needs} or newer: check "
+                             "Help > About in Gephi and update Gephi from gephi.org first "
+                             "if it is older. ")
+            behind.append(entry)
         if behind:
             result = {
                 "available": True,
                 "behind": behind,
-                "how_to_update": (
+                "how_to_update": first + (
                     "Claude Code: run `claude plugin update "
                     "gephi-network-analysis@gephi-ai`, then restart. "
                     "Claude Desktop: download the newest .mcpb from the Releases "
@@ -851,7 +867,8 @@ async def gephi_health_check() -> str:
     Also reports `server_version` (the MCP server) alongside `version` (the Gephi
     plugin), plus a freshness signal checked once per session: `update` when the
     install is behind the latest release (tell the user once, plainly, with the
-    how_to_update step), or `up_to_date: true` when it is current. Neither appears
+    how_to_update step; when the newest Gephi plugin needs a newer Gephi, that step says to
+    update Gephi first), or `up_to_date: true` when it is current. Neither appears
     if the check can't reach the network (then say nothing about versions).
     """
     health = await gephi.request("GET", "/health")
