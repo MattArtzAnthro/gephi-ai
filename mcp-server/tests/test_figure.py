@@ -186,3 +186,16 @@ def test_a_detail_page_becomes_a_second_pdf_page(tmp_path):
 
     assert written["pages"] == 2
     assert Path(written["pdf"]).stat().st_size > 0
+
+
+def test_pdf_pages_are_us_letter_turned_to_fit_each_page(tmp_path):
+    import re
+    wide = Image.new("RGB", (3000, 1800), "white")
+    tall = Image.new("RGB", (1800, 3000), "white")
+
+    written = figure.write([wide, tall], tmp_path / "fig")
+
+    boxes = re.findall(rb"/MediaBox \[\s*0 0 ([\d.]+) ([\d.]+)\s*\]", Path(written["pdf"]).read_bytes())
+    sizes = [(round(float(w)), round(float(h))) for w, h in boxes]
+    assert sizes == [(792, 612), (612, 792)]
+    assert Image.open(written["png"]).size == (3000, 1800)

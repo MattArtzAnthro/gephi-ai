@@ -2040,6 +2040,9 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
     node/edge columns as usual (check gephi_list_columns, then size or color by
     the new column). This is the plugin-ecosystem passthrough: install a metric
     plugin in Gephi (Tools > Plugins) and it is immediately runnable here.
+    `panel_result` (plugin 1.5.0+) is the line Gephi's Statistics panel shows for the run,
+    when the statistic gives one: the headline for a plugin metric with no named field in the
+    reply. It is display text and may be rounded; prefer the named fields when both exist.
 
     Plugin statistics configured by a UI dialog usually NEED params (their
     fields start null/zero). Verified example, the CWTS Leiden plugin:
@@ -2549,7 +2552,7 @@ async def gephi_export_figure(
     width: int = 2400,
     height: int = 2400,
 ) -> str:
-    """Write the map and its legend as one figure, as a PDF and a PNG at 300 dpi.
+    """Write the map and its legend as one figure, as a PDF on US Letter pages and a PNG at 300 dpi.
 
     gephi_export_png writes a map with no key and gephi_export_legend writes a key with no
     map; joining them has been left to whoever is driving, so the caveats that make a figure
@@ -2838,10 +2841,10 @@ async def gephi_export_screenshot(file: str, scale: int = 2, transparent_backgro
                                               "transparent_background": transparent_background}))
 
 @_tool(name="gephi_export_pdf")
-async def gephi_export_pdf(file: str, width: int | None = None, height: int | None = None) -> str:
-    """Export the graph visualization as PDF (page size auto-detected if omitted)."""
-    return fmt(await gephi.request("POST", "/export/pdf",
-                                   json_data=_body(file=file, width=width, height=height)))
+async def gephi_export_pdf(file: str) -> str:
+    """Export the graph visualization as a PDF on a US Letter page: landscape (11 x 8.5 in) when
+    the layout is wider than it is tall, portrait (8.5 x 11 in) otherwise."""
+    return fmt(await gephi.request("POST", "/export/pdf", json_data={"file": file}))
 
 @_tool(name="gephi_export_svg")
 async def gephi_export_svg(file: str) -> str:

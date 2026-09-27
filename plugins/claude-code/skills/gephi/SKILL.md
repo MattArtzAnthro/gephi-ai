@@ -7,7 +7,7 @@ description: |
   network holds, or whether a network is scale-free. Holds the rules that keep readings
   honest: test groups for stability before naming them, never call a network scale-free,
   and ship every map with its caption.
-compatibility: Requires Gephi Desktop 0.11.1+ (0.11.3 recommended) running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.3+ running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
   version: "1.18.0"

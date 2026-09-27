@@ -117,7 +117,7 @@ async def test_add_edges_forwards_full_edge_dicts(rec):
     assert rec.last["json"]["edges"] == edges
 
 
-async def test_export_pdf_drops_omitted_dimensions(rec):
+async def test_export_pdf_sends_only_the_file(rec):
     await out_of(gephi_mcp.gephi_export_pdf, file="/tmp/g.pdf")
     assert rec.last["json"] == {"file": "/tmp/g.pdf"}
 

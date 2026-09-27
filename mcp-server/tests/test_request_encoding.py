@@ -1,7 +1,7 @@
 """
 Request bodies carry node ids, labels, and attribute values, and people's names are not ASCII.
-The Gephi plugin's HTTP server (NanoHTTPD) decodes a body in the charset its Content-Type names,
-and as US-ASCII when it names none, so "Tomás" arrived as "Tom��s". Plugin builds from
+The Gephi plugin's original HTTP server (NanoHTTPD) decoded a body in the charset its Content-Type names,
+and as US-ASCII when it named none, so "Tomás" arrived as "Tom��s". Plugin builds from
 this release read bodies as UTF-8 regardless; declaring the charset fixes older plugins too.
 """
 import json

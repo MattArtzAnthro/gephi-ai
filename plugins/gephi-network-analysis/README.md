@@ -23,7 +23,7 @@ that does not expose or proxy the unauthenticated local Gephi API.
 
 ## Runtime prerequisites
 
-1. Gephi Desktop 0.11.1 or newer.
+1. Gephi Desktop 0.11.3 or newer.
 2. The Gephi AI Desktop plugin 1.3.0 or newer installed and running.
 3. `uv`/`uvx` available on the system path.
 

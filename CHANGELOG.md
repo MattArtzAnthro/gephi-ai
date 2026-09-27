@@ -4,6 +4,42 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased: Java plugin 1.5.0
+
+### Changed
+- **Requires Gephi 0.11.3.** The plugin builds against Gephi 0.11.3 and relies on its threading
+  and screenshot fixes. Earlier plugin releases still run on Gephi 0.11.1 and 0.11.2.
+- **Colouring and sizing go through Gephi's Appearance API.** `gephi_color_by_partition`,
+  `gephi_color_by_ranking`, `gephi_size_by_ranking` and `gephi_color_edges_by_partition` apply
+  the same function the Appearance panel's Apply button does, instead of setting each node
+  by hand. With a filter on, only the visible elements change, and the reply reports the
+  view. Values left out of a partial `colors` map take Gephi's default grey. A capped size
+  ranking has no Gephi equivalent and is still applied directly.
+- **Project and workspace changes run off Gephi's interface thread** on every supported
+  Gephi, as Gephi's own interface does; the check for older versions is gone.
+- **Layouts run only through Gephi's Layout controller.** The plugin's own fallback layout
+  runner is gone.
+- **Screenshots write straight to the file.** `gephi_export_screenshot` uses Gephi's
+  file-based screenshot call, which waits for the PNG, ignores the toolbar's screenshot
+  settings and never opens a dialog, instead of borrowing those settings and watching a
+  temporary folder.
+- **PDFs are US Letter.** `gephi_export_pdf` writes an 8.5 x 11 in page, turned to 11 x 8.5
+  when the layout is wider than it is tall, with half-inch margins; the reply says which
+  orientation. Its `width` and `height`
+  options are gone (they never took effect: every PDF came out A4). `gephi_export_figure` puts
+  each PDF page on a Letter sheet the same way; its PNG is unchanged.
+- **PNG size is set through Gephi's PNG exporter** rather than by reflection.
+- **Statistics report the Statistics panel's result line.** `gephi_run_statistic` adds
+  `panel_result`, the line Gephi shows for the run, when the statistic gives one. It is the
+  headline for metrics from other Gephi plugins, which have no named field in the reply.
+- **Built-in HTTP server.** The API runs on the JDK's HTTP server; the unmaintained NanoHTTPD
+  dependency is gone. The browser and Host checks are unchanged and now tested over a real
+  connection; query text that is not valid percent-encoding is kept as sent instead of
+  failing the request. Gson is 2.14.0.
+- Previews are no longer refreshed after every graph change (exports refresh them), several
+  calls no longer hop to Gephi's interface thread, and setting node or edge colours and node
+  sizes (one at a time, in a batch, or as a reset) no longer takes the graph write lock.
+
 ## MCP server 1.20.0 / Java plugin 1.4.0 / workflow packages 1.18.0
 
 ### Added

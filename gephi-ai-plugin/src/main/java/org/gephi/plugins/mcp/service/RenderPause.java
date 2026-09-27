@@ -25,15 +25,14 @@ import org.openide.util.Lookup;
 /**
  * Suspends Gephi's viz-engine world updater around external write sections.
  *
- * The macOS wedge happens because the renderer's world updater re-acquires the
- * graph read lock near-continuously; pausing it while we hold the write lock
- * removes that pressure entirely (VizEngine exposes public pauseUpdating() /
- * resumeUpdating() for exactly this). Access goes through reflection on the
+ * While paused, the renderer's world updater stops taking the graph read lock, so a write
+ * section does not compete with it (VizEngine exposes public pauseUpdating() /
+ * resumeUpdating() for this). Access goes through reflection on the
  * concrete VizController's getEngine() so this class compiles against
  * visualization-api only and degrades to a no-op wherever there is no engine
  * (Gephi Toolkit, headless, or older Gephi versions).
  *
- * Pause/resume is reference-counted: NanoHTTPD serves requests on multiple
+ * Pause/resume is reference-counted: the API server handles requests on multiple
  * threads, so concurrent write sections must not resume the renderer while a
  * sibling section still holds it paused.
  */
