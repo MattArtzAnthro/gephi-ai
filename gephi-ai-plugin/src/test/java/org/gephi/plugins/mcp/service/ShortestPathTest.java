@@ -33,7 +33,9 @@ class ShortestPathTest {
     private static GraphModel diamond(boolean directed) {
         GraphModel gm = GraphModel.Factory.newInstance();
         Graph g = directed ? gm.getDirectedGraph() : gm.getUndirectedGraph();
-        for (String id : new String[] {"a", "b", "c", "d"}) g.addNode(gm.factory().newNode(id));
+        for (String id : new String[]{"a", "b", "c", "d"}) {
+            g.addNode(gm.factory().newNode(id));
+        }
         edge(gm, g, "a", "b", 1, directed);
         edge(gm, g, "b", "d", 1, directed);
         edge(gm, g, "a", "c", 3, directed);

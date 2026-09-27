@@ -49,9 +49,13 @@ final class RenderPause {
     static void pause() {
         synchronized (GATE) {
             depth++;
-            if (depth > 1) return;               // already paused by a sibling section
+            if (depth > 1) {
+                return;               // already paused by a sibling section
+            }
             Object engine = engine();
-            if (engine == null) return;           // headless / toolkit / no view: no-op
+            if (engine == null) {
+                return;           // headless / toolkit / no view: no-op
+            }
             try {
                 engine.getClass().getMethod("pauseUpdating").invoke(engine);
                 pausedEngine = engine;
@@ -64,9 +68,13 @@ final class RenderPause {
 
     static void resume() {
         synchronized (GATE) {
-            if (depth == 0) return;               // defensive: unmatched resume
+            if (depth == 0) {
+                return;               // defensive: unmatched resume
+            }
             depth--;
-            if (depth > 0 || pausedEngine == null) return;
+            if (depth > 0 || pausedEngine == null) {
+                return;
+            }
             try {
                 pausedEngine.getClass().getMethod("resumeUpdating").invoke(pausedEngine);
             } catch (Throwable t) {
@@ -82,7 +90,9 @@ final class RenderPause {
         try {
             VisualizationController controller =
                 Lookup.getDefault().lookup(VisualizationController.class);
-            if (controller == null) return null;
+            if (controller == null) {
+                return null;
+            }
             Method getEngine = controller.getClass().getMethod("getEngine");
             Object result = getEngine.invoke(controller);
             if (result instanceof Optional) {

@@ -31,8 +31,10 @@ class IsolatesTest {
     void onlyNodesWithNoTiesAreIsolates() {
         GraphModel gm = GraphModel.Factory.newInstance();
         Graph g = gm.getGraph();
-        Node a = gm.factory().newNode("a"), b = gm.factory().newNode("b");
-        Node alone = gm.factory().newNode("alone"), loner = gm.factory().newNode("loner");
+        Node a = gm.factory().newNode("a");
+        Node b = gm.factory().newNode("b");
+        Node alone = gm.factory().newNode("alone");
+        Node loner = gm.factory().newNode("loner");
         g.addAllNodes(List.of(a, b, alone, loner));
         g.addEdge(gm.factory().newEdge(a, b, false));
 

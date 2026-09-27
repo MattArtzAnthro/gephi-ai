@@ -61,7 +61,9 @@ class HttpServerTest {
             ByteArrayOutputStream buf = new ByteArrayOutputStream();
             byte[] b = new byte[4096];
             int n;
-            while ((n = in.read(b)) > 0) buf.write(b, 0, n);
+            while ((n = in.read(b)) > 0) {
+                buf.write(b, 0, n);
+            }
             String response = new String(buf.toByteArray(), StandardCharsets.UTF_8);
             String status = response.split(" ", 3)[1];
             int split = response.indexOf("\r\n\r\n");
@@ -71,7 +73,9 @@ class HttpServerTest {
 
     private static String get(String path, String... headers) throws Exception {
         StringBuilder r = new StringBuilder("GET " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\n");
-        for (String h : headers) r.append(h).append("\r\n");
+        for (String h : headers) {
+            r.append(h).append("\r\n");
+        }
         return String.join("\n", send(r.append("Connection: close\r\n\r\n").toString()));
     }
 

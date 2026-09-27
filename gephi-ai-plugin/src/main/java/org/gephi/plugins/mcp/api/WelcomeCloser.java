@@ -42,7 +42,9 @@ final class WelcomeCloser {
 
     /** Close the Welcome window if it is open and this is still the start of the session. */
     static void closeIfOpen() {
-        if (!shouldTry(System.currentTimeMillis() - STARTED, closedOne)) return;
+        if (!shouldTry(System.currentTimeMillis() - STARTED, closedOne)) {
+            return;
+        }
         SwingUtilities.invokeLater(() -> {
             try {
                 for (Window window : Window.getWindows()) {
@@ -64,8 +66,12 @@ final class WelcomeCloser {
     /** True when a component of the named class sits anywhere inside {@code container}. */
     static boolean contains(Container container, String className) {
         for (Component child : container.getComponents()) {
-            if (child.getClass().getName().equals(className)) return true;
-            if (child instanceof Container && contains((Container) child, className)) return true;
+            if (child.getClass().getName().equals(className)) {
+                return true;
+            }
+            if (child instanceof Container && contains((Container) child, className)) {
+                return true;
+            }
         }
         return false;
     }

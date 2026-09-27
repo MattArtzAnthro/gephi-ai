@@ -35,7 +35,9 @@ class StatisticDeadlineTest {
         final AtomicBoolean cancelled = new AtomicBoolean();
 
         @Override public void run() {
-            while (!cancelled.get()) Thread.onSpinWait();
+            while (!cancelled.get()) {
+                Thread.onSpinWait();
+            }
         }
         @Override public boolean cancel() { cancelled.set(true); return true; }
         @Override public void setProgressTicket(ProgressTicket t) {}

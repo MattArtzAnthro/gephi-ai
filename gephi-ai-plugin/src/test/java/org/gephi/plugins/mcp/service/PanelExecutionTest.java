@@ -62,7 +62,9 @@ class PanelExecutionTest {
         @Override public void execute(GraphModel gm) {
             ran.set(true);
             long end = System.currentTimeMillis() + millis;
-            while (!cancelled.get() && System.currentTimeMillis() < end) Thread.onSpinWait();
+            while (!cancelled.get() && System.currentTimeMillis() < end) {
+                Thread.onSpinWait();
+            }
         }
         @Override public String getReport() { return ""; }
         @Override public boolean cancel() { cancelled.set(true); return true; }
@@ -149,7 +151,9 @@ class PanelExecutionTest {
                 }
             });
             run.start();
-            while (!stat.ran.get()) Thread.onSpinWait();
+            while (!stat.ran.get()) {
+                Thread.onSpinWait();
+            }
 
             com.google.gson.JsonObject r = GephiControlService.getInstance().stopStatistics();
 

@@ -49,7 +49,9 @@ class GraphOpsTest {
         m.put("id", id);
         if (attrKv.length > 0) {
             Map<String, Object> attrs = new LinkedHashMap<>();
-            for (int i = 0; i + 1 < attrKv.length; i += 2) attrs.put((String) attrKv[i], attrKv[i + 1]);
+            for (int i = 0; i + 1 < attrKv.length; i += 2) {
+                attrs.put((String) attrKv[i], attrKv[i + 1]);
+            }
             m.put("attributes", attrs);
         }
         return m;
@@ -209,7 +211,9 @@ class GraphOpsTest {
         // the fixed pattern: snapshot, then break early
         int count = 0;
         for (org.gephi.graph.api.Node n : g.getNodes().toArray()) {
-            if (count >= 3) break;
+            if (count >= 3) {
+                break;
+            }
             count++;
         }
 
@@ -225,7 +229,9 @@ class GraphOpsTest {
         it.next(); // iterator constructor auto-acquired the read lock
         assertFalse(wl.tryLock(50, java.util.concurrent.TimeUnit.MILLISECONDS),
             "an unexhausted live iterator holds the read lock (the leak this guards against)");
-        while (it.hasNext()) it.next(); // exhaustion releases it
+        while (it.hasNext()) {
+            it.next(); // exhaustion releases it
+        }
         assertTrue(wl.tryLock(200, java.util.concurrent.TimeUnit.MILLISECONDS));
         wl.unlock();
     }
@@ -287,7 +293,9 @@ class GraphOpsTest {
     private static GraphModel modelWithNodes(String... ids) {
         GraphModel gm = newModel();
         java.util.List<Map<String, Object>> ns = new java.util.ArrayList<>();
-        for (String id : ids) ns.add(node(id));
+        for (String id : ids) {
+            ns.add(node(id));
+        }
         GephiControlService.addNodesToModel(gm, ns);
         return gm;
     }

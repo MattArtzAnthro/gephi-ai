@@ -58,7 +58,9 @@ class DataToolsTest {
         for (Object[] row : rows) {
             Node n = gm.factory().newNode(row[0]);
             n.setAttribute("group", row[1]);
-            if (row[2] != null) n.setAttribute("score", row[2]);
+            if (row[2] != null) {
+                n.setAttribute("score", row[2]);
+            }
             n.setAttribute("joined", row[3]);
             g.addNode(n);
         }

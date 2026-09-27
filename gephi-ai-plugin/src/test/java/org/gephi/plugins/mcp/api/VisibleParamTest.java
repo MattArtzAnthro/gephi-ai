@@ -35,7 +35,9 @@ class VisibleParamTest {
 
     private static Map<String, String> params(String key, String value) {
         Map<String, String> m = new HashMap<>();
-        if (key != null) m.put(key, value);
+        if (key != null) {
+            m.put(key, value);
+        }
         return m;
     }
 

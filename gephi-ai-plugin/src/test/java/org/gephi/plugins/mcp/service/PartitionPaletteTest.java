@@ -34,12 +34,16 @@ class PartitionPaletteTest {
     @Test
     void manyGroupsStillGetDistinctColours() {
         Map<String, Integer> counts = new HashMap<>();
-        for (int i = 0; i < 40; i++) counts.put("g" + i, 100 - i);
+        for (int i = 0; i < 40; i++) {
+            counts.put("g" + i, 100 - i);
+        }
 
         Map<String, Color> palette = GephiControlService.partitionPalette(counts);
 
         Set<Integer> rgb = new HashSet<>();
-        for (Color c : palette.values()) rgb.add(c.getRGB());
+        for (Color c : palette.values()) {
+            rgb.add(c.getRGB());
+        }
         assertEquals(40, rgb.size(), "a colour was reused");
     }
 
@@ -63,7 +67,9 @@ class PartitionPaletteTest {
         int[][] validated = {{42, 120, 214}, {237, 161, 0}, {0, 131, 0}, {232, 123, 164},
                              {74, 58, 167}, {227, 73, 72}, {27, 175, 122}, {235, 104, 52}};
         Map<String, Integer> counts = new HashMap<>();
-        for (int i = 0; i < 8; i++) counts.put("g" + i, 10 + i);
+        for (int i = 0; i < 8; i++) {
+            counts.put("g" + i, 10 + i);
+        }
 
         List<Color> colours = List.copyOf(GephiControlService.partitionPalette(counts).values());
 

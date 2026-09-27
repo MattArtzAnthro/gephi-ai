@@ -124,7 +124,9 @@ class AppearancePanelTest {
         try {
             java.util.concurrent.Future<Integer> count = other.submit(() -> {
                 int n = 0;
-                for (org.gephi.graph.api.Column c : nodes) n++;
+                for (org.gephi.graph.api.Column c : nodes) {
+                    n++;
+                }
                 return n;
             });
             assertEquals(nodes.countColumns(), count.get(5, java.util.concurrent.TimeUnit.SECONDS));

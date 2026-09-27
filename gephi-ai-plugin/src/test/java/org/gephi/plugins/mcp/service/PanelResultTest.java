@@ -54,7 +54,9 @@ class PanelResultTest {
             this.fails = fails;
         }
         @Override public String getValue(Statistics statistics) {
-            if (fails) throw new IllegalStateException("not set up");
+            if (fails) {
+                throw new IllegalStateException("not set up");
+            }
             return shown == null || shown.isBlank() ? shown : shown + " for " + ((Quality) statistics).value;
         }
         @Override public JPanel getSettingsPanel() { return null; }

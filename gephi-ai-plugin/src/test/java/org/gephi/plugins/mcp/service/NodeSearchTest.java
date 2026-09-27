@@ -36,7 +36,9 @@ class NodeSearchTest {
         Object[][] rows = {{"a", "Peru", 0.5}, {"b", "peru", 2.0}, {"c", "Portugal", 7.5}, {"d", null, 1.0}};
         for (Object[] row : rows) {
             Node n = gm.factory().newNode((String) row[0]);
-            if (row[1] != null) n.setAttribute("country", row[1]);
+            if (row[1] != null) {
+                n.setAttribute("country", row[1]);
+            }
             n.setAttribute("score", row[2]);
             gm.getDirectedGraph().addNode(n);
         }
