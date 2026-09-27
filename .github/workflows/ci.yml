@@ -7,8 +7,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  fix-tests:
+    # Warns (never fails) when a fix commit in the pull request changes no test.
+    name: Fix commits carry tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: scripts/check-fix-tests.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
   java-plugin:
-    name: Gephi plugin (JUnit)
+    name: Gephi plugin (JUnit + checkstyle)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

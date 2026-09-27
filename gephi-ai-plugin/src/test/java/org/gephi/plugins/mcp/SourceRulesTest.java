@@ -162,6 +162,23 @@ class SourceRulesTest {
     }
 
     @Test
+    void everySourceFileStartsWithTheLicenseHeader() throws IOException {
+        Pattern header = Pattern.compile("^/\\*\n \\* Copyright \\d{4} Matt Artz\n \\*\n"
+            + " \\* Licensed under the Apache License, Version 2\\.0 \\(the \"License\"\\);\n");
+        List<String> missing = new ArrayList<>();
+        for (Path root : List.of(MAIN, Paths.get("src", "test", "java"))) {
+            try (Stream<Path> files = Files.walk(root)) {
+                for (Path p : files.filter(f -> f.toString().endsWith(".java")).collect(Collectors.toList())) {
+                    if (!header.matcher(Files.readString(p, StandardCharsets.UTF_8)).find()) {
+                        missing.add(p.toString());
+                    }
+                }
+            }
+        }
+        assertEquals(List.of(), missing, "Every Java file opens with the Apache 2.0 header the other files carry");
+    }
+
+    @Test
     void theLockRuleAcceptsTryFinallyAndRejectsAGap() {
         String good = "class A {\n    void m(Graph g) {\n        g.readLock();\n        try {\n"
             + "            work();\n        } finally {\n            g.readUnlock();\n        }\n    }\n}\n";
