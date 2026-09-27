@@ -39,8 +39,31 @@ have yet, so it fails to install until PyPI catches up.
 
    `package` auto-deploys the jar into
    `~/Library/Application Support/gephi/0.11/modules/`, so **restart Gephi** to
-   load it. Verify the fix against a running Gephi before shipping — the unit
-   tests do not exercise the live MCP path.
+   load it. Add `-Dmaven.antrun.skip=true` to build without deploying.
+
+   Then run the live smoke test, which drives every tool against a running Gephi
+   at 1000 nodes; the unit tests do not exercise the live MCP path:
+
+   ```bash
+   cd mcp-server && PYTHONPATH=. .venv/bin/python tests/live_smoke_test.py
+   ```
+
+   Every line must PASS. Run it twice: against your own Gephi, and against a Gephi
+   started with an empty settings folder, which has Gephi's default settings as a
+   new user's does. The test's docstring gives the command for a second Gephi on
+   its own port, which leaves an open Gephi untouched. On macOS it also fails when
+   a Gephi dialog is left open, and on any interface-thread warning or error the
+   run adds to Gephi's own log.
+
+   When the Claude Code plugin changed (hooks, agents, commands), also run the live
+   plugin checks. They start real Claude sessions and confirm that Claude Code applies
+   the plugin's health-check hook, the agents' tool lists and the commands'
+   pre-approved tools, which the file checks alone cannot show. Gephi need not be
+   running:
+
+   ```bash
+   cd mcp-server && GEPHI_LIVE_PLUGIN=1 PYTHONPATH=. .venv/bin/python -m pytest -v tests/test_plugin_live.py
+   ```
 
 4. **Do not commit the built `.nbm`.** It attaches to the GitHub release in step 9,
    which is the single download path. A copy at the repo root went two releases stale

@@ -159,6 +159,7 @@ _NON_STRUCTURAL = (
     "/preview/",
     "/datalab/frequencies",
     "/datalab/duplicates",
+    "/graph/shortest-path",
     "/selection",
     "/health",
 )
@@ -183,6 +184,7 @@ _REPLACES_GRAPH = (
     "/workspace/",
     "/project/",
     "/import/",
+    "/time/slice",
 )
 
 

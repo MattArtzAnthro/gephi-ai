@@ -21,6 +21,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import fi.iki.elonen.NanoHTTPD;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,9 +77,8 @@ public class GephiAPIServer extends NanoHTTPD {
         try {
             JsonObject requestBody = null;
             if (Method.POST.equals(method) || Method.PUT.equals(method)) {
-                Map<String, String> files = new HashMap<>();
-                session.parseBody(files);
-                String body = files.get("postData");
+                WelcomeCloser.closeIfOpen();
+                String body = readBody(session.getInputStream(), session.getHeaders().get("content-length"));
                 if (body != null && !body.isEmpty()) {
                     requestBody = JsonParser.parseString(body).getAsJsonObject();
                 }
@@ -117,6 +118,19 @@ public class GephiAPIServer extends NanoHTTPD {
         boolean hasOrigin = origin != null && !origin.trim().isEmpty();
         boolean hasFetchSite = secFetchSite != null && !secFetchSite.trim().isEmpty();
         return !hasOrigin && !hasFetchSite;
+    }
+
+    /**
+     * Reads a request body of {@code contentLength} bytes (the raw Content-Length header,
+     * possibly null) and decodes it as UTF-8. Request bodies are JSON, which is UTF-8;
+     * NanoHTTPD's parseBody decodes as US-ASCII when the Content-Type names no charset,
+     * corrupting every non-ASCII id, label, and value. Package-private and static so it
+     * can be unit-tested without a live server.
+     */
+    static String readBody(InputStream in, String contentLength) throws IOException {
+        long length = contentLength == null || contentLength.isBlank() ? 0 : Long.parseLong(contentLength.trim());
+        if (length <= 0) return "";
+        return new String(in.readNBytes((int) length), StandardCharsets.UTF_8);
     }
 
     /** True when the request's Host header is absent or resolves to the loopback interface. */
@@ -295,7 +309,10 @@ public class GephiAPIServer extends NanoHTTPD {
         if ("/graph/nodes".equals(uri) && Method.GET.equals(method)) {
             int limit = parseIntParam(params.get("limit"), 100);
             int offset = parseIntParam(params.get("offset"), 0);
-            return service.queryNodes(null, null, limit, offset, visibleParam(params, false));
+            return service.queryNodes(params.get("column"), params.get("value"), params.get("contains"),
+                doubleParamOrNull(params.get("min")), doubleParamOrNull(params.get("max")),
+                limit, offset, visibleParam(params, false), params.get("sort_by"),
+                !"false".equalsIgnoreCase(params.get("descending")), params.get("columns"));
         }
 
         if (uri.startsWith("/graph/node/get/") && Method.GET.equals(method)) {
@@ -507,7 +524,8 @@ public class GephiAPIServer extends NanoHTTPD {
             if (body == null || !body.has("column")) return errorResult("Missing 'column'");
             float minSize = body.has("min_size") ? body.get("min_size").getAsFloat() : 5f;
             float maxSize = body.has("max_size") ? body.get("max_size").getAsFloat() : 50f;
-            return service.sizeByRanking(body.get("column").getAsString(), minSize, maxSize);
+            Double cap = body.has("cap") && !body.get("cap").isJsonNull() ? body.get("cap").getAsDouble() : null;
+            return service.sizeByRanking(body.get("column").getAsString(), minSize, maxSize, cap);
         }
 
         // ─── Layout ──────────────────────────────────────────────────
@@ -557,6 +575,10 @@ public class GephiAPIServer extends NanoHTTPD {
             double res = body != null && body.has("resolution") ? body.get("resolution").getAsDouble() : 1.0;
             long timeoutMs = body != null && body.has("timeout_ms") ? body.get("timeout_ms").getAsLong() : 0;
             return service.computeModularity(res, timeoutMs);
+        }
+
+        if ("/statistics/stop".equals(uri) && Method.POST.equals(method)) {
+            return service.stopStatistics();
         }
 
         if ("/statistics/available".equals(uri) && Method.GET.equals(method)) {
@@ -627,7 +649,7 @@ public class GephiAPIServer extends NanoHTTPD {
         }
 
         if ("/filter/remove-isolates".equals(uri) && Method.POST.equals(method)) {
-            return service.removeIsolates();
+            return service.removeIsolates(body != null && body.has("dry_run") && body.get("dry_run").getAsBoolean());
         }
 
         if ("/filter/ego-network".equals(uri) && Method.POST.equals(method)) {
@@ -658,7 +680,44 @@ public class GephiAPIServer extends NanoHTTPD {
             return service.applyFilter(fname, filterParams, action, column);
         }
 
+        if ("/filter/combine".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("filters") || !body.get("filters").isJsonArray()) {
+                return errorResult("Missing 'filters' list");
+            }
+            List<Map<String, Object>> specs = GSON.fromJson(body.get("filters"), List.class);
+            return service.applyFilters(specs, str(body, "combine"), str(body, "action"), str(body, "column"),
+                body.has("dry_run") && body.get("dry_run").getAsBoolean());
+        }
+
+        // ─── Time ────────────────────────────────────────────────────
+
+        if ("/time/from-columns".equals(uri) && Method.POST.equals(method)) {
+            if (body == null) return errorResult("Missing body");
+            return service.setTimeFromColumns(str(body, "target"), str(body, "start"), str(body, "end"),
+                str(body, "date_format"), bool(body, "check_only"));
+        }
+
+        if ("/time/slice".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("start") || !body.has("end")) return errorResult("Missing 'start' or 'end'");
+            return service.timeSlice(body.get("start").getAsDouble(), body.get("end").getAsDouble());
+        }
+
+        // ─── Paths ───────────────────────────────────────────────────
+
+        if ("/graph/shortest-path".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("source") || !body.has("target")) return errorResult("Missing 'source' or 'target'");
+            boolean follow = !body.has("follow_direction") || body.get("follow_direction").getAsBoolean();
+            return service.findShortestPath(body.get("source").getAsString(), body.get("target").getAsString(),
+                str(body, "weighting"), follow, str(body, "mark_column"));
+        }
+
         // ─── Data Laboratory ─────────────────────────────────────────
+
+        if ("/datalab/column/edit".equals(uri) && Method.POST.equals(method)) {
+            if (body == null || !body.has("column") || !body.has("action")) return errorResult("Missing 'column' or 'action'");
+            return service.editColumn(str(body, "target"), str(body, "column"), str(body, "action"),
+                str(body, "value"), str(body, "type"), str(body, "new_name"), bool(body, "check_only"));
+        }
 
         if ("/datalab/frequencies".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("column")) return errorResult("Missing 'column'");
@@ -790,22 +849,26 @@ public class GephiAPIServer extends NanoHTTPD {
 
         if ("/import/gexf".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/graphml".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/csv".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/file".equals(uri) && Method.POST.equals(method)) {
             if (body == null || !body.has("file")) return errorResult("Missing 'file'");
-            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"));
+            return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
+                body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         return errorResult("Unknown endpoint: " + method + " " + uri);
@@ -817,6 +880,11 @@ public class GephiAPIServer extends NanoHTTPD {
      * response also states which view it used and whether a filter is active, so the two
      * can no longer disagree silently.
      */
+    static Double doubleParamOrNull(String v) {
+        if (v == null || v.isBlank()) return null;
+        try { return Double.parseDouble(v.trim()); } catch (NumberFormatException e) { return null; }
+    }
+
     static boolean visibleParam(Map<String, String> params, boolean dflt) {
         String v = params == null ? null : params.get("visible");
         if (v == null) return dflt;
@@ -863,6 +931,14 @@ public class GephiAPIServer extends NanoHTTPD {
     }
 
     /** An optional float from a JSON body, or null when absent or not a number. */
+    static boolean bool(JsonObject body, String key) {
+        return body != null && body.has(key) && !body.get(key).isJsonNull() && body.get(key).getAsBoolean();
+    }
+
+    static String str(JsonObject body, String key) {
+        return body != null && body.has(key) && !body.get(key).isJsonNull() ? body.get(key).getAsString() : null;
+    }
+
     static Float floatOrNull(JsonObject body, String key) {
         if (body == null || !body.has(key) || body.get(key).isJsonNull()) return null;
         try {

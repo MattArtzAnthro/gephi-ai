@@ -4,6 +4,154 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.20.0 / Java plugin 1.4.0 / workflow packages 1.18.0
+
+### Added
+- **Rank nodes in one call.** `gephi_query_nodes` takes `sort_by` (a column or "degree") and
+  orders nodes before paging, so `limit=10` is the top ten of the whole graph. `columns`
+  returns only the attributes named, which keeps long listings small.
+- **Compare two groupings.** New tool `gephi_compare_partitions` sets detected communities
+  against a grouping the person already has (factions, departments, sites): which known value
+  each group mostly holds, the cross-table, and two agreement scores (adjusted Rand index and
+  normalized mutual information). 120 tools.
+- **Weighted two-mode projections.** `gephi_bipartite_projection` takes `weighting`: "jaccard"
+  keeps the most active people from dominating who looks closest, and "newman" counts a small
+  shared event for more than a large one (Newman 2001).
+- `gephi_remove_isolates` takes `dry_run` to count isolates before removing them.
+- Options that need Gephi AI plugin 1.4.0 (sorting and choosing columns, the size cap, the
+  isolates dry run) are refused with an update message on an older plugin, which would
+  otherwise ignore them: a dry run there would delete for real.
+- **Cap node sizes.** `gephi_size_by_ranking` takes `cap`: every node at or above it gets
+  the largest size, so a few outliers (a mailing list with ten times anyone's contacts) no
+  longer shrink every other node. The reply counts the nodes at the cap and the legend
+  records it.
+- **Find nodes by value.** `gephi_query_nodes` takes a column and a whole value, part of the
+  text, or a numeric range, and counts every match.
+- **Combined filters.** `gephi_apply_filters` applies several filters with AND, OR or NOT,
+  shows the result in Gephi's Filters panel, and can count what would stay first
+  (`dry_run`) without changing anything.
+- **Time from columns and time slices.** `gephi_set_time_from_columns` gives nodes or edges
+  their time from start and end columns (years or dates). `gephi_time_slice` opens the
+  network as it was in one period in a new workspace, leaving the network and Gephi's
+  timeline as they were.
+- **Shortest paths.** `gephi_find_shortest_path` counts steps, or reads edge weight as a
+  length or as tie strength, says how many equally short paths exist, and can mark the path
+  for colouring.
+- **Column tidy-up.** `gephi_edit_column` deletes, renames or converts a column, fills its
+  empty cells, or clears it. A conversion reports the values it could not read.
+- **Stop a statistic.** `gephi_stop_statistic` stops a statistic still running in Gephi,
+  and interrupting a statistic from the chat stops it in Gephi too.
+- `gephi_apply_filter` takes `dry_run` to count what a filter would hide before applying it.
+- **Change over time in the skill.** A new reference walks through comparing a network
+  across periods: giving it time data, choosing windows, laying out once so every period
+  shares one map, and measuring each period the same way. Claim checking covers path claims
+  ("A reaches B only through C") and change claims, and exploring a network with time data
+  offers a comparison across periods.
+- **Gephi's panels show what Gephi AI does.** Statistics run through Gephi's Statistics
+  panel, which shows each one running, its result and its report, and lets you cancel it.
+  Layouts run through the Layout panel, which shows the algorithm, the exact settings used,
+  and whether it is running, with Stop working as usual. Coloring and sizing by a column set
+  the Appearance panel to the same column and colors or sizes, so clicking Apply there
+  reproduces the result. Results are unchanged.
+- Columns can be named by the title shown in Gephi as well as by their id, for coloring and
+  sizing.
+
+### Changed
+- **Shorter reports when no one can answer.** A session that has to choose for the person
+  now lists only the choices that changed the result, one short line each, and leaves the
+  list out when every step used its obvious default.
+- **The skill reaches every workflow.** Each Claude Code command now loads the gephi skill
+  first, reads references from the installed plugin, and repeats the few rules it could
+  break: test groups for stability before naming them, a caption and legend with every
+  export, a dry run before a filter. When a step asks the person something and no answer
+  comes, the assistant uses the step's named default and lists what it chose.
+- **A shorter core skill.** SKILL.md keeps every rule that still holds, in about a third fewer words. The
+  Python rendering recipes moved to `references/external-rendering.md` and version-bound
+  notes to `references/version-notes.md`; the five-pass layout recipe now lives in the
+  layout guide. The skill no longer tells the assistant to create a new project before an
+  import, which could discard unsaved work.
+- **The agents may use what their work needs, and no more.** The claim verifier and the
+  network analyst stay read-only (the claim verifier no longer leaves a visible filter on
+  the graph); the text-network builder and layout iterator can check group stability and
+  export a legend.
+- **New guidance:** a worked path for node and edge files with one row per pair per period
+  (importing repeated rows merges them), mixing between groups per period, checking a
+  claim's group definitions and comparing a removal against a comparable node, weighted
+  degree, a caveat on eigenvector centrality, and broadcast accounts in communication data.
+- **Group colours default to the validated palette.** With no colours given,
+  `gephi_color_by_partition` now uses the eight colours validated for readability on white
+  and for colour-blind separation, largest group first, instead of a set with gray and two
+  pale tones. Its description says to leave colours unset on light backgrounds.
+- **Colour order keeps the largest groups apart.** On a map any two groups can touch, so the
+  eight colours are now handed out in an order that keeps every pair of the five largest
+  groups distinguishable with normal vision and for red- and green-blind readers. Past five
+  groups the reply's note says to label the groups as well.
+- **Eigenvector centrality runs until it settles.** Gephi's default of 100 iterations stops
+  early on some networks and can put the wrong node first (Valjean ahead of Gavroche in Les
+  Miserables). `gephi_compute_eigenvector` now runs 1,000 by default and takes
+  `iterations`; its caveat says values can still differ from an exact calculation by up to
+  about a tenth.
+- **One default for sizes and edges.** `gephi_size_by_ranking` now defaults to 10 to 100,
+  about one to ten, and `gephi_export_png` recommends the same light neutral edges as the
+  skill instead of a different set.
+- **Imports open in their own workspace**, named after the file, as Gephi's File > Open
+  does, so files with timestamps or integer ids import next to any open graph. An empty
+  workspace left open is removed. `mode="append"` adds a file to the current workspace.
+  Gephi's import warnings come back as `import_issues`.
+- Partition colours no longer repeat. Past the eight base colours each group gets its own
+  generated colour, and a note says when there are too many groups to tell apart.
+- Gephi's per-column filters have plain names such as "Equal: group String (Node)". Their
+  Non-null and Partition Count versions were unreachable by name before.
+
+### Fixed
+- "Project saved" is reported only once the file is on disk. Saving into a folder that does
+  not exist is refused at once instead of waiting a minute, and saving no longer blocks
+  Gephi's window.
+- A value written to a column named by its title lands in that column instead of a new one.
+- A refused column edit or time change no longer takes an undo snapshot. There is one undo
+  point, and a snapshot of the unchanged graph replaced the one that undid the change before.
+- Appending a file whose time format or id type does not fit the workspace says to import it
+  into its own workspace instead.
+- On Gephi 0.11.3 and later, new projects and workspace changes (new, switch, delete,
+  duplicate, rename) run off Gephi's interface thread, as Gephi asks. Gephi had logged a
+  warning for each, saying it would become an error. Earlier Gephi versions keep running them
+  on the interface thread, as their own menus do.
+- `gephi_export_screenshot` could open Gephi's save dialog and time out on a Gephi that asks
+  where to save screenshots, which is Gephi's default. A capture that produces nothing is
+  now tried once more.
+- **Gephi's Welcome window closes when work starts.** Started right after launch, a session
+  could build its graph behind Gephi's Welcome window, which stayed open over the result.
+  The first request that does work now closes it, as its own close button does; a Welcome
+  reopened later from the Help menu is left alone.
+- **Names with accents survive.** Node ids, labels and values sent to Gephi were read as
+  plain ASCII, so "Tomás" became "Tom??s" and later calls could not find the node. The
+  plugin now reads every request as UTF-8, and the server says so in each request, which
+  also fixes older plugins.
+- `gephi_whatif` and `gephi_profile_graph` report average path length again; Gephi names
+  it differently from what the server looked for, so it was silently left out.
+  `gephi_whatif` also compares the share of nodes in the largest component. Its
+  description no longer promises a community count Gephi does not supply.
+- The probe for betweenness ignoring edge weights read its values under a name nodes do not
+  carry, so it compared two empty readings and reported the defect without measuring it. It
+  now reads the values; the defect is confirmed. A new probe checks eigenvector centrality
+  against an exact calculation.
+- **The skill** now teaches on the network the person is looking at, in plain words;
+  searches on part of a name before calling someone absent from a graph; and caps sizes when
+  a few nodes dwarf the rest.
+- **The Claude Code plugin's safeguards now apply.** The check that Gephi is running before
+  a graph change, the agents' tool lists and the commands' pre-approved tools named the
+  tools as they appear for a server registered by hand, so under the plugin the check never
+  ran, the read-only agents could use every tool, and each command asked permission for
+  every Gephi call.
+- **Dynamic statistics now run properly, or say why they cannot.** Dynamic # Nodes, # Edges,
+  Degree and Clustering Coefficient used to report success without computing anything. They
+  now run over the network's timeline. They need a window and a step (tick) in the network's
+  time units; without them, or on a network with no time data, they are refused with a
+  message giving the network's time range, instead of starting a loop that never ends.
+- Extracting the giant component could leave the node table locked on graphs whose component
+  column has an unusual name, which froze Gephi's interface the next time a panel listed the
+  columns.
+
 ## Workflow packages 1.17.2
 
 ### Changed

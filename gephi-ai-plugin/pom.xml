@@ -6,7 +6,7 @@
 
     <groupId>org.gephi.plugins</groupId>
     <artifactId>gephi-ai</artifactId>
-    <version>1.3.3</version>
+    <version>1.4.0</version>
     <packaging>nbm</packaging>
 
     <name>Gephi AI</name>
@@ -82,6 +82,26 @@
         <dependency>
             <groupId>org.gephi</groupId>
             <artifactId>utils-longtask</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>desktop-statistics</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>appearance-api</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>appearance-plugin</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>desktop-appearance</artifactId>
             <version>${gephi.version}</version>
         </dependency>
         <dependency>
@@ -190,6 +210,16 @@
         <dependency>
             <groupId>org.gephi</groupId>
             <artifactId>io-importer-plugin</artifactId>
+            <version>${gephi.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          Test only: Gephi's filter controller, which runs combined filters. At runtime it
+          comes from the host Gephi install via Lookup.
+        -->
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>filters-impl</artifactId>
             <version>${gephi.version}</version>
             <scope>test</scope>
         </dependency>

@@ -7,6 +7,17 @@ as part of the release checklist.
     PYTHONPATH=. uv run --with mcp --with httpx --with pydantic \
         python tests/live_smoke_test.py
 
+To test a plugin build without touching a Gephi that is already open, start a second
+Gephi with its own settings folder and port, with the built plugin copied into that
+folder's modules/ and config/Modules/ (from the .nbm's netbeans/ directory):
+
+    /Applications/Gephi.app/Contents/Resources/gephi/bin/gephi --userdir /tmp/gephi-test \
+        --cachedir /tmp/gephi-test-cache -J-Dgephi.mcp.port=8091
+    GEPHI_API_URL=http://127.0.0.1:8091 PYTHONPATH=. python tests/live_smoke_test.py
+
+A fresh settings folder starts with Gephi's defaults, as a new user's Gephi does, so run
+it there before a release as well as against a Gephi that has been used for a while.
+
 Standard: ALWAYS test at scale — ~1000 nodes and many edges, never a toy graph.
 Small graphs hide real bugs (e.g. the visual_qa title-vs-id partition bug was
 invisible at 8 nodes) and say nothing about performance. This harness builds a
@@ -20,19 +31,65 @@ import json
 import random
 import time
 
+import httpx
 from mcp.types import CallToolResult
 
 import gephi_mcp as g
 
 GEXF = "/tmp/gephi_smoke_big.gexf"
 
-# KNOWN BUG (tracked, see RELEASING.md): visual_qa / label_clusters /
-# community_layout resolve a partition column by its TITLE, while
-# color_by_partition / color_edges_by_partition / color_by_ranking resolve by
-# its ID. Gephi's modularity column is id="modularity_class" /
-# title="Modularity Class", so no single string works for both families. This
-# harness passes each tool the form it currently accepts; the consistency check
-# at the end fails until the id-or-title fix lands.
+# Every tool that takes a column accepts its id or its title. Gephi's modularity
+# column is id="modularity_class" / title="Modularity Class"; the harness passes
+# both forms across the tools, and the consistency check below passes the id to
+# both the colouring and the visual-QA families.
+
+
+def gephi_log() -> str | None:
+    """Gephi's own log (messages.log) for the Gephi answering on GEPHI_API_URL's port, read
+    from its --userdir, or None where it cannot be found."""
+    import os
+    import subprocess
+    port = g.GEPHI_API_URL.rsplit(":", 1)[-1].split("/")[0]
+    pid = subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+                         capture_output=True, text=True).stdout.split()
+    if not pid:
+        return None
+    command = subprocess.run(["ps", "-o", "command=", "-p", pid[0]],
+                             capture_output=True, text=True).stdout
+    if "--userdir " not in command:
+        return None
+    userdir = command.split("--userdir ", 1)[1].split(" --", 1)[0].strip()
+    path = os.path.join(userdir, "var", "log", "messages.log")
+    if not os.path.exists(path):
+        return None
+    with open(path, errors="replace") as f:
+        return f.read()
+
+
+def gephi_log_problems(log: str) -> tuple[int, int]:
+    """(interface-thread warnings, SEVERE entries) in a Gephi log."""
+    return (log.count("was called from the Event Dispatch Thread"),
+            log.count("\nSEVERE"))
+
+
+def gephi_windows() -> list[str] | None:
+    """Titles of the windows of the Gephi answering on GEPHI_API_URL's port, or None where
+    they cannot be read (not macOS). More than the main window means a dialog is open."""
+    import subprocess
+    import sys
+    if sys.platform != "darwin":
+        return None
+    port = g.GEPHI_API_URL.rsplit(":", 1)[-1].split("/")[0]
+    pid = subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+                         capture_output=True, text=True).stdout.split()
+    if not pid:
+        return None
+    script = ('tell application "System Events" to get name of every window of '
+              f"(first process whose unix id is {pid[0]})")
+    out = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if out.returncode != 0:
+        return None
+    return [w.strip() for w in out.stdout.split(",") if w.strip()]
 
 
 def build_big_gexf(path: str, n: int = 1000, k: int = 8) -> tuple[int, int]:
@@ -116,6 +173,7 @@ class Runner:
 
 
 async def main():
+    log_before = gephi_log()
     n, m = build_big_gexf(GEXF)
     print(f"Built {GEXF}: {n} nodes / {m} edges (avg degree {2 * m / n:.1f})")
     R = Runner()
@@ -216,6 +274,11 @@ async def main():
         ("export_svg", g.gephi_export_svg("/tmp/smoke.svg")),
     ]:
         await R.run(label, coro)
+    windows = gephi_windows()
+    if windows is not None:
+        R.results.append(("PASS" if len(windows) == 1 else "FAIL",
+                          "[dialogs] exports leave no Gephi dialog waiting for OK", 0.0,
+                          f"windows={windows}"))
 
     # ---- filters / extraction (mutate visible/workspaces) ----
     await R.run("filter_by_degree(dry_run)", g.gephi_filter_by_degree(min=10, dry_run=True))
@@ -284,17 +347,11 @@ async def main():
     # ---- perspective ----
     await R.run("switch_perspective(Overview)", g.gephi_switch_perspective("Overview"))
 
-    # ---- id/title consistency probe (documents the known bug) ----
-    # A single canonical column string ('modularity_class', the id the skill uses)
-    # should satisfy BOTH the coloring family and the qa/label/community family.
-    # It does not today: the qa/label/community family matches by title. This
-    # probe FAILS until the id-or-title fix lands, then flips to PASS.
+    # ---- id/title consistency: one column string works for every tool family ----
     await R.run("create_project#probe", g.gephi_create_project("probe"))
     await R.run("import_gexf#probe", g.gephi_import_gexf(GEXF))
     await R.run("compute_modularity#probe", g.gephi_compute_modularity(1.0))
-    # explicit assertion: with a known 8-community graph, BOTH tools given the
-    # SAME id string must resolve it. color resolves by id (ok); visual_qa
-    # resolves by title so groups==0 here — a real defect the report surfaces.
+    # With a known 8-community graph, both tools given the same id must resolve it.
     col_ok = "success\": true" in json.dumps(
         json.loads(await g.gephi_color_by_partition("modularity_class")))
     qa = json.loads(await g.gephi_visual_qa("modularity_class"))
@@ -410,6 +467,125 @@ async def main():
     R.results.append(("PASS" if empty_ok else "FAIL",
                       "[edge-case] empty graph: read/compute tools degrade gracefully",
                       0.0, "no exceptions on a 0-node graph"))
+
+    # ---- imports, time, search, paths, combined filters, column tidy-up, stop ----
+    def check(ok, label, detail=""):
+        R.results.append(("PASS" if ok else "FAIL", label, 0.0, str(detail)[:160]))
+
+    await g.gephi_create_project("survey")
+    imp = json.loads(await g.gephi_import_gexf(GEXF))
+    wss = json.loads(await g.gephi_list_workspaces()).get("workspaces", [])
+    check(imp.get("import_mode") == "new_workspace" and len(wss) == 1
+          and wss[0].get("name") == GEXF.rsplit("/", 1)[-1],
+          "[import] own workspace, named after the file, empty one removed", wss)
+    with open("/tmp/smoke_timed.gexf", "w") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?><gexf xmlns="http://gexf.net/1.3" '
+                'version="1.3"><graph defaultedgetype="undirected" mode="dynamic" '
+                'timeformat="double" timerepresentation="timestamp"><nodes>'
+                '<node id="t1"><spells><spell timestamp="1"/></spells></node>'
+                '<node id="t2"><spells><spell timestamp="2"/></spells></node></nodes>'
+                '<edges><edge id="te" source="t1" target="missing"/></edges></graph></gexf>')
+    timed = json.loads(await g.gephi_import_file("/tmp/smoke_timed.gexf"))
+    check(timed.get("success") is True and timed.get("import_issues"),
+          "[import] a timestamp file imports next to an open graph, with its warnings", timed)
+    await g.gephi_switch_workspace(0)
+    found = json.loads(await g.gephi_query_nodes(column="team", value="c3", limit=2))
+    check(found.get("matches", 0) > 0 and found.get("count") == 2,
+          "[search] query_nodes finds by value, case-insensitive", found.get("matches"))
+    await g.gephi_compute_degree()
+    capped = json.loads(await g.gephi_size_by_ranking("degree", cap=10))
+    check(capped.get("success") is True and capped.get("nodes_at_cap", 0) > 0,
+          "[size cap] nodes at or above the cap share the largest size",
+          (capped.get("nodes_at_cap"), capped.get("error")))
+    top = json.loads(await g.gephi_query_nodes(sort_by="degree", columns=["team"], limit=3))
+    every = json.loads(await g.gephi_query_nodes(columns=["team"], limit=2000))
+    most = max(n["degree"] for n in every.get("nodes", [{"degree": -1}]))
+    degrees = [n["degree"] for n in top.get("nodes", [])]
+    check(degrees and degrees[0] == most and degrees == sorted(degrees, reverse=True)
+          and "x" not in top["nodes"][0] and set(top["nodes"][0].get("attributes", {})) <= {"team"},
+          "[query] sort_by gives the top of the whole graph; columns trims each node",
+          (degrees, most))
+    await g.gephi_compute_modularity()
+    agree = json.loads(await g.gephi_compare_partitions("modularity_class", "team"))
+    check(agree.get("success") is True and agree.get("compared") == 1000
+          and -1 <= agree.get("adjusted_rand", 9) <= 1 and agree.get("groups"),
+          "[partitions] detected communities compared with a known grouping",
+          (agree.get("adjusted_rand"), agree.get("error")))
+    before = await stats_nodes()
+    isolates = json.loads(await g.gephi_remove_isolates(dry_run=True))
+    check(isolates.get("dry_run") is True and "would_remove" in isolates
+          and await stats_nodes() == before,
+          "[isolates] a dry run counts and removes nothing", isolates.get("would_remove"))
+    part = json.loads(await g.gephi_color_by_partition("team"))
+    check(part.get("success") is True, "[palette] color_by_partition", part.get("palette_note", ""))
+    path = json.loads(await g.gephi_find_shortest_path("n0", "n999", follow_direction=False))
+    check(path.get("found") is True and path.get("equally_short_paths", 0) >= 1,
+          "[paths] shortest path n0 to n999", {k: path.get(k) for k in ("steps", "equally_short_paths")})
+    specs = [{"name": "Degree Range", "params": {"range": [8, 100000]}},
+             {"name": "Equal: team String (Node)", "params": {"pattern": "C3"}}]
+    both = json.loads(await g.gephi_apply_filters(specs, combine="all", dry_run=True))
+    either = json.loads(await g.gephi_apply_filters(specs, combine="any", dry_run=True))
+    check(both.get("success") and either.get("success")
+          and both["nodes_kept"] < either["nodes_kept"] and await stats_nodes() == 1000,
+          "[filters] AND keeps fewer than OR; a dry run changes nothing",
+          (both.get("nodes_kept"), either.get("nodes_kept"), both.get("error"), either.get("error")))
+    await g.gephi_add_column("joined", "integer")
+    await g.gephi_batch_set_node_attributes(
+        [{"id": f"n{i}", "attributes": {"joined": 1990 + i % 10}} for i in range(1000)])
+    tim = json.loads(await g.gephi_set_time_from_columns(start="joined"))
+    sl = json.loads(await g.gephi_time_slice(1990, 1992))
+    check(tim.get("with_time") == 1000 and sl.get("success") and 0 < sl.get("node_count", 0) < 1000,
+          "[time] time from a year column, then a slice in its own workspace",
+          (tim.get("with_time"), sl.get("node_count")))
+    await g.gephi_switch_workspace(0)
+    conv = json.loads(await g.gephi_edit_column("team", "convert", type="integer"))
+    check(conv.get("values_lost") == 1000, "[columns] convert reports values it could not read",
+          conv.get("values_lost"))
+    await g.gephi_undo()
+    run = asyncio.ensure_future(g.gephi_compute_betweenness())
+    await asyncio.sleep(0.3)
+    stop = json.loads(await g.gephi_stop_statistic())
+    ran = json.loads(await run)
+    check(ran.get("stopped") is True or ran.get("success") is True,
+          "[stop] stop_statistic stops a running statistic (or it had already finished)",
+          (stop.get("stopped"), ran.get("error")))
+    save = json.loads(await g.gephi_save_project("/tmp/no-such-folder/x.gephi"))
+    check(save.get("success") is False and "does not exist" in save.get("error", ""),
+          "[save] a missing folder is refused at once instead of hanging", save.get("error"))
+
+    # Names are not ASCII. The plugin must read a body as UTF-8 even when the Content-Type names
+    # no charset (the raw post below sends none, as older servers and other clients do); the
+    # server's own calls must then find those nodes by their real ids.
+    await g.gephi_new_workspace()
+    async with httpx.AsyncClient() as client:
+        await client.post(f"{g.GEPHI_API_URL}/graph/nodes/add",
+                          content=json.dumps({"nodes": [{"id": "Tomás", "label": "Tomás"}]},
+                                             ensure_ascii=False).encode("utf-8"),
+                          headers={"Content-Type": "application/json"})
+    await g.gephi_add_nodes([{"id": "Zoë Wójcik", "label": "Zoë Wójcik"}])
+    await g.gephi_add_edge("Tomás", "Zoë Wójcik")
+    colored = json.loads(await g.gephi_set_node_color("Tomás", 200, 30, 30))
+    route = json.loads(await g.gephi_find_shortest_path("Tomás", "Zoë Wójcik"))
+    ids = [step.get("id") for step in route.get("path", [])]
+    check(colored.get("success") is True and ids == ["Tomás", "Zoë Wójcik"],
+          "[unicode] accented ids survive a request with and without a declared charset",
+          (colored.get("error"), ids))
+    await g.gephi_switch_workspace(0)
+    first = json.loads(await g.gephi_query_nodes(limit=1)).get("nodes", [{}])[0].get("id")
+    what = json.loads(await g.gephi_whatif([{"op": "remove_node", "id": first}], include_slow=True))
+    diffed = sorted(d.get("metric") for d in what.get("diff", []))
+    check({"avg_path_length", "giant_component_share"} <= set(diffed),
+          "[whatif] path length and the largest component's share are diffed",
+          diffed or what.get("detail", what.get("error")))
+
+    # Gephi's own log: this run must add no interface-thread warnings (Gephi 0.11.3 says
+    # those become errors) and no errors raised inside Gephi.
+    log_after = gephi_log()
+    if log_before is not None and log_after is not None and log_after.startswith(log_before):
+        warned, severe = gephi_log_problems(log_after[len(log_before):])
+        R.results.append(("PASS" if warned == 0 and severe == 0 else "FAIL",
+                          "[gephi log] no interface-thread warnings or errors in Gephi", 0.0,
+                          f"interface-thread warnings={warned} SEVERE={severe}"))
 
     # ---- DESTRUCTIVE LAST ----
     await R.run("clear_graph", g.gephi_clear_graph())

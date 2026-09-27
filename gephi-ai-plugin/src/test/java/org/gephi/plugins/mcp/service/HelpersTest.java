@@ -242,4 +242,27 @@ class HelpersTest {
         if (children != null) for (File c : children) deleteRecursively(c);
         f.delete();
     }
+
+    @Test
+    void gephisHtmlFilterLabelsReadAsPlainText() {
+        assertEquals("group String (Node)", GephiControlService.plainText(
+            "<font color='#000000'>group</font> <font color='#999999'><i>String (Node)</i></font>"));
+        assertEquals("Degree Range", GephiControlService.plainText("Degree Range"));
+    }
+
+    @Test
+    void projectCallsLeaveTheInterfaceThreadFromGephi0113() {
+        assertTrue(GephiControlService.versionAtLeast("0.11.3", "0.11.3"));
+        assertTrue(GephiControlService.versionAtLeast("0.12", "0.11.3"));
+        assertFalse(GephiControlService.versionAtLeast("0.11.1", "0.11.3"));
+        assertFalse(GephiControlService.versionAtLeast(null, "0.11.3"));
+        assertFalse(GephiControlService.versionAtLeast("not a version", "0.11.3"));
+    }
+
+    @Test
+    void theProjectApiVersionIsReadFromItsModule() {
+        String version = GephiControlService.projectApiVersion();
+
+        assertTrue(version != null && version.matches("\\d+(\\.\\d+)*"), String.valueOf(version));
+    }
 }

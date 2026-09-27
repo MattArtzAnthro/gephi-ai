@@ -177,10 +177,10 @@ async def test_export_screenshot_overrides(rec):
     }
 
 
-def test_all_113_tools_registered():
+def test_all_120_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 113, f"expected 113 tools, found {len(names)}"
+    assert len(names) == 120, f"expected 120 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",
@@ -192,7 +192,7 @@ def test_all_113_tools_registered():
         "gephi_detect_duplicates", "gephi_merge_nodes", "gephi_create_regex_column",
         "gephi_color_edges_by_partition", "gephi_export",
         "gephi_get_timeline", "gephi_snapshot", "gephi_undo",
-        "gephi_export_screenshot", "gephi_community_stability", "gephi_export_legend", "gephi_session_receipt", "gephi_compare_workspaces", "gephi_bipartite_layout", "gephi_bipartite_projection",
+        "gephi_export_screenshot", "gephi_community_stability", "gephi_export_legend", "gephi_session_receipt", "gephi_compare_workspaces", "gephi_compare_partitions", "gephi_bipartite_layout", "gephi_bipartite_projection",
     ):
         assert expected in names, f"{expected} not registered"
 
@@ -640,3 +640,165 @@ def test_server_reports_package_version():
     import importlib.metadata
     assert gephi_mcp.mcp.version == importlib.metadata.version("gephi-ai")
     assert gephi_mcp.mcp.version != ""
+
+
+async def test_import_file_mode_and_cap(rec):
+    await out_of(gephi_mcp.gephi_import_file, file="/tmp/g.gexf", mode="append", max_node_size=30)
+    assert rec.last["json"] == {"file": "/tmp/g.gexf", "mode": "append", "max_node_size": 30}
+
+
+async def test_import_gexf_passes_mode(rec):
+    await out_of(gephi_mcp.gephi_import_gexf, file="/tmp/g.gexf", mode="append")
+    assert rec.last["endpoint"] == "/import/gexf"
+    assert rec.last["json"] == {"file": "/tmp/g.gexf", "mode": "append"}
+
+
+async def test_query_nodes_value_search(rec):
+    await out_of(gephi_mcp.gephi_query_nodes, column="Country", value="Peru", min=1.0, limit=5)
+    assert rec.last["params"] == {"limit": 5, "offset": 0, "column": "Country", "value": "Peru",
+                                  "min": 1.0}
+
+
+async def test_apply_filters_body(rec):
+    specs = [{"name": "Degree Range", "params": {"range": [2, 9]}},
+             {"name": "Equal: group String (Node)", "params": {"pattern": "a"}, "exclude": True}]
+    await out_of(gephi_mcp.gephi_apply_filters, filters=specs, combine="any", dry_run=True)
+    assert rec.last["endpoint"] == "/filter/combine"
+    assert rec.last["json"] == {"filters": specs, "combine": "any", "action": "select",
+                                "dry_run": True}
+
+
+async def test_apply_filter_dry_run_only_counts(rec, monkeypatch):
+    async def no_snapshot(op):
+        raise AssertionError("a dry run must not take an undo snapshot")
+    monkeypatch.setattr(gephi_mcp, "_auto_snapshot", no_snapshot)
+    await out_of(gephi_mcp.gephi_apply_filter, name="Degree Range", params={"range": [2, 9]},
+                 dry_run=True)
+    assert rec.last["endpoint"] == "/filter/combine"
+    assert rec.last["json"]["dry_run"] is True
+    assert rec.last["json"]["filters"] == [{"name": "Degree Range", "params": {"range": [2, 9]}}]
+
+
+async def test_time_slice_body(rec):
+    await out_of(gephi_mcp.gephi_time_slice, start=1990, end=1995)
+    assert rec.last["endpoint"] == "/time/slice"
+    assert rec.last["json"] == {"start": 1990, "end": 1995}
+
+
+async def test_shortest_path_body(rec):
+    await out_of(gephi_mcp.gephi_find_shortest_path, source="a", target="b", weighting="strength",
+                 follow_direction=False, mark_column="on_path")
+    assert rec.last["endpoint"] == "/graph/shortest-path"
+    assert rec.last["json"] == {"source": "a", "target": "b", "weighting": "strength",
+                                "follow_direction": False, "mark_column": "on_path"}
+
+
+async def test_stop_statistic_endpoint(rec):
+    await out_of(gephi_mcp.gephi_stop_statistic)
+    assert (rec.last["method"], rec.last["endpoint"]) == ("POST", "/statistics/stop")
+
+
+async def test_a_refused_edit_takes_no_snapshot(rec, monkeypatch):
+    snapshots = []
+
+    async def snapshot(op):
+        snapshots.append(op)
+        return True
+    monkeypatch.setattr(gephi_mcp, "_auto_snapshot", snapshot)
+    rec.responses = [{"success": False, "error": "Gephi keeps the 'Label' column"}]
+
+    out = await out_of(gephi_mcp.gephi_edit_column, column="Label", action="delete")
+
+    assert out["success"] is False
+    assert snapshots == [], "a refused edit replaced the undo point"
+    assert rec.calls[-1]["json"]["check_only"] is True
+    assert len(rec.calls) == 1
+
+
+async def test_an_accepted_edit_is_checked_then_snapshotted_then_made(rec, monkeypatch):
+    order = []
+
+    async def snapshot(op):
+        order.append("snapshot")
+        return True
+    monkeypatch.setattr(gephi_mcp, "_auto_snapshot", snapshot)
+
+    out = await out_of(gephi_mcp.gephi_set_time_from_columns, start="year")
+
+    assert [c["json"].get("check_only", False) for c in rec.calls] == [True, False]
+    assert order == ["snapshot"]
+    assert out["undo_available"] is True
+
+
+async def test_size_by_ranking_sends_a_cap_only_when_given(rec):
+    await out_of(gephi_mcp.gephi_size_by_ranking, column="degree")
+    assert "cap" not in rec.last["json"]
+    await out_of(gephi_mcp.gephi_size_by_ranking, column="degree", cap=30)
+    assert rec.last["json"]["cap"] == 30
+
+
+async def test_a_capped_size_mapping_reaches_the_legend(rec):
+    gephi_mcp.LEDGER.reset()
+    await out_of(gephi_mcp.gephi_size_by_ranking, column="degree", cap=30)
+    item = gephi_mcp.LEDGER.legend_items()[-1]
+    assert item["channel"] == "node size" and item["cap"] == 30
+
+
+async def test_eigenvector_runs_long_enough_to_converge_by_default(rec):
+    """Gephi's default of 100 iterations stops early: on Les Miserables it ranks Valjean first,
+    where the converged eigenvector ranks Gavroche first. 1,000 iterations recovers the order."""
+    await out_of(gephi_mcp.gephi_compute_eigenvector)
+    call = next(c for c in rec.calls if c["endpoint"] == "/statistics/run")
+    assert call["json"] == {"name": "Eigenvector Centrality", "params": {"numRuns": 1000}}
+    await out_of(gephi_mcp.gephi_compute_eigenvector, iterations=5000)
+    call = [c for c in rec.calls if c["endpoint"] == "/statistics/run"][-1]
+    assert call["json"]["params"] == {"numRuns": 5000}
+
+
+async def test_query_nodes_can_sort_and_trim_columns(rec):
+    await out_of(gephi_mcp.gephi_query_nodes, limit=10, sort_by="pageranks",
+                 columns=["pageranks", "Degree"])
+    params = rec.last["params"]
+    assert params["sort_by"] == "pageranks" and params["descending"] == "true"
+    assert params["columns"] == "pageranks,Degree"
+    await out_of(gephi_mcp.gephi_query_nodes, sort_by="degree", descending=False)
+    assert rec.last["params"]["descending"] == "false"
+    await out_of(gephi_mcp.gephi_query_nodes)
+    assert "sort_by" not in rec.last["params"] and "columns" not in rec.last["params"]
+
+
+async def test_remove_isolates_dry_run_counts_without_a_snapshot(rec):
+    await out_of(gephi_mcp.gephi_remove_isolates, dry_run=True)
+    assert [c["endpoint"] for c in rec.calls] == ["/health", "/filter/remove-isolates"]
+    assert rec.last["json"] == {"dry_run": True}
+
+
+# An older Gephi plugin ignores options it does not know. For a dry run that means deleting
+# for real, with no undo snapshot; for sort_by or cap it means a quietly unsorted or uncapped
+# result. Options that need plugin 1.4.0 are refused on an older one instead.
+
+async def test_an_isolates_dry_run_is_refused_on_an_older_plugin_rather_than_deleting(rec):
+    rec.responses = [{"success": True, "version": "1.3.3"}]
+    out = await out_of(gephi_mcp.gephi_remove_isolates, dry_run=True)
+    assert out["success"] is False and "1.4.0" in out["error"]
+    assert "/filter/remove-isolates" not in [c["endpoint"] for c in rec.calls]
+
+
+async def test_sorting_and_capping_are_refused_on_an_older_plugin(rec):
+    rec.responses = [{"success": True, "version": "1.3.3"}]
+    out = await out_of(gephi_mcp.gephi_query_nodes, sort_by="degree")
+    assert out["success"] is False and "/graph/nodes" not in [c["endpoint"] for c in rec.calls]
+    rec.responses = [{"success": True, "version": "1.3.3"}]
+    out = await out_of(gephi_mcp.gephi_size_by_ranking, column="degree", cap=30)
+    assert out["success"] is False
+
+
+async def test_new_options_go_through_on_a_current_plugin(rec):
+    rec.responses = [{"success": True, "version": "1.4.0"}, {"success": True, "would_remove": 0}]
+    out = await out_of(gephi_mcp.gephi_remove_isolates, dry_run=True)
+    assert out["success"] is True and rec.last["endpoint"] == "/filter/remove-isolates"
+
+
+async def test_plain_calls_do_not_ask_for_the_version(rec):
+    await out_of(gephi_mcp.gephi_query_nodes, limit=5)
+    assert [c["endpoint"] for c in rec.calls] == ["/graph/nodes"]

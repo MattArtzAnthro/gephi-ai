@@ -134,3 +134,37 @@ def test_a_single_node_in_a_mode_does_not_divide_by_zero():
 
     assert len(positions) == 2
     assert all(isinstance(p["y"], float) for p in positions)
+
+
+# ── Weighting the projection ──
+# A raw count favours whoever attended most. Jaccard divides by everything either node took
+# part in; Newman's weighting counts a shared event as 1/(attendees - 1), so a small meeting
+# ties people more closely than a large gathering.
+
+def _weights(projected):
+    return {(e["source"], e["target"]): e["weight"] for e in projected["edges"]}
+
+
+def test_jaccard_weighting_divides_shared_partners_by_all_partners():
+    projected = project_bipartite(PEOPLE_EVENTS, "kind", keep="person", weighting="jaccard")
+
+    assert _weights(projected) == {("ann", "bo"): pytest.approx(0.5)}
+
+
+def test_newman_weighting_counts_a_crowded_event_for_less():
+    crowd = graph({"a": "p", "b": "p", "c": "p", "small": "e", "big": "e"},
+                  [("a", "small"), ("b", "small"), ("a", "big"), ("b", "big"), ("c", "big")])
+
+    weights = _weights(project_bipartite(crowd, "kind", keep="p", weighting="newman"))
+
+    assert weights[("a", "b")] == pytest.approx(1.0 + 0.5)
+    assert weights[("a", "c")] == pytest.approx(0.5)
+
+
+def test_the_default_weighting_is_the_shared_count():
+    assert _weights(project_bipartite(PEOPLE_EVENTS, "kind", keep="person")) == {("ann", "bo"): 1}
+
+
+def test_an_unknown_weighting_is_refused():
+    with pytest.raises(ValueError, match="weighting"):
+        project_bipartite(PEOPLE_EVENTS, "kind", keep="person", weighting="cosine")

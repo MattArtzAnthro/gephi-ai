@@ -52,6 +52,8 @@ def _text(x: float, y: float, body: Any, *, size: int = 11, weight: str = "norma
 def _block_height(item: dict[str, Any]) -> float:
     if item.get("groups"):
         return _TITLE_GAP + _ROW * len(item["groups"])
+    if item.get("cap") is not None:
+        return _TITLE_GAP + 2 * _ROW
     return _TITLE_GAP + _ROW
 
 
@@ -88,6 +90,8 @@ def _draw_block(item: dict[str, Any], y: float, gradient_id: str) -> tuple[str, 
         parts.append(f'<circle cx="{_PAD + 34}" cy="{row + 7:g}" r="9" fill="#bbbbbb" '
                      f'stroke="#00000033"/>')
         parts.append(_text(_PAD + 50, row + 11, f"{low} to {high}"))
+        if item.get("cap") is not None:
+            parts.append(_text(_PAD, row + 11 + _ROW, f"{item['cap']:g} and above: largest size"))
 
     return "\n".join(parts), defs
 

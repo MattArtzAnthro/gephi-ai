@@ -272,7 +272,7 @@ async def test_serializing_keeps_every_tool_listing_as_it_was():
     # The listing each tool would have without the wrapper, built from the unwrapped functions
     # on a separate server, must equal what the server lists.
     registered = gephi_mcp.mcp._tool_manager.list_tools()
-    assert len(registered) == 113
+    assert len(registered) == 120
     before = MCPServer("before")
     wrapped = set()
     for t in registered:
@@ -281,7 +281,7 @@ async def test_serializing_keeps_every_tool_listing_as_it_was():
             wrapped.add(t.name)
         before.add_tool(original, name=t.name, title=t.title, annotations=t.annotations,
                         icons=t.icons, meta=t.meta)
-    assert wrapped == {t.name for t in registered} - {"gephi_stop_layout"}
+    assert wrapped == {t.name for t in registered} - {"gephi_stop_layout", "gephi_stop_statistic"}
     alone = {t.name for t in registered if gephi_mcp._runs_alone(t.name)}
     assert {"gephi_whatif", "gephi_profile_graph", "gephi_set_node_color"} <= alone
     assert "gephi_get_graph_stats" not in alone
@@ -317,6 +317,64 @@ async def test_stop_layout_reaches_gephi_while_a_sync_layout_holds_the_lock(monk
     # The stop reached Gephi while the layout's status wait was still held open.
     assert stopped == [False], "the layout call had already ended"
     assert "/layout/stop" in _paths(state)
+
+
+async def test_stop_statistic_reaches_gephi_while_a_statistic_holds_the_lock(monkeypatch):
+    waiting, release = asyncio.Event(), asyncio.Event()
+
+    async def statistic_running():
+        waiting.set()
+        await release.wait()
+
+    state = install_fake_gephi(monkeypatch, faults={"/statistics/stop": {"success": True,
+                                                                         "stopped": ["Betweenness"]}},
+                               gates={"/statistics/betweenness": statistic_running})
+    run = asyncio.ensure_future(gephi_mcp.gephi_compute_betweenness())
+    try:
+        await asyncio.wait_for(waiting.wait(), 5)
+        out = await asyncio.wait_for(gephi_mcp.gephi_stop_statistic(), 1)
+        still_running = not run.done()
+    finally:
+        release.set()
+        await asyncio.wait_for(run, 5)
+    assert json.loads(out)["success"] is True
+    assert still_running, "the statistic call had already ended"
+    assert "/statistics/stop" in _paths(state)
+
+
+async def test_a_statistic_stopped_from_the_chat_is_stopped_in_gephi(monkeypatch):
+    waiting = asyncio.Event()
+
+    async def statistic_running():
+        waiting.set()
+        await asyncio.Event().wait()
+
+    state = install_fake_gephi(monkeypatch, faults={"/statistics/stop": {"success": True}},
+                               gates={"/statistics/run": statistic_running})
+    run = asyncio.ensure_future(gephi_mcp.gephi_run_statistic(name="Eccentricity"))
+    await asyncio.wait_for(waiting.wait(), 5)
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    await asyncio.wait_for(asyncio.gather(*gephi_mcp._BACKGROUND), 5)
+    assert "/statistics/stop" in _paths(state)
+
+
+async def test_a_cancelled_read_sends_no_stop(monkeypatch):
+    waiting = asyncio.Event()
+
+    async def slow_read():
+        waiting.set()
+        await asyncio.Event().wait()
+
+    state = install_fake_gephi(monkeypatch, gates={"/graph/stats": slow_read})
+    run = asyncio.ensure_future(gephi_mcp.gephi.request("GET", "/graph/stats"))
+    await asyncio.wait_for(waiting.wait(), 5)
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    await asyncio.sleep(0)
+    assert "/statistics/stop" not in _paths(state)
 
 
 async def test_a_locked_tool_awaited_directly_leaves_the_lock_marker_clear(monkeypatch):

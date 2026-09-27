@@ -38,10 +38,11 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 import gephi_mcp_viewer
 import text_network
-from bipartite import bipartite_positions, project_bipartite, split_modes
+from bipartite import bipartite_positions, column_value, project_bipartite, split_modes
 from community_stability import consensus
 from graph_diff import diff_graphs
 from legend import legend_document
+from partition_match import compare_partitions
 from session_ledger import Ledger
 from stats_integrity import (
     GraphFacts,
@@ -197,6 +198,7 @@ _READ_ONLY = {
     "gephi_list_filters", "gephi_get_timeline", "gephi_column_value_frequencies",
     "gephi_detect_duplicates", "gephi_get_preview_settings", "gephi_get_perspective",
     "gephi_get_selection", "gephi_view_graph", "gephi_whatif", "gephi_compare_nodes",
+    "gephi_compare_partitions",
 }
 _DESTRUCTIVE = {
     "gephi_create_project", "gephi_open_project", "gephi_delete_workspace",
@@ -205,7 +207,8 @@ _DESTRUCTIVE = {
     "gephi_remove_isolates", "gephi_extract_ego_network",
     "gephi_extract_giant_component", "gephi_extract_backbone",
     "gephi_merge_nodes", "gephi_clear_graph", "gephi_reset_appearance",
-    "gephi_reset_filters", "gephi_apply_filter",
+    "gephi_reset_filters", "gephi_apply_filter", "gephi_apply_filters", "gephi_edit_column",
+    "gephi_set_time_from_columns",
 }
 # Reaches beyond Gephi: the health check fetches latest.json from GitHub.
 _OPEN_WORLD = {"gephi_health_check"}
@@ -233,13 +236,14 @@ def _annotations_for(name: str) -> ToolAnnotations:
 # copy could show the copy. Only the tools that switch workspaces (a what-if and
 # gephi_compare_workspaces) hold reads back: they close a read gate for their whole call, so a
 # read never sees another workspace. A tool function called from inside another one runs
-# straight through, since its caller already holds the lock. gephi_stop_layout takes neither the
-# lock nor the gate: it has to reach Gephi while a sync layout holds the lock. asyncio primitives
+# straight through, since its caller already holds the lock. gephi_stop_layout and
+# gephi_stop_statistic take neither the lock nor the gate: they have to reach Gephi while the
+# layout or statistic they stop holds the lock. asyncio primitives
 # belong to the event loop they are first used in, so each running loop gets its own lock and
 # gate.
 _RUNS_ALONE_ANYWAY = {"gephi_whatif", "gephi_profile_graph"}
 _READS_DESPITE_ANNOTATION = {"gephi_session_receipt", "gephi_claim_record"}
-_NEVER_WAITS = {"gephi_stop_layout"}
+_NEVER_WAITS = {"gephi_stop_layout", "gephi_stop_statistic"}
 _HOLDS_BACK_READS = {"gephi_whatif", "gephi_compare_workspaces"}
 _TOOL_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
     weakref.WeakKeyDictionary())
@@ -378,6 +382,30 @@ def _timed_out(response: dict[str, Any]) -> bool:
     return response.get("success") is False and response.get("error") == TIMEOUT_ERROR
 
 
+async def _needs_plugin(minimum: tuple[int, ...], feature: str) -> dict[str, Any] | None:
+    """A refusal when the Gephi plugin is older than `minimum`, else None.
+
+    An older plugin ignores options it does not know: a dry run would delete for real with no
+    undo snapshot, and a sort or cap would quietly not happen. A version that cannot be read is
+    let through, since every plugin that lacks these options reports its version.
+    """
+    health = await gephi.request("GET", "/health")
+    version = health.get("version") if isinstance(health, dict) else None
+    try:
+        found = tuple(int(part) for part in str(version).split(".")[:3])
+    except ValueError:
+        return None
+    if found >= minimum:
+        return None
+    needed = ".".join(map(str, minimum))
+    return {"success": False,
+            "error": f"{feature} needs Gephi AI plugin {needed} or later; this Gephi has {version}. "
+                     "Update the plugin (see gephi_health_check), or leave the option out."}
+
+
+JSON_UTF8 = {"Content-Type": "application/json; charset=utf-8"}
+
+
 class GephiClient:
     def __init__(self, base_url: str = GEPHI_API_URL):
         self.base_url = base_url.rstrip("/")
@@ -397,9 +425,21 @@ class GephiClient:
                 LEDGER.reset()
         try:
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
-                response = await client.request(method=method, url=url, params=params, json=json_data)
+                # Name the charset: Gephi's HTTP server decodes a body as US-ASCII when none is
+                # given, which corrupted every non-ASCII id and label on older plugin builds.
+                headers = JSON_UTF8 if json_data is not None else None
+                response = await client.request(method=method, url=url, params=params,
+                                                json=json_data, headers=headers)
                 response.raise_for_status()
                 return response.json()
+        except asyncio.CancelledError:
+            # The call was stopped from the chat. A statistic would keep computing in Gephi
+            # with nobody waiting for it, so it is stopped there too.
+            if runs_statistic(method, endpoint):
+                task = asyncio.get_running_loop().create_task(self.stop_statistics())
+                _BACKGROUND.add(task)
+                task.add_done_callback(_BACKGROUND.discard)
+            raise
         except httpx.ConnectError:
             return {"success": False, "error": f"Cannot connect to Gephi at {self.base_url}. Ensure Gephi is running with the MCP plugin installed."}
         except httpx.TimeoutException:
@@ -411,6 +451,19 @@ class GephiClient:
                 return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text}"}
         except Exception as e:
             return {"success": False, "error": f"Request failed: {str(e)}"}
+
+    async def stop_statistics(self) -> dict[str, Any]:
+        return await self.request("POST", "/statistics/stop", timeout=10)
+
+
+def runs_statistic(method: str, endpoint: str) -> bool:
+    """True for a request that starts a statistic in Gephi."""
+    return (method == "POST" and endpoint.startswith("/statistics/")
+            and endpoint not in ("/statistics/stop", "/statistics/available"))
+
+
+#: Stop requests sent after a cancelled call, kept referenced until they finish.
+_BACKGROUND: set[asyncio.Task[Any]] = set()
 
 gephi = GephiClient()
 
@@ -763,6 +816,17 @@ async def _auto_snapshot(op: str) -> bool:
         return False
 
 
+async def _snapshot_then(op: str, endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Run a change that Gephi may refuse, taking the undo snapshot only once Gephi has said
+    it will go ahead. There is one rolling undo point, so a snapshot taken for a refused call
+    would replace the one that undoes the previous change with a copy of the unchanged graph."""
+    check = await gephi.request("POST", endpoint, json_data={**body, "check_only": True})
+    if not check.get("success"):
+        return check
+    undo = await _auto_snapshot(op)
+    return _with_undo(await gephi.request("POST", endpoint, json_data=body), undo)
+
+
 def _with_undo(result: Any, undo_ok: bool) -> Any:
     if isinstance(result, dict):
         result["undo_available"] = undo_ok
@@ -1005,11 +1069,41 @@ async def gephi_bulk_remove_nodes(ids: list[str]) -> str:
                                               json_data={"ids": ids}), undo))
 
 @_tool(name="gephi_query_nodes")
-async def gephi_query_nodes(limit: int = 100, offset: int = 0) -> str:
+async def gephi_query_nodes(limit: int = 100, offset: int = 0, column: str | None = None,
+                            value: str | None = None, contains: str | None = None,
+                            min: float | None = None, max: float | None = None,
+                            sort_by: str | None = None, descending: bool = True,
+                            columns: list[str] | None = None) -> str:
     """List nodes with their attributes, positions, sizes, colors, and computed
     metrics, paginated. Use it to read values (a centrality column, a community
-    id, a label) for many nodes at once; gephi_get_node reads one."""
-    return fmt(await gephi.request("GET", "/graph/nodes", params={"limit": limit, "offset": offset}))
+    id, a label) for many nodes at once; gephi_get_node reads one.
+
+    To find nodes by value, name a `column` (its id or its title, e.g. "label",
+    "modularity_class", "Country") and one or more of: `value` (the whole value;
+    text ignores case, numbers compare by value), `contains` (part of the text),
+    `min` / `max` (a numeric range, inclusive). Only matching nodes are listed,
+    and `matches` counts all of them, not just this page. Example: every node in
+    community 3 is column="modularity_class", value="3".
+
+    To rank, pass `sort_by` (a column id or title, or "degree"): nodes are ordered
+    largest first (descending=False for smallest first) before paging, so limit=10
+    is the top ten of the whole graph. Nodes without a value come last. Pass
+    `columns` to return only those attributes (plus id, label and degree), which
+    keeps long listings small: sort_by="pageranks", columns=["pageranks"], limit=10."""
+    if sort_by is not None or columns:
+        refused = await _needs_plugin((1, 4, 0), "Sorting or choosing columns")
+        if refused:
+            return fmt(refused)
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, val in (("column", column), ("value", value), ("contains", contains),
+                     ("min", min), ("max", max), ("sort_by", sort_by)):
+        if val is not None:
+            params[key] = val
+    if sort_by is not None:
+        params["descending"] = "true" if descending else "false"
+    if columns:
+        params["columns"] = ",".join(columns)
+    return fmt(await gephi.request("GET", "/graph/nodes", params=params))
 
 @_tool(name="gephi_get_node")
 async def gephi_get_node(id: str) -> str:
@@ -1187,12 +1281,18 @@ async def gephi_reset_appearance(r: int = 153, g: int = 153, b: int = 153, size:
 async def gephi_color_by_partition(column: str, colors: dict[str, list[int]] | None = None) -> str:
     """Color nodes by a categorical attribute (e.g. modularity_class, type).
 
-    colors: optional {value: [r, g, b]} map; otherwise a distinct palette is assigned.
-    Recommended palette (validated for readability on white exports and colorblind
-    separation; pale/pastel colors are near-invisible on white): {"0": [42,120,214],
-    "1": [27,175,122], "2": [237,161,0], "3": [0,131,0], "4": [74,58,167],
-    "5": [227,73,72], "6": [232,123,164], "7": [235,104,52]}. With more than 8
-    categories, color the 8 largest and set the rest to gray [153,153,153].
+    colors: leave unset on light backgrounds. The plugin then gives the largest group the
+    first of eight colours validated for readability on white, the next largest the second,
+    and so on, in an order that keeps the five largest groups apart wherever they touch, even
+    for colour-blind readers; further groups get their own generated colours, and past five
+    groups a palette_note says to label the groups as well.
+    Pass colors ({value: [r, g, b]}) only for a dark background, using the dark-surface
+    palette in the skill, or to match colours the person already uses.
+
+    column may be the column's id or the title shown in Gephi. With Gephi AI plugin 1.4.0+,
+    Gephi's Appearance panel is set to the same partition and colors, so the user sees what
+    was applied and can reapply it there; appearance_panel says whether it was, and
+    appearance_panel_note says why not.
     """
     return _fmt_styled(await gephi.request("POST", "/appearance/partition/color",
                                            json_data=_body(column=column, colors=colors)),
@@ -1220,7 +1320,9 @@ async def gephi_color_by_ranking(column: str,
                                  r_max: int = 255, g_max: int = 0, b_max: int = 0) -> str:
     """Color nodes by a numeric attribute using a gradient from (r/g/b)_min to (r/g/b)_max.
 
-    Works with degree, betweenness, pagerank, etc.
+    Works with degree, betweenness, pagerank, etc. column may be the id or the title shown
+    in Gephi. With plugin 1.4.0+, Gephi's Appearance panel is set to the same ranking and
+    colors (appearance_panel says whether it was).
     """
     return fmt(await gephi.request("POST", "/appearance/ranking/color",
                                    json_data={"column": column,
@@ -1228,17 +1330,31 @@ async def gephi_color_by_ranking(column: str,
                                               "r_max": r_max, "g_max": g_max, "b_max": b_max}))
 
 @_tool(name="gephi_size_by_ranking")
-async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: float = 60) -> str:
+async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: float = 100,
+                                cap: float | None = None) -> str:
     """Size nodes by a numeric attribute, mapping values between min_size and max_size.
 
     Always do this before exporting or viewing — unsized nodes render as invisible
-    specks. Degree with min 10, max 60 is a good default; scale up for large canvases.
+    specks. The default range, 10 to 100, gives the about one-to-ten ratio suited to a
+    whole map on screen; widen it for a large print.
+
+    cap: a value at and above which every node gets max_size, so a few outliers (a
+    mailing list with ten times anyone's contacts) do not shrink every other node. The
+    reply says how many nodes sit at the cap; say so in the caption, and the legend
+    records it. Gephi's Appearance panel has no cap, so it is left unchanged.
+    column may be the id or the title shown in Gephi. With plugin 1.4.0+, Gephi's
+    Appearance panel is set to the same ranking and size range (appearance_panel says
+    whether it was).
     """
+    if cap is not None:
+        refused = await _needs_plugin((1, 4, 0), "A size cap")
+        if refused:
+            return fmt(refused)
     return _fmt_styled(await gephi.request("POST", "/appearance/ranking/size",
-                                           json_data={"column": column, "min_size": min_size,
-                                                      "max_size": max_size}),
+                                           json_data=_body(column=column, min_size=min_size,
+                                                           max_size=max_size, cap=cap)),
                        "size_by_ranking", column=column,
-                       min_size=min_size, max_size=max_size)
+                       min_size=min_size, max_size=max_size, cap=cap)
 
 
 # ─── Reading the graph ───────────────────────────────────────
@@ -1332,6 +1448,8 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     Leave distributedAttraction (Dissuade Hubs) off. It acts only on directed networks,
     pushes nodes that send many links but receive few to the edge, and costs cluster
     separation; use it only as a deliberate exploration view and say so in the caption.
+    With plugin 1.4.0+, the layout runs through Gephi's Layout panel, which shows the
+    algorithm, the settings used and whether it is running.
     After the run, call gephi_visual_qa with partition_column: partition.separation
     (lower = clearer groups) lets you compare settings. Change one parameter per rerun.
     A setting whose name matches no property is not applied: the result then carries
@@ -1842,7 +1960,10 @@ async def _compute_profile(include_slow: bool = False) -> dict:
     if include_slow and profile["nodes"] <= 3000:
         dist = await gephi.request("POST", "/statistics/avg-path-length", json_data={})
         if dist.get("success"):
-            profile["distance"] = {k: dist[k] for k in ("avg_path_length", "diameter", "radius") if k in dist}
+            profile["distance"] = {k: dist[k] for k in ("diameter", "radius") if k in dist}
+            # Gephi names it average_path_length; the profile has always called it avg_path_length.
+            if "average_path_length" in dist:
+                profile["distance"]["avg_path_length"] = dist["average_path_length"]
     return _carry_filter_warning(exported, profile)
 
 
@@ -1906,6 +2027,13 @@ async def gephi_list_statistics() -> str:
 async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -> str:
     """Run any available statistic by name — including installed plugin metrics.
 
+    With Gephi AI plugin 1.4.0+, statistics run through Gephi's Statistics panel, which shows
+    each one running, its result and its report, and lets the user cancel it. Dynamic
+    statistics (# Nodes, # Edges, Degree and Clustering Coefficient over time) need a network
+    with time data and params {"window": ..., "tick": ...} in the network's time units (the
+    width of each time slice and the step between slices); without them they are refused, and
+    the error gives the network's time range.
+
     `name` matches an entry from gephi_list_statistics (case-insensitive).
     `params`: optional {property: value} map set on the statistic before it runs
     (setters, bare fields, and enums-by-name all work). Results land in
@@ -1924,6 +2052,36 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
     return fmt(await gephi.request("POST", "/statistics/run",
                                    json_data=_body(name=name, params=params),
                                    timeout=SLOW_REQUEST_TIMEOUT))
+
+@_tool(name="gephi_find_shortest_path")
+async def gephi_find_shortest_path(source: str, target: str, weighting: str = "none",
+                                   follow_direction: bool = True,
+                                   mark_column: str | None = None) -> str:
+    """Find the shortest path between two nodes (by id): the chain of nodes that links them.
+
+    `weighting`: "none" counts steps (the usual reading of "how far apart"); "distance"
+    reads each edge's weight as its length (kilometres, minutes); "strength" reads a
+    heavier edge as a closer tie (frequent contact, many co-authored papers), so strong
+    ties count as short. Pick by what the weights mean; ask when unsure.
+    Directed edges are followed forwards only unless `follow_direction` is False.
+    `equally_short_paths` says how many different paths share this length: when it is
+    above 1, this path is one of several, so do not present its middle nodes as the only
+    link. `mark_column` writes true/false into a node and an edge column, so the path
+    can be coloured with gephi_color_by_partition.
+    """
+    body = _body(source=source, target=target, weighting=weighting,
+                 follow_direction=follow_direction, mark_column=mark_column)
+    return fmt(await gephi.request("POST", "/graph/shortest-path", json_data=body))
+
+
+@_tool(name="gephi_stop_statistic")
+async def gephi_stop_statistic() -> str:
+    """Stop a statistic that is still running in Gephi (a slow betweenness, path length,
+    or plugin metric on a large network). The stopped run writes nothing, so the columns
+    keep their earlier values. Interrupting a statistic's call from the chat stops it in
+    Gephi as well; this tool is for a run started elsewhere or left running. Statistics
+    that offer no way to stop them are named in `cannot_stop`."""
+    return fmt(await gephi.stop_statistics())
 
 @_tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
@@ -1975,9 +2133,21 @@ async def gephi_compute_hits() -> str:
     return fmt(await gephi.request("POST", "/statistics/hits"))
 
 @_tool(name="gephi_compute_eigenvector")
-async def gephi_compute_eigenvector() -> str:
-    """Compute eigenvector centrality. Stores 'eigencentrality' on nodes."""
-    return await fmt_stat("eigenvector", await gephi.request("POST", "/statistics/eigenvector"))
+async def gephi_compute_eigenvector(iterations: int = 1000) -> str:
+    """Compute eigenvector centrality. Stores 'eigencentrality' on nodes.
+
+    iterations: how long Gephi iterates. Gephi's own default of 100 stops before the values
+    settle on some networks and can put the wrong node first, so this runs 1,000 by
+    default (about 3 seconds on 5,000 nodes). Values can still differ from an exact
+    calculation by up to about a tenth: do not rank on small differences, and compare with
+    PageRank when the order matters.
+    """
+    return await fmt_stat("eigenvector",
+                          await gephi.request("POST", "/statistics/run",
+                                              json_data={"name": "Eigenvector Centrality",
+                                                         "params": {"numRuns": iterations}},
+                                              timeout=SLOW_REQUEST_TIMEOUT),
+                          iterations=iterations)
 
 
 # ─── Filters ─────────────────────────────────────────────────
@@ -2011,9 +2181,15 @@ async def gephi_filter_by_edge_weight(min: float = 0, max: float = 0, dry_run: b
     return fmt(_with_undo(result, undo) if not dry_run else result)
 
 @_tool(name="gephi_remove_isolates")
-async def gephi_remove_isolates() -> str:
+async def gephi_remove_isolates(dry_run: bool = False) -> str:
     """Remove all isolated nodes (degree 0). Destructive; auto-snapshots first
-    (gephi_undo reverses it)."""
+    (gephi_undo reverses it). dry_run=True counts them (would_remove) and changes
+    nothing. Isolates can be a finding, so say what would go before removing them."""
+    if dry_run:
+        refused = await _needs_plugin((1, 4, 0), "A dry run of remove_isolates")
+        if refused:
+            return fmt(refused)
+        return fmt(await gephi.request("POST", "/filter/remove-isolates", json_data={"dry_run": True}))
     undo = await _auto_snapshot("remove_isolates")
     return fmt(_with_undo(await gephi.request("POST", "/filter/remove-isolates"), undo))
 
@@ -2045,8 +2221,9 @@ async def gephi_list_filters() -> str:
 
     Covers the built-in topology filters (Degree Range, K-core, Giant Component,
     Ego Network, Neighbors, Edge Weight, …) AND a per-column attribute filter for
-    each node/edge column currently in the graph (Attribute Equal / Range /
-    Non-null on that column) — so the exact set depends on what columns exist.
+    each node/edge column currently in the graph, named by kind and column (e.g.
+    "Equal: group String (Node)", "Non-null: email String (Node)") — so the exact
+    set depends on what columns exist. Pass names exactly as listed.
     Each entry gives name, category, description, and `properties` (name + type)
     so you know what to pass to gephi_apply_filter. Range-typed properties take a
     [low, high] pair. This is the discovery step before applying an arbitrary
@@ -2057,13 +2234,14 @@ async def gephi_list_filters() -> str:
 
 @_tool(name="gephi_apply_filter")
 async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
-                             action: str = "select", column: str | None = None) -> str:
+                             action: str = "select", column: str | None = None,
+                             dry_run: bool = False) -> str:
     """Apply a filter by name — the general-purpose filter tool.
 
     name matches an entry from gephi_list_filters (case-insensitive). params is a
     {property: value} map for that filter's properties (see the filter's
     `properties` in gephi_list_filters); a Range property takes a [low, high]
-    pair, e.g. params={"Degree Range": [2, 10]}. If a property name doesn't
+    pair, e.g. params={"range": [2, 10]}. If a property name doesn't
     match, the error lists the valid ones.
 
     action decides what happens with the matches:
@@ -2082,12 +2260,71 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
     This compiles a plain-language filtering intent ("nodes with degree ≥ 5 in
     the giant component", "only where type = X") into the right Gephi filter:
     pick the filter from gephi_list_filters, set its properties, choose the
-    action. For AND/OR of several conditions, apply them in sequence with
-    action="select" (each narrows the visible graph).
+    action. For AND, OR or NOT across several conditions, use gephi_apply_filters.
+
+    `dry_run`=True counts what would stay and what would go (nodes_kept,
+    nodes_removed, ...) and changes nothing; use it to tell the user what a filter
+    will hide before applying it.
     """
+    if dry_run:
+        spec: dict[str, Any] = {"name": name}
+        if params is not None:
+            spec["params"] = params
+        return fmt(await gephi.request("POST", "/filter/combine",
+                                       json_data={"filters": [spec], "dry_run": True}))
     return fmt(await gephi.request("POST", "/filter/apply",
                                    json_data=_body(name=name, params=params,
                                                    action=action, column=column)))
+
+
+@_tool(name="gephi_apply_filters")
+async def gephi_apply_filters(filters: list[dict[str, Any]], combine: str = "all",
+                              action: str = "select", column: str | None = None,
+                              dry_run: bool = False) -> str:
+    """Apply several filters together, e.g. "degree at least 3 AND in community 2" or
+    "Country is Peru OR Country is Chile".
+
+    Each entry in `filters` is {"name": ..., "params": {...}} as for gephi_apply_filter,
+    plus "exclude": true to keep the opposite of what that filter keeps (NOT).
+    `combine`: "all" keeps what every filter keeps (AND), "any" what at least one keeps (OR).
+    `action` is as for gephi_apply_filter: "select" (hide the rest, reversible with
+    gephi_reset_filters), "new_workspace", or "column" (write membership into `column`).
+    `dry_run`=True only counts what would stay and what would go; run it first and tell
+    the user before hiding a large part of the network. The combined query appears in
+    Gephi's Filters panel, so the user can adjust it there.
+    """
+    body = _body(filters=filters, combine=combine, action=action, column=column, dry_run=dry_run)
+    return fmt(await gephi.request("POST", "/filter/combine", json_data=body))
+
+
+@_tool(name="gephi_set_time_from_columns")
+async def gephi_set_time_from_columns(start: str | None = None, end: str | None = None,
+                                      target: str = "node", date_format: str | None = None) -> str:
+    """Give nodes (or edges, target="edge") their time from a start column and/or an end
+    column, so the network gains time data: Gephi's timeline, gephi_time_slice and the
+    dynamic statistics then work.
+
+    Columns holding numbers (years, for instance) are used as they are. Columns holding
+    dates as text need `date_format`, a Java date pattern such as "yyyy-MM-dd" or
+    "dd/MM/yyyy". A missing start means "from the beginning", a missing end "still
+    present". Changes the network; an undo snapshot is taken first (gephi_undo reverses it).
+    """
+    body = _body(start=start, end=end, target=target, date_format=date_format)
+    return fmt(await _snapshot_then("set_time_from_columns", "/time/from-columns", body))
+
+
+@_tool(name="gephi_time_slice")
+async def gephi_time_slice(start: float, end: float) -> str:
+    """Open the network as it was between `start` and `end` in a new workspace: the nodes
+    present at some moment in that window, and the edges present then between them.
+    Nodes and edges without time data count as always present. The network itself and
+    Gephi's timeline stay as they were; gephi_switch_workspace goes back.
+
+    Use it to compare periods: slice each one, then run the same statistics in each
+    workspace (gephi_compare_workspaces lines them up). Time-varying attribute values
+    keep their full history in the slice. Needs time data (see gephi_get_timeline; add it
+    with gephi_set_time_from_columns)."""
+    return fmt(await gephi.request("POST", "/time/slice", json_data={"start": start, "end": end}))
 
 
 @_tool(name="gephi_get_timeline")
@@ -2099,15 +2336,35 @@ async def gephi_get_timeline() -> str:
     recognizes, and the timeline's enabled/interval state. Use it to check
     whether an imported graph is dynamic and over what time range.
 
-    To reason about change over time, read this plus the node/edge start/end
-    values (e.g. via gephi_query_nodes / the exported GEXF) — there is no
-    programmatic "restrict the graph to a time window" tool: driving Gephi's
-    timeline from outside destabilizes its render thread in this architecture
-    (both the data-view swap and the timeline-UI toggle proved unsafe), so it's
-    deliberately not exposed. Slice by time in the Gephi timeline UI directly if
-    you need the live view filtered.
+    To look at one period, gephi_time_slice opens it in a new workspace. Gephi's
+    timeline itself is left to the user: moving it from outside destabilizes Gephi's
+    drawing, so no tool drives it. A network without time data can get it from start
+    and end columns with gephi_set_time_from_columns.
     """
     return fmt(await gephi.request("GET", "/timeline"))
+
+
+@_tool(name="gephi_edit_column")
+async def gephi_edit_column(column: str, action: str, target: str = "node",
+                            value: str | None = None, type: str | None = None,
+                            new_name: str | None = None) -> str:
+    """Tidy one column of the node table (or the edge table, target="edge").
+
+    `action`:
+    - "delete": remove the column.
+    - "rename": give it `new_name`.
+    - "convert": change its type to `type` (string, integer, long, float, double,
+      boolean), e.g. numbers imported as text. Values that cannot be read as the new
+      type become empty; the reply counts them in `values_lost`, so tell the user.
+    - "fill_empty": write `value` into every empty cell, leaving filled ones alone.
+    - "clear": empty every cell.
+    The column is found by id or title. Gephi's own columns (id, label, time) cannot be
+    deleted, renamed or converted. An undo snapshot is taken first (gephi_undo reverses it);
+    a refused edit changes nothing and keeps the earlier undo point.
+    """
+    body = _body(column=column, action=action, target=target, value=value, type=type,
+                 new_name=new_name)
+    return fmt(await _snapshot_then("edit_column", "/datalab/column/edit", body))
 
 
 @_tool(name="gephi_column_value_frequencies")
@@ -2539,11 +2796,12 @@ async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> 
     """Export the graph visualization as PNG. Run a layout first to position nodes.
 
     Default rendering yields near-invisible output; before exporting: (1) size nodes
-    with gephi_size_by_ranking (e.g. degree, 10-60); (2) color with the validated
-    palette (see gephi_color_by_partition); (3) call gephi_set_preview_settings with
-    {"edge.opacity": 25, "edge.thickness": 2.0, "node.opacity": 100,
-    "node.border.width": 0.3, "arrow.size": 0}. Then export, look at the image, and
-    fix what is unreadable before declaring done.
+    with gephi_size_by_ranking (e.g. degree, default range); (2) colour groups with
+    gephi_color_by_partition; (3) call gephi_set_preview_settings with
+    {"edge.color": "#D0D0D0", "edge.opacity": 90, "edge.thickness": 1.0,
+    "edge.curved": false, "node.opacity": 100, "node.border.width": 0.3,
+    "arrow.size": 0}, light neutral edges so the groups read first. Then export, look
+    at the image, and fix what is unreadable before declaring done.
     """
     return fmt(await gephi.request("POST", "/export/png",
                                    json_data={"file": file, "width": width, "height": height}))
@@ -2688,10 +2946,10 @@ async def gephi_get_selection(clear: bool = False) -> str:
     "this group", "the ones I selected", "what did I grab?". Their selection is
     the answer; do not ask them to type node names.
 
-    How the human points: box-drag selection is turned ON automatically at the
-    start of the session, so they can just drag a box around nodes on the
-    Overview canvas and the selection persists until they box elsewhere — no need
-    to hunt for a toolbar tool. (If they switched to another mouse mode, the
+    How the human points: the first call to this tool turns box-drag selection on
+    (gephi_set_selection_mode with "rectangle" does it up front), so they can drag a
+    box around nodes on the Overview canvas, and the selection persists until they box
+    elsewhere, with no need to hunt for a toolbar tool. (If they switched to another mouse mode, the
     dashed-square rectangle icon in the thin left toolbar turns it back on; plain
     hover highlighting is transient and does not register.)
 
@@ -3171,6 +3429,43 @@ async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
             await gephi.request("POST", "/workspace/switch", json_data={"index": original})
 
 
+@_tool(name="gephi_compare_partitions")
+async def gephi_compare_partitions(column: str, against: str) -> str:
+    """How far two groupings of the same nodes agree: detected communities against a grouping
+    the person already has (factions, departments, field sites), or two detection runs.
+
+    column and against are node columns, by id or by the title shown in Gephi (for example
+    column="modularity_class", against="department"). Returns:
+    - groups: for each group in `column`, the `against` value most of its members hold and the
+      share that do. Read this first; it says which detected group matches what.
+    - table: how many nodes fall in each combination.
+    - adjusted_rand: how often two nodes grouped together in one are together in the other,
+      corrected for chance: 1 is the same grouping, about 0 is what chance gives, and it can
+      go below 0 (Hubert and Arabie 1985).
+    - normalized_mutual_information: how much knowing one grouping tells about the other,
+      from 0 (nothing) to 1 (everything) (Danon et al. 2005).
+    Group names do not matter to either score. Nodes missing either value are left out and
+    counted in left_out. Report the scores with the table, and state no verdict ("strong",
+    "clear") from a score alone: check community stability before reading detected groups.
+    """
+    graph = await _read_graph()
+    if graph is None:
+        return fmt({"success": False, "error": "Could not read the current graph."})
+    nodes = graph.get("nodes", [])
+    for name in (column, against):
+        if not any(column_value(n.get("attributes"), name) is not None for n in nodes):
+            return fmt({"success": False,
+                        "error": f"No node has a value in {name!r}. Check the column with "
+                                 "gephi_get_columns; run the statistic first if it is a "
+                                 "detected grouping."})
+    try:
+        result = compare_partitions((column_value(n.get("attributes"), column),
+                                     column_value(n.get("attributes"), against)) for n in nodes)
+    except ValueError as exc:
+        return fmt({"success": False, "error": str(exc)})
+    return fmt({"success": True, "column": column, "against": against, **result})
+
+
 @_tool(name="gephi_compare_workspaces")
 async def gephi_compare_workspaces(before: int, after: int, compare: str | None = None,
                                    directed: bool = False) -> str:
@@ -3234,12 +3529,18 @@ async def gephi_bipartite_layout(mode_column: str, separation: float = 600.0,
 
 @_tool(name="gephi_bipartite_projection")
 async def gephi_bipartite_projection(mode_column: str, keep: str,
-                                     workspace_name: str | None = None) -> str:
+                                     workspace_name: str | None = None,
+                                     weighting: str = "shared") -> str:
     """Collapse a two-mode network onto one mode, in a new workspace.
 
-    Two people who attended the same event become connected, weighted by how many events they
-    shared. This is the standard way to analyse two-mode data as a social network, and Gephi
-    cannot do it at all.
+    Two people who attended the same event become connected. This is the standard way to
+    analyse two-mode data as a social network, and Gephi cannot do it at all.
+
+    weighting sets the tie strength: "shared" (default) counts the events two people shared;
+    "jaccard" divides that by all the events either attended, so people who attend everything
+    do not dominate "who is closest"; "newman" counts each shared event as 1/(attendees - 1),
+    so a small meeting ties people more closely than a large gathering (Newman 2001, the usual
+    choice for coauthorship). Say which weighting was used when reporting ties.
 
     Nodes sharing no partner are kept with no edges. Dropping them would quietly remove people
     from the network, which produces a different graph rather than a tidier one.
@@ -3251,7 +3552,7 @@ async def gephi_bipartite_projection(mode_column: str, keep: str,
     if graph is None:
         return fmt({"success": False, "error": "Could not read the current graph."})
     try:
-        projected = project_bipartite(graph, mode_column, keep=keep)
+        projected = project_bipartite(graph, mode_column, keep=keep, weighting=weighting)
     except ValueError as exc:
         return fmt({"success": False, "error": str(exc)})
 
@@ -3275,7 +3576,7 @@ async def gephi_bipartite_projection(mode_column: str, keep: str,
                                                   "weight": e["weight"], "directed": False}
                                                  for e in projected["edges"]]})
     result = {"success": True, "nodes": len(projected["nodes"]),
-              "edges": len(projected["edges"]), "kept_mode": keep}
+              "edges": len(projected["edges"]), "kept_mode": keep, "weighting": weighting}
     if projected.get("warning"):
         result["warning"] = projected["warning"]
         result["within_mode_edges"] = projected["within_mode_edges"]
@@ -3295,6 +3596,7 @@ _WHATIF_METRICS = [
     ("max_degree", ("degree", "max")),
     ("median_degree", ("degree", "median")),
     ("components", ("components", "count")),
+    ("giant_component_share", ("components", "giant_share")),
     ("isolates", ("isolates",)),
     ("modularity", ("modularity", "modularity")),
     ("communities", ("modularity", "communities")),
@@ -3400,8 +3702,8 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
 
     Returns {success, edits_applied, diff, cleanup}. `diff` is a list of
     {metric, before, after, delta} for global structural metrics (nodes, edges,
-    density, degree, components, isolates, modularity, communities, clustering,
-    and path length/diameter when include_slow). The tool returns measurements,
+    density, degree, components, the share of nodes in the largest component,
+    isolates, modularity, clustering, and path length/diameter when include_slow). The tool returns measurements,
     not conclusions — narrate the result yourself, and remember a counterfactual
     on a small or skewed graph can mislead the same way any single sample can.
     If an edit fails (e.g. add_edge on a pair that already has an edge), the
@@ -3669,27 +3971,44 @@ def _claim_caption(rec: dict[str, Any]) -> str:
 
 # ─── Import ──────────────────────────────────────────────────
 
+def _import_body(file: str, mode: str | None, max_node_size: float | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {"file": file}
+    if mode is not None:
+        body["mode"] = mode
+    if max_node_size is not None:
+        body["max_node_size"] = max_node_size
+    return body
+
 @_tool(name="gephi_import_gexf")
-async def gephi_import_gexf(file: str) -> str:
-    """Import a graph from a GEXF file. Merged with any existing graph."""
-    return fmt(await gephi.request("POST", "/import/gexf", json_data={"file": file}))
+async def gephi_import_gexf(file: str, mode: str | None = None) -> str:
+    """Import a graph from a GEXF file into a new workspace (see gephi_import_file for `mode`)."""
+    return fmt(await gephi.request("POST", "/import/gexf", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_graphml")
-async def gephi_import_graphml(file: str) -> str:
-    """Import a graph from a GraphML file."""
-    return fmt(await gephi.request("POST", "/import/graphml", json_data={"file": file}))
+async def gephi_import_graphml(file: str, mode: str | None = None) -> str:
+    """Import a graph from a GraphML file into a new workspace (see gephi_import_file for `mode`)."""
+    return fmt(await gephi.request("POST", "/import/graphml", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_csv")
-async def gephi_import_csv(file: str) -> str:
-    """Import a graph from a CSV file."""
-    return fmt(await gephi.request("POST", "/import/csv", json_data={"file": file}))
+async def gephi_import_csv(file: str, mode: str | None = None) -> str:
+    """Import a graph from a CSV file into a new workspace (see gephi_import_file for `mode`)."""
+    return fmt(await gephi.request("POST", "/import/csv", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_file")
-async def gephi_import_file(file: str, max_node_size: float | None = None) -> str:
+async def gephi_import_file(file: str, max_node_size: float | None = None,
+                           mode: str | None = None) -> str:
     """Import a graph from any supported format (GEXF, GraphML, GML, CSV, DOT, Pajek, ...).
 
     Auto-detected by extension. If the imported graph looks collapsed into a small
     cluster, the file's coordinates are very small; run a layout.
+
+    `mode`: by default ("new_workspace") the file opens in its own workspace, as it does
+    from Gephi's File > Open, so its time format and id type always fit. An empty workspace
+    that was open is removed; one holding a graph is kept, and gephi_switch_workspace returns
+    to it. "append" adds the file to the current workspace instead, for merging two files;
+    Gephi refuses when their settings differ (for example one has timestamps and the other
+    intervals). Warnings Gephi raised while reading the file come back as `import_issues`;
+    tell the user about any that matter, such as nodes Gephi created because an edge names a node the file does not list.
 
     No file path? (e.g. the user attached a spreadsheet/CSV/JSON/RDF in chat):
     parse the content yourself and build the graph with gephi_add_nodes +
@@ -3706,10 +4025,8 @@ async def gephi_import_file(file: str, max_node_size: float | None = None) -> st
     value) when a GEXF carries `viz:size` values large enough that a few nodes cover the
     whole map; the reply then reports how many nodes were changed.
     """
-    body: dict[str, Any] = {"file": file}
-    if max_node_size is not None:
-        body["max_node_size"] = max_node_size
-    return fmt(await gephi.request("POST", "/import/file", json_data=body))
+    return fmt(await gephi.request("POST", "/import/file",
+                                   json_data=_import_body(file, mode, max_node_size)))
 
 
 # ==================== Main Entry Point ====================
