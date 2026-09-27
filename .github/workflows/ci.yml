@@ -13,7 +13,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - run: scripts/check-fix-tests.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
@@ -22,8 +22,8 @@ jobs:
     name: Gephi plugin (JUnit + checkstyle)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -42,8 +42,8 @@ jobs:
         # install can resolve.
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -59,7 +59,7 @@ jobs:
         # Once: mypy checks against 3.12 on every runner (see [tool.mypy] in pyproject.toml).
         if: matrix.python-version == '3.12'
         working-directory: mcp-server
-        run: mypy *.py
+        run: mypy ./*.py
       - name: Test
         working-directory: mcp-server
         run: python -m pytest -q
@@ -68,7 +68,7 @@ jobs:
     name: Scripts and workflows (shellcheck, actionlint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: shellcheck scripts/*.sh
       - run: pip install actionlint-py && actionlint
 
@@ -80,15 +80,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - name: Smoke-test the bundle over stdio
         # The test launches the bundle with the manifest's uv command, as Claude Desktop does.
         # The variable turns a missing uv from a skip into a failure on every runner.
         env:
           GEPHI_AI_REQUIRE_BUNDLE_SMOKE: '1'
         run: uv run --directory mcp-server --extra dev python -m pytest -q -rs tests/test_bundle_smoke.py
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: runner.os == 'Linux'
         with:
           node-version: '20'
@@ -104,8 +104,8 @@ jobs:
     name: Codex plugin (manifest + parity)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install validator dependency

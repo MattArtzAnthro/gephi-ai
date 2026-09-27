@@ -19,7 +19,9 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   `fix` commit that changes no test.
 - **Type checking and script checks.** `mypy` runs in CI; it had been configured but could not
   parse numpy's stubs at the 3.10 target, so it never ran. Its findings are fixed. The release
-  scripts pass `shellcheck` and the CI workflow passes `actionlint`, both now in CI.
+  scripts pass `shellcheck` and the CI workflow passes `actionlint`, both now in CI. The
+  workflow's actions move to their current major versions, which run on Node 24; GitHub has
+  deprecated Node 20.
 - Two Javadoc comments that had drifted off their methods are back in place.
 - The docs cover the checks. The README's Development section had said JDK 11; Gephi 0.11.3's
   libraries need JDK 17. The tool reference now describes `gephi_version`, `panel_result`,
