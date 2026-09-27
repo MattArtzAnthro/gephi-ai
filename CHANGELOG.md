@@ -35,6 +35,9 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   offers a comparison across periods.
 
 ### Changed
+- **Shorter reports when no one can answer.** A session that has to choose for the person
+  now lists only the choices that changed the result, one short line each, and leaves the
+  list out when every step used its obvious default.
 - **The skill reaches every workflow.** Each Claude Code command now loads the gephi skill
   first, reads references from the installed plugin, and repeats the few rules it could
   break: test groups for stability before naming them, a caption and legend with every
@@ -94,6 +97,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - `gephi_export_screenshot` could open Gephi's save dialog and time out on a Gephi that asks
   where to save screenshots, which is Gephi's default. A capture that produces nothing is
   now tried once more.
+- **Gephi's Welcome window closes when work starts.** Started right after launch, a session
+  could build its graph behind Gephi's Welcome window, which stayed open over the result.
+  The first request that does work now closes it, as its own close button does; a Welcome
+  reopened later from the Help menu is left alone.
 - **Names with accents survive.** Node ids, labels and values sent to Gephi were read as
   plain ASCII, so "Tomás" became "Tom??s" and later calls could not find the node. The
   plugin now reads every request as UTF-8, and the server says so in each request, which

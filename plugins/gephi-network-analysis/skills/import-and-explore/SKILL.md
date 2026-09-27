@@ -17,7 +17,7 @@ when the data has time columns.
 
 ## Rules this workflow must keep
 
-- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step, remove or overwrite nothing, and list each choice under "Choices I made". If there is no input to work on, stop and say what is needed.
+- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step and remove or overwrite nothing. At the end, give one short line for each choice that changed the result, under "Choices I made"; leave the section out when every step used its obvious default. If there is no input to work on, stop and say what is needed.
 - **Importing.** Imports open in their own workspace, so no new project is needed. Never create or open a project over unsaved work; save it first or ask.
 - **Stability.** Run `gephi_community_stability` before naming, captioning, or colouring by groups, and say how stable they are.
 - **Filtering.** `gephi_apply_filter` and `gephi_apply_filters` hide nodes and change nothing; `gephi_reset_filters` shows them again. Pass `dry_run` to count what a filter would hide or remove before running it. The remove and extract tools delete, keep one undo level, and have no redo; for an experiment, duplicate the workspace first.
@@ -71,5 +71,5 @@ when the data has time columns.
    - Number of communities found, and how stable they are
    - Number of connected components
    - Average degree
-   - Choices I made (every default used in place of an answer)
+   - Choices I made, one short line per choice that changed the result (leave out if none)
    - Ready for further analysis: suggest next steps (centrality, export, and so on)

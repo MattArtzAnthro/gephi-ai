@@ -19,7 +19,7 @@ the caption discipline.
 
 ## Rules this workflow must keep
 
-- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step, remove or overwrite nothing, and list each choice under "Choices I made". If there is no input to work on, stop and say what is needed.
+- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step and remove or overwrite nothing. At the end, give one short line for each choice that changed the result, under "Choices I made"; leave the section out when every step used its obvious default. If there is no input to work on, stop and say what is needed.
 - **Session start.** Start with `gephi_health_check`. Then check which workspace is open (`gephi_list_workspaces`) and whether a filter is active (`filter_active` in replies): a filter from an earlier conversation stays on, and exports and checks then see only what it shows.
 - **Caption and legend.** Every export ships with a copy-ready caption (data, layout and settings, what size and colour encode, what the map does and does not show) and, when colour encodes groups, a legend (`gephi_export_legend`).
 - **Edges.** On a light background, edges use `{"edge.color": "#D0D0D0", "edge.opacity": 90, "edge.thickness": 1.0, "edge.curved": false}`. Label settings change labels only; they never reset edge values.
@@ -39,7 +39,7 @@ the caption discipline.
    (invisible sizes, near-white colors, an exploded layout), fix or flag them
    before exporting.
 
-3. **Choose the path.** Use the path given in the request. Default: `~/Desktop/network.png`, with the other files beside it. Name the path under "Choices I made" when it is the default.
+3. **Choose the path.** Use the path given in the request. Default: `~/Desktop/network.png`, with the other files beside it.
 
 4. **Set preview settings for clean export** (no labels). Call `gephi_set_preview_settings` with:
    ```json
@@ -77,7 +77,7 @@ the caption discipline.
 
 8. **Export the legend** when colour encodes groups: call `gephi_export_legend` with `file` set to the same base path with a `_legend.svg` suffix (the legend is an SVG). It refuses when no colour or size mapping was applied through these tools in this session; then say so and name the colours in the caption instead. If the legend shows numbers rather than names, say so, and suggest writing the earned names to a column and colouring by that column.
 
-9. **Report**: List every exported file path clearly, then give the copy-ready caption: the data, the layout and its key settings, what node size and colour encode, and what the map does and does not show (including any active filter). End with "Choices I made" when any default was used.
+9. **Report**: List every exported file path clearly, then give the copy-ready caption: the data, the layout and its key settings, what node size and colour encode, and what the map does and does not show (including any active filter). End with "Choices I made" only for choices that changed the result.
 
 ## Important
 

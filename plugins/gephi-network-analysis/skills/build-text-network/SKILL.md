@@ -16,7 +16,7 @@ before laying out the result.
 
 ## Rules this workflow must keep
 
-- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step, remove or overwrite nothing, and list each choice under "Choices I made". If there is no input to work on, stop and say what is needed.
+- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step and remove or overwrite nothing. At the end, give one short line for each choice that changed the result, under "Choices I made"; leave the section out when every step used its obvious default. If there is no input to work on, stop and say what is needed.
 - **Work in a new workspace.** Call `gephi_new_workspace` before the first build, so the person's open work stays as it was, and rebuild there with `clear_existing: true`. Never create, open, or save a project over their work.
 - **Stability.** Run `gephi_community_stability` before naming, captioning, or colouring by groups, and say how stable they are.
 - **Caption and legend.** Every export ships with a copy-ready caption (data, layout and settings, what size and colour encode, what the map does and does not show) and, when colour encodes groups, a legend (`gephi_export_legend`).

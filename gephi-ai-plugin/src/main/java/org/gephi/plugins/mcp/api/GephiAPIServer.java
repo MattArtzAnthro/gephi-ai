@@ -77,6 +77,7 @@ public class GephiAPIServer extends NanoHTTPD {
         try {
             JsonObject requestBody = null;
             if (Method.POST.equals(method) || Method.PUT.equals(method)) {
+                WelcomeCloser.closeIfOpen();
                 String body = readBody(session.getInputStream(), session.getHeaders().get("content-length"));
                 if (body != null && !body.isEmpty()) {
                     requestBody = JsonParser.parseString(body).getAsJsonObject();

@@ -17,7 +17,7 @@ before the layout step.
 
 ## Rules this workflow must keep
 
-- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step, remove or overwrite nothing, and list each choice under "Choices I made". If there is no input to work on, stop and say what is needed.
+- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step and remove or overwrite nothing. At the end, give one short line for each choice that changed the result, under "Choices I made"; leave the section out when every step used its obvious default. If there is no input to work on, stop and say what is needed.
 - **Session start.** Start with `gephi_health_check`. Then check which workspace is open (`gephi_list_workspaces`) and whether a filter is active (`filter_active` in replies): a filter from an earlier conversation stays on, and exports and checks then see only what it shows.
 - **Stability.** Run `gephi_community_stability` before naming, captioning, or colouring by groups, and say how stable they are.
 - **Palette.** On a light background, leave `colors` unset: the plugin gives the largest group the first of eight colours validated for readability, the next largest the second, and so on, in an order that keeps the five largest groups distinguishable wherever they touch, even for colour-blind readers; past five groups, label the groups as well. On a dark background, pass the dark-surface palette. Colour must never be the only way to tell groups apart: label the largest nodes or the groups.
@@ -76,4 +76,4 @@ before the layout step.
 
 7. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"` in two passes with `sync: true`: first 1500 iterations with properties `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01, "barnesHutOptimization": true}`, then 3000 iterations with `{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001, "barnesHutOptimization": true}` (see the layout guide). Leave Dissuade Hubs off.
 
-8. **Report results**: Summarize the communities found, their sizes (`gephi_column_value_frequencies` on the community column counts members per community), and how well they held up across runs. Give the modularity score only with its context, never as a verdict. Name only communities that are stable cores. End with "Choices I made" when any default was used.
+8. **Report results**: Summarize the communities found, their sizes (`gephi_column_value_frequencies` on the community column counts members per community), and how well they held up across runs. Give the modularity score only with its context, never as a verdict. Name only communities that are stable cores. End with "Choices I made" only for choices that changed the result.

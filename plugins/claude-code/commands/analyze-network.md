@@ -17,7 +17,7 @@ remembered rule of thumb.
 
 ## Rules this command must keep
 
-- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step, remove or overwrite nothing, and list each choice under "Choices I made". If there is no input to work on, stop and say what is needed.
+- **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step and remove or overwrite nothing. At the end, give one short line for each choice that changed the result, under "Choices I made"; leave the section out when every step used its obvious default. If there is no input to work on, stop and say what is needed.
 - **Session start.** Start with `gephi_health_check`. Then check which workspace is open (`gephi_list_workspaces`) and whether a filter is active (`filter_active` in replies): a filter from an earlier conversation stays on, and exports and checks then see only what it shows.
 - **Ranking.** To rank nodes on a metric, call `gephi_query_nodes` with `column` set to the metric and `min` set to a cutoff, with `limit` 20 or less, and raise or lower the cutoff until about ten nodes match (`matches` gives the total). A large `limit` returns every column of every node and can overflow.
 - **Stability.** Run `gephi_community_stability` before naming, captioning, or colouring by groups, and say how stable they are.
@@ -78,8 +78,8 @@ remembered rule of thumb.
       size (small-world-*like*, stated as a comparison, not a label); fragmentation.
       No universal-law labels such as "scale-free" (see the rules above).
 
-    ### Choices I made
-    - Every default used in place of an answer, one line each.
+    ### Choices I made (only if a choice changed the result)
+    - One short line per choice that changed the result.
 
 ## Reading pass (after the numbers)
 
