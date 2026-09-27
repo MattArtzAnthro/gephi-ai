@@ -382,6 +382,27 @@ def _timed_out(response: dict[str, Any]) -> bool:
     return response.get("success") is False and response.get("error") == TIMEOUT_ERROR
 
 
+async def _needs_plugin(minimum: tuple[int, ...], feature: str) -> dict[str, Any] | None:
+    """A refusal when the Gephi plugin is older than `minimum`, else None.
+
+    An older plugin ignores options it does not know: a dry run would delete for real with no
+    undo snapshot, and a sort or cap would quietly not happen. A version that cannot be read is
+    let through, since every plugin that lacks these options reports its version.
+    """
+    health = await gephi.request("GET", "/health")
+    version = health.get("version") if isinstance(health, dict) else None
+    try:
+        found = tuple(int(part) for part in str(version).split(".")[:3])
+    except ValueError:
+        return None
+    if found >= minimum:
+        return None
+    needed = ".".join(map(str, minimum))
+    return {"success": False,
+            "error": f"{feature} needs Gephi AI plugin {needed} or later; this Gephi has {version}. "
+                     "Update the plugin (see gephi_health_check), or leave the option out."}
+
+
 JSON_UTF8 = {"Content-Type": "application/json; charset=utf-8"}
 
 
@@ -1069,6 +1090,10 @@ async def gephi_query_nodes(limit: int = 100, offset: int = 0, column: str | Non
     is the top ten of the whole graph. Nodes without a value come last. Pass
     `columns` to return only those attributes (plus id, label and degree), which
     keeps long listings small: sort_by="pageranks", columns=["pageranks"], limit=10."""
+    if sort_by is not None or columns:
+        refused = await _needs_plugin((1, 4, 0), "Sorting or choosing columns")
+        if refused:
+            return fmt(refused)
     params: dict[str, Any] = {"limit": limit, "offset": offset}
     for key, val in (("column", column), ("value", value), ("contains", contains),
                      ("min", min), ("max", max), ("sort_by", sort_by)):
@@ -1321,6 +1346,10 @@ async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: flo
     Appearance panel is set to the same ranking and size range (appearance_panel says
     whether it was).
     """
+    if cap is not None:
+        refused = await _needs_plugin((1, 4, 0), "A size cap")
+        if refused:
+            return fmt(refused)
     return _fmt_styled(await gephi.request("POST", "/appearance/ranking/size",
                                            json_data=_body(column=column, min_size=min_size,
                                                            max_size=max_size, cap=cap)),
@@ -2157,6 +2186,9 @@ async def gephi_remove_isolates(dry_run: bool = False) -> str:
     (gephi_undo reverses it). dry_run=True counts them (would_remove) and changes
     nothing. Isolates can be a finding, so say what would go before removing them."""
     if dry_run:
+        refused = await _needs_plugin((1, 4, 0), "A dry run of remove_isolates")
+        if refused:
+            return fmt(refused)
         return fmt(await gephi.request("POST", "/filter/remove-isolates", json_data={"dry_run": True}))
     undo = await _auto_snapshot("remove_isolates")
     return fmt(_with_undo(await gephi.request("POST", "/filter/remove-isolates"), undo))

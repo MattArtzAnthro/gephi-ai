@@ -18,6 +18,9 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   keeps the most active people from dominating who looks closest, and "newman" counts a small
   shared event for more than a large one (Newman 2001).
 - `gephi_remove_isolates` takes `dry_run` to count isolates before removing them.
+- Options that need Gephi AI plugin 1.4.0 (sorting and choosing columns, the size cap, the
+  isolates dry run) are refused with an update message on an older plugin, which would
+  otherwise ignore them: a dry run there would delete for real.
 - **Cap node sizes.** `gephi_size_by_ranking` takes `cap`: every node at or above it gets
   the largest size, so a few outliers (a mailing list with ten times anyone's contacts) no
   longer shrink every other node. The reply counts the nodes at the cap and the legend

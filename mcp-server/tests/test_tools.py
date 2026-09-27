@@ -769,5 +769,36 @@ async def test_query_nodes_can_sort_and_trim_columns(rec):
 
 async def test_remove_isolates_dry_run_counts_without_a_snapshot(rec):
     await out_of(gephi_mcp.gephi_remove_isolates, dry_run=True)
-    assert [c["endpoint"] for c in rec.calls] == ["/filter/remove-isolates"]
+    assert [c["endpoint"] for c in rec.calls] == ["/health", "/filter/remove-isolates"]
     assert rec.last["json"] == {"dry_run": True}
+
+
+# An older Gephi plugin ignores options it does not know. For a dry run that means deleting
+# for real, with no undo snapshot; for sort_by or cap it means a quietly unsorted or uncapped
+# result. Options that need plugin 1.4.0 are refused on an older one instead.
+
+async def test_an_isolates_dry_run_is_refused_on_an_older_plugin_rather_than_deleting(rec):
+    rec.responses = [{"success": True, "version": "1.3.3"}]
+    out = await out_of(gephi_mcp.gephi_remove_isolates, dry_run=True)
+    assert out["success"] is False and "1.4.0" in out["error"]
+    assert "/filter/remove-isolates" not in [c["endpoint"] for c in rec.calls]
+
+
+async def test_sorting_and_capping_are_refused_on_an_older_plugin(rec):
+    rec.responses = [{"success": True, "version": "1.3.3"}]
+    out = await out_of(gephi_mcp.gephi_query_nodes, sort_by="degree")
+    assert out["success"] is False and "/graph/nodes" not in [c["endpoint"] for c in rec.calls]
+    rec.responses = [{"success": True, "version": "1.3.3"}]
+    out = await out_of(gephi_mcp.gephi_size_by_ranking, column="degree", cap=30)
+    assert out["success"] is False
+
+
+async def test_new_options_go_through_on_a_current_plugin(rec):
+    rec.responses = [{"success": True, "version": "1.4.0"}, {"success": True, "would_remove": 0}]
+    out = await out_of(gephi_mcp.gephi_remove_isolates, dry_run=True)
+    assert out["success"] is True and rec.last["endpoint"] == "/filter/remove-isolates"
+
+
+async def test_plain_calls_do_not_ask_for_the_version(rec):
+    await out_of(gephi_mcp.gephi_query_nodes, limit=5)
+    assert [c["endpoint"] for c in rec.calls] == ["/graph/nodes"]

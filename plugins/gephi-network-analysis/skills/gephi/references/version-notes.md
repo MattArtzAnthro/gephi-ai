@@ -42,4 +42,4 @@ item applies.
   colouring and sizing set the Appearance panel to the same column and values
   (`appearance_panel` in the reply says whether it was set). Columns can be named by the
   title shown in Gephi as well as by id. On earlier plugins, none of this shows in Gephi's
-  panels, so do not point the viewer to them.
+  panels, so do not point the viewer to them. Sorting and choosing columns in `gephi_query_nodes`, the `cap` in `gephi_size_by_ranking`, and a dry run of `gephi_remove_isolates` also need 1.4.0; on an older plugin the server refuses them rather than let the plugin ignore them.
