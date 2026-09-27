@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.api;
 
 import com.google.gson.Gson;
@@ -639,13 +640,13 @@ public class GephiAPIServer implements HttpHandler {
                 return errorResult("Missing 'column'");
             }
             String column = body.get("column").getAsString();
-            int rMin = body.has("r_min") ? body.get("r_min").getAsInt() : 255;
-            int gMin = body.has("g_min") ? body.get("g_min").getAsInt() : 255;
-            int bMin = body.has("b_min") ? body.get("b_min").getAsInt() : 200;
-            int rMax = body.has("r_max") ? body.get("r_max").getAsInt() : 255;
-            int gMax = body.has("g_max") ? body.get("g_max").getAsInt() : 0;
-            int bMax = body.has("b_max") ? body.get("b_max").getAsInt() : 0;
-            return service.colorByRanking(column, rMin, gMin, bMin, rMax, gMax, bMax);
+            int minRed = body.has("r_min") ? body.get("r_min").getAsInt() : 255;
+            int minGreen = body.has("g_min") ? body.get("g_min").getAsInt() : 255;
+            int minBlue = body.has("b_min") ? body.get("b_min").getAsInt() : 200;
+            int maxRed = body.has("r_max") ? body.get("r_max").getAsInt() : 255;
+            int maxGreen = body.has("g_max") ? body.get("g_max").getAsInt() : 0;
+            int maxBlue = body.has("b_max") ? body.get("b_max").getAsInt() : 0;
+            return service.colorByRanking(column, minRed, minGreen, minBlue, maxRed, maxGreen, maxBlue);
         }
 
         if ("/appearance/ranking/size".equals(uri) && "POST".equals(method)) {
@@ -917,8 +918,10 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Edge Appearance ────────────────────────────────────────
 
         if ("/appearance/edge/thickness-by-weight".equals(uri) && "POST".equals(method)) {
-            float minThickness = body != null && body.has("min_thickness") ? body.get("min_thickness").getAsFloat() : 1f;
-            float maxThickness = body != null && body.has("max_thickness") ? body.get("max_thickness").getAsFloat() : 5f;
+            float minThickness = body != null && body.has("min_thickness")
+                ? body.get("min_thickness").getAsFloat() : 1f;
+            float maxThickness = body != null && body.has("max_thickness")
+                ? body.get("max_thickness").getAsFloat() : 5f;
             return service.setEdgeThicknessByWeight(minThickness, maxThickness);
         }
 
@@ -958,7 +961,8 @@ public class GephiAPIServer implements HttpHandler {
             if (body == null || !body.has("file") || !body.has("format")) {
                 return errorResult("Missing 'file' or 'format'");
             }
-            return service.exportByFormat(body.get("file").getAsString(), body.get("format").getAsString(), visibleBody(body, true));
+            return service.exportByFormat(body.get("file").getAsString(), body.get("format").getAsString(),
+                visibleBody(body, true));
         }
 
         if ("/export/png".equals(uri) && "POST".equals(method)) {
@@ -1172,8 +1176,7 @@ public class GephiAPIServer implements HttpHandler {
         }
         try {
             return Integer.parseInt(value);
-        }
-        catch (NumberFormatException e) {
+        } catch (NumberFormatException e) {
             return defaultValue;
         }
     }

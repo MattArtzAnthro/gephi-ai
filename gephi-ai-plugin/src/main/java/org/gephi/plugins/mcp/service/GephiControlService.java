@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import com.google.gson.JsonArray;
@@ -21,14 +22,21 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import javax.imageio.ImageIO;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.imageio.ImageIO;
 import javax.swing.SwingUtilities;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.gephi.filters.api.FilterController;
+import org.gephi.filters.api.Query;
+import org.gephi.filters.spi.CategoryBuilder;
+import org.gephi.filters.spi.Filter;
+import org.gephi.filters.spi.FilterBuilder;
+import org.gephi.filters.spi.FilterProperty;
 import org.gephi.graph.api.Column;
 import org.gephi.graph.api.Edge;
 import org.gephi.graph.api.Graph;
@@ -41,13 +49,6 @@ import org.gephi.io.exporter.preview.PDFExporter;
 import org.gephi.io.exporter.preview.PNGExporter;
 import org.gephi.io.exporter.spi.Exporter;
 import org.gephi.io.exporter.spi.GraphExporter;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.gephi.filters.api.FilterController;
-import org.gephi.filters.api.Query;
-import org.gephi.filters.spi.CategoryBuilder;
-import org.gephi.filters.spi.Filter;
-import org.gephi.filters.spi.FilterBuilder;
-import org.gephi.filters.spi.FilterProperty;
 import org.gephi.io.importer.api.Container;
 import org.gephi.io.importer.api.ImportController;
 import org.gephi.io.processor.spi.Processor;
@@ -120,11 +121,9 @@ public class GephiControlService {
     private static <T> T onProjectThread(Callable<T> work) {
         try {
             return work.call();
-        }
-        catch (RuntimeException e) {
+        } catch (RuntimeException e) {
             throw e;
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
@@ -134,8 +133,7 @@ public class GephiControlService {
         if (SwingUtilities.isEventDispatchThread()) {
             try {
                 return callable.call();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         }
@@ -148,11 +146,9 @@ public class GephiControlService {
         SwingUtilities.invokeLater(() -> {
             try {
                 result[0] = callable.call();
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 exception[0] = e;
-            }
-            finally {
+            } finally {
                 done.countDown();
             }
         });
@@ -282,7 +278,8 @@ public class GephiControlService {
             while (!rl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 if (System.nanoTime() > deadline) {
                     throw new RuntimeException(
-                        "Graph is busy (lock unavailable) — if this persists, Gephi is wedged; fully quit and reopen it");
+                        "Graph is busy (lock unavailable) — if this persists, Gephi is wedged; fully quit and "
+                            + "reopen it");
                 }
                 Thread.sleep(5);
             }
@@ -736,7 +733,10 @@ public class GephiControlService {
         return addNodeToModel(getGraphController().getGraphModel(ws), id, label, attrs);
     }
 
-    /** Core node-add against an explicit model. Package-private + static so it is testable with a standalone GraphModel. */
+    /**
+     * Core node-add against an explicit model. Package-private + static so it is testable with a standalone
+     * GraphModel.
+     */
     static JsonObject addNodeToModel(GraphModel gm, String id, String label, Map<String, Object> attrs) {
         try {
             Graph g = gm.getGraph();
@@ -747,8 +747,8 @@ public class GephiControlService {
                 }
                 Node n = gm.factory().newNode(id);
                 n.setLabel(label != null ? label : id);
-                n.setX((float)(Math.random() * 1000 - 500));
-                n.setY((float)(Math.random() * 1000 - 500));
+                n.setX((float) (Math.random() * 1000 - 500));
+                n.setY((float) (Math.random() * 1000 - 500));
                 n.setSize(10f);
                 if (attrs != null) {
                     for (Map.Entry<String, Object> e : attrs.entrySet()) {
@@ -792,8 +792,8 @@ public class GephiControlService {
                     String label = (String) nd.getOrDefault("label", id);
                     Node n = gm.factory().newNode(id);
                     n.setLabel(label);
-                    n.setX((float)(Math.random() * 1000 - 500));
-                    n.setY((float)(Math.random() * 1000 - 500));
+                    n.setX((float) (Math.random() * 1000 - 500));
+                    n.setY((float) (Math.random() * 1000 - 500));
                     n.setSize(10f);
                     g.addNode(n);
                     Object attrsObj = nd.get("attributes");
@@ -887,100 +887,9 @@ public class GephiControlService {
     }
 
     /**
-     * Items ordered by a value: numbers by size, anything else as text ignoring case. Items
-     * without a value always come last, so a sorted first page is the top of the graph.
-     */
-    static <T> List<T> sortByValue(List<T> items, java.util.function.Function<T, Object> value,
-        boolean descending) {
-        java.util.Comparator<Object> byValue = (a, b) -> {
-            if (a instanceof Number && b instanceof Number) {
-                return Double.compare(((Number) a).doubleValue(), ((Number) b).doubleValue());
-            }
-            return a.toString().compareToIgnoreCase(b.toString());
-        };
-        java.util.Comparator<Object> order = descending ? byValue.reversed() : byValue;
-        List<T> sorted = new java.util.ArrayList<>(items);
-        sorted.sort((x, y) -> {
-            Object a = value.apply(x);
-            Object b = value.apply(y);
-            if (a == null || b == null) {
-                return a == null ? (b == null ? 0 : 1) : -1;
-            }
-            return order.compare(a, b);
-        });
-        return sorted;
-    }
-
-    /** The requested attribute columns, lower-cased; null means every column. */
-    static java.util.Set<String> wantedColumns(String columns) {
-        if (columns == null || columns.isBlank()) {
-            return null;
-        }
-        java.util.Set<String> wanted = new java.util.HashSet<>();
-        for (String c : columns.split(",")) {
-            if (!c.isBlank()) {
-                wanted.add(c.trim().toLowerCase(java.util.Locale.ROOT));
-            }
-        }
-        return wanted.isEmpty() ? null : wanted;
-    }
-
-    static boolean isWanted(java.util.Set<String> wanted, String id, String title) {
-        return wanted == null || wanted.contains(id.toLowerCase(java.util.Locale.ROOT))
-            || (title != null && wanted.contains(title.toLowerCase(java.util.Locale.ROOT)));
-    }
-
-    /**
-     * Which nodes a value search keeps: {@code value} matches the whole value (text ignoring
-     * case, numbers by value), {@code contains} a part of the text, and {@code min} / {@code max}
-     * a numeric range. The column is found by id or by title. Null when no search was asked for.
-     */
-    static java.util.function.Predicate<Node> nodeMatcher(Column col, String value, String contains,
-        Double min, Double max) {
-        if (value == null && contains == null && min == null && max == null) {
-            return null;
-        }
-        String needle = contains == null ? null : contains.toLowerCase(java.util.Locale.ROOT);
-        return n -> {
-            Object v = n.getAttribute(col);
-            if (v == null) {
-                return false;
-            }
-            if (value != null) {
-                if (v instanceof Number) {
-                    try {
-                        if (((Number) v).doubleValue() != Double.parseDouble(value.trim())) {
-                            return false;
-                        }
-                    } catch (NumberFormatException e) {
-                        return false;
-                    }
-                } else if (!v.toString().equalsIgnoreCase(value)) {
-                    return false;
-                }
-            }
-            if (needle != null && !v.toString().toLowerCase(java.util.Locale.ROOT).contains(needle)) {
-                return false;
-            }
-            if (min != null || max != null) {
-                if (!(v instanceof Number)) {
-                    return false;
-                }
-                double d = ((Number) v).doubleValue();
-                if (min != null && d < min) {
-                    return false;
-                }
-                if (max != null && d > max) {
-                    return false;
-                }
-            }
-            return true;
-        };
-    }
-
-    /**
      * Lists nodes, optionally only those whose {@code column} matches a value search (see
      * nodeMatcher); {@code matches} then counts every match, not just the page returned.
+     *
      * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
      */
     public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
@@ -1118,6 +1027,98 @@ public class GephiControlService {
         }
     }
 
+    /**
+     * Items ordered by a value: numbers by size, anything else as text ignoring case. Items
+     * without a value always come last, so a sorted first page is the top of the graph.
+     */
+    static <T> List<T> sortByValue(List<T> items, java.util.function.Function<T, Object> value,
+        boolean descending) {
+        java.util.Comparator<Object> byValue = (a, b) -> {
+            if (a instanceof Number && b instanceof Number) {
+                return Double.compare(((Number) a).doubleValue(), ((Number) b).doubleValue());
+            }
+            return a.toString().compareToIgnoreCase(b.toString());
+        };
+        java.util.Comparator<Object> order = descending ? byValue.reversed() : byValue;
+        List<T> sorted = new java.util.ArrayList<>(items);
+        sorted.sort((x, y) -> {
+            Object a = value.apply(x);
+            Object b = value.apply(y);
+            if (a == null || b == null) {
+                return a == null ? (b == null ? 0 : 1) : -1;
+            }
+            return order.compare(a, b);
+        });
+        return sorted;
+    }
+
+    /** The requested attribute columns, lower-cased; null means every column. */
+    static java.util.Set<String> wantedColumns(String columns) {
+        if (columns == null || columns.isBlank()) {
+            return null;
+        }
+        java.util.Set<String> wanted = new java.util.HashSet<>();
+        for (String c : columns.split(",")) {
+            if (!c.isBlank()) {
+                wanted.add(c.trim().toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        return wanted.isEmpty() ? null : wanted;
+    }
+
+    static boolean isWanted(java.util.Set<String> wanted, String id, String title) {
+        return wanted == null || wanted.contains(id.toLowerCase(java.util.Locale.ROOT))
+            || (title != null && wanted.contains(title.toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    /**
+     * Which nodes a value search keeps: {@code value} matches the whole value (text ignoring
+     * case, numbers by value), {@code contains} a part of the text, and {@code min} / {@code max}
+     * a numeric range. The column is found by id or by title. Null when no search was asked for.
+     */
+    static java.util.function.Predicate<Node> nodeMatcher(Column col, String value, String contains,
+        Double min, Double max) {
+        if (value == null && contains == null && min == null && max == null) {
+            return null;
+        }
+        String needle = contains == null ? null : contains.toLowerCase(java.util.Locale.ROOT);
+        return n -> {
+            Object v = n.getAttribute(col);
+            if (v == null) {
+                return false;
+            }
+            if (value != null) {
+                if (v instanceof Number) {
+                    try {
+                        if (((Number) v).doubleValue() != Double.parseDouble(value.trim())) {
+                            return false;
+                        }
+                    } catch (NumberFormatException e) {
+                        return false;
+                    }
+                } else if (!v.toString().equalsIgnoreCase(value)) {
+                    return false;
+                }
+            }
+            if (needle != null && !v.toString().toLowerCase(java.util.Locale.ROOT).contains(needle)) {
+                return false;
+            }
+            if (min != null || max != null) {
+                if (!(v instanceof Number)) {
+                    return false;
+                }
+                double d = ((Number) v).doubleValue();
+                if (min != null && d < min) {
+                    return false;
+                }
+                if (max != null && d > max) {
+                    return false;
+                }
+            }
+            return true;
+        };
+    }
+
     public JsonObject getNode(String id) {
         try {
             Workspace ws = currentWorkspace();
@@ -1136,9 +1137,9 @@ public class GephiControlService {
             o.addProperty("x", n.x());
             o.addProperty("y", n.y());
             o.addProperty("size", n.size());
-            o.addProperty("r", (int)(n.r() * 255));
-            o.addProperty("g", (int)(n.g() * 255));
-            o.addProperty("b", (int)(n.b() * 255));
+            o.addProperty("r", (int) (n.r() * 255));
+            o.addProperty("g", (int) (n.g() * 255));
+            o.addProperty("b", (int) (n.b() * 255));
             JsonObject attrs = new JsonObject();
             for (Column col : gm.getNodeTable()) {
                 if (col.isProperty()) {
@@ -1475,7 +1476,9 @@ public class GephiControlService {
         return queryEdges(limit, offset, false);
     }
 
-    /** @param visible read the filtered visible graph instead of the full graph (see addViewInfo). */
+    /**
+     * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
+     */
     public JsonObject queryEdges(int limit, int offset, boolean visible) {
         try {
             Workspace ws = currentWorkspace();
@@ -1584,7 +1587,9 @@ public class GephiControlService {
         return getGraphStats(false);
     }
 
-    /** @param visible read the filtered visible graph instead of the full graph (see addViewInfo). */
+    /**
+     * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
+     */
     public JsonObject getGraphStats(boolean visible) {
         try {
             Workspace ws = currentWorkspace();
@@ -2327,7 +2332,8 @@ public class GephiControlService {
             + " via the statistics tools) or check the columns list");
     }
 
-    public JsonObject colorByRanking(String columnName, int rMin, int gMin, int bMin, int rMax, int gMax, int bMax) {
+    public JsonObject colorByRanking(String columnName, int minRed, int minGreen, int minBlue, int maxRed,
+        int maxGreen, int maxBlue) {
         Workspace ws = currentWorkspace();
         if (ws == null) {
             return error("No project open");
@@ -2344,8 +2350,8 @@ public class GephiControlService {
             if (mm == null) {
                 return error("No numeric values in column " + columnName);
             }
-            final Color low = new Color(clamp255(rMin), clamp255(gMin), clamp255(bMin));
-            final Color high = new Color(clamp255(rMax), clamp255(gMax), clamp255(bMax));
+            final Color low = new Color(clamp255(minRed), clamp255(minGreen), clamp255(minBlue));
+            final Color high = new Color(clamp255(maxRed), clamp255(maxGreen), clamp255(maxBlue));
             org.gephi.appearance.api.Function f = applyAppearance(ws, col, false,
                 org.gephi.appearance.plugin.RankingElementColorTransformer.class,
                 fn -> configureRankingColor(fn.getTransformer(), low, high));
@@ -2485,7 +2491,7 @@ public class GephiControlService {
                 return error("Layout already running");
             }
             final int panelIters = iterations > 0 ? iterations : 1000;
-            java.util.List<String> unapplied =
+            final java.util.List<String> unapplied =
                 startLayoutThroughController(lc, layout, properties, panelIters, this::onEdt);
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
@@ -2549,7 +2555,8 @@ public class GephiControlService {
             if (props != null) {
                 for (LayoutProperty prop : props) {
                     JsonObject o = new JsonObject();
-                    o.addProperty("name", prop.getCanonicalName() != null ? prop.getCanonicalName() : prop.getProperty().getDisplayName());
+                    o.addProperty("name", prop.getCanonicalName() != null ? prop.getCanonicalName()
+                        : prop.getProperty().getDisplayName());
                     o.addProperty("display_name", prop.getProperty().getDisplayName());
                     o.addProperty("type", prop.getProperty().getValueType().getSimpleName());
                     Object val = prop.getProperty().getValue();
@@ -2573,7 +2580,6 @@ public class GephiControlService {
         }
     }
 
-    /** Match each Layout property against a caller-supplied key map and set it. */
     /**
      * Apply layout properties by canonical key, display name or full canonical name (any case).
      * Returns the keys that matched no property, in the order given, so a misspelled setting is
@@ -2619,8 +2625,7 @@ public class GephiControlService {
                 if (converted != null) {
                     try {
                         prop.getProperty().setValue(converted);
-                    }
-                    catch (Exception e) {
+                    } catch (Exception e) {
                         LOGGER.log(Level.WARNING, "Set layout property failed", e);
                     }
                 }
@@ -2666,7 +2671,7 @@ public class GephiControlService {
                 return error("Layout not found: " + algo);
             }
             layout.setGraphModel(currentGraphModel());
-            java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
+            final java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
             pendingLayoutProps = properties;
             pendingLayoutAlgo = algo;
             JsonObject r = new JsonObject();
@@ -2744,27 +2749,38 @@ public class GephiControlService {
         new org.gephi.utils.progress.ProgressTicket() {
             public void finish() {
             }
+
             public void finish(String s) {
             }
+
             public void progress() {
             }
+
             public void progress(int i) {
             }
+
             public void progress(String s) {
             }
+
             public void progress(String s, int i) {
             }
+
             public String getDisplayName() {
                 return "MCP statistic";
             }
+
             public void setDisplayName(String s) {
             }
+
             public void start() {
             }
+
             public void start(int i) {
             }
+
             public void switchToDeterminate(int i) {
             }
+
             public void switchToIndeterminate() {
             }
         };
@@ -2842,12 +2858,6 @@ public class GephiControlService {
     /** After a deadline cancels a statistic, how long to wait for it to actually stop. */
     static final long STATISTIC_STOP_GRACE_MS = 30_000;
 
-    /**
-     * Run a statistic through Gephi's Statistics panel when the desktop interface is present, so
-     * the panel shows it running, its result and its report, as if the user had clicked Run.
-     * Without the panel (headless, tests) the statistic runs directly. Returns true when the
-     * deadline stopped it; throws when Gephi reports a failure or the run never finishes.
-     */
     /** Statistics running now, by the name Gephi shows for them, so a stop request can reach them. */
     static final Map<Statistics, String> RUNNING_STATISTICS = new java.util.concurrent.ConcurrentHashMap<>();
     /** Statistics stopped by request, so their run is reported as stopped rather than finished. */
@@ -2880,6 +2890,12 @@ public class GephiControlService {
         return r;
     }
 
+    /**
+     * Run a statistic through Gephi's Statistics panel when the desktop interface is present, so
+     * the panel shows it running, its result and its report, as if the user had clicked Run.
+     * Without the panel (headless, tests) the statistic runs directly. Returns true when the
+     * deadline stopped it; throws when Gephi reports a failure or the run never finishes.
+     */
     static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
         org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
         java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
@@ -2974,14 +2990,15 @@ public class GephiControlService {
             if (ws == null) {
                 return error("No project open");
             }
-            GraphModel gm = currentGraphModel();
+            final GraphModel gm = currentGraphModel();
 
             // Find statistics builder by name
             StatisticsBuilder matchedBuilder = null;
             for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
                 String name = sb.getName();
                 LOGGER.fine("MCP: Found StatisticsBuilder: " + name + " (" + sb.getClass().getName() + ")");
-                if (name.equalsIgnoreCase(builderName) || sb.getClass().getSimpleName().toLowerCase().contains(builderName.toLowerCase())) {
+                if (name.equalsIgnoreCase(builderName)
+                    || sb.getClass().getSimpleName().toLowerCase().contains(builderName.toLowerCase())) {
                     matchedBuilder = sb;
                     break;
                 }
@@ -3197,8 +3214,7 @@ public class GephiControlService {
                 r.addProperty(jsonKey, val.toString());
             }
         } catch (NoSuchMethodException e) { /* method not available for this statistic */
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             LOGGER.fine("Could not get " + getter + ": " + e.getMessage());
         }
     }
@@ -3280,8 +3296,7 @@ public class GephiControlService {
                 for (Node n : toRemove) {
                     g.removeNode(n);
                 }
-            }
-            finally {
+            } finally {
                 unlockWrite(g);
             }
             JsonObject r = success("Filtered by degree [" + minDegree + ", " + maxDegree + "]");
@@ -3320,8 +3335,7 @@ public class GephiControlService {
                 for (Edge e : toRemove) {
                     g.removeEdge(e);
                 }
-            }
-            finally {
+            } finally {
                 unlockWrite(g);
             }
             JsonObject r = success("Filtered edges by weight [" + minWeight + ", " + maxWeight + "]");
@@ -3355,14 +3369,16 @@ public class GephiControlService {
                 if (val != null) {
                     if (val instanceof Color) {
                         Color c = (Color) val;
-                        settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                        settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                            c.getBlue()));
                     } else if (val instanceof Number) {
                         settings.addProperty(name, (Number) val);
                     } else if (val instanceof Boolean) {
                         settings.addProperty(name, (Boolean) val);
                     } else if (val instanceof java.awt.Font) {
                         java.awt.Font f = (java.awt.Font) val;
-                        String style = f.isBold() && f.isItalic() ? "BoldItalic" : f.isBold() ? "Bold" : f.isItalic() ? "Italic" : "Plain";
+                        String style = f.isBold() && f.isItalic() ? "BoldItalic" : f.isBold() ? "Bold"
+                            : f.isItalic() ? "Italic" : "Plain";
                         settings.addProperty(name, f.getFamily() + " " + f.getSize() + " " + style);
                     } else if (val instanceof EdgeColor) {
                         EdgeColor ec = (EdgeColor) val;
@@ -3372,7 +3388,8 @@ public class GephiControlService {
                             settings.addProperty(name, "mixed");
                         } else if (ec.getCustomColor() != null) {
                             Color c = ec.getCustomColor();
-                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                                c.getBlue()));
                         } else {
                             settings.addProperty(name, ec.getMode().toString().toLowerCase());
                         }
@@ -3384,7 +3401,8 @@ public class GephiControlService {
                             settings.addProperty(name, "darker");
                         } else if (dc.getCustomColor() != null) {
                             Color c = dc.getCustomColor();
-                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                                c.getBlue()));
                         } else {
                             settings.addProperty(name, "parent");
                         }
@@ -3396,7 +3414,8 @@ public class GephiControlService {
                             settings.addProperty(name, "parent");
                         } else if (doc.getCustomColor() != null) {
                             Color c = doc.getCustomColor();
-                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                                c.getBlue()));
                         } else {
                             settings.addProperty(name, "original");
                         }
@@ -3411,9 +3430,11 @@ public class GephiControlService {
                 Object bgVal = pm.getProperties().getValue("background.color");
                 if (bgVal instanceof Color) {
                     Color c = (Color) bgVal;
-                    settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                    settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(),
+                        c.getGreen(), c.getBlue()));
                 }
             } catch (Exception ignored) {
+                // No background colour in these settings: it is left out.
             }
 
             JsonObject r = new JsonObject();
@@ -3491,6 +3512,7 @@ public class GephiControlService {
                             try {
                                 coerced = Float.parseFloat(sv);
                             } catch (NumberFormatException ignore) {
+                                // Not a number: the text is kept as given.
                             }
                         }
                     } else if (val instanceof Number) {
@@ -3538,6 +3560,7 @@ public class GephiControlService {
                                 try {
                                     fontSize = Integer.parseInt(rest[0]);
                                 } catch (NumberFormatException ignored) {
+                                    // Not a number: the default font size stays.
                                 }
                                 for (int pi = 1; pi < rest.length; pi++) {
                                     if ("Bold".equalsIgnoreCase(rest[pi])) {
@@ -3570,7 +3593,8 @@ public class GephiControlService {
                             } else if ("original".equals(s)) {
                                 prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.ORIGINAL));
                             } else if (s.startsWith("#")) {
-                                prop.setValue(new DependantOriginalColor(new Color(Integer.parseInt(s.substring(1), 16))));
+                                prop.setValue(
+                                    new DependantOriginalColor(new Color(Integer.parseInt(s.substring(1), 16))));
                             } else {
                                 continue;
                             }
@@ -3736,7 +3760,8 @@ public class GephiControlService {
             if (bgColor != null && !bgColor.equals(Color.WHITE)) {
                 BufferedImage exported = ImageIO.read(new File(filePath));
                 if (exported != null) {
-                    BufferedImage result = new BufferedImage(exported.getWidth(), exported.getHeight(), BufferedImage.TYPE_INT_RGB);
+                    BufferedImage result = new BufferedImage(exported.getWidth(), exported.getHeight(),
+                        BufferedImage.TYPE_INT_RGB);
                     Graphics2D g2d = result.createGraphics();
                     g2d.setColor(bgColor);
                     g2d.fillRect(0, 0, result.getWidth(), result.getHeight());
@@ -3923,7 +3948,8 @@ public class GephiControlService {
             }
             ec.exportFile(new File(filePath), exporter);
             JsonObject r = success("Exported to " + filePath);
-            r.addProperty("page", landscape ? "US Letter, landscape (11 x 8.5 in)" : "US Letter, portrait (8.5 x 11 in)");
+            r.addProperty("page", landscape ? "US Letter, landscape (11 x 8.5 in)"
+                : "US Letter, portrait (8.5 x 11 in)");
             return r;
         } catch (IllegalArgumentException e) {
             return error("Export failed: graph nodes may not be positioned — run a layout first");
@@ -3959,7 +3985,9 @@ public class GephiControlService {
         return exportGraphml(filePath, true);
     }
 
-    /** @param visible see exportGexf — same contract, response self-declares the view. */
+    /**
+     * @param visible see exportGexf — same contract, response self-declares the view.
+     */
     public JsonObject exportGraphml(String filePath, boolean visible) {
         Workspace ws = currentWorkspace();
         if (ws == null) {
@@ -4051,7 +4079,8 @@ public class GephiControlService {
                 if (sb.length() > 0) {
                     sb.append("\n");
                 }
-                sb.append(csv("Source", sep)).append(sep).append(csv("Target", sep)).append(sep).append(csv("Weight", sep));
+                sb.append(csv("Source", sep)).append(sep).append(csv("Target", sep)).append(sep)
+                    .append(csv("Weight", sep));
                 for (Column col : gm.getEdgeTable()) {
                     if (!col.isProperty()) {
                         sb.append(sep).append(csv(col.getTitle(), sep));
@@ -4102,31 +4131,6 @@ public class GephiControlService {
 
     public JsonObject importFile(String filePath, Float maxNodeSize) {
         return importFile(filePath, maxNodeSize, null);
-    }
-
-    /** Collect up to {@code limit} import issues (level and message) from a report. */
-    static void addIssues(JsonArray out, org.gephi.io.importer.api.Report report, int limit) {
-        if (report == null) {
-            return;
-        }
-        for (org.gephi.io.importer.api.Issue issue : report.getIssuesList(limit)) {
-            if (out.size() >= limit) {
-                return;
-            }
-            JsonObject o = new JsonObject();
-            o.addProperty("level", String.valueOf(issue.getLevel()));
-            o.addProperty("message", issue.getMessage());
-            out.add(o);
-        }
-    }
-
-    private static Processor findProcessor(String simpleName) {
-        for (Processor p : Lookup.getDefault().lookupAll(Processor.class)) {
-            if (p.getClass().getSimpleName().equals(simpleName)) {
-                return p;
-            }
-        }
-        return null;
     }
 
     /**
@@ -4252,7 +4256,7 @@ public class GephiControlService {
                 }
 
                 Workspace effectiveWs = importedWs != null ? importedWs : ws;
-                Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
+                final Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
                 JsonObject r = success("Imported from " + file.getName());
                 r.addProperty("import_mode", append ? "append" : "new_workspace");
                 if (issues.size() > 0) {
@@ -4269,6 +4273,31 @@ public class GephiControlService {
                 return error("Import failed: " + e.getMessage());
             }
         }
+    }
+
+    /** Collect up to {@code limit} import issues (level and message) from a report. */
+    static void addIssues(JsonArray out, org.gephi.io.importer.api.Report report, int limit) {
+        if (report == null) {
+            return;
+        }
+        for (org.gephi.io.importer.api.Issue issue : report.getIssuesList(limit)) {
+            if (out.size() >= limit) {
+                return;
+            }
+            JsonObject o = new JsonObject();
+            o.addProperty("level", String.valueOf(issue.getLevel()));
+            o.addProperty("message", issue.getMessage());
+            out.add(o);
+        }
+    }
+
+    private static Processor findProcessor(String simpleName) {
+        for (Processor p : Lookup.getDefault().lookupAll(Processor.class)) {
+            if (p.getClass().getSimpleName().equals(simpleName)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     // ─── Graph Operations ────────────────────────────────────────────
@@ -4422,7 +4451,7 @@ public class GephiControlService {
                 return error("No project open");
             }
             GraphModel gm = currentGraphModel();
-            Graph g = gm.getGraph();
+            final Graph g = gm.getGraph();
 
             // Run connected components (on HTTP thread, not EDT)
             StatisticsBuilder ccBuilder = null;
@@ -4489,8 +4518,7 @@ public class GephiControlService {
                 for (Node n : toRemove) {
                     g.removeNode(n);
                 }
-            }
-            finally {
+            } finally {
                 unlockWrite(g);
             }
             JsonObject r = success("Giant component extracted");
@@ -5062,6 +5090,7 @@ public class GephiControlService {
             try {
                 out.add(Map.entry(plainText(b.getName()), b));
             } catch (Exception ignore) {
+                // A filter whose name cannot be read is left out of the list.
             }
         }
         for (CategoryBuilder cb : Lookup.getDefault().lookupAll(CategoryBuilder.class)) {
@@ -5105,6 +5134,7 @@ public class GephiControlService {
                     byLabel = e.getValue();
                 }
             } catch (Exception ignore) {
+                // A filter whose name cannot be read cannot match by name.
             }
         }
         return byLabel;
@@ -5129,8 +5159,10 @@ public class GephiControlService {
             if (pair == null || pair.size() != 2) {
                 return null;
             }
-            double loD = pair.get(0) instanceof Number ? ((Number) pair.get(0)).doubleValue() : Double.parseDouble(pair.get(0).toString());
-            double hiD = pair.get(1) instanceof Number ? ((Number) pair.get(1)).doubleValue() : Double.parseDouble(pair.get(1).toString());
+            double loD = pair.get(0) instanceof Number ? ((Number) pair.get(0)).doubleValue()
+                : Double.parseDouble(pair.get(0).toString());
+            double hiD = pair.get(1) instanceof Number ? ((Number) pair.get(1)).doubleValue()
+                : Double.parseDouble(pair.get(1).toString());
             // Range requires both bounds to be the SAME Number class. Use Integer when
             // both are whole (degree/count filters), Double otherwise (continuous columns).
             boolean whole = loD == Math.floor(loD) && hiD == Math.floor(hiD)
@@ -5156,10 +5188,12 @@ public class GephiControlService {
             try {
                 o.addProperty("category", b.getCategory() == null ? null : b.getCategory().getName());
             } catch (Exception ignore) {
+                // The category is optional.
             }
             try {
                 o.addProperty("description", b.getDescription());
             } catch (Exception ignore) {
+                // The description is optional.
             }
             // Introspect the filter's settable properties so callers know what params to pass.
             try {
@@ -5240,8 +5274,7 @@ public class GephiControlService {
                 }
                 try {
                     match.setValue(converted);
-                }
-                catch (Exception ex) {
+                } catch (Exception ex) {
                     return error("Failed to set '" + e.getKey() + "': " + ex.getMessage());
                 }
             }
@@ -5405,8 +5438,7 @@ public class GephiControlService {
                 }
                 try {
                     match.setValue(converted);
-                }
-                catch (Exception ex) {
+                } catch (Exception ex) {
                     return "Failed to set '" + e.getKey() + "': " + ex.getMessage();
                 }
             }
@@ -5488,7 +5520,8 @@ public class GephiControlService {
         } else {
             FilterBuilder ob = operatorBuilder(ws, mode.equals("all") ? "INTERSECTIONBuilder" : "UNIONBuilder");
             if (ob == null) {
-                return error("Gephi's " + (mode.equals("all") ? "INTERSECTION" : "UNION") + " operator is not available");
+                return error("Gephi's " + (mode.equals("all") ? "INTERSECTION" : "UNION")
+                    + " operator is not available");
             }
             query = fc.createQuery(ob.getFilter(ws));
             for (Query part : parts) {
@@ -5536,7 +5569,7 @@ public class GephiControlService {
             }
             if (act.equals("select")) {
                 r = success("Filters applied to the visible graph");
-                boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
+                final boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
                 r.addProperty("nodes_before", nodesBefore);
                 r.addProperty("edges_before", edgesBefore);
                 r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
@@ -5604,8 +5637,7 @@ public class GephiControlService {
             }
             try {
                 new java.text.SimpleDateFormat(dateFormat);
-            }
-            catch (IllegalArgumentException e) {
+            } catch (IllegalArgumentException e) {
                 return error("Not a date pattern: " + dateFormat);
             }
         }
@@ -5617,7 +5649,8 @@ public class GephiControlService {
         lockWrite(g);
         try {
             if (numeric) {
-                mc.mergeNumericColumnsToTimeInterval(table, start, end, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+                mc.mergeNumericColumnsToTimeInterval(table, start, end, Double.NEGATIVE_INFINITY,
+                    Double.POSITIVE_INFINITY);
             } else {
                 java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat(dateFormat);
                 mc.mergeDateColumnsToTimeInterval(table, start, end, fmt, null, null);
@@ -5688,7 +5721,7 @@ public class GephiControlService {
         if (!(low <= high)) {
             return error("'start' must not be after 'end'");
         }
-        ProjectController pc = getProjectController();
+        final ProjectController pc = getProjectController();
         Workspace source = currentWorkspace();
         if (source == null) {
             return error("No workspace open");
@@ -5902,7 +5935,8 @@ public class GephiControlService {
                     ec = gm.getEdgeTable().addColumn(markColumn, Boolean.class);
                 }
                 if (nc.getTypeClass() != Boolean.class || ec.getTypeClass() != Boolean.class) {
-                    return error("Column '" + markColumn + "' already exists and is not true/false; choose another name");
+                    return error("Column '" + markColumn
+                        + "' already exists and is not true/false; choose another name");
                 }
                 for (Node n : g.getNodes().toArray()) {
                     n.setAttribute(nc, path.nodes.contains(n));
@@ -5996,7 +6030,7 @@ public class GephiControlService {
                     if (checkOnly) {
                         return success("Ready");
                     }
-                    int before = countValues(gm, target, col);
+                    final int before = countValues(gm, target, col);
                     Column tmp = acc.duplicateColumn(table, col, title + " (converting)", cls);
                     acc.deleteAttributeColumn(table, col);
                     Column converted = acc.duplicateColumn(table, tmp, title, cls);
@@ -6287,7 +6321,9 @@ public class GephiControlService {
         return exportByFormat(filePath, format, true);
     }
 
-    /** @param visible see exportGexf — same contract, response self-declares the view. */
+    /**
+     * @param visible see exportGexf — same contract, response self-declares the view.
+     */
     public JsonObject exportByFormat(String filePath, String format, boolean visible) {
         Workspace ws = currentWorkspace();
         if (ws == null) {
