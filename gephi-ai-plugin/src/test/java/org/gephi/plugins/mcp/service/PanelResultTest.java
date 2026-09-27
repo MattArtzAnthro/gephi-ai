@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,11 +35,14 @@ class PanelResultTest {
 
     static class Quality implements Statistics {
         final double value;
+
         Quality(double value) {
             this.value = value;
         }
+
         @Override public void execute(GraphModel graphModel) {
         }
+
         @Override public String getReport() {
             return "";
         }
@@ -47,6 +51,7 @@ class PanelResultTest {
     static class Other implements Statistics {
         @Override public void execute(GraphModel graphModel) {
         }
+
         @Override public String getReport() {
             return "";
         }
@@ -56,39 +61,50 @@ class PanelResultTest {
         private final Class<? extends Statistics> forClass;
         private final String shown;
         private final boolean fails;
+
         QualityUI(Class<? extends Statistics> forClass, String shown, boolean fails) {
             this.forClass = forClass;
             this.shown = shown;
             this.fails = fails;
         }
+
         @Override public String getValue(Statistics statistics) {
             if (fails) {
                 throw new IllegalStateException("not set up");
             }
             return shown == null || shown.isBlank() ? shown : shown + " for " + ((Quality) statistics).value;
         }
-        @Override public JPanel getSettingsPanel() {
-            return null;
-        }
-        @Override public void setup(Statistics statistics) {
-        }
-        @Override public void unsetup() {
-        }
-        @Override public Class<? extends Statistics> getStatisticsClass() {
-            return forClass;
-        }
+
         @Override public String getValue() {
             return "stale";
         }
+
+        @Override public JPanel getSettingsPanel() {
+            return null;
+        }
+
+        @Override public void setup(Statistics statistics) {
+        }
+
+        @Override public void unsetup() {
+        }
+
+        @Override public Class<? extends Statistics> getStatisticsClass() {
+            return forClass;
+        }
+
         @Override public String getDisplayName() {
             return "Quality";
         }
+
         @Override public String getShortDescription() {
             return "";
         }
+
         @Override public String getCategory() {
             return StatisticsUI.CATEGORY_NETWORK_OVERVIEW;
         }
+
         @Override public int getPosition() {
             return 0;
         }
@@ -112,7 +128,7 @@ class PanelResultTest {
     }
 
     @Test
-    void aUiThatFailsLeavesTheRunsOwnResultAlone() {
+    void uiThatFailsLeavesTheRunsOwnResultAlone() {
         assertNull(GephiControlService.panelResult(new Quality(0.5),
             List.of(new QualityUI(Quality.class, "Q", true))));
     }

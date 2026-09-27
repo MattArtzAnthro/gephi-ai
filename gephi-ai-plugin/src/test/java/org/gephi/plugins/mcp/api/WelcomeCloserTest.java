@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.api;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -45,7 +46,7 @@ class WelcomeCloserTest {
     }
 
     @Test
-    void aWindowWithoutItIsLeftAlone() {
+    void windowWithoutItIsLeftAlone() {
         JPanel outer = new JPanel();
         outer.add(new JLabel("Screenshot saved"));
 

@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -80,20 +81,20 @@ class HttpServerTest {
     }
 
     @Test
-    void aRequestFromABrowserIsRefused() throws Exception {
+    void requestFromABrowserIsRefused() throws Exception {
         assertTrue(get("/health", "Origin: https://example.com").startsWith("403\n"));
         assertTrue(get("/health", "Sec-Fetch-Site: cross-site").startsWith("403\n"));
     }
 
     @Test
-    void aRequestForAnotherHostIsRefused() throws Exception {
+    void requestForAnotherHostIsRefused() throws Exception {
         String[] r = send("GET /health HTTP/1.1\r\nHost: attacker.example:8080\r\nConnection: close\r\n\r\n");
         assertEquals("403", r[0]);
         assertTrue(r[1].contains("localhost"), r[1]);
     }
 
     @Test
-    void aLocalRequestIsAnswered() throws Exception {
+    void localRequestIsAnswered() throws Exception {
         String r = get("/health");
         assertTrue(r.startsWith("200\n") && r.contains("running"), r);
     }
@@ -128,7 +129,7 @@ class HttpServerTest {
     }
 
     @Test
-    void aChunkedBodyIsRead() throws Exception {
+    void chunkedBodyIsRead() throws Exception {
         // Read as empty, this request would be refused as "Missing 'nodes' array".
         String json = "{\"nodes\": []}";
         String[] r = send("POST /graph/nodes/add HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"

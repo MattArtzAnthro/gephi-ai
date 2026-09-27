@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -107,7 +108,7 @@ class ImportRoundTripTest {
      * each one the default size.
      */
     @Test
-    void aFileWithoutPositionsStillGetsSpreadOutNodes(@TempDir Path dir) throws Exception {
+    void fileWithoutPositionsStillGetsSpreadOutNodes(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("bare.gexf");
         Files.write(file, ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
             + "<gexf xmlns=\"http://gexf.net/1.3\" version=\"1.3\">\n"

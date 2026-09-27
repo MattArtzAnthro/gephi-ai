@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -314,7 +315,8 @@ class GraphOpsTest {
     void differentTypedEdgesCoexistBetweenSamePair() {
         GraphModel gm = modelWithNodes("a", "b");
         assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "cites").get("success").getAsBoolean());
-        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "coauthor").get("success").getAsBoolean());
+        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true,
+            "coauthor").get("success").getAsBoolean());
         assertEquals(2, gm.getGraph().getEdgeCount(), "two typed parallel edges should coexist");
         assertTrue(gm.getEdgeTypeCount() >= 2);
     }
@@ -330,7 +332,7 @@ class GraphOpsTest {
 
     @Test
     void batchAddHonorsPerEdgeType() {
-        GraphModel gm = modelWithNodes("a", "b");
+        final GraphModel gm = modelWithNodes("a", "b");
         Map<String, Object> e1 = new LinkedHashMap<>();
         e1.put("source", "a");
         e1.put("target", "b");

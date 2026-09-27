@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -53,32 +54,42 @@ class AppearancePanelTest {
         @Override public Collection getValues(Graph g) {
             return values;
         }
+
         @Override public Collection getSortedValues(Graph g) {
             return values;
         }
+
         @Override public int getElementCount(Graph g) {
             return values.size();
         }
+
         @Override public int count(Object v, Graph g) {
             return 1;
         }
+
         @Override public Object getValue(Element e, Graph g) {
             return null;
         }
+
         @Override public Color getColor(Object v) {
             return colors.get(v);
         }
+
         @Override public void setColor(Object v, Color c) {
             colors.put(v, c);
         }
+
         @Override public void setColors(Graph g, Color[] c) {
         }
+
         @Override public float percentage(Object v, Graph g) {
             return 0;
         }
+
         @Override public int size(Graph g) {
             return values.size();
         }
+
         @Override public Column getColumn() {
             return null;
         }
@@ -120,7 +131,7 @@ class AppearancePanelTest {
     }
 
     @Test
-    void aColumnIsFoundByItsIdOrByTheTitleUsersSee() {
+    void columnIsFoundByItsIdOrByTheTitleUsersSee() {
         org.gephi.graph.api.GraphModel gm = org.gephi.graph.api.GraphModel.Factory.newInstance();
         org.gephi.graph.api.Table nodes = gm.getNodeTable();
         nodes.addColumn("0", "group", String.class, org.gephi.graph.api.Origin.DATA, null, true);

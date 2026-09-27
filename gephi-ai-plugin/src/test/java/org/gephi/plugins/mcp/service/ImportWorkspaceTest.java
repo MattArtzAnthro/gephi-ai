@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -70,7 +71,7 @@ class ImportWorkspaceTest {
     }
 
     @Test
-    void aFileWithTimestampsImports(@TempDir Path dir) throws Exception {
+    void fileWithTimestampsImports(@TempDir Path dir) throws Exception {
         freshProject();
         Path f = write(dir, "timestamps.gexf", "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
             + "<gexf xmlns=\"http://gexf.net/1.3\" version=\"1.3\">"
@@ -87,7 +88,7 @@ class ImportWorkspaceTest {
     }
 
     @Test
-    void aFileWithIntegerIdsImports(@TempDir Path dir) throws Exception {
+    void fileWithIntegerIdsImports(@TempDir Path dir) throws Exception {
         freshProject();
         Path f = write(dir, "ints.gexf", "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
             + "<gexf xmlns=\"http://gexf.net/1.3\" version=\"1.3\">"

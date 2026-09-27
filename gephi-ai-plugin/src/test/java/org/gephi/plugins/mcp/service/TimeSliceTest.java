@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,7 +65,7 @@ class TimeSliceTest {
     }
 
     @Test
-    void aSliceOpensInItsOwnWorkspaceAndLeavesTheNetworkAlone(@TempDir Path dir) throws Exception {
+    void sliceOpensInItsOwnWorkspaceAndLeavesTheNetworkAlone(@TempDir Path dir) throws Exception {
         ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
         pc.closeCurrentProject();
         pc.newProject();
@@ -92,7 +93,7 @@ class TimeSliceTest {
     }
 
     @Test
-    void aNetworkWithoutTimeDataIsRefused() {
+    void networkWithoutTimeDataIsRefused() {
         ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
         pc.closeCurrentProject();
         pc.newProject();

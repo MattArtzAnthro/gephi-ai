@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,7 +51,7 @@ class RequestBodyTest {
     }
 
     @Test
-    void aMissingOrEmptyLengthReadsNothing() throws IOException {
+    void missingOrEmptyLengthReadsNothing() throws IOException {
         assertEquals("", GephiAPIServer.readBody(new ByteArrayInputStream(new byte[0]), null));
         assertEquals("", GephiAPIServer.readBody(new ByteArrayInputStream(new byte[0]), " "));
     }

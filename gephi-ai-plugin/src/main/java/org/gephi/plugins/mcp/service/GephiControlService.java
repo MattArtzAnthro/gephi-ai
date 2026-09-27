@@ -5816,7 +5816,7 @@ public class GephiControlService {
     static PathResult shortestPath(Graph g, Node from, Node to, String weighting, boolean followDirection) {
         java.util.Map<Node, Double> dist = new java.util.HashMap<>();
         java.util.Map<Node, Long> ways = new java.util.HashMap<>();
-        java.util.Map<Node, Edge> via = new java.util.HashMap<>();
+        final java.util.Map<Node, Edge> via = new java.util.HashMap<>();
         java.util.PriorityQueue<Object[]> queue = new java.util.PriorityQueue<>(
             (a, b) -> Double.compare((Double) a[1], (Double) b[1]));
         dist.put(from, 0.0);

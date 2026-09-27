@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,7 +55,7 @@ class NodeSearchTest {
     }
 
     @Test
-    void aWholeValueMatchesIgnoringCase() {
+    void wholeValueMatchesIgnoringCase() {
         assertEquals(List.of("a", "b"), find(people(), "country", "PERU", null, null, null));
     }
 
@@ -64,12 +65,12 @@ class NodeSearchTest {
     }
 
     @Test
-    void aNumericRangeIsInclusive() {
+    void numericRangeIsInclusive() {
         assertEquals(List.of("b", "d"), find(people(), "score", null, null, 1.0, 2.0));
     }
 
     @Test
-    void aNumberMatchesByValueNotByText() {
+    void numberMatchesByValueNotByText() {
         assertEquals(List.of("b"), find(people(), "score", "2", null, null, null));
     }
 

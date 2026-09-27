@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -60,7 +61,7 @@ class NodeSortTest {
     }
 
     @Test
-    void aRequestedColumnIsKeptByIdOrByTitleIgnoringCase() {
+    void requestedColumnIsKeptByIdOrByTitleIgnoringCase() {
         Set<String> wanted = GephiControlService.wantedColumns("pageranks, Betweenness Centrality");
         assertTrue(GephiControlService.isWanted(wanted, "pageranks", "PageRank"));
         assertTrue(GephiControlService.isWanted(wanted, "betweenesscentrality", "Betweenness Centrality"));

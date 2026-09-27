@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,17 +40,17 @@ class PdfPageTest {
     }
 
     @Test
-    void aWideDrawingPrintsLandscape() {
+    void wideDrawingPrintsLandscape() {
         assertTrue(GephiControlService.landscapeFor(graphAt(new float[][]{{-300, 0}, {300, 50}})));
     }
 
     @Test
-    void aTallDrawingPrintsPortrait() {
+    void tallDrawingPrintsPortrait() {
         assertFalse(GephiControlService.landscapeFor(graphAt(new float[][]{{0, -300}, {50, 300}})));
     }
 
     @Test
-    void aSquareOrSingleNodeDrawingPrintsPortrait() {
+    void squareOrSingleNodeDrawingPrintsPortrait() {
         assertFalse(GephiControlService.landscapeFor(graphAt(new float[][]{{-10, -10}, {10, 10}})));
         assertFalse(GephiControlService.landscapeFor(graphAt(new float[][]{{5, 5}})));
     }

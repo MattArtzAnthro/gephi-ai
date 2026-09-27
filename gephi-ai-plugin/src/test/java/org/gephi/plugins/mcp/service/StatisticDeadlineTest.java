@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,16 +40,18 @@ class StatisticDeadlineTest {
                 Thread.onSpinWait();
             }
         }
+
         @Override public boolean cancel() {
             cancelled.set(true);
             return true;
         }
+
         @Override public void setProgressTicket(ProgressTicket t) {
         }
     }
 
     @Test
-    void aTaskThatNeverFinishesIsStoppedAtTheDeadline() {
+    void taskThatNeverFinishesIsStoppedAtTheDeadline() {
         Spinner s = new Spinner();
         long start = System.nanoTime();
         boolean stopped = GephiControlService.runWithDeadline(s, s, 200);
@@ -60,7 +63,7 @@ class StatisticDeadlineTest {
     }
 
     @Test
-    void aTaskThatFinishesInTimeIsNotReportedAsStoppedOrCancelledLater() throws Exception {
+    void taskThatFinishesInTimeIsNotReportedAsStoppedOrCancelledLater() throws Exception {
         Spinner s = new Spinner();
         boolean stopped = GephiControlService.runWithDeadline(() -> {
         }, s, 200);

@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -110,7 +111,7 @@ class DataToolsTest {
     }
 
     @Test
-    void aCheckChangesNothing() {
+    void checkChangesNothing() {
         JsonObject ok = service.editColumn("node", "group", "delete", null, null, null, true);
         JsonObject refused = service.editColumn("node", "Label", "delete", null, null, null, true);
 
