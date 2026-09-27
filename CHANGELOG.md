@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.20.0 / Java plugin 1.4.0 / workflow packages 1.18.0
 
 ### Added
 - **Rank nodes in one call.** `gephi_query_nodes` takes `sort_by` (a column or "degree") and
@@ -47,6 +47,14 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   shares one map, and measuring each period the same way. Claim checking covers path claims
   ("A reaches B only through C") and change claims, and exploring a network with time data
   offers a comparison across periods.
+- **Gephi's panels show what Gephi AI does.** Statistics run through Gephi's Statistics
+  panel, which shows each one running, its result and its report, and lets you cancel it.
+  Layouts run through the Layout panel, which shows the algorithm, the exact settings used,
+  and whether it is running, with Stop working as usual. Coloring and sizing by a column set
+  the Appearance panel to the same column and colors or sizes, so clicking Apply there
+  reproduces the result. Results are unchanged.
+- Columns can be named by the title shown in Gephi as well as by their id, for coloring and
+  sizing.
 
 ### Changed
 - **Shorter reports when no one can answer.** A session that has to choose for the person
@@ -135,20 +143,6 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   tools as they appear for a server registered by hand, so under the plugin the check never
   ran, the read-only agents could use every tool, and each command asked permission for
   every Gephi call.
-
-## MCP server 1.19.3 / Java plugin 1.4.0 / workflow packages 1.17.3
-
-### Added
-- **Gephi's panels show what Gephi AI does.** Statistics run through Gephi's Statistics
-  panel, which shows each one running, its result and its report, and lets you cancel it.
-  Layouts run through the Layout panel, which shows the algorithm, the exact settings used,
-  and whether it is running, with Stop working as usual. Coloring and sizing by a column set
-  the Appearance panel to the same column and colors or sizes, so clicking Apply there
-  reproduces the result. Results are unchanged.
-- Columns can be named by the title shown in Gephi as well as by their id, for coloring and
-  sizing.
-
-### Fixed
 - **Dynamic statistics now run properly, or say why they cannot.** Dynamic # Nodes, # Edges,
   Degree and Clustering Coefficient used to report success without computing anything. They
   now run over the network's timeline. They need a window and a step (tick) in the network's

@@ -6,7 +6,7 @@ whether it applies them: whether the hook fires, whether an agent's tool list ho
 command's pre-approved tools are actually approved. Plugin tool naming has changed under this
 plugin once already, and the files then looked right while nothing applied.
 
-Opt-in, because each test starts a Claude session (Haiku; a few cents each):
+Opt-in, because each test starts a Claude session (Sonnet; a few cents each):
 
     GEPHI_LIVE_PLUGIN=1 PYTHONPATH=. .venv/bin/python -m pytest -v tests/test_plugin_live.py
 
@@ -55,7 +55,7 @@ def session(tmp_path_factory):
     env = dict(os.environ, GEPHI_API_URL=f"http://127.0.0.1:{_closed_port()}")
 
     def run(prompt, bypass_permissions=True):
-        argv = ["claude", "-p", "--setting-sources", "project", "--model", "haiku",
+        argv = ["claude", "-p", "--setting-sources", "project", "--model", "sonnet",
                 "--plugin-dir", str(plugin), "--output-format", "stream-json", "--verbose"]
         if bypass_permissions:
             argv += ["--permission-mode", "bypassPermissions"]
@@ -111,10 +111,17 @@ def test_a_read_only_agent_cannot_reach_a_restyling_tool(session):
 
 
 def test_a_command_pre_approves_its_gephi_tools(session):
-    events = session("/gephi-network-analysis:explore Step one: call the gephi_health_check tool "
-                     "(load it with ToolSearch if needed) and report its result. Do nothing else.",
-                     bypass_permissions=False)
-    ran = [i for name, i, _ in _calls(events) if name == TOOL + "health_check"]
+    # The model occasionally takes another route and never attempts the call, which tests
+    # nothing either way; a few attempts give it the chance. A refusal fails at once.
+    for _ in range(3):
+        events = session("/gephi-network-analysis:explore Step one: call the gephi_health_check "
+                         "tool (load it with ToolSearch if needed) and report its result. Do "
+                         "nothing else.", bypass_permissions=False)
+        assert not [d for d in _denied(events) if d.startswith(TOOL)], \
+            f"the command's allowed-tools did not approve: {_denied(events)}"
+        ran = [i for name, i, _ in _calls(events) if name == TOOL + "health_check"]
+        if ran:
+            break
     assert ran and all(i in _results(events) for i in ran), \
         "gephi_health_check never ran under the command's own permissions"
     assert not [d for d in _denied(events) if d.startswith(TOOL)], \

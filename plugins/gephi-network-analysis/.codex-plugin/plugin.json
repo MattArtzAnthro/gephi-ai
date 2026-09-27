@@ -1,6 +1,6 @@
 {
   "name": "gephi-network-analysis",
-  "version": "1.17.3",
+  "version": "1.18.0",
   "description": "AI-powered network analysis, visualization, and export using Gephi Desktop through 120 local MCP tools and guided workflows.",
   "author": {
     "name": "Matt Artz",

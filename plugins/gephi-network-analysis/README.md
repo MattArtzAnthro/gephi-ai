@@ -46,7 +46,7 @@ lifecycle callback.
 
 ## Versioning
 
-The Codex plugin version tracks the Claude plugin version (`1.17.3`). The MCP
-server version is pinned separately at `1.19.3` in `.mcp.json`, matching
+The Codex plugin version (`.codex-plugin/plugin.json`) tracks the Claude plugin
+version. The MCP server version is pinned separately in `.mcp.json`, matching
 `mcp-server/pyproject.toml` and the Claude plugin's `.mcp.json`. The package
 tests check both pins, so a release that bumps one without the other fails.

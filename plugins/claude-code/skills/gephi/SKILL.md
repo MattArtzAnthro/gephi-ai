@@ -10,12 +10,12 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.1+ (0.11.3 recommended) running with the Gephi AI Plugin (1.3.0+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.17.3"
+  version: "1.18.0"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.17.3 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.18.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 120 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__plugin_gephi-network-analysis_gephi-mcp__gephi_*` from the plugin, or `mcp__gephi-mcp__gephi_*` when the server is registered by hand) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
