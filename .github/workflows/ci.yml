@@ -81,7 +81,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0  # this action publishes no moving major tag after v7
       - name: Smoke-test the bundle over stdio
         # The test launches the bundle with the manifest's uv command, as Claude Desktop does.
         # The variable turns a missing uv from a skip into a failure on every runner.
