@@ -41,6 +41,12 @@ have yet, so it fails to install until PyPI catches up.
    `~/Library/Application Support/gephi/0.11/modules/`, so **restart Gephi** to
    load it. Add `-Dmaven.antrun.skip=true` to build without deploying.
 
+   The auto-deploy copies the module jar only. When a release changes the bundled
+   libraries (`modules/ext/org.gephi.plugins.gephi-ai/`), install the whole `.nbm`
+   instead: with Gephi closed, unzip it and copy its `netbeans/` contents into
+   `~/Library/Application Support/gephi/0.11/`, then delete any library folder under
+   `modules/ext/org.gephi.plugins.gephi-ai/` that the new `.nbm` no longer carries.
+
    Then run the live smoke test, which drives every tool against a running Gephi
    at 1000 nodes; the unit tests do not exercise the live MCP path:
 
@@ -113,6 +119,13 @@ have yet, so it fails to install until PyPI catches up.
    scripts/build-mcpb.sh          # version comes from mcpb/manifest.json
    ```
 
+   uv can lag behind pip: for 1.21.0, pip resolved the new version while the lock still
+   failed. Rerun with `UV_NO_CACHE=1 scripts/build-mcpb.sh` until it succeeds.
+
+   The CI job "Build the bundle for real and check what it ships" fails on the release
+   pull request for the same reason until the version is on PyPI. Rerun it once the build
+   succeeds (`gh run rerun <run-id> --failed`) and merge only when every check passes.
+
    `.mcpb` files are gitignored — they ship as release assets only.
 
 8. **Commit and push.** A push that changes `.github/workflows/ci.yml` requires the
@@ -175,6 +188,14 @@ have yet, so it fails to install until PyPI catches up.
 
    Start a new task after reinstalling so Codex discovers the refreshed skills
    and MCP registration together.
+
+   Cowork keeps its own plugin store, which the commands above do not touch.
+   `scripts/check-drift.sh --fix-clones` updates its marketplace clone. Its install record
+   (`cowork_plugins/installed_plugins.json` under the Cowork session folder the drift
+   script names) then needs pointing at the new version by hand. Back the file up,
+   copy `marketplaces/gephi-ai/plugins/claude-code` to
+   `cache/gephi-ai/gephi-network-analysis/<version>`, and update the entry's
+   `installPath`, `version`, `gitCommitSha` and `lastUpdated`.
 
 11. **Verify:**
 

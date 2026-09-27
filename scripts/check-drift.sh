@@ -165,7 +165,11 @@ except Exception:
   elif [ "$installed" = "$LATEST_PLUGIN" ]; then
     ok "$label installed_plugins.json is current ($installed)"
   else
-    note "$label installed_plugins.json is STALE ($installed vs $LATEST_PLUGIN) — run: claude plugin marketplace update gephi-ai && claude plugin update gephi-network-analysis@gephi-ai"
+    if [ "$label" = "host" ]; then
+      note "$label installed_plugins.json is STALE ($installed vs $LATEST_PLUGIN) — run: claude plugin marketplace update gephi-ai && claude plugin update gephi-network-analysis@gephi-ai"
+    else
+      note "$label installed_plugins.json is STALE ($installed vs $LATEST_PLUGIN) — Cowork's store is updated by hand: see RELEASING.md step 10"
+    fi
   fi
 }
 
