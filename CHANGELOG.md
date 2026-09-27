@@ -4,11 +4,15 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased: Java plugin 1.5.0
+## MCP server 1.21.0 / Java plugin 1.5.0 / workflow packages 1.19.0
 
 ### Changed
 - **Requires Gephi 0.11.3.** The plugin builds against Gephi 0.11.3 and relies on its threading
-  and screenshot fixes. Earlier plugin releases still run on Gephi 0.11.1 and 0.11.2.
+  and screenshot fixes. Earlier plugin releases still run on Gephi 0.11.1 and 0.11.2, and Gephi
+  refuses to install this one there. `/health` now reports `gephi_version`, and when a plugin
+  update needs a newer Gephi, `gephi_health_check` says to update Gephi first (or, with an
+  older plugin that does not report the version, how to check it). `latest.json` records the
+  minimum as `nbm_needs_gephi`, set by `bump-version.sh` from the plugin's POM.
 - **Colouring and sizing go through Gephi's Appearance API.** `gephi_color_by_partition`,
   `gephi_color_by_ranking`, `gephi_size_by_ranking` and `gephi_color_edges_by_partition` apply
   the same function the Appearance panel's Apply button does, instead of setting each node
@@ -36,6 +40,8 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   dependency is gone. The browser and Host checks are unchanged and now tested over a real
   connection; query text that is not valid percent-encoding is kept as sent instead of
   failing the request. Gson is 2.14.0.
+- The skill's stated plugin requirement had stopped following releases at 1.3.0;
+  `bump-version.sh` now updates and verifies it.
 - Previews are no longer refreshed after every graph change (exports refresh them), several
   calls no longer hop to Gephi's interface thread, and setting node or edge colours and node
   sizes (one at a time, in a batch, or as a reset) no longer takes the graph write lock.
