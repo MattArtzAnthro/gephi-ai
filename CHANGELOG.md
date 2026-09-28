@@ -4,6 +4,13 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Development
+- **Plugin unit tests stay off port 8080 and run headless.** NetBeans runs the module's
+  installer inside the test JVM, and it started the API server on 8080. With a Gephi already
+  holding that port, the bind failure opened an error dialog on the desktop mid-run.
+
 ## Workflow packages 1.20.0
 
 ### Changed
