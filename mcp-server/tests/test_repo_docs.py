@@ -9,13 +9,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-# The server NAME stays `gephi-mcp` (it sets the tool prefix `mcp__gephi-mcp__` and
-# every allowlist that matches it); the PACKAGE the launcher resolves is `gephi-ai`.
-# The two senses are easy to conflate in a sweep, so both are pinned here.
+# The server NAME is `gephi-ai` (it sets the tool prefix `mcp__gephi-ai__` and every
+# allowlist that matches it; it was `gephi-mcp` before 1.20.0), and the PACKAGE the launcher
+# resolves is also `gephi-ai`. Both are pinned here.
 REGISTRATIONS = (
-    "claude mcp add gephi-mcp -- uvx gephi-ai",
-    "codex mcp add gephi-mcp -- uvx gephi-ai",
-    "gemini mcp add -s user gephi-mcp uvx gephi-ai",
+    "claude mcp add gephi-ai -- uvx gephi-ai",
+    "codex mcp add gephi-ai -- uvx gephi-ai",
+    "gemini mcp add -s user gephi-ai uvx gephi-ai",
 )
 
 
@@ -53,7 +53,7 @@ def test_skill_prose_does_not_hardcode_the_claude_tool_prefix():
     skill = REPO / "plugins" / "claude-code" / "skills" / "gephi" / "SKILL.md"
     body = skill.read_text(encoding="utf-8").split("---", 2)[2]
     stray = [ln for ln in body.splitlines()
-             if "mcp__gephi-mcp__" in ln and "Claude Code shows them as" not in ln]
+             if "mcp__gephi-ai__" in ln and "Claude Code shows them as" not in ln]
     assert stray == [], f"Claude-only tool prefix in skill prose: {stray[:3]}"
 
 
@@ -184,7 +184,7 @@ def test_bundle_pins_the_same_server_version_as_the_plugins():
     manifest = json.loads(_read("mcpb/manifest.json"))
     pin = re.search(r'"gephi-ai==([^"]+)"', _read("mcpb/pyproject.toml")).group(1)
     plugin_pin = json.loads(_read("plugins/claude-code/.mcp.json"))[
-        "mcpServers"]["gephi-mcp"]["args"][1].split("==")[1]
+        "mcpServers"]["gephi-ai"]["args"][1].split("==")[1]
     assert manifest["version"] == pin == plugin_pin
 
 

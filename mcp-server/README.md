@@ -32,7 +32,7 @@ The Gephi AI plugin must be installed and Gephi Desktop running first. Then poin
 client at the `gephi-ai` command, e.g. for Claude Desktop:
 
 ```json
-{ "mcpServers": { "gephi-mcp": { "command": "uvx", "args": ["gephi-ai"] } } }
+{ "mcpServers": { "gephi-ai": { "command": "uvx", "args": ["gephi-ai"] } } }
 ```
 
 ## Configuration

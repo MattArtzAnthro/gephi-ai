@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "gephi-mcp": {
+    "gephi-ai": {
       "command": "uvx",
       "args": ["--from", "gephi-ai==1.21.1", "gephi-ai"]
     }

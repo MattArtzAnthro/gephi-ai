@@ -1,6 +1,6 @@
 ---
 description: Explore the graph already open in Gephi (no file path needed): intake, profile, style, layout, overview
-allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill(gephi-network-analysis:gephi)
+allowed-tools: mcp__plugin_gephi-network-analysis_gephi-ai__*, Skill(gephi-network-analysis:gephi)
 ---
 
 # Explore

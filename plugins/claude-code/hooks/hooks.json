@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__(plugin_gephi-network-analysis_)?gephi-mcp__gephi_(add_node|add_nodes|add_edge|add_edges|import_file|import_gexf|import_graphml|import_csv|clear_graph|run_layout)$",
+        "matcher": "mcp__(plugin_gephi-network-analysis_)?gephi-(ai|mcp)__gephi_(add_node|add_nodes|add_edge|add_edges|import_file|import_gexf|import_graphml|import_csv|clear_graph|run_layout)$",
         "hooks": [
           {
             "type": "command",

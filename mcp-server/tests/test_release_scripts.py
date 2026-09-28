@@ -82,7 +82,7 @@ def test_bump_version_moves_every_bundle_pin(tmp_path):
     assert re.search(r'^version = "(.+)"', bundle, re.M).group(1) == new
     assert re.search(r'"gephi-ai==([^"]+)"', bundle).group(1) == new
     for mcp_json in ("plugins/claude-code/.mcp.json", "plugins/gephi-network-analysis/.mcp.json"):
-        args = json.loads((tmp_path / mcp_json).read_text())["mcpServers"]["gephi-mcp"]["args"]
+        args = json.loads((tmp_path / mcp_json).read_text())["mcpServers"]["gephi-ai"]["args"]
         assert f"gephi-ai=={new}" in args, mcp_json
 
 

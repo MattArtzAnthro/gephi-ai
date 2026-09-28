@@ -75,8 +75,8 @@ class CodexPluginPackageTests(unittest.TestCase):
         self.assertEqual(codex, latest)
 
     def test_mcp_pins_are_synchronized(self):
-        codex = load_json(PLUGIN_ROOT / ".mcp.json")["mcpServers"]["gephi-mcp"]["args"]
-        claude = load_json(REPO_ROOT / "plugins/claude-code/.mcp.json")["mcpServers"]["gephi-mcp"]["args"]
+        codex = load_json(PLUGIN_ROOT / ".mcp.json")["mcpServers"]["gephi-ai"]["args"]
+        claude = load_json(REPO_ROOT / "plugins/claude-code/.mcp.json")["mcpServers"]["gephi-ai"]["args"]
         self.assertEqual(codex, claude)
         pinned = codex[1].split("==", 1)[1]
         pyproject = (REPO_ROOT / "mcp-server/pyproject.toml").read_text(encoding="utf-8")

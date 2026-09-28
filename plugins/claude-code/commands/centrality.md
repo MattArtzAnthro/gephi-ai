@@ -1,6 +1,6 @@
 ---
 description: Run centrality analysis and identify the most important nodes
-allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill(gephi-network-analysis:gephi)
+allowed-tools: mcp__plugin_gephi-network-analysis_gephi-ai__*, Skill(gephi-network-analysis:gephi)
 ---
 
 # Centrality Analysis Workflow

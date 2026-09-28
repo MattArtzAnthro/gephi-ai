@@ -99,8 +99,8 @@ P=$(python3 -c "import json;print(json.load(open('plugins/claude-code/.claude-pl
 fail=0
 check() { [ "$2" = "$3" ] || { echo "  MISMATCH $1: '$2' != '$3'"; fail=1; }; }
 echo "--- verify ---"
-check ".mcp.json pin"      "$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
-check "Codex .mcp.json pin" "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])")" "$S"
+check ".mcp.json pin"      "$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.json'))['mcpServers']['gephi-ai']['args'][1].split('==')[1])")" "$S"
+check "Codex .mcp.json pin" "$(python3 -c "import json;print(json.load(open('plugins/gephi-network-analysis/.mcp.json'))['mcpServers']['gephi-ai']['args'][1].split('==')[1])")" "$S"
 check "mcpb manifest"      "$(python3 -c "import json;print(json.load(open('mcpb/manifest.json'))['version'])")" "$S"
 check "mcpb pyproject pin" "$(grep -oE 'gephi-ai==[0-9.]+' mcpb/pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$S"
 check "latest.json server" "$(python3 -c "import json;print(json.load(open('latest.json'))['server'])")" "$S"

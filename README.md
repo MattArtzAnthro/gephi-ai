@@ -65,7 +65,7 @@ Start a new Codex task after installing.
 **Gemini CLI:**
 
 ```bash
-gemini mcp add -s user gephi-mcp uvx gephi-ai
+gemini mcp add -s user gephi-ai uvx gephi-ai
 ```
 
 **Any other MCP client:** run `uvx gephi-ai` over stdio.
@@ -74,8 +74,8 @@ gemini mcp add -s user gephi-mcp uvx gephi-ai
 <summary>Tools only, without the skills and commands</summary>
 
 ```bash
-claude mcp add gephi-mcp -- uvx gephi-ai
-codex mcp add gephi-mcp -- uvx gephi-ai
+claude mcp add gephi-ai -- uvx gephi-ai
+codex mcp add gephi-ai -- uvx gephi-ai
 ```
 
 Claude Desktop through its config file (`claude_desktop_config.json`):
@@ -83,7 +83,7 @@ Claude Desktop through its config file (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
-    "gephi-mcp": {
+    "gephi-ai": {
       "command": "uvx",
       "args": ["gephi-ai"]
     }
@@ -131,7 +131,8 @@ The health check tells you once per session when something is out of date.
 <summary>Upgrade notes</summary>
 
 - **From plugin 1.2.x (one time):** the plugin was renamed to Gephi AI, so the new version installs alongside the old one and both try to use port 8080. In **Tools > Plugins > Installed**, uninstall **Gephi AI (MCP)**, restart Gephi, then install the new `.nbm`.
-- **From the `gephi-mcp` package:** the server is now published as `gephi-ai`. If your config says `uvx gephi-mcp`, change it to `uvx gephi-ai` to keep getting updates. Tool names do not change.
+- **From the `gephi-mcp` package:** the server is now published as `gephi-ai`. If your config says `uvx gephi-mcp`, change it to `uvx gephi-ai` to keep getting updates.
+- **From the `gephi-mcp` server name:** the setup commands and the Claude plugin now name the server `gephi-ai`, so its tools show as `mcp__gephi-ai__gephi_*` (`mcp__plugin_gephi-network-analysis_gephi-ai__gephi_*` from the plugin). A server you registered by hand as `gephi-mcp` keeps working under that name; re-register it as `gephi-ai` to match, and re-approve the tools once.
 - **Cowork** keeps its own copy of plugins. Ask Cowork to update gephi-network-analysis, then fully quit and reopen the app.
 
 </details>
@@ -139,7 +140,7 @@ The health check tells you once per session when something is out of date.
 ## Troubleshooting
 
 - **"Executable not found in $PATH":** the app cannot find `uvx` or `gephi-ai`. Install with `uvx` or `pipx` rather than inside a project virtual environment, or point your config at the executable's full path.
-- **Every tool appears twice:** two connection methods are active. Remove one (bundle: **Settings > Extensions**; config file: delete the `gephi-mcp` block).
+- **Every tool appears twice:** two connection methods are active. Remove one (bundle: **Settings > Extensions**; config file: delete the `gephi-ai` block, or `gephi-mcp` in an older setup).
 - **"Graph is busy" keeps appearing:** fully quit and reopen Gephi.
 - **Opening `http://127.0.0.1:8080` in a browser returns `403`:** this is intended. The API refuses browsers so that a web page cannot drive Gephi. `curl http://127.0.0.1:8080/health` shows whether the plugin is running.
 

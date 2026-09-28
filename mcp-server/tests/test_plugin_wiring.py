@@ -1,7 +1,7 @@
 """
 The Claude Code plugin names its own tools in three places: the PreToolUse hook matcher, the
 agents' tool lists, and the commands' allowed-tools. Installed as a plugin, the tools are named
-mcp__plugin_gephi-network-analysis_gephi-mcp__gephi_*, not mcp__gephi-mcp__gephi_* as they are
+mcp__plugin_gephi-network-analysis_gephi-ai__gephi_*, not mcp__gephi-ai__gephi_* as they are
 for a server registered by hand. With the hand-registered names the hook never fired and the
 agents' read-only lists restricted nothing.
 """
@@ -12,8 +12,8 @@ from pathlib import Path
 import gephi_mcp
 
 PLUGIN = Path(__file__).resolve().parents[2] / "plugins" / "claude-code"
-PLUGIN_PREFIX = "mcp__plugin_gephi-network-analysis_gephi-mcp__"
-BARE_PREFIX = "mcp__gephi-mcp__"
+PLUGIN_PREFIX = "mcp__plugin_gephi-network-analysis_gephi-ai__"
+BARE_PREFIX = "mcp__gephi-ai__"
 
 
 def _frontmatter(path):
@@ -39,6 +39,7 @@ def test_the_health_check_hook_matches_the_plugins_tool_names():
     for tool in guarded:
         assert re.search(matcher, PLUGIN_PREFIX + tool), f"hook misses the plugin's {tool}"
         assert re.search(matcher, BARE_PREFIX + tool), f"hook misses the hand-registered {tool}"
+        assert re.search(matcher, "mcp__gephi-mcp__" + tool), f"hook misses the pre-1.20 server name {tool}"
     for tool in ("gephi_add_node_attribute_that_does_not_exist", "gephi_health_check"):
         assert not re.search(matcher, PLUGIN_PREFIX + tool), f"hook also guards {tool}"
 

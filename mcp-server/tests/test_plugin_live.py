@@ -28,7 +28,7 @@ import pytest
 
 MCP_DIR = Path(__file__).resolve().parents[1]
 PLUGIN = MCP_DIR.parent / "plugins" / "claude-code"
-TOOL = "mcp__plugin_gephi-network-analysis_gephi-mcp__gephi_"
+TOOL = "mcp__plugin_gephi-network-analysis_gephi-ai__gephi_"
 HOOK_MESSAGE = "Gephi Desktop is not running or the MCP plugin is not responding"
 
 pytestmark = pytest.mark.skipif(
@@ -49,7 +49,7 @@ def session(tmp_path_factory):
     shutil.copytree(PLUGIN, plugin, ignore=shutil.ignore_patterns("__pycache__"))
     launch = f"import sys; sys.path.insert(0, {str(MCP_DIR)!r}); import gephi_mcp; gephi_mcp.mcp.run()"
     (plugin / ".mcp.json").write_text(json.dumps(
-        {"mcpServers": {"gephi-mcp": {"command": sys.executable, "args": ["-c", launch]}}}))
+        {"mcpServers": {"gephi-ai": {"command": sys.executable, "args": ["-c", launch]}}}))
     project = root / "project"
     project.mkdir()
     env = dict(os.environ, GEPHI_API_URL=f"http://127.0.0.1:{_closed_port()}")

@@ -1,7 +1,7 @@
 ---
 description: Import a graph file and run an initial exploration with layout and styling
 argument-hint: "<file-path>"
-allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill(gephi-network-analysis:gephi)
+allowed-tools: mcp__plugin_gephi-network-analysis_gephi-ai__*, Skill(gephi-network-analysis:gephi)
 ---
 
 # Import & Explore

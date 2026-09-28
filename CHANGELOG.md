@@ -4,6 +4,15 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Workflow packages 1.20.0
+
+### Changed
+- **The MCP server is named `gephi-ai`**, matching the package, instead of `gephi-mcp`. In the
+  Claude Code plugin its tools are now `mcp__plugin_gephi-network-analysis_gephi-ai__gephi_*`,
+  and the setup commands register it as `gephi-ai`. Tools you had approved once will ask again
+  once. A server registered by hand as `gephi-mcp` keeps working, and the health-check hook
+  still covers it.
+
 ## Workflow packages 1.19.2
 
 ### Changed

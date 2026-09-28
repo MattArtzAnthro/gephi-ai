@@ -56,7 +56,7 @@ echo ""
 
 # ---- 2. PyPI vs the pinned version (the "dead on install" hazard) ----
 echo "-- PyPI publish gap --"
-PINNED=$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.json'))['mcpServers']['gephi-mcp']['args'][1].split('==')[1])" 2>/dev/null)
+PINNED=$(python3 -c "import json;print(json.load(open('plugins/claude-code/.mcp.json'))['mcpServers']['gephi-ai']['args'][1].split('==')[1])" 2>/dev/null)
 if [ -z "$PINNED" ]; then
   note "could not read pinned version from plugins/claude-code/.mcp.json"
 else

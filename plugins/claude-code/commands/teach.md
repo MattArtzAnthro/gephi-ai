@@ -1,7 +1,7 @@
 ---
 description: Narrated, watch-along network analysis in Gephi for teaching and demos
 argument-hint: "[topic or dataset, e.g. 'community detection on this GEXF']"
-allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill(gephi-network-analysis:gephi), Read
+allowed-tools: mcp__plugin_gephi-network-analysis_gephi-ai__*, Skill(gephi-network-analysis:gephi), Read
 ---
 
 # Teaching Mode
