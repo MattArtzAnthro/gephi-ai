@@ -204,26 +204,23 @@ public class GephiControlService {
      * no timed acquisition, so the underlying ReentrantReadWriteLock is reached by reflection;
      * if it cannot be, this falls back to the blocking lock. Once held, any Gephi-internal
      * writeLock() on this same thread (setVisibleView, etc.) re-enters for free, which is why
-     * callers wrap those calls too. The renderer is paused for the section (RenderPause).
+     * callers wrap those calls too.
      */
     static void lockWrite(Graph g) {
-        RenderPause.pause();   // free the renderer's read-lock pressure for this section
-        boolean acquired = false;
         try {
             java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl = writeLockHandle(g);
             if (wl == null) {
                 g.writeLock();
-                acquired = true;
                 return;
             }
             long deadline = System.nanoTime() + 15_000_000_000L;
             while (!wl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 if (System.nanoTime() > deadline) {
-                    throw new RuntimeException("Graph is busy (renderer holds the lock); please retry");
+                    throw new RuntimeException(
+                        "Graph is busy (another task, such as a running statistic, holds the lock); please retry");
                 }
                 Thread.sleep(5);
             }
-            acquired = true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while acquiring the write lock");
@@ -232,20 +229,12 @@ public class GephiControlService {
             // and would otherwise skip every catch(Exception) up the call chain and kill the
             // HTTP connection with no response) must still surface as a normal API error.
             throw new RuntimeException("Could not acquire write lock: " + t, t);
-        } finally {
-            if (!acquired) {
-                RenderPause.resume();
-            }
         }
     }
 
-    /** Release the write lock and resume the renderer paused by lockWrite. */
+    /** Release the write lock taken by lockWrite. */
     static void unlockWrite(Graph g) {
-        try {
-            g.writeUnlock();
-        } finally {
-            RenderPause.resume();
-        }
+        g.writeUnlock();
     }
 
     private static volatile java.lang.reflect.Field READ_LOCK_FIELD;

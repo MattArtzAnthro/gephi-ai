@@ -25,8 +25,8 @@ item applies.
 - **1.1.x:** no protection against Gephi's renderer holding the graph lock, so writes can hang
   indefinitely. Keep each session to one build, style, layout, and export pass, and update the
   plugin.
-- **1.2.0 and later:** writes pause the renderer, and every lock wait is bounded, so a call
-  returns "Graph is busy" instead of hanging.
+- **1.2.0 and later:** every lock wait is bounded, so a call returns "Graph is busy" instead
+  of hanging.
 - **1.2.16 and earlier:** OpenOrd and Yifan Hu run with every property at zero unless each one
   is passed: OpenOrd collapses every node to one point and Yifan Hu does nothing, while both
   report success. All-zero values from `gephi_get_layout_properties` are the sign. Update, or

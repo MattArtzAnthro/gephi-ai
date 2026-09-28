@@ -6,6 +6,15 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## Unreleased
 
+### Removed
+- **The plugin no longer pauses Gephi's renderer during writes.** Measured on Gephi 0.11.3,
+  pausing made no difference to hangs, lock timeouts or renderer waits. Writes still wait for
+  the lock with a time limit and return "Graph is busy" instead of hanging.
+
+### Changed
+- **"Graph is busy" names a likelier cause.** The message said the renderer held the lock;
+  in testing the holder was a long-running statistic, so it now says so.
+
 ### Development
 - **Gephi core's checkstyle is enforced.** `gephi-ai-plugin/checkstyle.xml` is core's configuration,
   unchanged, run on every build at core's versions; unlike core, any violation fails the build.

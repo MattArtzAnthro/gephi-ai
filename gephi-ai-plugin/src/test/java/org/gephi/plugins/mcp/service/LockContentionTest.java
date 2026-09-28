@@ -174,4 +174,78 @@ class LockContentionTest {
         assertFalse(writer.isAlive(), "writer thread leaked");
         assertFalse(readerThread.isAlive(), "reader thread leaked");
     }
+
+    /**
+     * A long reader (a running statistic, in Gephi) must not let a waiting plugin write freeze
+     * every other reader, and the write must give up with an error that does not blame the
+     * renderer. A blocking writeLock() here parks at the head of the queue and new readers
+     * (the renderer, layouts, the interface thread) wait behind it until the long reader ends.
+     */
+    @Test
+    void lockWriteGivesUpBehindALongReaderWithoutBlockingOtherReaders() throws Exception {
+        Graph g = newGraph();
+        ReentrantReadWriteLock.ReadLock rl = GephiControlService.readLockHandle(g);
+        assertNotNull(rl, "read lock handle must be reachable (lockWrite depends on it)");
+
+        CountDownLatch readerHolds = new CountDownLatch(1);
+        CountDownLatch releaseReader = new CountDownLatch(1);
+        Thread longReader = new Thread(() -> {
+            rl.lock();
+            try {
+                readerHolds.countDown();
+                releaseReader.await(60, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                rl.unlock();
+            }
+        }, "long-reader");
+        longReader.setDaemon(true);
+        longReader.start();
+        assertTrue(readerHolds.await(5, TimeUnit.SECONDS), "reader thread failed to start");
+
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch writerDone = new CountDownLatch(1);
+        Thread writer = new Thread(() -> {
+            try {
+                GephiControlService.lockWrite(g);
+                GephiControlService.unlockWrite(g);
+            } catch (Throwable t) {
+                failure.set(t);
+            } finally {
+                writerDone.countDown();
+            }
+        }, "waiting-writer");
+        writer.setDaemon(true);
+        writer.start();
+
+        try {
+            // While the write waits, fresh readers must still get in, as the renderer does
+            // every frame. Each gets well under a second; a parked writer would hold them
+            // until the long reader ended.
+            for (int i = 0; i < 5; i++) {
+                Thread.sleep(500);
+                CountDownLatch got = new CountDownLatch(1);
+                Thread probe = new Thread(() -> {
+                    rl.lock();
+                    rl.unlock();
+                    got.countDown();
+                }, "probe-reader");
+                probe.setDaemon(true);
+                probe.start();
+                assertTrue(got.await(1, TimeUnit.SECONDS),
+                    "a new reader waited behind the pending write");
+            }
+
+            assertTrue(writerDone.await(30, TimeUnit.SECONDS), "lockWrite never gave up");
+            assertNotNull(failure.get(), "lockWrite acquired over a live read hold");
+            String message = String.valueOf(failure.get().getMessage());
+            assertTrue(message.contains("Graph is busy"), message);
+            assertFalse(message.contains("renderer"), "the busy message blames the renderer: " + message);
+        } finally {
+            releaseReader.countDown();
+            longReader.join(5_000);
+            writer.join(5_000);
+        }
+    }
 }
