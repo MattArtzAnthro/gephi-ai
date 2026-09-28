@@ -6,6 +6,17 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## Unreleased
 
+### Fixed
+- **A statistic already running is not started a second time.** A second request for the same
+  statistic now returns "already running" instead of starting another run alongside it, which
+  repeated the work and kept the graph's read lock held for both runs.
+- **The degree and edge-weight filters choose what to remove after taking the write lock**, so
+  another write landing in between cannot leave them removing from a list that no longer
+  matches the graph.
+- **Failures inside Gephi leave a stack trace in Gephi's log.** Every request that fails with an
+  exception now logs it before returning the error. A PNG export crash had come back as a
+  one-line message with nothing to report.
+
 ### Development
 - **Plugin unit tests stay off port 8080 and run headless.** NetBeans runs the module's
   installer inside the test JVM, and it started the API server on 8080. With a Gephi already

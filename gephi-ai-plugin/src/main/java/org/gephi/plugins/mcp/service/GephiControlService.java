@@ -181,6 +181,15 @@ public class GephiControlService {
         return r;
     }
 
+    /**
+     * A request that failed with an exception: logs it with its stack trace, so a failure inside
+     * Gephi leaves a trace that can be reported, and returns the error to the caller.
+     */
+    static JsonObject failure(String prefix, Exception e) {
+        LOGGER.log(Level.WARNING, prefix + e.getMessage(), e);
+        return error(prefix + e.getMessage());
+    }
+
     private Workspace currentWorkspace() {
         return getProjectController().getCurrentWorkspace();
     }
@@ -481,7 +490,7 @@ public class GephiControlService {
             // whose completion needs a free EDT.
             pc.openProject(file);
         } catch (Exception e) {
-            return error("Failed to open project: " + e.getMessage());
+            return failure("Failed to open project: ", e);
         }
         // Report the actual loaded counts so an empty result is never a silent success.
         return runOnEDT(() -> {
@@ -537,7 +546,7 @@ public class GephiControlService {
             r.addProperty("bytes", file.length());
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -593,7 +602,7 @@ public class GephiControlService {
                 r.addProperty("workspace_id", ws.getId());
                 return r;
             } catch (Exception e) {
-                return error("Failed: " + e.getMessage());
+                return failure("Failed: ", e);
             }
         });
     }
@@ -681,7 +690,7 @@ public class GephiControlService {
                         r.addProperty("workspace_id", copy.getId());
                         return r;
                     } catch (Exception e) {
-                        return error("Failed: " + e.getMessage());
+                        return failure("Failed: ", e);
                     }
                 }
                 i++;
@@ -703,7 +712,7 @@ public class GephiControlService {
                         pc.renameWorkspace(ws, name);
                         return success("Workspace renamed to: " + name);
                     } catch (Exception e) {
-                        return error("Failed: " + e.getMessage());
+                        return failure("Failed: ", e);
                     }
                 }
                 i++;
@@ -752,7 +761,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -804,7 +813,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -830,7 +839,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -863,7 +872,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1012,7 +1021,7 @@ public class GephiControlService {
                 g.readUnlock();
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1152,7 +1161,7 @@ public class GephiControlService {
             r.add("node", o);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1175,7 +1184,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1199,7 +1208,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1234,7 +1243,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1297,7 +1306,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1373,7 +1382,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1401,7 +1410,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1429,7 +1438,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1457,7 +1466,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1538,7 +1547,7 @@ public class GephiControlService {
                 g.readUnlock();
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1606,7 +1615,7 @@ public class GephiControlService {
                 g.readUnlock();
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1626,7 +1635,7 @@ public class GephiControlService {
             r.addProperty("mixed", gm.isMixed());
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1655,7 +1664,7 @@ public class GephiControlService {
             r.add("columns", arr);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1693,7 +1702,7 @@ public class GephiControlService {
             }
             return success("Column '" + name + "' added");
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1719,7 +1728,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1760,7 +1769,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1791,7 +1800,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1900,7 +1909,7 @@ public class GephiControlService {
             n.setColor(new Color(r, g, b, a));
             return success("Node color set");
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1918,7 +1927,7 @@ public class GephiControlService {
             n.setSize(size);
             return success("Node size set to " + size);
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1957,7 +1966,7 @@ public class GephiControlService {
                 unlockWrite(graph);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -1990,7 +1999,7 @@ public class GephiControlService {
             res.addProperty("not_found", notFound);
             return res;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2010,7 +2019,7 @@ public class GephiControlService {
             }
             return success("Appearance reset for all nodes");
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2260,7 +2269,7 @@ public class GephiControlService {
             reportPanel(r, showInAppearancePanel(f));
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2355,7 +2364,7 @@ public class GephiControlService {
             reportPanel(res, showInAppearancePanel(f));
             return res;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2444,7 +2453,7 @@ public class GephiControlService {
                 + " reapplying the ranking there would undo the cap.");
             return res;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2489,7 +2498,7 @@ public class GephiControlService {
             reportUnapplied(r, unapplied, algo);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2565,7 +2574,7 @@ public class GephiControlService {
             r.add("properties", arr);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2672,7 +2681,7 @@ public class GephiControlService {
             reportUnapplied(r, unapplied, algo);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -2849,6 +2858,22 @@ public class GephiControlService {
 
     /** Statistics running now, by the name Gephi shows for them, so a stop request can reach them. */
     static final Map<Statistics, String> RUNNING_STATISTICS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Records a statistic as running, unless a run of the same statistic is already under way.
+     * Two runs of one statistic do the same work twice and hold the graph's read lock for both,
+     * which keeps every write waiting longer. Returns null when claimed, or the error to report.
+     */
+    static String claimStatistic(Statistics stat, String name) {
+        synchronized (RUNNING_STATISTICS) {
+            if (RUNNING_STATISTICS.containsValue(name)) {
+                return name + " is already running; wait for it to finish, or stop it with stop_statistic";
+            }
+            RUNNING_STATISTICS.put(stat, name);
+            return null;
+        }
+    }
+
     /** Statistics stopped by request, so their run is reported as stopped rather than finished. */
     static final java.util.Set<Statistics> STOP_REQUESTED = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -3042,7 +3067,10 @@ public class GephiControlService {
             }
             boolean stopped;
             boolean stoppedOnRequest;
-            RUNNING_STATISTICS.put(stat, matchedBuilder.getName());
+            String busy = claimStatistic(stat, matchedBuilder.getName());
+            if (busy != null) {
+                return error(busy);
+            }
             try {
                 stopped = executeStatistic(stat, gm, timeoutMs,
                     Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class),
@@ -3258,6 +3286,61 @@ public class GephiControlService {
 
     // ─── Filters ─────────────────────────────────────────────────────
 
+    /** Nodes whose degree falls outside [min, max]; a max of 0 or less means no upper bound. */
+    static java.util.List<Node> nodesOutsideDegreeRange(Graph g, int minDegree, int maxDegree) {
+        java.util.List<Node> out = new java.util.ArrayList<>();
+        for (Node n : g.getNodes().toArray()) {
+            int deg = g.getDegree(n);
+            if (deg < minDegree || (maxDegree > 0 && deg > maxDegree)) {
+                out.add(n);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Removes the nodes outside the degree range. They are chosen after the write lock is taken,
+     * so another write landing first cannot leave the list describing a graph that has changed.
+     */
+    static int removeNodesOutsideDegreeRange(Graph g, int minDegree, int maxDegree) {
+        lockWrite(g);
+        try {
+            java.util.List<Node> toRemove = nodesOutsideDegreeRange(g, minDegree, maxDegree);
+            for (Node n : toRemove) {
+                g.removeNode(n);
+            }
+            return toRemove.size();
+        } finally {
+            unlockWrite(g);
+        }
+    }
+
+    /** Edges whose weight falls outside [min, max]; a max of 0 or less means no upper bound. */
+    static java.util.List<Edge> edgesOutsideWeightRange(Graph g, double minWeight, double maxWeight) {
+        java.util.List<Edge> out = new java.util.ArrayList<>();
+        for (Edge e : g.getEdges().toArray()) {
+            double w = e.getWeight();
+            if (w < minWeight || (maxWeight > 0 && w > maxWeight)) {
+                out.add(e);
+            }
+        }
+        return out;
+    }
+
+    /** Removes the edges outside the weight range, chosen under the write lock. */
+    static int removeEdgesOutsideWeightRange(Graph g, double minWeight, double maxWeight) {
+        lockWrite(g);
+        try {
+            java.util.List<Edge> toRemove = edgesOutsideWeightRange(g, minWeight, maxWeight);
+            for (Edge e : toRemove) {
+                g.removeEdge(e);
+            }
+            return toRemove.size();
+        } finally {
+            unlockWrite(g);
+        }
+    }
+
     public JsonObject filterByDegreeRange(int minDegree, int maxDegree, boolean dryRun) {
         Workspace ws = currentWorkspace();
         if (ws == null) {
@@ -3265,35 +3348,21 @@ public class GephiControlService {
         }
         try {
             Graph g = currentGraphModel().getGraph();
-            Node[] allNodes = g.getNodes().toArray();
-            java.util.List<Node> toRemove = new java.util.ArrayList<>();
-            for (Node n : allNodes) {
-                int deg = g.getDegree(n);
-                if (deg < minDegree || (maxDegree > 0 && deg > maxDegree)) {
-                    toRemove.add(n);
-                }
-            }
             if (dryRun) {
+                java.util.List<Node> toRemove = nodesOutsideDegreeRange(g, minDegree, maxDegree);
                 JsonObject r = success("Dry run: " + toRemove.size() + " nodes would be removed");
                 r.addProperty("would_remove", toRemove.size());
                 r.addProperty("would_remain", g.getNodeCount() - toRemove.size());
                 r.addProperty("dry_run", true);
                 return r;
             }
-            lockWrite(g);
-            try {
-                for (Node n : toRemove) {
-                    g.removeNode(n);
-                }
-            } finally {
-                unlockWrite(g);
-            }
+            int removed = removeNodesOutsideDegreeRange(g, minDegree, maxDegree);
             JsonObject r = success("Filtered by degree [" + minDegree + ", " + maxDegree + "]");
-            r.addProperty("removed", toRemove.size());
+            r.addProperty("removed", removed);
             r.addProperty("remaining_nodes", g.getNodeCount());
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -3304,35 +3373,21 @@ public class GephiControlService {
         }
         try {
             Graph g = currentGraphModel().getGraph();
-            Edge[] allEdges = g.getEdges().toArray();
-            java.util.List<Edge> toRemove = new java.util.ArrayList<>();
-            for (Edge e : allEdges) {
-                double w = e.getWeight();
-                if (w < minWeight || (maxWeight > 0 && w > maxWeight)) {
-                    toRemove.add(e);
-                }
-            }
             if (dryRun) {
+                java.util.List<Edge> toRemove = edgesOutsideWeightRange(g, minWeight, maxWeight);
                 JsonObject r = success("Dry run: " + toRemove.size() + " edges would be removed");
                 r.addProperty("would_remove", toRemove.size());
                 r.addProperty("would_remain", g.getEdgeCount() - toRemove.size());
                 r.addProperty("dry_run", true);
                 return r;
             }
-            lockWrite(g);
-            try {
-                for (Edge e : toRemove) {
-                    g.removeEdge(e);
-                }
-            } finally {
-                unlockWrite(g);
-            }
+            int removed = removeEdgesOutsideWeightRange(g, minWeight, maxWeight);
             JsonObject r = success("Filtered edges by weight [" + minWeight + ", " + maxWeight + "]");
-            r.addProperty("removed", toRemove.size());
+            r.addProperty("removed", removed);
             r.addProperty("remaining_edges", g.getEdgeCount());
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -3431,7 +3486,7 @@ public class GephiControlService {
             r.add("settings", settings);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -3634,7 +3689,7 @@ public class GephiControlService {
             r.addProperty("properties_set", set);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -3669,7 +3724,7 @@ public class GephiControlService {
             addViewInfo(r, currentGraphModel(), visible);
             return r;
         } catch (Exception e) {
-            return error("Export failed: " + e.getMessage());
+            return failure("Export failed: ", e);
         }
     }
 
@@ -3707,7 +3762,7 @@ public class GephiControlService {
             r.addProperty("content", sw.toString());
             return r;
         } catch (Exception e) {
-            return error("Export failed: " + e.getMessage());
+            return failure("Export failed: ", e);
         }
     }
 
@@ -3762,7 +3817,7 @@ public class GephiControlService {
 
             return success("Exported to " + filePath);
         } catch (Exception e) {
-            return error("Export failed: " + e.getMessage());
+            return failure("Export failed: ", e);
         }
     }
 
@@ -3943,7 +3998,7 @@ public class GephiControlService {
         } catch (IllegalArgumentException e) {
             return error("Export failed: graph nodes may not be positioned — run a layout first");
         } catch (Exception e) {
-            return error("Export failed: " + e.getMessage());
+            return failure("Export failed: ", e);
         }
     }
 
@@ -3966,7 +4021,7 @@ public class GephiControlService {
             ec.exportFile(new File(filePath), exporter);
             return success("Exported to " + filePath);
         } catch (Exception e) {
-            return error("Export failed: " + e.getMessage());
+            return failure("Export failed: ", e);
         }
     }
 
@@ -3997,7 +4052,7 @@ public class GephiControlService {
             addViewInfo(r, currentGraphModel(), visible);
             return r;
         } catch (Exception e) {
-            return error("Export failed: " + e.getMessage());
+            return failure("Export failed: ", e);
         }
     }
 
@@ -4027,7 +4082,7 @@ public class GephiControlService {
             addViewInfo(r, gm, false);
             return r;
         } catch (Exception e) {
-            return error("CSV export failed: " + e.getMessage());
+            return failure("CSV export failed: ", e);
         }
     }
 
@@ -4259,7 +4314,7 @@ public class GephiControlService {
                 r.addProperty("edge_count", g.getEdgeCount());
                 return r;
             } catch (Exception e) {
-                return error("Import failed: " + e.getMessage());
+                return failure("Import failed: ", e);
             }
         }
     }
@@ -4312,7 +4367,7 @@ public class GephiControlService {
                 unlockWrite(g);
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -4367,7 +4422,7 @@ public class GephiControlService {
             r.addProperty("remaining_nodes", g.getNodeCount());
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -4427,7 +4482,7 @@ public class GephiControlService {
             r.addProperty("removed_nodes", toRemove.size());
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -4516,7 +4571,7 @@ public class GephiControlService {
             r.addProperty("component_count", componentSizes.size());
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -4560,7 +4615,7 @@ public class GephiControlService {
             r.addProperty("max_thickness", maxThickness);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -4582,7 +4637,7 @@ public class GephiControlService {
             }
             return success("Filters reset - full graph view restored");
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -4944,7 +4999,7 @@ public class GephiControlService {
             }
             return r;
         } catch (Exception e) {
-            return error("Focus failed: " + e.getMessage());
+            return failure("Focus failed: ", e);
         }
     }
 
@@ -4981,7 +5036,7 @@ public class GephiControlService {
             r.addProperty("mode", m);
             return r;
         } catch (Exception e) {
-            return error("Set selection mode failed: " + e.getMessage());
+            return failure("Set selection mode failed: ", e);
         }
     }
 
@@ -5007,7 +5062,7 @@ public class GephiControlService {
             r.add("perspectives", arr);
             return r;
         } catch (Exception e) {
-            return error("List perspectives failed: " + e.getMessage());
+            return failure("List perspectives failed: ", e);
         }
     }
 
@@ -5264,7 +5319,7 @@ public class GephiControlService {
                 try {
                     match.setValue(converted);
                 } catch (Exception ex) {
-                    return error("Failed to set '" + e.getKey() + "': " + ex.getMessage());
+                    return failure("Failed to set '" + e.getKey() + "': ", ex);
                 }
             }
         }
@@ -5650,7 +5705,7 @@ public class GephiControlService {
                 }
             }
         } catch (Exception e) {
-            return error("Could not set time from the columns: " + e.getMessage());
+            return failure("Could not set time from the columns: ", e);
         } finally {
             unlockWrite(g);
         }
@@ -6080,7 +6135,7 @@ public class GephiControlService {
                     return error("Unknown action: " + action + " (use delete|rename|convert|fill_empty|clear)");
             }
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         } finally {
             unlockWrite(g);
         }
@@ -6240,7 +6295,7 @@ public class GephiControlService {
             r.addProperty("merged_count", nodes.size());
             return r;
         } catch (Exception e) {
-            return error("Merge failed: " + e.getMessage());
+            return failure("Merge failed: ", e);
         }
     }
 
@@ -6295,7 +6350,7 @@ public class GephiControlService {
             addViewInfo(r, gm, true);
             return r;
         } catch (Exception e) {
-            return error("Failed: " + e.getMessage());
+            return failure("Failed: ", e);
         }
     }
 
@@ -6338,7 +6393,7 @@ public class GephiControlService {
             addViewInfo(r, currentGraphModel(), visible);
             return r;
         } catch (Exception e) {
-            return error("Export failed: " + e.getMessage());
+            return failure("Export failed: ", e);
         }
     }
 
@@ -6433,7 +6488,7 @@ public class GephiControlService {
         } catch (java.util.regex.PatternSyntaxException e) {
             return error("Invalid regex: " + e.getMessage());
         } catch (Exception e) {
-            return error("Create match column failed: " + e.getMessage());
+            return failure("Create match column failed: ", e);
         }
     }
 

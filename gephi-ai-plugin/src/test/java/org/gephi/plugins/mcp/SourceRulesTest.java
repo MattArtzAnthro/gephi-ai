@@ -105,6 +105,23 @@ class SourceRulesTest {
     }
 
     @Test
+    void caughtExceptionIsLoggedBeforeItIsReturned() {
+        Pattern catchAll = Pattern.compile("catch \\((Exception|RuntimeException|Throwable) \\w+\\) \\{");
+        Pattern bareReturn = Pattern.compile("return error\\(.*\\+ \\w+\\.getMessage\\(\\)\\);");
+        List<String> found = new ArrayList<>();
+        sources.forEach((file, text) -> {
+            String[] lines = text.split("\n", -1);
+            for (int i = 1; i < lines.length; i++) {
+                if (bareReturn.matcher(lines[i]).find() && catchAll.matcher(lines[i - 1]).find()) {
+                    found.add(file + ":" + (i + 1));
+                }
+            }
+        });
+        assertEquals(List.of(), found, "Return failure(prefix, e), which logs the stack trace; a bare"
+            + " message leaves nothing in Gephi's log when the failure is inside Gephi");
+    }
+
+    @Test
     void nothingWaitsOnTheInterfaceThread() {
         List<String> found = new ArrayList<>();
         sources.forEach((file, text) -> {
