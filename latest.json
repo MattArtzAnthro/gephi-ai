@@ -1,7 +1,7 @@
 {
-  "server": "1.21.0",
-  "nbm": "1.5.0",
+  "server": "1.21.1",
+  "nbm": "1.5.1",
   "nbm_needs_gephi": "0.11.3",
-  "plugin": "1.19.0",
+  "plugin": "1.19.1",
   "_comment": "Canonical latest-version marker read by gephi_health_check. Bump on every release (part of RELEASING.md). server = PyPI gephi-ai, nbm = Gephi Java plugin, plugin = Claude and Codex workflow packages. nbm_needs_gephi = the oldest Gephi Desktop that installs that nbm (the plugin's gephi.version), set by bump-version.sh."
 }

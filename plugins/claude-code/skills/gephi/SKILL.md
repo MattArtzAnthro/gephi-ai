@@ -7,15 +7,15 @@ description: |
   network holds, or whether a network is scale-free. Holds the rules that keep readings
   honest: test groups for stability before naming them, never call a network scale-free,
   and ship every map with its caption.
-compatibility: Requires Gephi Desktop 0.11.3+ running with the Gephi AI Plugin (1.5.0+) installed, and the gephi-mcp MCP server connected.
+compatibility: Requires Gephi Desktop 0.11.3+ running with the Gephi AI Plugin (1.5.1+) installed, and the gephi-mcp MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.19.0"
+  version: "1.19.1"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.19.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.19.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 120 MCP tools from the `gephi-mcp` server (tool names start with `gephi_`; Claude Code shows them as `mcp__plugin_gephi-network-analysis_gephi-mcp__gephi_*` from the plugin, or `mcp__gephi-mcp__gephi_*` when the server is registered by hand) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 

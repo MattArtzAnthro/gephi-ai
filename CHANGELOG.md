@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.21.1 / Java plugin 1.5.1 / workflow packages 1.19.1
 
 ### Removed
 - **The plugin no longer pauses Gephi's renderer during writes.** Measured on Gephi 0.11.3,
