@@ -86,3 +86,16 @@ def test_the_plugin_ships_a_square_icon():
     view_box = re.search(r'viewBox="0 0 (\d+) (\d+)"', icon.read_text(encoding="utf-8"))
     assert view_box and view_box.group(1) == view_box.group(2), "the icon is not square"
     assert int(view_box.group(1)) >= 128, "the directory wants an icon of at least 128px"
+
+
+def test_the_hook_command_survives_a_plugin_path_with_spaces():
+    # Cowork installs plugins under "Application Support"; an unquoted path splits there.
+    hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    for entry in hooks["hooks"]["PreToolUse"]:
+        for hook in entry["hooks"]:
+            assert hook["command"].startswith('"${CLAUDE_PLUGIN_ROOT}/'), hook["command"]
+
+
+def test_the_plugin_shows_as_gephi_ai():
+    manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert manifest["displayName"] == "Gephi AI"
