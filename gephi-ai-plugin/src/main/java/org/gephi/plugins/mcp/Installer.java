@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp;
 
 import java.io.IOException;
@@ -176,7 +177,7 @@ public class Installer extends ModuleInstall {
             String detail = e.getLocalizedMessage() != null ? e.getLocalizedMessage() : e.toString();
             LOGGER.log(Level.SEVERE, "Gephi AI server failed to bind port " + port, e);
             return NbBundle.getMessage(Installer.class, "Installer.error.bindFailed",
-                    Integer.toString(port), detail);
+                Integer.toString(port), detail);
         }
         server = s;
         if (stopped) {
@@ -185,7 +186,7 @@ public class Installer extends ModuleInstall {
             return null;
         }
         LOGGER.log(Level.INFO, "Gephi AI API listening on http://127.0.0.1:{0}",
-                Integer.toString(port));
+            Integer.toString(port));
         return null;
     }
 

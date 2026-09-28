@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -88,7 +89,7 @@ class ImportRoundTripTest {
             float y = (Float) row[2];
             float size = (Float) row[3];
             if (Math.abs(n.x() - x) > TOLERANCE || Math.abs(n.y() - y) > TOLERANCE
-                    || Math.abs(n.size() - size) > TOLERANCE) {
+                || Math.abs(n.size() - size) > TOLERANCE) {
                 mismatches.append(String.format(
                     "%n  %s: file (%.2f, %.2f) size %.2f, imported (%.2f, %.2f) size %.2f",
                     row[0], x, y, size, n.x(), n.y(), n.size()));
@@ -107,7 +108,7 @@ class ImportRoundTripTest {
      * each one the default size.
      */
     @Test
-    void aFileWithoutPositionsStillGetsSpreadOutNodes(@TempDir Path dir) throws Exception {
+    void fileWithoutPositionsStillGetsSpreadOutNodes(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("bare.gexf");
         Files.write(file, ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
             + "<gexf xmlns=\"http://gexf.net/1.3\" version=\"1.3\">\n"

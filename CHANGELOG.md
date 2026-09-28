@@ -4,6 +4,29 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Development
+- **Gephi core's checkstyle is enforced.** `gephi-ai-plugin/checkstyle.xml` is core's configuration,
+  unchanged, run on every build at core's versions; unlike core, any violation fails the build.
+  The plugin was reformatted to meet it; compiled without debug information, its bytecode is
+  identical before and after.
+- **Source rules** (`SourceRulesTest`): every graph lock is released in a `finally`, no loop
+  runs over a live graph iterator, nothing calls `invokeAndWait`, interface-thread blocks neither
+  change projects nor read the graph, threads come only from known owners and are named daemons,
+  and every Java file carries the licence header.
+- **Fix commits carry tests:** `scripts/check-fix-tests.sh`, run on pull requests, warns about a
+  `fix` commit that changes no test.
+- **Type checking and script checks.** `mypy` runs in CI; it had been configured but could not
+  parse numpy's stubs at the 3.10 target, so it never ran. Its findings are fixed. The release
+  scripts pass `shellcheck` and the CI workflow passes `actionlint`, both now in CI. The
+  workflow's actions move to their current major versions, which run on Node 24; GitHub has
+  deprecated Node 20.
+- Two Javadoc comments that had drifted off their methods are back in place.
+- The docs cover the checks. The README's Development section had said JDK 11; Gephi 0.11.3's
+  libraries need JDK 17. The tool reference now describes `gephi_version`, `panel_result`,
+  colouring under a filter, and the screenshot change from 1.21.0.
+
 ## MCP server 1.21.0 / Java plugin 1.5.0 / workflow packages 1.19.0
 
 ### Changed

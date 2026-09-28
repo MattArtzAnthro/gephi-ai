@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.api;
 
 import com.google.gson.Gson;
@@ -67,7 +68,7 @@ public class GephiAPIServer implements HttpHandler {
             // is how a malicious web page would try to reach 127.0.0.1 via a rebound
             // hostname. Requests with no Host header (e.g. raw curl) are allowed.
             if (!isNonBrowserRequest(exchange.getRequestHeaders().getFirst("Origin"),
-                                     exchange.getRequestHeaders().getFirst("Sec-Fetch-Site"))) {
+                exchange.getRequestHeaders().getFirst("Sec-Fetch-Site"))) {
                 JsonObject error = new JsonObject();
                 error.addProperty("success", false);
                 error.addProperty("error", "Forbidden: this API is not reachable from a browser");
@@ -147,7 +148,9 @@ public class GephiAPIServer implements HttpHandler {
             return params;
         }
         for (String pair : rawQuery.split("&")) {
-            if (pair.isEmpty()) continue;
+            if (pair.isEmpty()) {
+                continue;
+            }
             int eq = pair.indexOf('=');
             String key = eq >= 0 ? pair.substring(0, eq) : pair;
             String value = eq >= 0 ? pair.substring(eq + 1) : "";
@@ -196,7 +199,9 @@ public class GephiAPIServer implements HttpHandler {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
         long length = Long.parseLong(contentLength.trim());
-        if (length <= 0) return "";
+        if (length <= 0) {
+            return "";
+        }
         return new String(in.readNBytes((int) length), StandardCharsets.UTF_8);
     }
 
@@ -208,10 +213,14 @@ public class GephiAPIServer implements HttpHandler {
      * Package-private and static so it can be unit-tested without a live server.
      */
     static boolean isLoopbackHost(String host) {
-        if (host == null || host.isEmpty()) return true;
+        if (host == null || host.isEmpty()) {
+            return true;
+        }
         String name = host;
         int colon = name.lastIndexOf(':');
-        if (colon > -1 && name.indexOf(']') < colon) name = name.substring(0, colon);
+        if (colon > -1 && name.indexOf(']') < colon) {
+            name = name.substring(0, colon);
+        }
         name = name.replace("[", "").replace("]", "").trim().toLowerCase();
         return name.equals("127.0.0.1") || name.equals("localhost") || name.equals("::1");
     }
@@ -227,7 +236,9 @@ public class GephiAPIServer implements HttpHandler {
             result.addProperty("service", "Gephi AI API");
             result.addProperty("version", moduleVersion());
             String gephi = gephiVersion();
-            if (gephi != null) result.addProperty("gephi_version", gephi);
+            if (gephi != null) {
+                result.addProperty("gephi_version", gephi);
+            }
             result.addProperty("status", "running");
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
@@ -280,7 +291,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/perspective/switch".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("name")) return errorResult("Missing 'name'");
+            if (body == null || !body.has("name")) {
+                return errorResult("Missing 'name'");
+            }
             return service.switchPerspective(body.get("name").getAsString());
         }
 
@@ -292,12 +305,16 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/project/open".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file' parameter");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file' parameter");
+            }
             return service.openProject(body.get("file").getAsString());
         }
 
         if ("/project/save".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file' parameter");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file' parameter");
+            }
             return service.saveProject(body.get("file").getAsString());
         }
 
@@ -316,7 +333,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/workspace/switch".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("index")) return errorResult("Missing 'index'");
+            if (body == null || !body.has("index")) {
+                return errorResult("Missing 'index'");
+            }
             return service.switchWorkspace(body.get("index").getAsInt());
         }
 
@@ -325,24 +344,32 @@ public class GephiAPIServer implements HttpHandler {
             // bodies are parsed for POST and PUT only, so a JSON body on this DELETE
             // was never readable; the query parameter is the supported form.
             int index = parseIntParam(params.get("index"), -1);
-            if (index < 0) return errorResult("Missing 'index' query parameter");
+            if (index < 0) {
+                return errorResult("Missing 'index' query parameter");
+            }
             return service.deleteWorkspace(index);
         }
 
         if ("/workspace/duplicate".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("index")) return errorResult("Missing 'index'");
+            if (body == null || !body.has("index")) {
+                return errorResult("Missing 'index'");
+            }
             return service.duplicateWorkspace(body.get("index").getAsInt());
         }
 
         if ("/workspace/rename".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("index") || !body.has("name")) return errorResult("Missing 'index' or 'name'");
+            if (body == null || !body.has("index") || !body.has("name")) {
+                return errorResult("Missing 'index' or 'name'");
+            }
             return service.renameWorkspace(body.get("index").getAsInt(), body.get("name").getAsString());
         }
 
         // ─── Nodes ───────────────────────────────────────────────────
 
         if ("/graph/node/add".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("id")) return errorResult("Missing 'id' parameter");
+            if (body == null || !body.has("id")) {
+                return errorResult("Missing 'id' parameter");
+            }
             String id = body.get("id").getAsString();
             String label = body.has("label") ? body.get("label").getAsString() : null;
             Map<String, Object> attrs = null;
@@ -353,19 +380,25 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/graph/nodes/add".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("nodes")) return errorResult("Missing 'nodes' array");
+            if (body == null || !body.has("nodes")) {
+                return errorResult("Missing 'nodes' array");
+            }
             List<Map<String, Object>> nodes = GSON.fromJson(body.get("nodes"), List.class);
             return service.addNodes(nodes);
         }
 
         if (uri.startsWith("/graph/node/") && uri.length() > "/graph/node/".length() && "DELETE".equals(method)) {
             String nodeId = uri.substring("/graph/node/".length());
-            if (nodeId.isEmpty()) return errorResult("Missing node ID");
+            if (nodeId.isEmpty()) {
+                return errorResult("Missing node ID");
+            }
             return service.removeNode(nodeId);
         }
 
         if ("/graph/nodes/remove".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("ids")) return errorResult("Missing 'ids' array");
+            if (body == null || !body.has("ids")) {
+                return errorResult("Missing 'ids' array");
+            }
             List<String> ids = GSON.fromJson(body.get("ids"), List.class);
             return service.bulkRemoveNodes(ids);
         }
@@ -381,24 +414,32 @@ public class GephiAPIServer implements HttpHandler {
 
         if (uri.startsWith("/graph/node/get/") && "GET".equals(method)) {
             String nodeId = uri.substring("/graph/node/get/".length());
-            if (nodeId.isEmpty()) return errorResult("Missing node ID");
+            if (nodeId.isEmpty()) {
+                return errorResult("Missing node ID");
+            }
             return service.getNode(nodeId);
         }
 
         if ("/graph/node/label".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("id") || !body.has("label")) return errorResult("Missing 'id' or 'label'");
+            if (body == null || !body.has("id") || !body.has("label")) {
+                return errorResult("Missing 'id' or 'label'");
+            }
             return service.setNodeLabel(body.get("id").getAsString(), body.get("label").getAsString());
         }
 
         if ("/graph/node/position".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("id")) return errorResult("Missing 'id'");
+            if (body == null || !body.has("id")) {
+                return errorResult("Missing 'id'");
+            }
             float x = body.has("x") ? body.get("x").getAsFloat() : 0;
             float y = body.has("y") ? body.get("y").getAsFloat() : 0;
             return service.setNodePosition(body.get("id").getAsString(), x, y);
         }
 
         if ("/graph/nodes/positions".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("positions")) return errorResult("Missing 'positions' array");
+            if (body == null || !body.has("positions")) {
+                return errorResult("Missing 'positions' array");
+            }
             List<Map<String, Object>> positions = GSON.fromJson(body.get("positions"), List.class);
             return service.batchSetPositions(positions);
         }
@@ -406,8 +447,9 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Edges ───────────────────────────────────────────────────
 
         if ("/graph/edge/add".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("source") || !body.has("target"))
+            if (body == null || !body.has("source") || !body.has("target")) {
                 return errorResult("Missing 'source' or 'target'");
+            }
             String source = body.get("source").getAsString();
             String target = body.get("target").getAsString();
             Double weight = body.has("weight") ? body.get("weight").getAsDouble() : 1.0;
@@ -417,20 +459,24 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/graph/edges/add".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("edges")) return errorResult("Missing 'edges' array");
+            if (body == null || !body.has("edges")) {
+                return errorResult("Missing 'edges' array");
+            }
             List<Map<String, Object>> edges = GSON.fromJson(body.get("edges"), List.class);
             return service.addEdges(edges);
         }
 
         if ("/graph/edge/remove".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("source") || !body.has("target"))
+            if (body == null || !body.has("source") || !body.has("target")) {
                 return errorResult("Missing 'source' or 'target'");
+            }
             return service.removeEdge(body.get("source").getAsString(), body.get("target").getAsString());
         }
 
         if ("/graph/edge/weight".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("source") || !body.has("target") || !body.has("weight"))
+            if (body == null || !body.has("source") || !body.has("target") || !body.has("weight")) {
                 return errorResult("Missing 'source', 'target', or 'weight'");
+            }
             return service.setEdgeWeight(
                 body.get("source").getAsString(),
                 body.get("target").getAsString(),
@@ -439,8 +485,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/graph/edge/label".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("source") || !body.has("target") || !body.has("label"))
+            if (body == null || !body.has("source") || !body.has("target") || !body.has("label")) {
                 return errorResult("Missing 'source', 'target', or 'label'");
+            }
             return service.setEdgeLabel(
                 body.get("source").getAsString(),
                 body.get("target").getAsString(),
@@ -472,28 +519,33 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/graph/columns/add".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("name") || !body.has("type"))
+            if (body == null || !body.has("name") || !body.has("type")) {
                 return errorResult("Missing 'name' or 'type'");
+            }
             String target = body.has("target") ? body.get("target").getAsString() : "node";
             return service.addColumn(body.get("name").getAsString(), body.get("type").getAsString(), target);
         }
 
         if ("/graph/node/attributes".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("id") || !body.has("attributes"))
+            if (body == null || !body.has("id") || !body.has("attributes")) {
                 return errorResult("Missing 'id' or 'attributes'");
+            }
             Map<String, Object> attrs = GSON.fromJson(body.get("attributes"), Map.class);
             return service.setNodeAttributes(body.get("id").getAsString(), attrs);
         }
 
         if ("/graph/nodes/attributes".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("updates")) return errorResult("Missing 'updates' array");
+            if (body == null || !body.has("updates")) {
+                return errorResult("Missing 'updates' array");
+            }
             List<Map<String, Object>> updates = GSON.fromJson(body.get("updates"), List.class);
             return service.batchSetNodeAttributes(updates);
         }
 
         if ("/graph/edge/attributes".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("source") || !body.has("target") || !body.has("attributes"))
+            if (body == null || !body.has("source") || !body.has("target") || !body.has("attributes")) {
                 return errorResult("Missing 'source', 'target', or 'attributes'");
+            }
             Map<String, Object> attrs = GSON.fromJson(body.get("attributes"), Map.class);
             return service.setEdgeAttributes(
                 body.get("source").getAsString(),
@@ -505,7 +557,9 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Appearance ──────────────────────────────────────────────
 
         if ("/appearance/node/color".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("id")) return errorResult("Missing 'id'");
+            if (body == null || !body.has("id")) {
+                return errorResult("Missing 'id'");
+            }
             int r = body.has("r") ? body.get("r").getAsInt() : 0;
             int g = body.has("g") ? body.get("g").getAsInt() : 0;
             int b = body.has("b") ? body.get("b").getAsInt() : 0;
@@ -514,13 +568,16 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/appearance/node/size".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("id") || !body.has("size")) return errorResult("Missing 'id' or 'size'");
+            if (body == null || !body.has("id") || !body.has("size")) {
+                return errorResult("Missing 'id' or 'size'");
+            }
             return service.setNodeSize(body.get("id").getAsString(), body.get("size").getAsFloat());
         }
 
         if ("/appearance/edge/color".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("source") || !body.has("target"))
+            if (body == null || !body.has("source") || !body.has("target")) {
                 return errorResult("Missing 'source' or 'target'");
+            }
             int r = body.has("r") ? body.get("r").getAsInt() : 0;
             int g = body.has("g") ? body.get("g").getAsInt() : 0;
             int b = body.has("b") ? body.get("b").getAsInt() : 0;
@@ -529,7 +586,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/appearance/nodes/color".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("nodes")) return errorResult("Missing 'nodes' array");
+            if (body == null || !body.has("nodes")) {
+                return errorResult("Missing 'nodes' array");
+            }
             List<Map<String, Object>> nodes = GSON.fromJson(body.get("nodes"), List.class);
             return service.batchSetNodeColors(nodes);
         }
@@ -543,7 +602,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/appearance/partition/color".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            if (body == null || !body.has("column")) {
+                return errorResult("Missing 'column'");
+            }
             String column = body.get("column").getAsString();
             Map<String, int[]> colorMap = null;
             if (body.has("colors") && body.get("colors").isJsonObject()) {
@@ -558,7 +619,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/appearance/edge/partition-color".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            if (body == null || !body.has("column")) {
+                return errorResult("Missing 'column'");
+            }
             String column = body.get("column").getAsString();
             Map<String, int[]> colorMap = null;
             if (body.has("colors") && body.get("colors").isJsonObject()) {
@@ -573,19 +636,23 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/appearance/ranking/color".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            if (body == null || !body.has("column")) {
+                return errorResult("Missing 'column'");
+            }
             String column = body.get("column").getAsString();
-            int rMin = body.has("r_min") ? body.get("r_min").getAsInt() : 255;
-            int gMin = body.has("g_min") ? body.get("g_min").getAsInt() : 255;
-            int bMin = body.has("b_min") ? body.get("b_min").getAsInt() : 200;
-            int rMax = body.has("r_max") ? body.get("r_max").getAsInt() : 255;
-            int gMax = body.has("g_max") ? body.get("g_max").getAsInt() : 0;
-            int bMax = body.has("b_max") ? body.get("b_max").getAsInt() : 0;
-            return service.colorByRanking(column, rMin, gMin, bMin, rMax, gMax, bMax);
+            int minRed = body.has("r_min") ? body.get("r_min").getAsInt() : 255;
+            int minGreen = body.has("g_min") ? body.get("g_min").getAsInt() : 255;
+            int minBlue = body.has("b_min") ? body.get("b_min").getAsInt() : 200;
+            int maxRed = body.has("r_max") ? body.get("r_max").getAsInt() : 255;
+            int maxGreen = body.has("g_max") ? body.get("g_max").getAsInt() : 0;
+            int maxBlue = body.has("b_max") ? body.get("b_max").getAsInt() : 0;
+            return service.colorByRanking(column, minRed, minGreen, minBlue, maxRed, maxGreen, maxBlue);
         }
 
         if ("/appearance/ranking/size".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            if (body == null || !body.has("column")) {
+                return errorResult("Missing 'column'");
+            }
             float minSize = body.has("min_size") ? body.get("min_size").getAsFloat() : 5f;
             float maxSize = body.has("max_size") ? body.get("max_size").getAsFloat() : 50f;
             Double cap = body.has("cap") && !body.get("cap").isJsonNull() ? body.get("cap").getAsDouble() : null;
@@ -595,7 +662,9 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Layout ──────────────────────────────────────────────────
 
         if ("/layout/run".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("algorithm")) return errorResult("Missing 'algorithm'");
+            if (body == null || !body.has("algorithm")) {
+                return errorResult("Missing 'algorithm'");
+            }
             String algo = body.get("algorithm").getAsString();
             int iterations = body.has("iterations") ? body.get("iterations").getAsInt() : 1000;
             // Inline properties: configure and run in one step.
@@ -620,13 +689,16 @@ public class GephiAPIServer implements HttpHandler {
 
         if ("/layout/properties".equals(uri) && "GET".equals(method)) {
             String algo = params.get("algorithm");
-            if (algo == null || algo.isEmpty()) return errorResult("Missing 'algorithm' parameter");
+            if (algo == null || algo.isEmpty()) {
+                return errorResult("Missing 'algorithm' parameter");
+            }
             return service.getLayoutProperties(algo);
         }
 
         if ("/layout/properties".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("algorithm") || !body.has("properties"))
+            if (body == null || !body.has("algorithm") || !body.has("properties")) {
                 return errorResult("Missing 'algorithm' or 'properties'");
+            }
             String algo = body.get("algorithm").getAsString();
             Map<String, Object> properties = GSON.fromJson(body.get("properties"), Map.class);
             int iterations = body.has("iterations") ? body.get("iterations").getAsInt() : 1000;
@@ -650,7 +722,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/statistics/run".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("name")) return errorResult("Missing 'name'");
+            if (body == null || !body.has("name")) {
+                return errorResult("Missing 'name'");
+            }
             Map<String, Object> statParams = null;
             if (body.has("params") && body.get("params").isJsonObject()) {
                 statParams = GSON.fromJson(body.get("params"), Map.class);
@@ -717,7 +791,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/filter/ego-network".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("node_id")) return errorResult("Missing 'node_id'");
+            if (body == null || !body.has("node_id")) {
+                return errorResult("Missing 'node_id'");
+            }
             String nodeId = body.get("node_id").getAsString();
             int depth = body.has("depth") ? body.get("depth").getAsInt() : 1;
             return service.extractEgoNetwork(nodeId, depth);
@@ -736,7 +812,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/filter/apply".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("name")) return errorResult("Missing 'name'");
+            if (body == null || !body.has("name")) {
+                return errorResult("Missing 'name'");
+            }
             String fname = body.get("name").getAsString();
             Map<String, Object> filterParams = body.has("params") ? GSON.fromJson(body.get("params"), Map.class) : null;
             String action = body.has("action") ? body.get("action").getAsString() : "select";
@@ -756,20 +834,26 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Time ────────────────────────────────────────────────────
 
         if ("/time/from-columns".equals(uri) && "POST".equals(method)) {
-            if (body == null) return errorResult("Missing body");
+            if (body == null) {
+                return errorResult("Missing body");
+            }
             return service.setTimeFromColumns(str(body, "target"), str(body, "start"), str(body, "end"),
                 str(body, "date_format"), bool(body, "check_only"));
         }
 
         if ("/time/slice".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("start") || !body.has("end")) return errorResult("Missing 'start' or 'end'");
+            if (body == null || !body.has("start") || !body.has("end")) {
+                return errorResult("Missing 'start' or 'end'");
+            }
             return service.timeSlice(body.get("start").getAsDouble(), body.get("end").getAsDouble());
         }
 
         // ─── Paths ───────────────────────────────────────────────────
 
         if ("/graph/shortest-path".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("source") || !body.has("target")) return errorResult("Missing 'source' or 'target'");
+            if (body == null || !body.has("source") || !body.has("target")) {
+                return errorResult("Missing 'source' or 'target'");
+            }
             boolean follow = !body.has("follow_direction") || body.get("follow_direction").getAsBoolean();
             return service.findShortestPath(body.get("source").getAsString(), body.get("target").getAsString(),
                 str(body, "weighting"), follow, str(body, "mark_column"));
@@ -778,34 +862,43 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Data Laboratory ─────────────────────────────────────────
 
         if ("/datalab/column/edit".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column") || !body.has("action")) return errorResult("Missing 'column' or 'action'");
+            if (body == null || !body.has("column") || !body.has("action")) {
+                return errorResult("Missing 'column' or 'action'");
+            }
             return service.editColumn(str(body, "target"), str(body, "column"), str(body, "action"),
                 str(body, "value"), str(body, "type"), str(body, "new_name"), bool(body, "check_only"));
         }
 
         if ("/datalab/frequencies".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            if (body == null || !body.has("column")) {
+                return errorResult("Missing 'column'");
+            }
             String target = body.has("target") ? body.get("target").getAsString() : "node";
             return service.columnValueFrequencies(target, body.get("column").getAsString());
         }
 
         if ("/datalab/duplicates".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column")) return errorResult("Missing 'column'");
+            if (body == null || !body.has("column")) {
+                return errorResult("Missing 'column'");
+            }
             String target = body.has("target") ? body.get("target").getAsString() : "node";
             boolean cs = body.has("case_sensitive") && body.get("case_sensitive").getAsBoolean();
             return service.detectDuplicates(target, body.get("column").getAsString(), cs);
         }
 
         if ("/datalab/merge-nodes".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("ids")) return errorResult("Missing 'ids'");
+            if (body == null || !body.has("ids")) {
+                return errorResult("Missing 'ids'");
+            }
             java.util.List<String> ids = GSON.fromJson(body.get("ids"), java.util.List.class);
             String into = body.has("into") ? body.get("into").getAsString() : null;
             return service.mergeNodes(ids, into);
         }
 
         if ("/datalab/regex-column".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("column") || !body.has("new_column") || !body.has("regex"))
+            if (body == null || !body.has("column") || !body.has("new_column") || !body.has("regex")) {
                 return errorResult("Missing 'column', 'new_column', or 'regex'");
+            }
             String target = body.has("target") ? body.get("target").getAsString() : "node";
             return service.createRegexColumn(target, body.get("column").getAsString(),
                 body.get("new_column").getAsString(), body.get("regex").getAsString());
@@ -825,8 +918,10 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Edge Appearance ────────────────────────────────────────
 
         if ("/appearance/edge/thickness-by-weight".equals(uri) && "POST".equals(method)) {
-            float minThickness = body != null && body.has("min_thickness") ? body.get("min_thickness").getAsFloat() : 1f;
-            float maxThickness = body != null && body.has("max_thickness") ? body.get("max_thickness").getAsFloat() : 5f;
+            float minThickness = body != null && body.has("min_thickness")
+                ? body.get("min_thickness").getAsFloat() : 1f;
+            float maxThickness = body != null && body.has("max_thickness")
+                ? body.get("max_thickness").getAsFloat() : 5f;
             return service.setEdgeThicknessByWeight(minThickness, maxThickness);
         }
 
@@ -837,7 +932,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/preview/settings".equals(uri) && "POST".equals(method)) {
-            if (body == null) return errorResult("Missing request body");
+            if (body == null) {
+                return errorResult("Missing request body");
+            }
             // Body shape is flat {property: value}; unwrap the common client
             // mistake of nesting everything under a "settings" key so it does
             // not get stored as a junk preview property named "settings".
@@ -854,20 +951,24 @@ public class GephiAPIServer implements HttpHandler {
         if ("/export/gexf".equals(uri) && "POST".equals(method)) {
             // no "file" (or inline:true) -> return the GEXF as a string in "content"
             if (body == null || !body.has("file")
-                    || (body.has("inline") && body.get("inline").getAsBoolean())) {
+                || (body.has("inline") && body.get("inline").getAsBoolean())) {
                 return service.exportGexfContent(visibleBody(body, true));
             }
             return service.exportGexf(body.get("file").getAsString(), visibleBody(body, true));
         }
 
         if ("/export/format".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file") || !body.has("format"))
+            if (body == null || !body.has("file") || !body.has("format")) {
                 return errorResult("Missing 'file' or 'format'");
-            return service.exportByFormat(body.get("file").getAsString(), body.get("format").getAsString(), visibleBody(body, true));
+            }
+            return service.exportByFormat(body.get("file").getAsString(), body.get("format").getAsString(),
+                visibleBody(body, true));
         }
 
         if ("/export/png".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             String file = body.get("file").getAsString();
             int w = body.has("width") ? body.get("width").getAsInt() : 1920;
             int h = body.has("height") ? body.get("height").getAsInt() : 1080;
@@ -875,7 +976,9 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/export/screenshot".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             String file = body.get("file").getAsString();
             int scale = body.has("scale") ? body.get("scale").getAsInt() : 2;
             boolean transparent = body.has("transparent_background")
@@ -884,22 +987,30 @@ public class GephiAPIServer implements HttpHandler {
         }
 
         if ("/export/pdf".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             return service.exportPdf(body.get("file").getAsString());
         }
 
         if ("/export/svg".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             return service.exportSvg(body.get("file").getAsString());
         }
 
         if ("/export/graphml".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             return service.exportGraphml(body.get("file").getAsString(), visibleBody(body, true));
         }
 
         if ("/export/csv".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             String file = body.get("file").getAsString();
             String separator = body.has("separator") ? body.get("separator").getAsString() : ",";
             String target = body.has("target") ? body.get("target").getAsString() : "nodes";
@@ -909,25 +1020,33 @@ public class GephiAPIServer implements HttpHandler {
         // ─── Import ──────────────────────────────────────────────────
 
         if ("/import/gexf".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
                 body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/graphml".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
                 body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/csv".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
                 body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
         if ("/import/file".equals(uri) && "POST".equals(method)) {
-            if (body == null || !body.has("file")) return errorResult("Missing 'file'");
+            if (body == null || !body.has("file")) {
+                return errorResult("Missing 'file'");
+            }
             return service.importFile(body.get("file").getAsString(), floatOrNull(body, "max_node_size"),
                 body.has("mode") ? body.get("mode").getAsString() : null);
         }
@@ -942,17 +1061,31 @@ public class GephiAPIServer implements HttpHandler {
      * can no longer disagree silently.
      */
     static Double doubleParamOrNull(String v) {
-        if (v == null || v.isBlank()) return null;
-        try { return Double.parseDouble(v.trim()); } catch (NumberFormatException e) { return null; }
+        if (v == null || v.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(v.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     static boolean visibleParam(Map<String, String> params, boolean dflt) {
         String v = params == null ? null : params.get("visible");
-        if (v == null) return dflt;
+        if (v == null) {
+            return dflt;
+        }
         String t = v.trim();
-        if (t.isEmpty()) return dflt;
-        if ("true".equalsIgnoreCase(t) || "1".equals(t)) return true;
-        if ("false".equalsIgnoreCase(t) || "0".equals(t)) return false;
+        if (t.isEmpty()) {
+            return dflt;
+        }
+        if ("true".equalsIgnoreCase(t) || "1".equals(t)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(t) || "0".equals(t)) {
+            return false;
+        }
         // Anything else is not a decision. Falling back to the endpoint's default beats
         // reading unrecognised text as "false", which would silently switch an export
         // from the filtered graph to the whole graph on a typo.
@@ -961,7 +1094,9 @@ public class GephiAPIServer implements HttpHandler {
 
     /** The {@code visible} flag from a JSON body, defaulting to the endpoint's historical view. */
     static boolean visibleBody(JsonObject body, boolean dflt) {
-        if (body == null || !body.has("visible") || body.get("visible").isJsonNull()) return dflt;
+        if (body == null || !body.has("visible") || body.get("visible").isJsonNull()) {
+            return dflt;
+        }
         com.google.gson.JsonElement e = body.get("visible");
         // Only a real JSON boolean decides. Gson would read the string "banana" as false,
         // which is the same silent-switch trap the query parameter avoids above.
@@ -1003,7 +1138,8 @@ public class GephiAPIServer implements HttpHandler {
             if (module != null && module.getSpecificationVersion() != null) {
                 return module.getSpecificationVersion().toString();
             }
-        } catch (Throwable ignore) { /* outside Gephi's module system */ }
+        } catch (Throwable ignore) { /* outside Gephi's module system */
+        }
         try {
             java.net.URL jar = api.getProtectionDomain().getCodeSource().getLocation();
             try (java.util.jar.JarFile f = new java.util.jar.JarFile(new java.io.File(jar.toURI()))) {
@@ -1024,7 +1160,9 @@ public class GephiAPIServer implements HttpHandler {
     }
 
     static Float floatOrNull(JsonObject body, String key) {
-        if (body == null || !body.has(key) || body.get(key).isJsonNull()) return null;
+        if (body == null || !body.has(key) || body.get(key).isJsonNull()) {
+            return null;
+        }
         try {
             return body.get(key).getAsFloat();
         } catch (RuntimeException e) {
@@ -1033,9 +1171,14 @@ public class GephiAPIServer implements HttpHandler {
     }
 
     private int parseIntParam(String value, int defaultValue) {
-        if (value == null) return defaultValue;
-        try { return Integer.parseInt(value); }
-        catch (NumberFormatException e) { return defaultValue; }
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     private JsonObject errorResult(String message) {

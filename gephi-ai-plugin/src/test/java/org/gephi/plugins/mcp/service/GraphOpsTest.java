@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -49,7 +50,9 @@ class GraphOpsTest {
         m.put("id", id);
         if (attrKv.length > 0) {
             Map<String, Object> attrs = new LinkedHashMap<>();
-            for (int i = 0; i + 1 < attrKv.length; i += 2) attrs.put((String) attrKv[i], attrKv[i + 1]);
+            for (int i = 0; i + 1 < attrKv.length; i += 2) {
+                attrs.put((String) attrKv[i], attrKv[i + 1]);
+            }
             m.put("attributes", attrs);
         }
         return m;
@@ -209,7 +212,9 @@ class GraphOpsTest {
         // the fixed pattern: snapshot, then break early
         int count = 0;
         for (org.gephi.graph.api.Node n : g.getNodes().toArray()) {
-            if (count >= 3) break;
+            if (count >= 3) {
+                break;
+            }
             count++;
         }
 
@@ -225,7 +230,9 @@ class GraphOpsTest {
         it.next(); // iterator constructor auto-acquired the read lock
         assertFalse(wl.tryLock(50, java.util.concurrent.TimeUnit.MILLISECONDS),
             "an unexhausted live iterator holds the read lock (the leak this guards against)");
-        while (it.hasNext()) it.next(); // exhaustion releases it
+        while (it.hasNext()) {
+            it.next(); // exhaustion releases it
+        }
         assertTrue(wl.tryLock(200, java.util.concurrent.TimeUnit.MILLISECONDS));
         wl.unlock();
     }
@@ -287,7 +294,9 @@ class GraphOpsTest {
     private static GraphModel modelWithNodes(String... ids) {
         GraphModel gm = newModel();
         java.util.List<Map<String, Object>> ns = new java.util.ArrayList<>();
-        for (String id : ids) ns.add(node(id));
+        for (String id : ids) {
+            ns.add(node(id));
+        }
         GephiControlService.addNodesToModel(gm, ns);
         return gm;
     }
@@ -306,7 +315,8 @@ class GraphOpsTest {
     void differentTypedEdgesCoexistBetweenSamePair() {
         GraphModel gm = modelWithNodes("a", "b");
         assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "cites").get("success").getAsBoolean());
-        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true, "coauthor").get("success").getAsBoolean());
+        assertTrue(GephiControlService.addEdgeToModel(gm, "a", "b", 1.0, true,
+            "coauthor").get("success").getAsBoolean());
         assertEquals(2, gm.getGraph().getEdgeCount(), "two typed parallel edges should coexist");
         assertTrue(gm.getEdgeTypeCount() >= 2);
     }
@@ -322,11 +332,15 @@ class GraphOpsTest {
 
     @Test
     void batchAddHonorsPerEdgeType() {
-        GraphModel gm = modelWithNodes("a", "b");
+        final GraphModel gm = modelWithNodes("a", "b");
         Map<String, Object> e1 = new LinkedHashMap<>();
-        e1.put("source", "a"); e1.put("target", "b"); e1.put("edge_type", "cites");
+        e1.put("source", "a");
+        e1.put("target", "b");
+        e1.put("edge_type", "cites");
         Map<String, Object> e2 = new LinkedHashMap<>();
-        e2.put("source", "a"); e2.put("target", "b"); e2.put("edge_type", "coauthor");
+        e2.put("source", "a");
+        e2.put("target", "b");
+        e2.put("edge_type", "coauthor");
         JsonObject r = GephiControlService.addEdgesToModel(gm, List.of(e1, e2));
         assertEquals(2, r.get("added").getAsInt());
         assertEquals(2, gm.getGraph().getEdgeCount());

@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.api;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,7 +36,9 @@ class VisibleParamTest {
 
     private static Map<String, String> params(String key, String value) {
         Map<String, String> m = new HashMap<>();
-        if (key != null) m.put(key, value);
+        if (key != null) {
+            m.put(key, value);
+        }
         return m;
     }
 
@@ -77,7 +80,7 @@ class VisibleParamTest {
     }
 
     @Test
-    void aNonBooleanBodyValueFallsBackRatherThanThrowing() {
+    void nonBooleanBodyValueFallsBackRatherThanThrowing() {
         assertTrue(GephiAPIServer.visibleBody(body("{\"visible\":{\"a\":1}}"), true));
         assertFalse(GephiAPIServer.visibleBody(body("{\"visible\":[1,2]}"), false));
     }

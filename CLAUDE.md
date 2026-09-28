@@ -83,3 +83,10 @@ Repository layout: `gephi-ai-plugin/` (Java, the Gephi side), `mcp-server/`
 (Python, the MCP side; tests in `mcp-server/tests/`), `plugins/claude-code/` (skill,
 commands, agents). `RELEASING.md` is the release procedure and
 `scripts/check-drift.sh` reports which channel is behind.
+
+Before a pull request, run what CI runs:
+- `mvn verify` in `gephi-ai-plugin/`, which runs Gephi core's checkstyle and `SourceRulesTest`;
+- `ruff check .`, `mypy ./*.py` and `python -m pytest -q` in `mcp-server/`;
+- `shellcheck scripts/*.sh`.
+
+A `fix` commit carries a test that fails without it. Plugin changes also get the live smoke test in a separate Gephi; its docstring gives the command.

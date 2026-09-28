@@ -49,4 +49,6 @@ item applies.
   or edges change (`view` and `filter_active` in the reply say so), and in a partial `colors`
   map the values left out take Gephi's default grey. A capped `gephi_size_by_ranking` is the
   exception and sizes every node. Screenshots are written straight to the file and no longer
-  touch the toolbar's screenshot settings.
+  touch the toolbar's screenshot settings. PDFs are US Letter, landscape for a wide layout.
+  `gephi_health_check` reports `gephi_version` and, when an update needs a newer Gephi, says to
+  update Gephi first; `gephi_run_statistic` adds `panel_result`, the Statistics panel's line.

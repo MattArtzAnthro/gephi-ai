@@ -24,6 +24,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from typing import Any
 
 _LEMMA_STATE: dict[str, bool] = {}
 
@@ -295,11 +296,13 @@ def _context_snippets(
         ((len(pattern.findall(doc)), doc) for doc in documents),
         key=lambda item: -item[0],
     )
-    snippets = []
+    snippets: list[str] = []
     for count, doc in counted:
         if count == 0 or len(snippets) >= max_snippets:
             break
         match = pattern.search(doc)
+        if match is None:  # cannot happen: count > 0 means the pattern occurs in doc
+            continue
         start = max(0, match.start() - radius_chars)
         end = min(len(doc), match.end() + radius_chars)
         excerpt = doc[start:end].replace("\n", " ").strip()
@@ -530,7 +533,7 @@ def build_cooccurrence_graph(
     # a manual top-40-by-raw-frequency check because plenty of individually
     # rarer, more topical words outranked it in absolute count that one time,
     # even though almost nothing in the corpus is more universal than it).
-    self_referential_candidates = []
+    self_referential_candidates: list[dict[str, Any]] = []
     if documents:
         for word, count in frequency.items():
             ratio = document_frequency[word] / len(documents)
@@ -567,7 +570,7 @@ def build_cooccurrence_graph(
                 other = tokens[j]
                 if other == word:
                     continue
-                pair = tuple(sorted((word, other)))
+                pair = (word, other) if word < other else (other, word)
                 edge_weights[pair] += (window_size - distance)
 
     nodes = [
@@ -643,7 +646,7 @@ def extract_backbone(edges: list[dict], alpha: float = 0.05) -> dict:
     Returns {"edges": [...] (surviving edges, same shape as input),
     "stats": {"edges_kept", "edges_removed", "alpha"}}.
     """
-    strength: dict[str, float] = Counter()
+    strength: Counter[str] = Counter()
     degree: dict[str, int] = Counter()
     for e in edges:
         w = e["weight"]

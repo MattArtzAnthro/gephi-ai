@@ -74,8 +74,9 @@ def write_overlay(overlay_path: Path, verdicts: dict[str, str],
     for caveat_id, verdict in verdicts.items():
         was = existing.get(caveat_id, {}).get("status")
         existing[caveat_id] = {"status": verdict, "checked_on": today}
-        if (evidence or {}).get(caveat_id):
-            existing[caveat_id]["evidence"] = evidence[caveat_id]
+        ev = evidence or {}
+        if ev.get(caveat_id):
+            existing[caveat_id]["evidence"] = ev[caveat_id]
         if was != verdict:
             changes.append(f"  {caveat_id}: {was or 'unverified'} -> {verdict}")
     overlay_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
@@ -114,8 +115,9 @@ def apply_verdicts(register_path: Path, verdicts: dict[str, str],
         was, now = verification.get("status"), verdicts[probe]
         verification["status"] = now
         verification["checked_on"] = today
-        if (evidence or {}).get(probe):
-            verification["evidence"] = evidence[probe]
+        ev = evidence or {}
+        if ev.get(probe):
+            verification["evidence"] = ev[probe]
         if now == "reproduced":
             entry["says"] = (entry["says"].replace(UNVERIFIED_SUFFIX, "").rstrip()
                              + f" Reproduced on this Gephi on {today}.")

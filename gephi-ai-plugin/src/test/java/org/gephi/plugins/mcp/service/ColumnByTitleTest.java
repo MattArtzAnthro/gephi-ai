@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,7 +42,7 @@ class ColumnByTitleTest {
     }
 
     @Test
-    void aValueWrittenUnderAColumnsTitleLandsInThatColumn() {
+    void valueWrittenUnderAColumnsTitleLandsInThatColumn() {
         GraphModel gm = withTitledColumn();
         Table table = gm.getNodeTable();
         Node n = gm.getGraph().getNode("a");

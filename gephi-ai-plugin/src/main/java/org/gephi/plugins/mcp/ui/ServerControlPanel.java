@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.ui;
 
 import java.awt.GridBagConstraints;
@@ -66,7 +67,7 @@ public final class ServerControlPanel extends JPanel {
         // carry HelpCtx in their signatures, which lives in org-openide-util-ui,
         // a module this plugin does not depend on.
         DialogDescriptor descriptor = new DialogDescriptor(
-                panel, msg("ServerControlPanel.title"), true, (ActionListener) null);
+            panel, msg("ServerControlPanel.title"), true, (ActionListener) null);
         descriptor.setOptions(new Object[]{close});
         DialogDisplayer.getDefault().notify(descriptor);
     }
@@ -157,7 +158,7 @@ public final class ServerControlPanel extends JPanel {
         if (Installer.isServerRunning()) {
             String url = "http://127.0.0.1:" + Installer.getRunningPort();
             statusLabel.setText(NbBundle.getMessage(ServerControlPanel.class,
-                    "ServerControlPanel.status.running", url));
+                "ServerControlPanel.status.running", url));
             startButton.setEnabled(false);
             stopButton.setEnabled(true);
         } else {

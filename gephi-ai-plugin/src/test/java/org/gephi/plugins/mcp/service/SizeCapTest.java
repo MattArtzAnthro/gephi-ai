@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,7 +46,7 @@ class SizeCapTest {
     }
 
     @Test
-    void aCapAboveTheLargestValueChangesNothing() {
+    void capAboveTheLargestValueChangesNothing() {
         assertEquals(19f, GephiControlService.rankedSize(20, 0, 200, 500.0, 10, 100), 1e-4);
     }
 }

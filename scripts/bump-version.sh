@@ -122,5 +122,10 @@ check "Codex manifest"     "$(python3 -c "import json;print(json.load(open('plug
 check "Codex SKILL"        "$(grep -m1 'version:' plugins/gephi-network-analysis/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"
 check "latest.json plugin" "$(python3 -c "import json;print(json.load(open('latest.json'))['plugin'])")" "$P"
 check "marketplace.json"   "$(python3 -c "import json;print(json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'])")" "$P"
-[ "$fail" = 0 ] && echo "  OK  server=$S java=$J plugin=$P — all surfaces consistent" || { echo "  FAILED"; exit 1; }
+if [ "$fail" = 0 ]; then
+  echo "  OK  server=$S java=$J plugin=$P — all surfaces consistent"
+else
+  echo "  FAILED"
+  exit 1
+fi
 echo "Next: update CHANGELOG, run tests, build + publish (see RELEASING.md)."

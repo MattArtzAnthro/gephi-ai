@@ -9,7 +9,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_health_check
 - **Method**: GET `/health`
 - **Params**: None
-- **Returns**: `{success, service, version, status}`
+- **Returns**: `{success, service, version, gephi_version, status, graph_lock, graph_lock_stats, server_version}`, plus `update` (with `how_to_update`) when a newer release exists or `up_to_date: true`. `gephi_version` comes from plugin 1.5.0 on. When the newest plugin needs a newer Gephi than the one running, `how_to_update` says to update Gephi first.
 - **Usage**: Call first to verify Gephi is running
 
 ### gephi_visual_qa
@@ -294,23 +294,23 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_color_by_partition
 - **Method**: POST `/appearance/partition/color`
 - **Params**: `{column: str, colors?: {value: [r,g,b], ...}}`
-- **Notes**: On a light background, leave `colors` unset: the plugin gives the largest group the first of eight colours validated for readability, the next largest the second, and so on, in an order that keeps the five largest groups distinguishable wherever they touch, even for colour-blind readers; past five groups, label the groups as well. On a dark background, pass the dark-surface palette. Colour must never be the only way to tell groups apart: label the largest nodes or the groups. Past eight groups the rest get generated distinct colours and the reply adds `palette_note`. Use for modularity_class, type, category.
+- **Notes**: On a light background, leave `colors` unset: the plugin gives the largest group the first of eight colours validated for readability, the next largest the second, and so on, in an order that keeps the five largest groups distinguishable wherever they touch, even for colour-blind readers; past five groups, label the groups as well. On a dark background, pass the dark-surface palette. Colour must never be the only way to tell groups apart: label the largest nodes or the groups. Past eight groups the rest get generated distinct colours and the reply adds `palette_note`. Use for modularity_class, type, category. With a filter on, only the visible nodes change (plugin 1.5.0 on), as with Gephi's Apply button; the reply's `view` and `filter_active` say so. Values left out of a partial `colors` map take Gephi's default grey.
 - **Dark-surface palette** (pass explicitly, keyed largest group first): `{"0":[57,135,229],"1":[201,133,0],"2":[0,131,0],"3":[213,81,129],"4":[144,133,233],"5":[230,103,103],"6":[25,158,112],"7":[217,89,38]}`
 
 ### gephi_color_edges_by_partition
 - **Method**: POST `/appearance/edge/partition-color`
 - **Params**: `{column: str, colors?: {value: [r,g,b], ...}}`
-- **Notes**: The edge twin of `gephi_color_by_partition`: colors edges by a categorical EDGE column (relationship type, period, weight tier). Auto-palette if colors omitted. Coloring by a few relationship TYPES is when edge color earns its keep (unlike per-source coloring on dense graphs; see text-network-analysis.md).
+- **Notes**: The edge twin of `gephi_color_by_partition`: colors edges by a categorical EDGE column (relationship type, period, weight tier). Auto-palette if colors omitted. Coloring by a few relationship TYPES is when edge color earns its keep (unlike per-source coloring on dense graphs; see text-network-analysis.md). With a filter on, only the visible edges change (plugin 1.5.0 on), as with Gephi's Apply button; the reply's `view` and `filter_active` say so.
 
 ### gephi_color_by_ranking
 - **Method**: POST `/appearance/ranking/color`
 - **Params**: `{column: str, r_min?: int (255), g_min?: int (255), b_min?: int (200), r_max?: int (255), g_max?: int (0), b_max?: int (0)}`
-- **Notes**: Creates gradient from min to max color. Use for degree, pageranks, centrality.
+- **Notes**: Creates gradient from min to max color. Use for degree, pageranks, centrality. With a filter on, only the visible nodes change (plugin 1.5.0 on), as with Gephi's Apply button; the reply's `view` and `filter_active` say so.
 
 ### gephi_size_by_ranking
 - **Method**: POST `/appearance/ranking/size`
 - **Params**: `{column: str, min_size?: float (10), max_size?: float (100), cap?: float}`
-- **Notes**: Size nodes at about one to ten on screen (the `gephi_size_by_ranking` default, 10 to 100); widen the range for a large print. Unsized nodes render as invisible specks. `cap` gives every node at or above that value the largest size, so a few outliers do not shrink the rest; the reply gives `nodes_at_cap`, the legend records the cap, and Gephi's Appearance panel is left unchanged because it has no cap.
+- **Notes**: Size nodes at about one to ten on screen (the `gephi_size_by_ranking` default, 10 to 100); widen the range for a large print. Unsized nodes render as invisible specks. `cap` gives every node at or above that value the largest size, so a few outliers do not shrink the rest; the reply gives `nodes_at_cap`, the legend records the cap, and Gephi's Appearance panel is left unchanged because it has no cap. With a filter on, only the visible nodes change (plugin 1.5.0 on), as with Gephi's Apply button; the reply's `view` and `filter_active` say so. A capped ranking sizes every node.
 
 ### gephi_edge_thickness_by_weight
 - **Method**: POST `/appearance/edge/thickness-by-weight`
@@ -387,7 +387,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_run_statistic
 - **Params**: `{name: str, params?: dict}`. `name` matches an entry from `gephi_list_statistics` (case-insensitive); `params` is an optional `{property: value}` map set on the statistic before it runs
-- **Notes**: the passthrough to Gephi's plugin ecosystem: install a metric plugin in Gephi (Tools > Plugins) and it is immediately runnable here. `gephi_run_statistic("Weighted Degree")` writes a "Weighted Degree" column, the sum of each node's edge weights. Plugin statistics configured by a UI dialog usually need `params` (their fields start null/zero). Results land in node/edge columns as usual.
+- **Notes**: the passthrough to Gephi's plugin ecosystem: install a metric plugin in Gephi (Tools > Plugins) and it is immediately runnable here. `gephi_run_statistic("Weighted Degree")` writes a "Weighted Degree" column, the sum of each node's edge weights. Plugin statistics configured by a UI dialog usually need `params` (their fields start null/zero). Results land in node/edge columns as usual. `panel_result` (plugin 1.5.0 on) is the line Gephi's Statistics panel shows for the run, when the statistic gives one: the headline for a plugin metric with no named field in the reply. It is display text and may be rounded.
 
 ### gephi_stop_statistic
 - **Method**: POST `/statistics/stop`
@@ -636,7 +636,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_export_screenshot
 - **Method**: POST `/export/screenshot`
 - **Params**: `{file: str, scale?: int (2), transparent_background?: bool (false)}`
-- **Notes**: Captures the LIVE Overview canvas via Gephi's own built-in screenshot feature (`org.gephi.visualization.api.ScreenshotController`): selection highlighting, hover state, and current camera framing all show up exactly as rendered on screen, unlike gephi_export_png. `scale` is a multiplier on the current on-screen canvas size, not literal pixel dimensions. Visually rougher than Preview-based exports (no edge bundling, plainer typography), so prefer gephi_export_png for clean data-driven figures and this tool specifically when selection/on-screen state needs to be captured. Desktop only; the Overview window must be visible.
+- **Notes**: Captures the LIVE Overview canvas via Gephi's own built-in screenshot feature (`org.gephi.visualization.api.ScreenshotController`; from plugin 1.5.0 it writes straight to the file, never opens a dialog, and leaves the toolbar's screenshot settings alone): selection highlighting, hover state, and current camera framing all show up exactly as rendered on screen, unlike gephi_export_png. `scale` is a multiplier on the current on-screen canvas size, not literal pixel dimensions. Visually rougher than Preview-based exports (no edge bundling, plainer typography), so prefer gephi_export_png for clean data-driven figures and this tool specifically when selection/on-screen state needs to be captured. Desktop only; the Overview window must be visible.
 
 ### gephi_export_pdf
 - **Method**: POST `/export/pdf`

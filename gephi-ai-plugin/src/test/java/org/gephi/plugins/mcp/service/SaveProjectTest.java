@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,7 +33,7 @@ import org.openide.util.Lookup;
 class SaveProjectTest {
 
     @Test
-    void aSaveReportsTheWrittenFile(@TempDir Path dir) {
+    void saveReportsTheWrittenFile(@TempDir Path dir) {
         ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
         pc.closeCurrentProject();
         pc.newProject();
@@ -46,7 +47,7 @@ class SaveProjectTest {
     }
 
     @Test
-    void aSaveIntoAMissingFolderIsReportedAsFailed(@TempDir Path dir) {
+    void saveIntoAMissingFolderIsReportedAsFailed(@TempDir Path dir) {
         ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
         pc.closeCurrentProject();
         pc.newProject();
@@ -58,7 +59,7 @@ class SaveProjectTest {
     }
 
     @Test
-    void aFileLeftUnchangedIsNotASave(@TempDir Path dir) throws Exception {
+    void fileLeftUnchangedIsNotASave(@TempDir Path dir) throws Exception {
         File old = Files.writeString(dir.resolve("old.gephi"), "x").toFile();
         long stamp = System.currentTimeMillis() - 60_000;
         assertTrue(old.setLastModified(stamp));
@@ -69,7 +70,7 @@ class SaveProjectTest {
     }
 
     @Test
-    void aMissingOrEmptyFileIsNotASave(@TempDir Path dir) throws Exception {
+    void missingOrEmptyFileIsNotASave(@TempDir Path dir) throws Exception {
         long now = System.currentTimeMillis();
         assertTrue(GephiControlService.savedFileProblem(dir.resolve("none").toFile(), -1, now).contains("not written"));
         File empty = Files.createFile(dir.resolve("empty.gephi")).toFile();

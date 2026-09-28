@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,7 +37,9 @@ class NodeSearchTest {
         Object[][] rows = {{"a", "Peru", 0.5}, {"b", "peru", 2.0}, {"c", "Portugal", 7.5}, {"d", null, 1.0}};
         for (Object[] row : rows) {
             Node n = gm.factory().newNode((String) row[0]);
-            if (row[1] != null) n.setAttribute("country", row[1]);
+            if (row[1] != null) {
+                n.setAttribute("country", row[1]);
+            }
             n.setAttribute("score", row[2]);
             gm.getDirectedGraph().addNode(n);
         }
@@ -44,7 +47,7 @@ class NodeSearchTest {
     }
 
     private static List<String> find(GraphModel gm, String column, String value, String contains,
-                                     Double min, Double max) {
+        Double min, Double max) {
         Column col = GephiControlService.findColumn(gm.getNodeTable(), column);
         Predicate<Node> keep = GephiControlService.nodeMatcher(col, value, contains, min, max);
         return gm.getGraph().getNodes().toCollection().stream().filter(keep)
@@ -52,7 +55,7 @@ class NodeSearchTest {
     }
 
     @Test
-    void aWholeValueMatchesIgnoringCase() {
+    void wholeValueMatchesIgnoringCase() {
         assertEquals(List.of("a", "b"), find(people(), "country", "PERU", null, null, null));
     }
 
@@ -62,12 +65,12 @@ class NodeSearchTest {
     }
 
     @Test
-    void aNumericRangeIsInclusive() {
+    void numericRangeIsInclusive() {
         assertEquals(List.of("b", "d"), find(people(), "score", null, null, 1.0, 2.0));
     }
 
     @Test
-    void aNumberMatchesByValueNotByText() {
+    void numberMatchesByValueNotByText() {
         assertEquals(List.of("b"), find(people(), "score", "2", null, null, null));
     }
 

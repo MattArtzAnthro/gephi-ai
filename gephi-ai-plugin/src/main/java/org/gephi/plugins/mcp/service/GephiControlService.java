@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import com.google.gson.JsonArray;
@@ -21,14 +22,21 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import javax.imageio.ImageIO;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.imageio.ImageIO;
 import javax.swing.SwingUtilities;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.gephi.filters.api.FilterController;
+import org.gephi.filters.api.Query;
+import org.gephi.filters.spi.CategoryBuilder;
+import org.gephi.filters.spi.Filter;
+import org.gephi.filters.spi.FilterBuilder;
+import org.gephi.filters.spi.FilterProperty;
 import org.gephi.graph.api.Column;
 import org.gephi.graph.api.Edge;
 import org.gephi.graph.api.Graph;
@@ -41,13 +49,6 @@ import org.gephi.io.exporter.preview.PDFExporter;
 import org.gephi.io.exporter.preview.PNGExporter;
 import org.gephi.io.exporter.spi.Exporter;
 import org.gephi.io.exporter.spi.GraphExporter;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.gephi.filters.api.FilterController;
-import org.gephi.filters.api.Query;
-import org.gephi.filters.spi.CategoryBuilder;
-import org.gephi.filters.spi.Filter;
-import org.gephi.filters.spi.FilterBuilder;
-import org.gephi.filters.spi.FilterProperty;
 import org.gephi.io.importer.api.Container;
 import org.gephi.io.importer.api.ImportController;
 import org.gephi.io.processor.spi.Processor;
@@ -91,10 +92,13 @@ public class GephiControlService {
     // after it actually succeeds (the view may not be started at the first attempt).
     private volatile boolean rectangleAutoEnabled = false;
 
-    private GephiControlService() {}
+    private GephiControlService() {
+    }
 
     public static synchronized GephiControlService getInstance() {
-        if (instance == null) instance = new GephiControlService();
+        if (instance == null) {
+            instance = new GephiControlService();
+        }
         return instance;
     }
 
@@ -115,16 +119,23 @@ public class GephiControlService {
      * that this will become an error.
      */
     private static <T> T onProjectThread(Callable<T> work) {
-        try { return work.call(); }
-        catch (RuntimeException e) { throw e; }
-        catch (Exception e) { throw new RuntimeException(e); }
+        try {
+            return work.call();
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @SuppressWarnings("unchecked")
     private <T> T runOnEDT(Callable<T> callable) {
         if (SwingUtilities.isEventDispatchThread()) {
-            try { return callable.call(); }
-            catch (Exception e) { throw new RuntimeException(e); }
+            try {
+                return callable.call();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
         // Bounded wait: invokeAndWait parks forever when the EDT is wedged (the
         // "health answers but nothing else does" symptom). Fail fast with guidance
@@ -133,9 +144,13 @@ public class GephiControlService {
         final Exception[] exception = new Exception[1];
         final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
         SwingUtilities.invokeLater(() -> {
-            try { result[0] = callable.call(); }
-            catch (Exception e) { exception[0] = e; }
-            finally { done.countDown(); }
+            try {
+                result[0] = callable.call();
+            } catch (Exception e) {
+                exception[0] = e;
+            } finally {
+                done.countDown();
+            }
         });
         try {
             if (!done.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -146,7 +161,9 @@ public class GephiControlService {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while waiting for Gephi's UI thread");
         }
-        if (exception[0] != null) throw new RuntimeException(exception[0]);
+        if (exception[0] != null) {
+            throw new RuntimeException(exception[0]);
+        }
         return (T) result[0];
     }
 
@@ -194,11 +211,16 @@ public class GephiControlService {
         boolean acquired = false;
         try {
             java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock wl = writeLockHandle(g);
-            if (wl == null) { g.writeLock(); acquired = true; return; }
+            if (wl == null) {
+                g.writeLock();
+                acquired = true;
+                return;
+            }
             long deadline = System.nanoTime() + 15_000_000_000L;
             while (!wl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                if (System.nanoTime() > deadline)
+                if (System.nanoTime() > deadline) {
                     throw new RuntimeException("Graph is busy (renderer holds the lock); please retry");
+                }
                 Thread.sleep(5);
             }
             acquired = true;
@@ -211,7 +233,9 @@ public class GephiControlService {
             // HTTP connection with no response) must still surface as a normal API error.
             throw new RuntimeException("Could not acquire write lock: " + t, t);
         } finally {
-            if (!acquired) RenderPause.resume();
+            if (!acquired) {
+                RenderPause.resume();
+            }
         }
     }
 
@@ -245,13 +269,18 @@ public class GephiControlService {
      */
     static void lockRead(Graph g) {
         java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
-        if (rl == null) { g.readLock(); return; }
+        if (rl == null) {
+            g.readLock();
+            return;
+        }
         long deadline = System.nanoTime() + 10_000_000_000L;
         try {
             while (!rl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                if (System.nanoTime() > deadline)
+                if (System.nanoTime() > deadline) {
                     throw new RuntimeException(
-                        "Graph is busy (lock unavailable) — if this persists, Gephi is wedged; fully quit and reopen it");
+                        "Graph is busy (lock unavailable) — if this persists, Gephi is wedged; fully quit and "
+                            + "reopen it");
+                }
                 Thread.sleep(5);
             }
         } catch (InterruptedException e) {
@@ -264,7 +293,9 @@ public class GephiControlService {
     static java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock readLockHandle(Graph g) {
         try {
             org.gephi.graph.api.GraphLock lock = g.getLock();
-            if (lock == null) return null;
+            if (lock == null) {
+                return null;
+            }
             java.lang.reflect.Field f = READ_LOCK_FIELD;
             if (f == null || !f.getDeclaringClass().isInstance(lock)) {
                 f = lock.getClass().getDeclaredField("readLock");
@@ -283,7 +314,9 @@ public class GephiControlService {
     static java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock writeLockHandle(Graph g) {
         try {
             org.gephi.graph.api.GraphLock lock = g.getLock();
-            if (lock == null) return null;
+            if (lock == null) {
+                return null;
+            }
             java.lang.reflect.Field f = WRITE_LOCK_FIELD;
             if (f == null || !f.getDeclaringClass().isInstance(lock)) {
                 f = lock.getClass().getDeclaredField("writeLock");
@@ -301,8 +334,12 @@ public class GephiControlService {
     /** Find an edge between two nodes, checking all edge types (directed type 1 and undirected type 0). */
     static Edge findEdge(Graph g, Node source, Node target) {
         Edge e = g.getEdge(source, target, 1);  // directed
-        if (e == null) e = g.getEdge(source, target, 0);  // undirected
-        if (e == null) e = g.getEdge(source, target);  // default
+        if (e == null) {
+            e = g.getEdge(source, target, 0);  // undirected
+        }
+        if (e == null) {
+            e = g.getEdge(source, target);  // default
+        }
         return e;
     }
 
@@ -330,14 +367,20 @@ public class GephiControlService {
             names.add(b.getName());
         }
         int idx = bestLayoutMatch(names, algo);
-        if (idx < 0) return null;
+        if (idx < 0) {
+            return null;
+        }
         Layout layout = builders.get(idx).buildLayout();
-        if (layout == null) return null;
+        if (layout == null) {
+            return null;
+        }
         // Separate failure paths: a missing graph model must not skip the reset, which is
         // the part that actually keeps OpenOrd and Yifan Hu from running on zeros.
         try {
             GraphModel gm = currentGraphModel();
-            if (gm != null) layout.setGraphModel(gm);
+            if (gm != null) {
+                layout.setGraphModel(gm);
+            }
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "setGraphModel failed for layout: " + algo, e);
         }
@@ -358,18 +401,28 @@ public class GephiControlService {
      * static for unit testing without the layout registry.
      */
     static int bestLayoutMatch(java.util.List<String> names, String query) {
-        if (query == null) return -1;
+        if (query == null) {
+            return -1;
+        }
         String q = query.toLowerCase().trim();
         String qns = q.replace(" ", "");
-        if (qns.isEmpty()) return -1;
+        if (qns.isEmpty()) {
+            return -1;
+        }
         int substr = -1;
         for (int i = 0; i < names.size(); i++) {
             String name = names.get(i);
-            if (name == null) continue;
+            if (name == null) {
+                continue;
+            }
             String n = name.toLowerCase();
             String nns = n.replace(" ", "");
-            if (n.equals(q) || nns.equals(qns)) return i;
-            if (substr == -1 && (n.contains(q) || nns.contains(qns))) substr = i;
+            if (n.equals(q) || nns.equals(qns)) {
+                return i;
+            }
+            if (substr == -1 && (n.contains(q) || nns.contains(qns))) {
+                substr = i;
+            }
         }
         return substr;
     }
@@ -384,13 +437,17 @@ public class GephiControlService {
      */
     private void clearFilterQueriesBeforeClosing() {
         ProjectController pc = getProjectController();
-        if (!pc.hasCurrentProject()) return;
+        if (!pc.hasCurrentProject()) {
+            return;
+        }
         try {
             runOnEDT(() -> {
                 FilterController fc = Lookup.getDefault().lookup(FilterController.class);
                 org.gephi.filters.api.FilterModel fm = fc == null ? null : fc.getModel();
                 if (fm != null) {
-                    for (Query q : fm.getQueries()) fc.remove(q);
+                    for (Query q : fm.getQueries()) {
+                        fc.remove(q);
+                    }
                 }
                 return null;
             });
@@ -413,7 +470,9 @@ public class GephiControlService {
 
     public JsonObject openProject(String filePath) {
         File file = new File(filePath);
-        if (!file.exists()) return error("File not found: " + filePath);
+        if (!file.exists()) {
+            return error("File not found: " + filePath);
+        }
         try {
             ProjectController pc = getProjectController();
             // Close any open project FIRST. Opening a .gephi on top of an existing
@@ -424,7 +483,10 @@ public class GephiControlService {
             // File>Open closes first.
             if (pc.hasCurrentProject()) {
                 clearFilterQueriesBeforeClosing();
-                onProjectThread(() -> { pc.closeCurrentProject(); return null; });
+                onProjectThread(() -> {
+                    pc.closeCurrentProject();
+                    return null;
+                });
             }
             // openProject(File) off the EDT: it blocks on a LongTaskExecutor Future
             // whose completion needs a free EDT.
@@ -436,7 +498,8 @@ public class GephiControlService {
         return runOnEDT(() -> {
             JsonObject r = success("Project opened");
             Workspace cur = getProjectController().getCurrentWorkspace();
-            int nodes = 0, edges = 0;
+            int nodes = 0;
+            int edges = 0;
             if (cur != null) {
                 Graph g = getGraphController().getGraphModel(cur).getGraph();
                 nodes = g.getNodeCount();
@@ -444,7 +507,9 @@ public class GephiControlService {
             }
             r.addProperty("node_count", nodes);
             r.addProperty("edge_count", edges);
-            if (nodes == 0) r.addProperty("warning", "opened but no nodes are in the current workspace");
+            if (nodes == 0) {
+                r.addProperty("warning", "opened but no nodes are in the current workspace");
+            }
             return r;
         });
     }
@@ -458,12 +523,16 @@ public class GephiControlService {
         try {
             ProjectController pc = getProjectController();
             Project project = pc.getCurrentProject();
-            if (project == null) return error("No project open");
+            if (project == null) {
+                return error("No project open");
+            }
             File file = new File(filePath).getAbsoluteFile();
             // Checked first: a save that fails inside Gephi reports it in a dialog, which leaves
             // this call waiting until someone closes it.
             File dir = file.getParentFile();
-            if (dir == null || !dir.isDirectory()) return error("The folder " + dir + " does not exist");
+            if (dir == null || !dir.isDirectory()) {
+                return error("The folder " + dir + " does not exist");
+            }
             if (!dir.canWrite() || (file.exists() && !file.canWrite())) {
                 return error("Gephi cannot write to " + file.getPath());
             }
@@ -471,19 +540,27 @@ public class GephiControlService {
             long started = System.currentTimeMillis();
             pc.saveProject(project, file);
             String problem = savedFileProblem(file, before, started);
-            if (problem != null) return error(problem);
+            if (problem != null) {
+                return error(problem);
+            }
             JsonObject r = success("Project saved");
             r.addProperty("file", file.getPath());
             r.addProperty("bytes", file.length());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /** Null when {@code file} holds a fresh save, else what went wrong. */
     static String savedFileProblem(File file, long modifiedBefore, long started) {
         String hint = " Gephi may have shown an error; check that the folder exists and is writable.";
-        if (!file.isFile()) return "The project was not saved: " + file.getPath() + " was not written." + hint;
-        if (file.length() == 0) return "The project was not saved: " + file.getPath() + " is empty." + hint;
+        if (!file.isFile()) {
+            return "The project was not saved: " + file.getPath() + " was not written." + hint;
+        }
+        if (file.length() == 0) {
+            return "The project was not saved: " + file.getPath() + " is empty." + hint;
+        }
         // File times can be as coarse as two seconds, so only a file older than that counts as unchanged.
         if (modifiedBefore >= 0 && file.lastModified() == modifiedBefore && modifiedBefore < started - 2000) {
             return "The project was not saved: " + file.getPath() + " is unchanged." + hint;
@@ -518,20 +595,26 @@ public class GephiControlService {
         return onProjectThread(() -> {
             try {
                 ProjectController pc = getProjectController();
-                if (pc.getCurrentProject() == null) return error("No project open");
+                if (pc.getCurrentProject() == null) {
+                    return error("No project open");
+                }
                 Workspace ws = pc.newWorkspace(pc.getCurrentProject());
                 pc.openWorkspace(ws);
                 JsonObject r = success("Workspace created");
                 r.addProperty("workspace_id", ws.getId());
                 return r;
-            } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } catch (Exception e) {
+                return error("Failed: " + e.getMessage());
+            }
         });
     }
 
     public JsonObject listWorkspaces() {
         return runOnEDT(() -> {
             ProjectController pc = getProjectController();
-            if (pc.getCurrentProject() == null) return error("No project open");
+            if (pc.getCurrentProject() == null) {
+                return error("No project open");
+            }
             JsonArray arr = new JsonArray();
             Workspace current = pc.getCurrentWorkspace();
             for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
@@ -560,7 +643,9 @@ public class GephiControlService {
     public JsonObject switchWorkspace(int index) {
         return onProjectThread(() -> {
             ProjectController pc = getProjectController();
-            if (pc.getCurrentProject() == null) return error("No project open");
+            if (pc.getCurrentProject() == null) {
+                return error("No project open");
+            }
             int i = 0;
             for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 if (i == index) {
@@ -576,7 +661,9 @@ public class GephiControlService {
     public JsonObject deleteWorkspace(int index) {
         return onProjectThread(() -> {
             ProjectController pc = getProjectController();
-            if (pc.getCurrentProject() == null) return error("No project open");
+            if (pc.getCurrentProject() == null) {
+                return error("No project open");
+            }
             int i = 0;
             for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 if (i == index) {
@@ -592,7 +679,9 @@ public class GephiControlService {
     public JsonObject duplicateWorkspace(int index) {
         return onProjectThread(() -> {
             ProjectController pc = getProjectController();
-            if (pc.getCurrentProject() == null) return error("No project open");
+            if (pc.getCurrentProject() == null) {
+                return error("No project open");
+            }
             int i = 0;
             for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 if (i == index) {
@@ -602,7 +691,9 @@ public class GephiControlService {
                         JsonObject r = success("Workspace duplicated");
                         r.addProperty("workspace_id", copy.getId());
                         return r;
-                    } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+                    } catch (Exception e) {
+                        return error("Failed: " + e.getMessage());
+                    }
                 }
                 i++;
             }
@@ -613,14 +704,18 @@ public class GephiControlService {
     public JsonObject renameWorkspace(int index, String name) {
         return onProjectThread(() -> {
             ProjectController pc = getProjectController();
-            if (pc.getCurrentProject() == null) return error("No project open");
+            if (pc.getCurrentProject() == null) {
+                return error("No project open");
+            }
             int i = 0;
             for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 if (i == index) {
                     try {
                         pc.renameWorkspace(ws, name);
                         return success("Workspace renamed to: " + name);
-                    } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+                    } catch (Exception e) {
+                        return error("Failed: " + e.getMessage());
+                    }
                 }
                 i++;
             }
@@ -632,21 +727,28 @@ public class GephiControlService {
 
     public JsonObject addNode(String id, String label, Map<String, Object> attrs) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         return addNodeToModel(getGraphController().getGraphModel(ws), id, label, attrs);
     }
 
-    /** Core node-add against an explicit model. Package-private + static so it is testable with a standalone GraphModel. */
+    /**
+     * Core node-add against an explicit model. Package-private + static so it is testable with a standalone
+     * GraphModel.
+     */
     static JsonObject addNodeToModel(GraphModel gm, String id, String label, Map<String, Object> attrs) {
         try {
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                if (g.getNode(id) != null) return error("Node exists: " + id);
+                if (g.getNode(id) != null) {
+                    return error("Node exists: " + id);
+                }
                 Node n = gm.factory().newNode(id);
                 n.setLabel(label != null ? label : id);
-                n.setX((float)(Math.random() * 1000 - 500));
-                n.setY((float)(Math.random() * 1000 - 500));
+                n.setX((float) (Math.random() * 1000 - 500));
+                n.setY((float) (Math.random() * 1000 - 500));
                 n.setSize(10f);
                 if (attrs != null) {
                     for (Map.Entry<String, Object> e : attrs.entrySet()) {
@@ -657,13 +759,19 @@ public class GephiControlService {
                 JsonObject r = success("Node added");
                 r.addProperty("node_id", id);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject addNodes(List<Map<String, Object>> nodes) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         return addNodesToModel(getGraphController().getGraphModel(ws), nodes);
     }
 
@@ -671,17 +779,21 @@ public class GephiControlService {
     static JsonObject addNodesToModel(GraphModel gm, List<Map<String, Object>> nodes) {
         try {
             Graph g = gm.getGraph();
-            int added = 0, skipped = 0;
+            int added = 0;
+            int skipped = 0;
             lockWrite(g);
             try {
                 for (Map<String, Object> nd : nodes) {
                     String id = (String) nd.get("id");
-                    if (id == null || g.getNode(id) != null) { skipped++; continue; }
+                    if (id == null || g.getNode(id) != null) {
+                        skipped++;
+                        continue;
+                    }
                     String label = (String) nd.getOrDefault("label", id);
                     Node n = gm.factory().newNode(id);
                     n.setLabel(label);
-                    n.setX((float)(Math.random() * 1000 - 500));
-                    n.setY((float)(Math.random() * 1000 - 500));
+                    n.setX((float) (Math.random() * 1000 - 500));
+                    n.setY((float) (Math.random() * 1000 - 500));
                     n.setSize(10f);
                     g.addNode(n);
                     Object attrsObj = nd.get("attributes");
@@ -699,39 +811,57 @@ public class GephiControlService {
                 r.addProperty("added", added);
                 r.addProperty("skipped", skipped);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject removeNode(String id) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = getGraphController().getGraphModel(ws).getGraph();
             lockWrite(g);
             try {
                 Node n = g.getNode(id);
-                if (n == null) return error("Node not found: " + id);
+                if (n == null) {
+                    return error("Node not found: " + id);
+                }
                 int edgesRemoved = g.getDegree(n);
                 g.removeNode(n);
                 JsonObject r = success("Node removed");
                 r.addProperty("edges_removed", edgesRemoved);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject bulkRemoveNodes(List<String> ids) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = getGraphController().getGraphModel(ws).getGraph();
             lockWrite(g);
             try {
-                int removed = 0, notFound = 0;
+                int removed = 0;
+                int notFound = 0;
                 for (String id : ids) {
                     Node n = g.getNode(id);
-                    if (n == null) { notFound++; continue; }
+                    if (n == null) {
+                        notFound++;
+                        continue;
+                    }
                     g.removeNode(n);
                     removed++;
                 }
@@ -740,8 +870,12 @@ public class GephiControlService {
                 r.addProperty("removed", removed);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject queryNodes(String attr, String val, int limit, int offset) {
@@ -753,81 +887,13 @@ public class GephiControlService {
     }
 
     /**
-     * Items ordered by a value: numbers by size, anything else as text ignoring case. Items
-     * without a value always come last, so a sorted first page is the top of the graph.
-     */
-    static <T> List<T> sortByValue(List<T> items, java.util.function.Function<T, Object> value,
-                                   boolean descending) {
-        java.util.Comparator<Object> byValue = (a, b) -> {
-            if (a instanceof Number && b instanceof Number) {
-                return Double.compare(((Number) a).doubleValue(), ((Number) b).doubleValue());
-            }
-            return a.toString().compareToIgnoreCase(b.toString());
-        };
-        java.util.Comparator<Object> order = descending ? byValue.reversed() : byValue;
-        List<T> sorted = new java.util.ArrayList<>(items);
-        sorted.sort((x, y) -> {
-            Object a = value.apply(x), b = value.apply(y);
-            if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
-            return order.compare(a, b);
-        });
-        return sorted;
-    }
-
-    /** The requested attribute columns, lower-cased; null means every column. */
-    static java.util.Set<String> wantedColumns(String columns) {
-        if (columns == null || columns.isBlank()) return null;
-        java.util.Set<String> wanted = new java.util.HashSet<>();
-        for (String c : columns.split(",")) {
-            if (!c.isBlank()) wanted.add(c.trim().toLowerCase(java.util.Locale.ROOT));
-        }
-        return wanted.isEmpty() ? null : wanted;
-    }
-
-    static boolean isWanted(java.util.Set<String> wanted, String id, String title) {
-        return wanted == null || wanted.contains(id.toLowerCase(java.util.Locale.ROOT))
-            || (title != null && wanted.contains(title.toLowerCase(java.util.Locale.ROOT)));
-    }
-
-    /**
-     * Which nodes a value search keeps: {@code value} matches the whole value (text ignoring
-     * case, numbers by value), {@code contains} a part of the text, and {@code min} / {@code max}
-     * a numeric range. The column is found by id or by title. Null when no search was asked for.
-     */
-    static java.util.function.Predicate<Node> nodeMatcher(Column col, String value, String contains,
-                                                          Double min, Double max) {
-        if (value == null && contains == null && min == null && max == null) return null;
-        String needle = contains == null ? null : contains.toLowerCase(java.util.Locale.ROOT);
-        return n -> {
-            Object v = n.getAttribute(col);
-            if (v == null) return false;
-            if (value != null) {
-                if (v instanceof Number) {
-                    try {
-                        if (((Number) v).doubleValue() != Double.parseDouble(value.trim())) return false;
-                    } catch (NumberFormatException e) { return false; }
-                } else if (!v.toString().equalsIgnoreCase(value)) {
-                    return false;
-                }
-            }
-            if (needle != null && !v.toString().toLowerCase(java.util.Locale.ROOT).contains(needle)) return false;
-            if (min != null || max != null) {
-                if (!(v instanceof Number)) return false;
-                double d = ((Number) v).doubleValue();
-                if (min != null && d < min) return false;
-                if (max != null && d > max) return false;
-            }
-            return true;
-        };
-    }
-
-    /**
      * Lists nodes, optionally only those whose {@code column} matches a value search (see
      * nodeMatcher); {@code matches} then counts every match, not just the page returned.
+     *
      * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
      */
     public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
-                                 int limit, int offset, boolean visible) {
+        int limit, int offset, boolean visible) {
         return queryNodes(column, value, contains, min, max, limit, offset, visible, null, true, null);
     }
 
@@ -838,30 +904,40 @@ public class GephiControlService {
      * plus its id, label and degree, which keeps a long listing small.
      */
     public JsonObject queryNodes(String column, String value, String contains, Double min, Double max,
-                                 int limit, int offset, boolean visible, String sortBy,
-                                 boolean descending, String columns) {
+        int limit, int offset, boolean visible, String sortBy,
+        boolean descending, String columns) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = visible ? gm.getGraphVisible() : gm.getGraph();
             java.util.function.Predicate<Node> keep = null;
             if (value != null || contains != null || min != null || max != null) {
-                if (column == null) return error("Name the column to search with 'column'");
+                if (column == null) {
+                    return error("Name the column to search with 'column'");
+                }
                 Column col = findColumn(gm.getNodeTable(), column);
-                if (col == null) return error("Column not found: " + column);
+                if (col == null) {
+                    return error("Column not found: " + column);
+                }
                 keep = nodeMatcher(col, value, contains, min, max);
             }
             Column sortCol = null;
             if (sortBy != null && !"degree".equalsIgnoreCase(sortBy)) {
                 sortCol = findColumn(gm.getNodeTable(), sortBy);
-                if (sortCol == null) return error("Column not found for sort_by: " + sortBy);
+                if (sortCol == null) {
+                    return error("Column not found for sort_by: " + sortBy);
+                }
             }
             java.util.Set<String> wanted = wantedColumns(columns);
             lockRead(g);
             try {
                 JsonArray arr = new JsonArray();
-                int count = 0, skip = 0, matches = 0;
+                int count = 0;
+                int skip = 0;
+                int matches = 0;
                 // toArray, not the live iterable: breaking out of an auto-locked
                 // iterator before exhaustion leaks its read hold permanently.
                 List<Node> nodes = java.util.Arrays.asList(g.getNodes().toArray());
@@ -869,16 +945,22 @@ public class GephiControlService {
                     final Column sc = sortCol;
                     final Graph sg = g;
                     nodes = sortByValue(nodes, n -> sc == null ? (Object) sg.getDegree(n) : n.getAttribute(sc),
-                                        descending);
+                        descending);
                 }
                 for (Node n : nodes) {
                     if (keep != null) {
-                        if (!keep.test(n)) continue;
+                        if (!keep.test(n)) {
+                            continue;
+                        }
                         matches++;
                     }
-                    if (skip++ < offset) continue;
+                    if (skip++ < offset) {
+                        continue;
+                    }
                     if (count >= limit) {
-                        if (keep == null) break;
+                        if (keep == null) {
+                            break;
+                        }
                         continue;
                     }
                     JsonObject o = new JsonObject();
@@ -900,23 +982,35 @@ public class GephiControlService {
                     // Custom attributes: every one, or only those asked for
                     JsonObject attrs = new JsonObject();
                     for (Column col : gm.getNodeTable()) {
-                        if (col.isProperty()) continue; // skip built-in
-                        if (!isWanted(wanted, col.getId(), col.getTitle())) continue;
+                        if (col.isProperty()) {
+                            continue; // skip built-in
+                        }
+                        if (!isWanted(wanted, col.getId(), col.getTitle())) {
+                            continue;
+                        }
                         Object v = n.getAttribute(col);
                         if (v != null) {
-                            if (v instanceof Number) attrs.addProperty(col.getTitle(), (Number) v);
-                            else if (v instanceof Boolean) attrs.addProperty(col.getTitle(), (Boolean) v);
-                            else attrs.addProperty(col.getTitle(), v.toString());
+                            if (v instanceof Number) {
+                                attrs.addProperty(col.getTitle(), (Number) v);
+                            } else if (v instanceof Boolean) {
+                                attrs.addProperty(col.getTitle(), (Boolean) v);
+                            } else {
+                                attrs.addProperty(col.getTitle(), v.toString());
+                            }
                         }
                     }
-                    if (attrs.size() > 0) o.add("attributes", attrs);
+                    if (attrs.size() > 0) {
+                        o.add("attributes", attrs);
+                    }
                     arr.add(o);
                     count++;
                 }
                 JsonObject r = new JsonObject();
                 r.addProperty("success", true);
                 r.addProperty("total", g.getNodeCount());
-                if (keep != null) r.addProperty("matches", matches);
+                if (keep != null) {
+                    r.addProperty("matches", matches);
+                }
                 if (sortBy != null) {
                     r.addProperty("sorted_by", sortCol == null ? "degree" : sortCol.getTitle());
                     r.addProperty("descending", descending);
@@ -925,87 +1019,219 @@ public class GephiControlService {
                 addViewInfo(r, gm, visible);
                 r.add("nodes", arr);
                 return r;
-            } finally { g.readUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                g.readUnlock();
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Items ordered by a value: numbers by size, anything else as text ignoring case. Items
+     * without a value always come last, so a sorted first page is the top of the graph.
+     */
+    static <T> List<T> sortByValue(List<T> items, java.util.function.Function<T, Object> value,
+        boolean descending) {
+        java.util.Comparator<Object> byValue = (a, b) -> {
+            if (a instanceof Number && b instanceof Number) {
+                return Double.compare(((Number) a).doubleValue(), ((Number) b).doubleValue());
+            }
+            return a.toString().compareToIgnoreCase(b.toString());
+        };
+        java.util.Comparator<Object> order = descending ? byValue.reversed() : byValue;
+        List<T> sorted = new java.util.ArrayList<>(items);
+        sorted.sort((x, y) -> {
+            Object a = value.apply(x);
+            Object b = value.apply(y);
+            if (a == null || b == null) {
+                return a == null ? (b == null ? 0 : 1) : -1;
+            }
+            return order.compare(a, b);
+        });
+        return sorted;
+    }
+
+    /** The requested attribute columns, lower-cased; null means every column. */
+    static java.util.Set<String> wantedColumns(String columns) {
+        if (columns == null || columns.isBlank()) {
+            return null;
+        }
+        java.util.Set<String> wanted = new java.util.HashSet<>();
+        for (String c : columns.split(",")) {
+            if (!c.isBlank()) {
+                wanted.add(c.trim().toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        return wanted.isEmpty() ? null : wanted;
+    }
+
+    static boolean isWanted(java.util.Set<String> wanted, String id, String title) {
+        return wanted == null || wanted.contains(id.toLowerCase(java.util.Locale.ROOT))
+            || (title != null && wanted.contains(title.toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    /**
+     * Which nodes a value search keeps: {@code value} matches the whole value (text ignoring
+     * case, numbers by value), {@code contains} a part of the text, and {@code min} / {@code max}
+     * a numeric range. The column is found by id or by title. Null when no search was asked for.
+     */
+    static java.util.function.Predicate<Node> nodeMatcher(Column col, String value, String contains,
+        Double min, Double max) {
+        if (value == null && contains == null && min == null && max == null) {
+            return null;
+        }
+        String needle = contains == null ? null : contains.toLowerCase(java.util.Locale.ROOT);
+        return n -> {
+            Object v = n.getAttribute(col);
+            if (v == null) {
+                return false;
+            }
+            if (value != null) {
+                if (v instanceof Number) {
+                    try {
+                        if (((Number) v).doubleValue() != Double.parseDouble(value.trim())) {
+                            return false;
+                        }
+                    } catch (NumberFormatException e) {
+                        return false;
+                    }
+                } else if (!v.toString().equalsIgnoreCase(value)) {
+                    return false;
+                }
+            }
+            if (needle != null && !v.toString().toLowerCase(java.util.Locale.ROOT).contains(needle)) {
+                return false;
+            }
+            if (min != null || max != null) {
+                if (!(v instanceof Number)) {
+                    return false;
+                }
+                double d = ((Number) v).doubleValue();
+                if (min != null && d < min) {
+                    return false;
+                }
+                if (max != null && d > max) {
+                    return false;
+                }
+            }
+            return true;
+        };
     }
 
     public JsonObject getNode(String id) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
             Node n = g.getNode(id);
-            if (n == null) return error("Node not found: " + id);
+            if (n == null) {
+                return error("Node not found: " + id);
+            }
             JsonObject o = new JsonObject();
             o.addProperty("id", n.getId().toString());
             o.addProperty("label", n.getLabel());
             o.addProperty("x", n.x());
             o.addProperty("y", n.y());
             o.addProperty("size", n.size());
-            o.addProperty("r", (int)(n.r() * 255));
-            o.addProperty("g", (int)(n.g() * 255));
-            o.addProperty("b", (int)(n.b() * 255));
+            o.addProperty("r", (int) (n.r() * 255));
+            o.addProperty("g", (int) (n.g() * 255));
+            o.addProperty("b", (int) (n.b() * 255));
             JsonObject attrs = new JsonObject();
             for (Column col : gm.getNodeTable()) {
-                if (col.isProperty()) continue;
+                if (col.isProperty()) {
+                    continue;
+                }
                 Object v = n.getAttribute(col);
-                if (v == null) continue;
-                if (v instanceof Number) attrs.addProperty(col.getTitle(), (Number) v);
-                else if (v instanceof Boolean) attrs.addProperty(col.getTitle(), (Boolean) v);
-                else attrs.addProperty(col.getTitle(), v.toString());
+                if (v == null) {
+                    continue;
+                }
+                if (v instanceof Number) {
+                    attrs.addProperty(col.getTitle(), (Number) v);
+                } else if (v instanceof Boolean) {
+                    attrs.addProperty(col.getTitle(), (Boolean) v);
+                } else {
+                    attrs.addProperty(col.getTitle(), v.toString());
+                }
             }
             o.add("attributes", attrs);
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
             r.add("node", o);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodeLabel(String id, String label) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
                 Node n = g.getNode(id);
-                if (n == null) return error("Node not found: " + id);
+                if (n == null) {
+                    return error("Node not found: " + id);
+                }
                 n.setLabel(label);
                 return success("Label set");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodePosition(String id, float x, float y) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
                 Node n = g.getNode(id);
-                if (n == null) return error("Node not found: " + id);
+                if (n == null) {
+                    return error("Node not found: " + id);
+                }
                 n.setX(x);
                 n.setY(y);
                 return success("Position set");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject batchSetPositions(List<Map<String, Object>> positions) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                int set = 0, notFound = 0;
+                int set = 0;
+                int notFound = 0;
                 for (Map<String, Object> pos : positions) {
                     String id = (String) pos.get("id");
                     Node n = g.getNode(id);
-                    if (n == null) { notFound++; continue; }
+                    if (n == null) {
+                        notFound++;
+                        continue;
+                    }
                     n.setX(((Number) pos.get("x")).floatValue());
                     n.setY(((Number) pos.get("y")).floatValue());
                     set++;
@@ -1015,8 +1241,12 @@ public class GephiControlService {
                 r.addProperty("set", set);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Edge Operations ─────────────────────────────────────────────
@@ -1027,7 +1257,9 @@ public class GephiControlService {
 
     public JsonObject addEdge(String src, String tgt, Double weight, boolean directed, String edgeType) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         return addEdgeToModel(getGraphController().getGraphModel(ws), src, tgt, weight, directed, edgeType);
     }
 
@@ -1045,31 +1277,46 @@ public class GephiControlService {
      * AND a "coauthor" edge at once, while a second "cites" A→B is still blocked.
      */
     static JsonObject addEdgeToModel(GraphModel gm, String src, String tgt, Double weight,
-                                     boolean directed, String edgeType) {
+        boolean directed, String edgeType) {
         try {
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(src), t = g.getNode(tgt);
-                if (s == null) return error("Source not found: " + src);
-                if (t == null) return error("Target not found: " + tgt);
+                Node s = g.getNode(src);
+                Node t = g.getNode(tgt);
+                if (s == null) {
+                    return error("Source not found: " + src);
+                }
+                if (t == null) {
+                    return error("Target not found: " + tgt);
+                }
                 double w = weight != null ? weight : 1.0;
                 if (edgeType != null && !edgeType.isEmpty()) {
                     int typeId = gm.addEdgeType(edgeType);
-                    if (g.getEdge(s, t, typeId) != null) return error("Edge of type '" + edgeType + "' exists");
+                    if (g.getEdge(s, t, typeId) != null) {
+                        return error("Edge of type '" + edgeType + "' exists");
+                    }
                     g.addEdge(gm.factory().newEdge(s, t, typeId, w, directed));
                 } else {
-                    if (findEdge(g, s, t) != null) return error("Edge exists");
+                    if (findEdge(g, s, t) != null) {
+                        return error("Edge exists");
+                    }
                     g.addEdge(gm.factory().newEdge(s, t, directed ? 1 : 0, w, directed));
                 }
                 return success("Edge added");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject addEdges(List<Map<String, Object>> edges) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         return addEdgesToModel(getGraphController().getGraphModel(ws), edges);
     }
 
@@ -1077,15 +1324,23 @@ public class GephiControlService {
     static JsonObject addEdgesToModel(GraphModel gm, List<Map<String, Object>> edges) {
         try {
             Graph g = gm.getGraph();
-            int added = 0, skipped = 0;
+            int added = 0;
+            int skipped = 0;
             lockWrite(g);
             try {
                 for (Map<String, Object> ed : edges) {
                     String src = (String) ed.get("source");
                     String tgt = (String) ed.get("target");
-                    if (src == null || tgt == null) { skipped++; continue; }
-                    Node s = g.getNode(src), t = g.getNode(tgt);
-                    if (s == null || t == null) { skipped++; continue; }
+                    if (src == null || tgt == null) {
+                        skipped++;
+                        continue;
+                    }
+                    Node s = g.getNode(src);
+                    Node t = g.getNode(tgt);
+                    if (s == null || t == null) {
+                        skipped++;
+                        continue;
+                    }
                     Double w = ed.containsKey("weight") ? ((Number) ed.get("weight")).doubleValue() : 1.0;
                     boolean directed = !ed.containsKey("directed") || Boolean.TRUE.equals(ed.get("directed"));
                     Object edgeTypeObj = ed.get("edge_type");
@@ -1093,14 +1348,22 @@ public class GephiControlService {
                     int type;
                     if (edgeType != null && !edgeType.isEmpty()) {
                         type = gm.addEdgeType(edgeType);
-                        if (g.getEdge(s, t, type) != null) { skipped++; continue; }
+                        if (g.getEdge(s, t, type) != null) {
+                            skipped++;
+                            continue;
+                        }
                     } else {
-                        if (findEdge(g, s, t) != null) { skipped++; continue; }
+                        if (findEdge(g, s, t) != null) {
+                            skipped++;
+                            continue;
+                        }
                         type = directed ? 1 : 0;
                     }
                     Edge e = gm.factory().newEdge(s, t, type, w, directed);
                     Object label = ed.get("label");
-                    if (label != null) e.setLabel(label.toString());
+                    if (label != null) {
+                        e.setLabel(label.toString());
+                    }
                     g.addEdge(e);
                     Object attrsObj = ed.get("attributes");
                     if (attrsObj instanceof Map) {
@@ -1117,87 +1380,135 @@ public class GephiControlService {
                 r.addProperty("added", added);
                 r.addProperty("skipped", skipped);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject removeEdge(String source, String target) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source), t = g.getNode(target);
-                if (s == null || t == null) return error("Node not found");
+                Node s = g.getNode(source);
+                Node t = g.getNode(target);
+                if (s == null || t == null) {
+                    return error("Node not found");
+                }
                 Edge e = findEdge(g, s, t);
-                if (e == null) return error("Edge not found");
+                if (e == null) {
+                    return error("Edge not found");
+                }
                 g.removeEdge(e);
                 return success("Edge removed");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeWeight(String source, String target, double weight) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source), t = g.getNode(target);
-                if (s == null || t == null) return error("Node not found");
+                Node s = g.getNode(source);
+                Node t = g.getNode(target);
+                if (s == null || t == null) {
+                    return error("Node not found");
+                }
                 Edge e = findEdge(g, s, t);
-                if (e == null) return error("Edge not found");
+                if (e == null) {
+                    return error("Edge not found");
+                }
                 e.setWeight(weight);
                 return success("Weight set to " + weight);
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeLabel(String source, String target, String label) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source), t = g.getNode(target);
-                if (s == null || t == null) return error("Node not found");
+                Node s = g.getNode(source);
+                Node t = g.getNode(target);
+                if (s == null || t == null) {
+                    return error("Node not found");
+                }
                 Edge e = findEdge(g, s, t);
-                if (e == null) return error("Edge not found");
+                if (e == null) {
+                    return error("Edge not found");
+                }
                 e.setLabel(label);
                 return success("Edge label set");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject queryEdges(int limit, int offset) {
         return queryEdges(limit, offset, false);
     }
 
-    /** @param visible read the filtered visible graph instead of the full graph (see addViewInfo). */
+    /**
+     * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
+     */
     public JsonObject queryEdges(int limit, int offset, boolean visible) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = visible ? gm.getGraphVisible() : gm.getGraph();
             lockRead(g);
             try {
                 JsonArray arr = new JsonArray();
-                int count = 0, skip = 0;
+                int count = 0;
+                int skip = 0;
                 // toArray, not the live iterable: breaking out of an auto-locked
                 // iterator before exhaustion leaks its read hold permanently.
                 for (Edge e : g.getEdges().toArray()) {
-                    if (skip++ < offset) continue;
-                    if (count >= limit) break;
+                    if (skip++ < offset) {
+                        continue;
+                    }
+                    if (count >= limit) {
+                        break;
+                    }
                     JsonObject o = new JsonObject();
                     o.addProperty("source", e.getSource().getId().toString());
                     o.addProperty("target", e.getTarget().getId().toString());
                     o.addProperty("weight", e.getWeight());
                     o.addProperty("directed", e.isDirected());
-                    if (e.getLabel() != null) o.addProperty("label", e.getLabel());
+                    if (e.getLabel() != null) {
+                        o.addProperty("label", e.getLabel());
+                    }
                     Color c = e.getColor();
                     if (c != null) {
                         o.addProperty("r", c.getRed());
@@ -1207,15 +1518,23 @@ public class GephiControlService {
                     // Include custom attributes
                     JsonObject attrs = new JsonObject();
                     for (Column col : gm.getEdgeTable()) {
-                        if (col.isProperty()) continue;
+                        if (col.isProperty()) {
+                            continue;
+                        }
                         Object v = e.getAttribute(col);
                         if (v != null) {
-                            if (v instanceof Number) attrs.addProperty(col.getTitle(), (Number) v);
-                            else if (v instanceof Boolean) attrs.addProperty(col.getTitle(), (Boolean) v);
-                            else attrs.addProperty(col.getTitle(), v.toString());
+                            if (v instanceof Number) {
+                                attrs.addProperty(col.getTitle(), (Number) v);
+                            } else if (v instanceof Boolean) {
+                                attrs.addProperty(col.getTitle(), (Boolean) v);
+                            } else {
+                                attrs.addProperty(col.getTitle(), v.toString());
+                            }
                         }
                     }
-                    if (attrs.size() > 0) o.add("attributes", attrs);
+                    if (attrs.size() > 0) {
+                        o.add("attributes", attrs);
+                    }
                     arr.add(o);
                     count++;
                 }
@@ -1226,8 +1545,12 @@ public class GephiControlService {
                 addViewInfo(r, gm, visible);
                 r.add("edges", arr);
                 return r;
-            } finally { g.readUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                g.readUnlock();
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Graph Stats ─────────────────────────────────────────────────
@@ -1264,16 +1587,21 @@ public class GephiControlService {
         return getGraphStats(false);
     }
 
-    /** @param visible read the filtered visible graph instead of the full graph (see addViewInfo). */
+    /**
+     * @param visible read the filtered visible graph instead of the full graph (see addViewInfo).
+     */
     public JsonObject getGraphStats(boolean visible) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = visible ? gm.getGraphVisible() : gm.getGraph();
             lockRead(g);
             try {
-                int nc = g.getNodeCount(), ec = g.getEdgeCount();
+                int nc = g.getNodeCount();
+                int ec = g.getEdgeCount();
                 double density = nc > 1 ? (2.0 * ec) / (nc * (nc - 1)) : 0;
                 double avgDeg = nc > 0 ? (2.0 * ec) / nc : 0;
                 JsonObject r = new JsonObject();
@@ -1285,8 +1613,12 @@ public class GephiControlService {
                 r.addProperty("is_directed", gm.isDirected());
                 addViewInfo(r, gm, visible);
                 return r;
-            } finally { g.readUnlock(); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                g.readUnlock();
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Graph Type ──────────────────────────────────────────────────
@@ -1294,7 +1626,9 @@ public class GephiControlService {
     public JsonObject getGraphType() {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
@@ -1302,7 +1636,9 @@ public class GephiControlService {
             r.addProperty("undirected", gm.isUndirected());
             r.addProperty("mixed", gm.isMixed());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Attribute / Column Management ───────────────────────────────
@@ -1310,7 +1646,9 @@ public class GephiControlService {
     public JsonObject getColumns(String target) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
             Table table = "edge".equalsIgnoreCase(target) ? gm.getEdgeTable() : gm.getNodeTable();
             JsonArray arr = new JsonArray();
@@ -1327,12 +1665,16 @@ public class GephiControlService {
             r.addProperty("target", target);
             r.add("columns", arr);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject addColumn(String name, String type, String target) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         return addColumnToModel(currentGraphModel(), name, type, target);
     }
 
@@ -1346,49 +1688,71 @@ public class GephiControlService {
         try {
             Table table = "edge".equalsIgnoreCase(target) ? gm.getEdgeTable() : gm.getNodeTable();
             Class<?> cls = typeStringToClass(type);
-            if (cls == null) return error("Unknown type: " + type + ". Use: string, integer, double, float, boolean, long");
+            if (cls == null) {
+                return error("Unknown type: " + type + ". Use: string, integer, double, float, boolean, long");
+            }
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
                 Column existing = findColumn(table, name);
-                if (existing != null) return error("Column already exists: " + existing.getTitle() + " (id " + existing.getId() + ")");
+                if (existing != null) {
+                    return error("Column already exists: " + existing.getTitle() + " (id " + existing.getId() + ")");
+                }
                 table.addColumn(name, cls);
-            } finally { unlockWrite(g); }
+            } finally {
+                unlockWrite(g);
+            }
             return success("Column '" + name + "' added");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodeAttributes(String id, Map<String, Object> attrs) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
                 Node n = g.getNode(id);
-                if (n == null) return error("Node not found: " + id);
+                if (n == null) {
+                    return error("Node not found: " + id);
+                }
                 for (Map.Entry<String, Object> e : attrs.entrySet()) {
                     ensureColumnAndSet(gm.getNodeTable(), n, e.getKey(), e.getValue());
                 }
                 return success("Attributes set on node " + id);
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject batchSetNodeAttributes(List<Map<String, Object>> updates) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                int set = 0, notFound = 0;
+                int set = 0;
+                int notFound = 0;
                 for (Map<String, Object> update : updates) {
                     String id = (String) update.get("id");
                     Node n = g.getNode(id);
-                    if (n == null) { notFound++; continue; }
+                    if (n == null) {
+                        notFound++;
+                        continue;
+                    }
                     @SuppressWarnings("unchecked")
                     Map<String, Object> attrs = (Map<String, Object>) update.get("attributes");
                     if (attrs != null) {
@@ -1403,28 +1767,43 @@ public class GephiControlService {
                 r.addProperty("set", set);
                 r.addProperty("not_found", notFound);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeAttributes(String source, String target, Map<String, Object> attrs) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source), t = g.getNode(target);
-                if (s == null || t == null) return error("Node not found");
+                Node s = g.getNode(source);
+                Node t = g.getNode(target);
+                if (s == null || t == null) {
+                    return error("Node not found");
+                }
                 Edge e = findEdge(g, s, t);
-                if (e == null) return error("Edge not found");
+                if (e == null) {
+                    return error("Edge not found");
+                }
                 for (Map.Entry<String, Object> entry : attrs.entrySet()) {
                     ensureColumnAndSet(gm.getEdgeTable(), e, entry.getKey(), entry.getValue());
                 }
                 return success("Attributes set on edge");
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     static void ensureColumnAndSet(Table table, Object element, String key, Object value) {
@@ -1432,10 +1811,15 @@ public class GephiControlService {
         if (col == null) {
             Class<?> cls = String.class;
             if (value instanceof Number) {
-                if (value instanceof Integer) cls = Integer.class;
-                else if (value instanceof Long) cls = Long.class;
-                else if (value instanceof Float) cls = Float.class;
-                else cls = Double.class;
+                if (value instanceof Integer) {
+                    cls = Integer.class;
+                } else if (value instanceof Long) {
+                    cls = Long.class;
+                } else if (value instanceof Float) {
+                    cls = Float.class;
+                } else {
+                    cls = Double.class;
+                }
             } else if (value instanceof Boolean) {
                 cls = Boolean.class;
             }
@@ -1443,34 +1827,63 @@ public class GephiControlService {
         }
         // Convert value to column type
         Object converted = convertToColumnType(value, col.getTypeClass());
-        if (element instanceof Node) ((Node) element).setAttribute(col, converted);
-        else if (element instanceof Edge) ((Edge) element).setAttribute(col, converted);
+        if (element instanceof Node) {
+            ((Node) element).setAttribute(col, converted);
+        } else if (element instanceof Edge) {
+            ((Edge) element).setAttribute(col, converted);
+        }
     }
 
     static Object convertToColumnType(Object value, Class<?> targetType) {
-        if (value == null) return null;
-        if (targetType.isInstance(value)) return value;
+        if (value == null) {
+            return null;
+        }
+        if (targetType.isInstance(value)) {
+            return value;
+        }
         String s = value.toString();
         try {
-            if (targetType == Integer.class) return (int) Double.parseDouble(s);
-            if (targetType == Long.class) return (long) Double.parseDouble(s);
-            if (targetType == Float.class) return (float) Double.parseDouble(s);
-            if (targetType == Double.class) return Double.parseDouble(s);
-            if (targetType == Boolean.class) return Boolean.parseBoolean(s);
-        } catch (Exception e) { /* fall through */ }
+            if (targetType == Integer.class) {
+                return (int) Double.parseDouble(s);
+            }
+            if (targetType == Long.class) {
+                return (long) Double.parseDouble(s);
+            }
+            if (targetType == Float.class) {
+                return (float) Double.parseDouble(s);
+            }
+            if (targetType == Double.class) {
+                return Double.parseDouble(s);
+            }
+            if (targetType == Boolean.class) {
+                return Boolean.parseBoolean(s);
+            }
+        } catch (Exception e) { /* fall through */
+        }
         return s;
     }
 
     static Class<?> typeStringToClass(String type) {
-        if (type == null) return null;
+        if (type == null) {
+            return null;
+        }
         switch (type.toLowerCase()) {
-            case "string": return String.class;
-            case "integer": case "int": return Integer.class;
-            case "double": return Double.class;
-            case "float": return Float.class;
-            case "boolean": case "bool": return Boolean.class;
-            case "long": return Long.class;
-            default: return null;
+            case "string":
+                return String.class;
+            case "integer":
+            case "int":
+                return Integer.class;
+            case "double":
+                return Double.class;
+            case "float":
+                return Float.class;
+            case "boolean":
+            case "bool":
+                return Boolean.class;
+            case "long":
+                return Long.class;
+            default:
+                return null;
         }
     }
 
@@ -1487,25 +1900,37 @@ public class GephiControlService {
     public JsonObject setNodeColor(String id, int r, int g, int b, int a) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph graph = currentGraphModel().getGraph();
             Node n = graph.getNode(id);
-            if (n == null) return error("Node not found: " + id);
+            if (n == null) {
+                return error("Node not found: " + id);
+            }
             n.setColor(new Color(r, g, b, a));
             return success("Node color set");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setNodeSize(String id, float size) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph graph = currentGraphModel().getGraph();
             Node n = graph.getNode(id);
-            if (n == null) return error("Node not found: " + id);
+            if (n == null) {
+                return error("Node not found: " + id);
+            }
             n.setSize(size);
             return success("Node size set to " + size);
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /*
@@ -1521,31 +1946,48 @@ public class GephiControlService {
 
     public JsonObject setEdgeColor(String source, String target, int r, int g, int b, int a) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             Graph graph = currentGraphModel().getGraph();
             lockWrite(graph);
             try {
-                Node s = graph.getNode(source), t = graph.getNode(target);
-                if (s == null || t == null) return error("Node not found");
+                Node s = graph.getNode(source);
+                Node t = graph.getNode(target);
+                if (s == null || t == null) {
+                    return error("Node not found");
+                }
                 Edge e = findEdge(graph, s, t);
-                if (e == null) return error("Edge not found");
+                if (e == null) {
+                    return error("Edge not found");
+                }
                 e.setColor(new Color(r, g, b, a));
                 return success("Edge color set");
-            } finally { unlockWrite(graph); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(graph);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject batchSetNodeColors(List<Map<String, Object>> nodeColors) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Graph graph = currentGraphModel().getGraph();
-            int set = 0, notFound = 0;
+            int set = 0;
+            int notFound = 0;
             for (Map<String, Object> nc : nodeColors) {
                 String id = (String) nc.get("id");
                 Node n = graph.getNode(id);
-                if (n == null) { notFound++; continue; }
+                if (n == null) {
+                    notFound++;
+                    continue;
+                }
                 int r = ((Number) nc.get("r")).intValue();
                 int g = ((Number) nc.get("g")).intValue();
                 int b = ((Number) nc.get("b")).intValue();
@@ -1558,12 +2000,16 @@ public class GephiControlService {
             res.addProperty("set", set);
             res.addProperty("not_found", notFound);
             return res;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject resetAppearance(int r, int g, int b, float size) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             Graph graph = currentGraphModel().getGraph();
             Color defaultColor = new Color(r, g, b);
@@ -1574,7 +2020,9 @@ public class GephiControlService {
                 n.setSize(size);
             }
             return success("Appearance reset for all nodes");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Appearance: Color/Size by Attribute ─────────────────────────
@@ -1584,18 +2032,26 @@ public class GephiControlService {
      * Imported files often give columns internal ids such as "0" with a readable title.
      */
     static Column findColumn(org.gephi.graph.api.Table table, String name) {
-        if (table == null || name == null) return null;
+        if (table == null || name == null) {
+            return null;
+        }
         Column byId = table.getColumn(name);
-        if (byId != null) return byId;
+        if (byId != null) {
+            return byId;
+        }
         // Search a copy: iterating the table itself locks it until the loop runs to the end, so
         // returning from inside the loop would leave the table locked and wedge Gephi.
         for (Column c : table.toArray()) {
-            if (name.equalsIgnoreCase(c.getId()) || name.equalsIgnoreCase(c.getTitle())) return c;
+            if (name.equalsIgnoreCase(c.getId()) || name.equalsIgnoreCase(c.getTitle())) {
+                return c;
+            }
         }
         return null;
     }
 
-    private static int clamp255(int v) { return Math.max(0, Math.min(255, v)); }
+    private static int clamp255(int v) {
+        return Math.max(0, Math.min(255, v));
+    }
 
     /**
      * Give a partition the exact colours Gephi AI applied, matched by the value's text as the
@@ -1603,7 +2059,7 @@ public class GephiControlService {
      * many values were set.
      */
     static int applyPaletteToPartition(org.gephi.appearance.api.Partition partition, Graph graph,
-                                       Map<String, Color> palette) {
+        Map<String, Color> palette) {
         int set = 0;
         for (Object value : partition.getValues(graph)) {
             Color c = palette.get(String.valueOf(value));
@@ -1622,22 +2078,26 @@ public class GephiControlService {
         try {
             int n = 0;
             for (org.gephi.graph.api.Element e : edges ? visible.getEdges().toArray() : visible.getNodes().toArray()) {
-                if (counts.test(e.getAttribute(col))) n++;
+                if (counts.test(e.getAttribute(col))) {
+                    n++;
+                }
             }
             return n;
-        } finally { visible.readUnlock(); }
+        } finally {
+            visible.readUnlock();
+        }
     }
 
     /** A two-stop colour ranking from the minimum colour to the maximum, as Gephi AI applies it. */
     static void configureRankingColor(org.gephi.appearance.plugin.RankingElementColorTransformer t,
-                                      Color min, Color max) {
+        Color min, Color max) {
         t.setColors(new Color[]{min, max});
         t.setColorPositions(new float[]{0f, 1f});
     }
 
     /** A size ranking from the minimum size to the maximum, as Gephi AI applies it. */
     static void configureRankingSize(org.gephi.appearance.plugin.RankingSizeTransformer<?> t,
-                                     float min, float max) {
+        float min, float max) {
         t.setMinSize(min);
         t.setMaxSize(max);
     }
@@ -1650,15 +2110,19 @@ public class GephiControlService {
      * such function for the column.
      */
     private org.gephi.appearance.api.Function applyAppearance(Workspace ws, Column col, boolean edges,
-            Class<? extends org.gephi.appearance.spi.Transformer> transformer,
-            java.util.function.Consumer<org.gephi.appearance.api.Function> configure) {
+        Class<? extends org.gephi.appearance.spi.Transformer> transformer,
+        java.util.function.Consumer<org.gephi.appearance.api.Function> configure) {
         org.gephi.appearance.api.AppearanceController ac =
             Lookup.getDefault().lookup(org.gephi.appearance.api.AppearanceController.class);
         org.gephi.appearance.api.AppearanceModel am = ac == null ? null : ac.getModel(ws);
-        if (am == null) return null;
+        if (am == null) {
+            return null;
+        }
         org.gephi.appearance.api.Function f = edges
             ? am.getEdgeFunction(col, transformer) : am.getNodeFunction(col, transformer);
-        if (f == null) return null;
+        if (f == null) {
+            return null;
+        }
         ac.setUseRankingLocalScale(false);
         ac.setUsePartitionLocalScale(false);
         configure.accept(f);
@@ -1680,7 +2144,9 @@ public class GephiControlService {
         try {
             org.gephi.desktop.appearance.AppearanceUIController ui =
                 Lookup.getDefault().lookup(org.gephi.desktop.appearance.AppearanceUIController.class);
-            if (ui == null) return "Gephi's Appearance panel is not available";
+            if (ui == null) {
+                return "Gephi's Appearance panel is not available";
+            }
             onEdt(() -> {
                 ui.setSelectedElementClass("nodes");
                 ui.setSelectedCategory(f.getUI().getCategory());
@@ -1700,7 +2166,9 @@ public class GephiControlService {
     /** Record in a response whether Gephi's Appearance panel now shows what was applied. */
     private static void reportPanel(JsonObject r, String problem) {
         r.addProperty("appearance_panel", problem == null);
-        if (problem != null) r.addProperty("appearance_panel_note", problem);
+        if (problem != null) {
+            r.addProperty("appearance_panel_note", problem);
+        }
     }
 
     /**
@@ -1735,7 +2203,9 @@ public class GephiControlService {
     }
 
     static Color paletteColor(int i) {
-        if (i < BASE_PALETTE.length) return BASE_PALETTE[i];
+        if (i < BASE_PALETTE.length) {
+            return BASE_PALETTE[i];
+        }
         int k = i - BASE_PALETTE.length;
         float hue = (float) ((0.13 + k * 0.618033988749895) % 1.0);
         float saturation = new float[] {0.55f, 0.85f, 0.40f}[k % 3];
@@ -1757,12 +2227,16 @@ public class GephiControlService {
 
     public JsonObject colorByPartition(String columnName, Map<String, int[]> colorMap) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             GraphModel gm = currentGraphModel();
             Graph graph = gm.getGraph();
             Column col = findColumn(gm.getNodeTable(), columnName);
-            if (col == null) return error("Column not found: " + columnName);
+            if (col == null) {
+                return error("Column not found: " + columnName);
+            }
 
             // Collect distinct values
             java.util.Map<String, Color> palette = new java.util.LinkedHashMap<>();
@@ -1775,7 +2249,9 @@ public class GephiControlService {
                 java.util.Map<String, Integer> counts = new java.util.HashMap<>();
                 for (Node n : graph.getNodes().toArray()) {
                     Object v = n.getAttribute(col);
-                    if (v != null) counts.merge(v.toString(), 1, Integer::sum);
+                    if (v != null) {
+                        counts.merge(v.toString(), 1, Integer::sum);
+                    }
                 }
                 palette.putAll(partitionPalette(counts));
             }
@@ -1783,8 +2259,10 @@ public class GephiControlService {
             org.gephi.appearance.api.Function f = applyAppearance(ws, col, false,
                 org.gephi.appearance.plugin.PartitionElementColorTransformer.class,
                 fn -> applyPaletteToPartition(((org.gephi.appearance.api.PartitionFunction) fn).getPartition(),
-                                              fn.getGraph(), palette));
-            if (f == null) return noAppearanceFunction("partition colouring", col);
+                    fn.getGraph(), palette));
+            if (f == null) {
+                return noAppearanceFunction("partition colouring", col);
+            }
             int colored = countVisible(gm, false, v -> v != null && palette.containsKey(v.toString()), col);
             JsonObject r = success("Colored " + colored + " nodes by " + columnName);
             r.addProperty("partitions", palette.size());
@@ -1792,7 +2270,9 @@ public class GephiControlService {
             addViewInfo(r, gm, true);
             reportPanel(r, showInAppearancePanel(f));
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -1802,18 +2282,25 @@ public class GephiControlService {
      * positive double) silently broke that case. Package-private + static for unit testing.
      */
     static double[] numericRange(Graph g, Column col) {
-        double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
         lockRead(g);
         try {
             for (Node n : g.getNodes().toArray()) {
                 Object v = n.getAttribute(col);
                 if (v instanceof Number) {
                     double d = ((Number) v).doubleValue();
-                    if (d < min) min = d;
-                    if (d > max) max = d;
+                    if (d < min) {
+                        min = d;
+                    }
+                    if (d > max) {
+                        max = d;
+                    }
                 }
             }
-        } finally { g.readUnlock(); }
+        } finally {
+            g.readUnlock();
+        }
         return min == Double.POSITIVE_INFINITY ? null : new double[]{min, max};
     }
 
@@ -1845,23 +2332,32 @@ public class GephiControlService {
             + " via the statistics tools) or check the columns list");
     }
 
-    public JsonObject colorByRanking(String columnName, int rMin, int gMin, int bMin, int rMax, int gMax, int bMax) {
+    public JsonObject colorByRanking(String columnName, int minRed, int minGreen, int minBlue, int maxRed,
+        int maxGreen, int maxBlue) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             GraphModel gm = currentGraphModel();
             Graph graph = gm.getGraph();
             Column col = resolveRankingColumn(gm, columnName);
-            if (col == null) return columnNotFound(columnName);
+            if (col == null) {
+                return columnNotFound(columnName);
+            }
 
             double[] mm = numericRange(graph, col);
-            if (mm == null) return error("No numeric values in column " + columnName);
-            final Color low = new Color(clamp255(rMin), clamp255(gMin), clamp255(bMin));
-            final Color high = new Color(clamp255(rMax), clamp255(gMax), clamp255(bMax));
+            if (mm == null) {
+                return error("No numeric values in column " + columnName);
+            }
+            final Color low = new Color(clamp255(minRed), clamp255(minGreen), clamp255(minBlue));
+            final Color high = new Color(clamp255(maxRed), clamp255(maxGreen), clamp255(maxBlue));
             org.gephi.appearance.api.Function f = applyAppearance(ws, col, false,
                 org.gephi.appearance.plugin.RankingElementColorTransformer.class,
                 fn -> configureRankingColor(fn.getTransformer(), low, high));
-            if (f == null) return noAppearanceFunction("colour ranking", col);
+            if (f == null) {
+                return noAppearanceFunction("colour ranking", col);
+            }
             int colored = countVisible(gm, false, v -> v instanceof Number, col);
             JsonObject res = success("Colored " + colored + " nodes by ranking on " + columnName);
             res.addProperty("min_value", mm[0]);
@@ -1869,7 +2365,9 @@ public class GephiControlService {
             addViewInfo(res, gm, true);
             reportPanel(res, showInAppearancePanel(f));
             return res;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -1880,7 +2378,9 @@ public class GephiControlService {
     static float rankedSize(double v, double min, double max, Double cap, float minSize, float maxSize) {
         double top = cap != null && cap < max ? cap : max;
         double range = top - min;
-        if (range <= 0) range = 1;
+        if (range <= 0) {
+            range = 1;
+        }
         double t = Math.min(1.0, Math.max(0.0, (v - min) / range));
         return (float) (minSize + t * (maxSize - minSize));
     }
@@ -1891,23 +2391,32 @@ public class GephiControlService {
 
     public JsonObject sizeByRanking(String columnName, float minSize, float maxSize, Double cap) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             GraphModel gm = currentGraphModel();
             Graph graph = gm.getGraph();
             Column col = resolveRankingColumn(gm, columnName);
-            if (col == null) return columnNotFound(columnName);
+            if (col == null) {
+                return columnNotFound(columnName);
+            }
 
             double[] mm = numericRange(graph, col);
-            if (mm == null) return error("No numeric values in column " + columnName);
-            double min = mm[0], max = mm[1];
+            if (mm == null) {
+                return error("No numeric values in column " + columnName);
+            }
+            double min = mm[0];
+            double max = mm[1];
             boolean capped = cap != null && cap < max;
 
             if (!capped) {
                 org.gephi.appearance.api.Function f = applyAppearance(ws, col, false,
                     org.gephi.appearance.plugin.RankingNodeSizeTransformer.class,
                     fn -> configureRankingSize(fn.getTransformer(), minSize, maxSize));
-                if (f == null) return noAppearanceFunction("size ranking", col);
+                if (f == null) {
+                    return noAppearanceFunction("size ranking", col);
+                }
                 int sized = countVisible(gm, false, v -> v instanceof Number, col);
                 JsonObject res = success("Sized " + sized + " nodes by " + columnName);
                 res.addProperty("min_value", min);
@@ -1918,7 +2427,8 @@ public class GephiControlService {
             }
 
             // Gephi's size ranking has no cap, so a capped ranking is applied here directly.
-            int sized = 0, atCap = 0;
+            int sized = 0;
+            int atCap = 0;
             lockWrite(graph);
             try {
                 for (Node n : graph.getNodes().toArray()) {
@@ -1926,11 +2436,15 @@ public class GephiControlService {
                     if (v instanceof Number) {
                         double value = ((Number) v).doubleValue();
                         n.setSize(rankedSize(value, min, max, cap, minSize, maxSize));
-                        if (capped && value >= cap) atCap++;
+                        if (capped && value >= cap) {
+                            atCap++;
+                        }
                         sized++;
                     }
                 }
-            } finally { unlockWrite(graph); }
+            } finally {
+                unlockWrite(graph);
+            }
             JsonObject res = success("Sized " + sized + " nodes by " + columnName);
             res.addProperty("min_value", min);
             res.addProperty("max_value", max);
@@ -1940,7 +2454,9 @@ public class GephiControlService {
             reportPanel(res, "Gephi's Appearance panel has no cap, so it was left as it was;"
                 + " reapplying the ranking there would undo the cap.");
             return res;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Layout ──────────────────────────────────────────────────────
@@ -1952,10 +2468,14 @@ public class GephiControlService {
     public JsonObject runLayout(String algo, int iterations, Map<String, Object> properties) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = getGraphController().getGraphModel(ws);
             Layout layout = findLayout(algo);
-            if (layout == null) return error("Layout not found: " + algo);
+            if (layout == null) {
+                return error("Layout not found: " + algo);
+            }
             layout.setGraphModel(gm);
             // Apply inline properties, or config staged earlier by setLayoutProperties.
             if (properties == null && pendingLayoutProps != null && algo.equals(pendingLayoutAlgo)) {
@@ -1964,10 +2484,14 @@ public class GephiControlService {
             pendingLayoutProps = null;
             pendingLayoutAlgo = null;
             org.gephi.layout.api.LayoutController lc = layoutController();
-            if (lc == null) return error("Gephi's layout controller is not available");
-            if (lc.getModel().isRunning()) return error("Layout already running");
+            if (lc == null) {
+                return error("Gephi's layout controller is not available");
+            }
+            if (lc.getModel().isRunning()) {
+                return error("Layout already running");
+            }
             final int panelIters = iterations > 0 ? iterations : 1000;
-            java.util.List<String> unapplied =
+            final java.util.List<String> unapplied =
                 startLayoutThroughController(lc, layout, properties, panelIters, this::onEdt);
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
@@ -1975,12 +2499,16 @@ public class GephiControlService {
             r.addProperty("status", "running");
             reportUnapplied(r, unapplied, algo);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject stopLayout() {
         org.gephi.layout.api.LayoutController lc = layoutController();
-        if (lc == null || !lc.getModel().isRunning()) return success("No layout running");
+        if (lc == null || !lc.getModel().isRunning()) {
+            return success("No layout running");
+        }
         lc.stopLayout();
         return success("Layout stopped");
     }
@@ -2013,23 +2541,32 @@ public class GephiControlService {
     public JsonObject getLayoutProperties(String algo) {
         try {
             Layout layout = findLayout(algo);
-            if (layout == null) return error("Layout not found: " + algo);
+            if (layout == null) {
+                return error("Layout not found: " + algo);
+            }
             // Need a graph model for the layout to report properties
             Workspace ws = currentWorkspace();
-            if (ws != null) layout.setGraphModel(currentGraphModel());
+            if (ws != null) {
+                layout.setGraphModel(currentGraphModel());
+            }
 
             JsonArray arr = new JsonArray();
             LayoutProperty[] props = layout.getProperties();
             if (props != null) {
                 for (LayoutProperty prop : props) {
                     JsonObject o = new JsonObject();
-                    o.addProperty("name", prop.getCanonicalName() != null ? prop.getCanonicalName() : prop.getProperty().getDisplayName());
+                    o.addProperty("name", prop.getCanonicalName() != null ? prop.getCanonicalName()
+                        : prop.getProperty().getDisplayName());
                     o.addProperty("display_name", prop.getProperty().getDisplayName());
                     o.addProperty("type", prop.getProperty().getValueType().getSimpleName());
                     Object val = prop.getProperty().getValue();
-                    if (val != null) o.addProperty("value", val.toString());
+                    if (val != null) {
+                        o.addProperty("value", val.toString());
+                    }
                     String desc = prop.getProperty().getShortDescription();
-                    if (desc != null) o.addProperty("description", desc);
+                    if (desc != null) {
+                        o.addProperty("description", desc);
+                    }
                     arr.add(o);
                 }
             }
@@ -2038,10 +2575,11 @@ public class GephiControlService {
             r.addProperty("algorithm", algo);
             r.add("properties", arr);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
-    /** Match each Layout property against a caller-supplied key map and set it. */
     /**
      * Apply layout properties by canonical key, display name or full canonical name (any case).
      * Returns the keys that matched no property, in the order given, so a misspelled setting is
@@ -2049,7 +2587,9 @@ public class GephiControlService {
      */
     static java.util.List<String> applyLayoutProperties(Layout layout, Map<String, Object> properties) {
         java.util.List<String> unapplied = new java.util.ArrayList<>();
-        if (properties == null) return unapplied;
+        if (properties == null) {
+            return unapplied;
+        }
         java.util.Set<String> matched = new java.util.HashSet<>();
         LayoutProperty[] props = layout.getProperties();
         if (props == null) {
@@ -2063,36 +2603,51 @@ public class GephiControlService {
             String canonicalKey = "";
             if (!canonicalName.isEmpty()) {
                 String[] parts = canonicalName.split("\\.");
-                if (parts.length >= 3) canonicalKey = parts[parts.length - 2];
+                if (parts.length >= 3) {
+                    canonicalKey = parts[parts.length - 2];
+                }
             }
             Object val = null;
             for (Map.Entry<String, Object> e : properties.entrySet()) {
                 String k = e.getKey();
                 if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
-                        || k.equalsIgnoreCase(displayName)
-                        || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
+                    || k.equalsIgnoreCase(displayName)
+                    || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
                     matched.add(k);
-                    if (val == null) val = e.getValue();
+                    if (val == null) {
+                        val = e.getValue();
+                    }
                 }
             }
             if (val != null) {
                 Class<?> type = prop.getProperty().getValueType();
                 Object converted = convertLayoutProperty(val, type);
                 if (converted != null) {
-                    try { prop.getProperty().setValue(converted); }
-                    catch (Exception e) { LOGGER.log(Level.WARNING, "Set layout property failed", e); }
+                    try {
+                        prop.getProperty().setValue(converted);
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING, "Set layout property failed", e);
+                    }
                 }
             }
         }
-        for (String k : properties.keySet()) if (!matched.contains(k)) unapplied.add(k);
+        for (String k : properties.keySet()) {
+            if (!matched.contains(k)) {
+                unapplied.add(k);
+            }
+        }
         return unapplied;
     }
 
     /** Adds unapplied_params and a warning to a layout response when any key matched nothing. */
     private static void reportUnapplied(JsonObject r, java.util.List<String> unapplied, String algo) {
-        if (unapplied == null || unapplied.isEmpty()) return;
+        if (unapplied == null || unapplied.isEmpty()) {
+            return;
+        }
         JsonArray ua = new JsonArray();
-        for (String k : unapplied) ua.add(k);
+        for (String k : unapplied) {
+            ua.add(k);
+        }
         r.add("unapplied_params", ua);
         r.addProperty("warning", "These settings match no property of " + algo
             + " and were NOT applied: " + unapplied + ". Check the names with gephi_get_layout_properties.");
@@ -2108,11 +2663,15 @@ public class GephiControlService {
     public JsonObject setLayoutProperties(String algo, Map<String, Object> properties, int iterations) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             Layout layout = findLayout(algo);
-            if (layout == null) return error("Layout not found: " + algo);
+            if (layout == null) {
+                return error("Layout not found: " + algo);
+            }
             layout.setGraphModel(currentGraphModel());
-            java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
+            final java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
             pendingLayoutProps = properties;
             pendingLayoutAlgo = algo;
             JsonObject r = new JsonObject();
@@ -2123,20 +2682,37 @@ public class GephiControlService {
             r.addProperty("note", "properties staged; the next run_layout of this algorithm applies them");
             reportUnapplied(r, unapplied, algo);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     static Object convertLayoutProperty(Object val, Class<?> type) {
-        if (val == null) return null;
+        if (val == null) {
+            return null;
+        }
         String s = val.toString();
         try {
-            if (type == Boolean.class || type == boolean.class) return Boolean.parseBoolean(s);
-            if (type == Integer.class || type == int.class) return (int) Double.parseDouble(s);
-            if (type == Double.class || type == double.class) return Double.parseDouble(s);
-            if (type == Float.class || type == float.class) return (float) Double.parseDouble(s);
-            if (type == Long.class || type == long.class) return (long) Double.parseDouble(s);
-            if (type == String.class) return s;
-        } catch (Exception e) { /* fall through */ }
+            if (type == Boolean.class || type == boolean.class) {
+                return Boolean.parseBoolean(s);
+            }
+            if (type == Integer.class || type == int.class) {
+                return (int) Double.parseDouble(s);
+            }
+            if (type == Double.class || type == double.class) {
+                return Double.parseDouble(s);
+            }
+            if (type == Float.class || type == float.class) {
+                return (float) Double.parseDouble(s);
+            }
+            if (type == Long.class || type == long.class) {
+                return (long) Double.parseDouble(s);
+            }
+            if (type == String.class) {
+                return s;
+            }
+        } catch (Exception e) { /* fall through */
+        }
         return null;
     }
 
@@ -2154,7 +2730,8 @@ public class GephiControlService {
             o.addProperty("name", sb.getName());
             try {
                 o.addProperty("id", sb.getStatistics().getClass().getSimpleName());
-            } catch (Throwable t) { /* name alone is enough */ }
+            } catch (Throwable t) { /* name alone is enough */
+            }
             arr.add(o);
         }
         JsonObject r = new JsonObject();
@@ -2170,18 +2747,42 @@ public class GephiControlService {
 
     private static final org.gephi.utils.progress.ProgressTicket NOOP_TICKET =
         new org.gephi.utils.progress.ProgressTicket() {
-            public void finish() {}
-            public void finish(String s) {}
-            public void progress() {}
-            public void progress(int i) {}
-            public void progress(String s) {}
-            public void progress(String s, int i) {}
-            public String getDisplayName() { return "MCP statistic"; }
-            public void setDisplayName(String s) {}
-            public void start() {}
-            public void start(int i) {}
-            public void switchToDeterminate(int i) {}
-            public void switchToIndeterminate() {}
+            public void finish() {
+            }
+
+            public void finish(String s) {
+            }
+
+            public void progress() {
+            }
+
+            public void progress(int i) {
+            }
+
+            public void progress(String s) {
+            }
+
+            public void progress(String s, int i) {
+            }
+
+            public String getDisplayName() {
+                return "MCP statistic";
+            }
+
+            public void setDisplayName(String s) {
+            }
+
+            public void start() {
+            }
+
+            public void start(int i) {
+            }
+
+            public void switchToDeterminate(int i) {
+            }
+
+            public void switchToIndeterminate() {
+            }
         };
 
     /** Cancels statistics that overrun their deadline. One daemon thread serves every run. */
@@ -2199,7 +2800,7 @@ public class GephiControlService {
      * ends the run and releases the graph lock it holds.
      */
     static boolean runWithDeadline(Runnable work, org.gephi.utils.longtask.spi.LongTask task,
-                                   long timeoutMs) {
+        long timeoutMs) {
         if (timeoutMs <= 0) {
             work.run();
             return false;
@@ -2227,7 +2828,9 @@ public class GephiControlService {
     }
 
     static String dynamicStatisticProblem(Statistics stat, GraphModel gm) {
-        if (!(stat instanceof org.gephi.statistics.spi.DynamicStatistics) || gm == null) return null;
+        if (!(stat instanceof org.gephi.statistics.spi.DynamicStatistics) || gm == null) {
+            return null;
+        }
         org.gephi.graph.api.Interval bounds = gm.isDynamic() ? gm.getTimeBounds() : null;
         if (bounds == null || Double.isInfinite(bounds.getLow()) || Double.isInfinite(bounds.getHigh())) {
             return "This is a dynamic statistic and needs a network with time data (timestamps or"
@@ -2255,12 +2858,6 @@ public class GephiControlService {
     /** After a deadline cancels a statistic, how long to wait for it to actually stop. */
     static final long STATISTIC_STOP_GRACE_MS = 30_000;
 
-    /**
-     * Run a statistic through Gephi's Statistics panel when the desktop interface is present, so
-     * the panel shows it running, its result and its report, as if the user had clicked Run.
-     * Without the panel (headless, tests) the statistic runs directly. Returns true when the
-     * deadline stopped it; throws when Gephi reports a failure or the run never finishes.
-     */
     /** Statistics running now, by the name Gephi shows for them, so a stop request can reach them. */
     static final Map<Statistics, String> RUNNING_STATISTICS = new java.util.concurrent.ConcurrentHashMap<>();
     /** Statistics stopped by request, so their run is reported as stopped rather than finished. */
@@ -2287,17 +2884,25 @@ public class GephiControlService {
             : stopped.size() > 0 ? "Stopped " + stopped.size() + " statistic(s)"
             : "The running statistic cannot be stopped; it will finish on its own");
         r.add("stopped", stopped);
-        if (unstoppable.size() > 0) r.add("cannot_stop", unstoppable);
+        if (unstoppable.size() > 0) {
+            r.add("cannot_stop", unstoppable);
+        }
         return r;
     }
 
+    /**
+     * Run a statistic through Gephi's Statistics panel when the desktop interface is present, so
+     * the panel shows it running, its result and its report, as if the user had clicked Run.
+     * Without the panel (headless, tests) the statistic runs directly. Returns true when the
+     * deadline stopped it; throws when Gephi reports a failure or the run never finishes.
+     */
     static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
-                                    org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
-                                    java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
+        org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
+        java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
         if (panel == null) {
             if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
                 return runWithDeadline(() -> stat.execute(gm),
-                                       (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
+                    (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
             }
             stat.execute(gm);
             return false;
@@ -2334,7 +2939,9 @@ public class GephiControlService {
                     + " not finished; restart Gephi if it keeps running.");
             }
         }
-        if (failure.get() != null) throw new RuntimeException(failure.get());
+        if (failure.get() != null) {
+            throw new RuntimeException(failure.get());
+        }
         return stopped;
     }
 
@@ -2346,9 +2953,9 @@ public class GephiControlService {
      * setting names that matched no property.
      */
     static java.util.List<String> startLayoutThroughController(org.gephi.layout.api.LayoutController lc,
-                                                          Layout layout, Map<String, Object> properties,
-                                                          int iterations,
-                                                          java.util.function.Consumer<Runnable> onEdt) {
+        Layout layout, Map<String, Object> properties,
+        int iterations,
+        java.util.function.Consumer<Runnable> onEdt) {
         java.util.List<String> unapplied = new java.util.ArrayList<>();
         onEdt.accept(() -> {
             lc.setLayout(layout);
@@ -2380,15 +2987,18 @@ public class GephiControlService {
     private JsonObject runStatistic(String builderName, Map<String, Object> params) {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
-            GraphModel gm = currentGraphModel();
+            if (ws == null) {
+                return error("No project open");
+            }
+            final GraphModel gm = currentGraphModel();
 
             // Find statistics builder by name
             StatisticsBuilder matchedBuilder = null;
             for (StatisticsBuilder sb : Lookup.getDefault().lookupAll(StatisticsBuilder.class)) {
                 String name = sb.getName();
                 LOGGER.fine("MCP: Found StatisticsBuilder: " + name + " (" + sb.getClass().getName() + ")");
-                if (name.equalsIgnoreCase(builderName) || sb.getClass().getSimpleName().toLowerCase().contains(builderName.toLowerCase())) {
+                if (name.equalsIgnoreCase(builderName)
+                    || sb.getClass().getSimpleName().toLowerCase().contains(builderName.toLowerCase())) {
                     matchedBuilder = sb;
                     break;
                 }
@@ -2402,10 +3012,13 @@ public class GephiControlService {
                             matchedBuilder = sb;
                             break;
                         }
-                    } catch (Exception e) { /* skip */ }
+                    } catch (Exception e) { /* skip */
+                    }
                 }
             }
-            if (matchedBuilder == null) return error("Statistics not found: " + builderName);
+            if (matchedBuilder == null) {
+                return error("Statistics not found: " + builderName);
+            }
 
             Statistics stat = matchedBuilder.getStatistics();
 
@@ -2420,7 +3033,9 @@ public class GephiControlService {
             }
             if (params != null) {
                 for (Map.Entry<String, Object> e : params.entrySet()) {
-                    if (!setViaReflection(stat, e.getKey(), e.getValue())) unappliedParams.add(e.getKey());
+                    if (!setViaReflection(stat, e.getKey(), e.getValue())) {
+                        unappliedParams.add(e.getKey());
+                    }
                 }
             }
 
@@ -2433,7 +3048,9 @@ public class GephiControlService {
 
             // Execute, stopping it at the deadline when one was given
             String dynamicProblem = dynamicStatisticProblem(stat, gm);
-            if (dynamicProblem != null) return error(dynamicProblem);
+            if (dynamicProblem != null) {
+                return error(dynamicProblem);
+            }
             boolean stopped;
             boolean stoppedOnRequest;
             RUNNING_STATISTICS.put(stat, matchedBuilder.getName());
@@ -2456,8 +3073,8 @@ public class GephiControlService {
                 JsonObject r = error(matchedBuilder.getName() + " did not finish within "
                     + (timeoutMs / 1000) + " s and was stopped; its column was not updated."
                     + ("Modularity".equals(builderName)
-                        ? " Gephi's modularity occasionally never converges (gephi#1630);"
-                          + " running it again usually finishes normally." : ""));
+                    ? " Gephi's modularity occasionally never converges (gephi#1630);"
+                    + " running it again usually finishes normally." : ""));
                 r.addProperty("stopped", true);
                 return r;
             }
@@ -2468,7 +3085,9 @@ public class GephiControlService {
             r.addProperty("statistic", matchedBuilder.getName());
             if (!unappliedParams.isEmpty()) {
                 JsonArray ua = new JsonArray();
-                for (String k : unappliedParams) ua.add(k);
+                for (String k : unappliedParams) {
+                    ua.add(k);
+                }
                 r.add("unapplied_params", ua);
                 r.addProperty("warning", "Parameters matched no setter or field on "
                     + stat.getClass().getSimpleName() + " and were NOT applied: " + unappliedParams);
@@ -2486,7 +3105,9 @@ public class GephiControlService {
             // rounded; its use is a headline for statistics with no getter above, such as
             // those from other Gephi plugins.
             String shown = panelResult(stat, Lookup.getDefault().lookupAll(StatisticsUI.class));
-            if (shown != null) r.addProperty("panel_result", shown);
+            if (shown != null) {
+                r.addProperty("panel_result", shown);
+            }
 
             // Get the report
             try {
@@ -2495,7 +3116,8 @@ public class GephiControlService {
                     r.addProperty("report_available", true);
                     r.addProperty("report_html", report);
                 }
-            } catch (Exception e) { /* no report */ }
+            } catch (Exception e) { /* no report */
+            }
 
             return r;
         } catch (Exception e) {
@@ -2517,7 +3139,9 @@ public class GephiControlService {
                 if (m.getName().equals(methodName) && m.getParameterCount() == 1) {
                     Class<?> paramType = m.getParameterTypes()[0];
                     Object converted = convertStatValue(value, paramType);
-                    if (converted == null) return false;  // name matched, value did not convert
+                    if (converted == null) {
+                        return false;  // name matched, value did not convert
+                    }
                     m.invoke(obj, converted);
                     return true;
                 }
@@ -2528,7 +3152,9 @@ public class GephiControlService {
                 for (java.lang.reflect.Field f : c.getDeclaredFields()) {
                     if (f.getName().equalsIgnoreCase(setter)) {
                         Object converted = convertStatValue(value, f.getType());
-                        if (converted == null) return false;
+                        if (converted == null) {
+                            return false;
+                        }
                         f.setAccessible(true);
                         f.set(obj, converted);
                         return true;
@@ -2546,7 +3172,9 @@ public class GephiControlService {
         if (val != null && type.isEnum()) {
             String want = val.toString();
             for (Object ec : type.getEnumConstants()) {
-                if (ec.toString().equalsIgnoreCase(want)) return ec;
+                if (ec.toString().equalsIgnoreCase(want)) {
+                    return ec;
+                }
             }
             return null;
         }
@@ -2560,7 +3188,9 @@ public class GephiControlService {
      */
     static String panelResult(Statistics stat, java.util.Collection<? extends StatisticsUI> uis) {
         for (StatisticsUI ui : uis) {
-            if (!stat.getClass().equals(ui.getStatisticsClass())) continue;
+            if (!stat.getClass().equals(ui.getStatisticsClass())) {
+                continue;
+            }
             try {
                 String shown = ui.getValue(stat);
                 return shown == null || shown.isBlank() ? null : shown.trim();
@@ -2576,11 +3206,17 @@ public class GephiControlService {
         try {
             java.lang.reflect.Method m = obj.getClass().getMethod(getter);
             Object val = m.invoke(obj);
-            if (val instanceof Number) r.addProperty(jsonKey, (Number) val);
-            else if (val instanceof Boolean) r.addProperty(jsonKey, (Boolean) val);
-            else if (val != null) r.addProperty(jsonKey, val.toString());
-        } catch (NoSuchMethodException e) { /* method not available for this statistic */ }
-        catch (Exception e) { LOGGER.fine("Could not get " + getter + ": " + e.getMessage()); }
+            if (val instanceof Number) {
+                r.addProperty(jsonKey, (Number) val);
+            } else if (val instanceof Boolean) {
+                r.addProperty(jsonKey, (Boolean) val);
+            } else if (val != null) {
+                r.addProperty(jsonKey, val.toString());
+            }
+        } catch (NoSuchMethodException e) { /* method not available for this statistic */
+        } catch (Exception e) {
+            LOGGER.fine("Could not get " + getter + ": " + e.getMessage());
+        }
     }
 
     public JsonObject computeModularity(double resolution) {
@@ -2590,7 +3226,9 @@ public class GephiControlService {
     public JsonObject computeModularity(double resolution, long timeoutMs) {
         java.util.Map<String, Object> params = new java.util.HashMap<>();
         params.put("resolution", resolution);
-        if (timeoutMs > 0) params.put("timeout_ms", timeoutMs);
+        if (timeoutMs > 0) {
+            params.put("timeout_ms", timeoutMs);
+        }
         params.put("useWeight", false);
         return runStatistic("Modularity", params);
     }
@@ -2633,7 +3271,9 @@ public class GephiControlService {
 
     public JsonObject filterByDegreeRange(int minDegree, int maxDegree, boolean dryRun) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             Graph g = currentGraphModel().getGraph();
             Node[] allNodes = g.getNodes().toArray();
@@ -2652,18 +3292,27 @@ public class GephiControlService {
                 return r;
             }
             lockWrite(g);
-            try { for (Node n : toRemove) g.removeNode(n); }
-            finally { unlockWrite(g); }
+            try {
+                for (Node n : toRemove) {
+                    g.removeNode(n);
+                }
+            } finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Filtered by degree [" + minDegree + ", " + maxDegree + "]");
             r.addProperty("removed", toRemove.size());
             r.addProperty("remaining_nodes", g.getNodeCount());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject filterByEdgeWeight(double minWeight, double maxWeight, boolean dryRun) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             Graph g = currentGraphModel().getGraph();
             Edge[] allEdges = g.getEdges().toArray();
@@ -2682,24 +3331,35 @@ public class GephiControlService {
                 return r;
             }
             lockWrite(g);
-            try { for (Edge e : toRemove) g.removeEdge(e); }
-            finally { unlockWrite(g); }
+            try {
+                for (Edge e : toRemove) {
+                    g.removeEdge(e);
+                }
+            } finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Filtered edges by weight [" + minWeight + ", " + maxWeight + "]");
             r.addProperty("removed", toRemove.size());
             r.addProperty("remaining_edges", g.getEdgeCount());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Preview Settings ────────────────────────────────────────────
 
     public JsonObject getPreviewSettings() {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
             PreviewModel pm = pc.getModel(ws);
-            if (pm == null) return error("Preview model not available");
+            if (pm == null) {
+                return error("Preview model not available");
+            }
 
             JsonObject settings = new JsonObject();
             // Get commonly used properties
@@ -2709,39 +3369,56 @@ public class GephiControlService {
                 if (val != null) {
                     if (val instanceof Color) {
                         Color c = (Color) val;
-                        settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                        settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                            c.getBlue()));
                     } else if (val instanceof Number) {
                         settings.addProperty(name, (Number) val);
                     } else if (val instanceof Boolean) {
                         settings.addProperty(name, (Boolean) val);
                     } else if (val instanceof java.awt.Font) {
                         java.awt.Font f = (java.awt.Font) val;
-                        String style = f.isBold() && f.isItalic() ? "BoldItalic" : f.isBold() ? "Bold" : f.isItalic() ? "Italic" : "Plain";
+                        String style = f.isBold() && f.isItalic() ? "BoldItalic" : f.isBold() ? "Bold"
+                            : f.isItalic() ? "Italic" : "Plain";
                         settings.addProperty(name, f.getFamily() + " " + f.getSize() + " " + style);
                     } else if (val instanceof EdgeColor) {
                         EdgeColor ec = (EdgeColor) val;
-                        if (ec.getMode() == EdgeColor.Mode.ORIGINAL) settings.addProperty(name, "original");
-                        else if (ec.getMode() == EdgeColor.Mode.MIXED) settings.addProperty(name, "mixed");
-                        else if (ec.getCustomColor() != null) {
+                        if (ec.getMode() == EdgeColor.Mode.ORIGINAL) {
+                            settings.addProperty(name, "original");
+                        } else if (ec.getMode() == EdgeColor.Mode.MIXED) {
+                            settings.addProperty(name, "mixed");
+                        } else if (ec.getCustomColor() != null) {
                             Color c = ec.getCustomColor();
-                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
-                        } else settings.addProperty(name, ec.getMode().toString().toLowerCase());
+                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                                c.getBlue()));
+                        } else {
+                            settings.addProperty(name, ec.getMode().toString().toLowerCase());
+                        }
                     } else if (val instanceof DependantColor) {
                         DependantColor dc = (DependantColor) val;
-                        if (dc.getMode() == DependantColor.Mode.PARENT) settings.addProperty(name, "parent");
-                        else if (dc.getMode() == DependantColor.Mode.DARKER) settings.addProperty(name, "darker");
-                        else if (dc.getCustomColor() != null) {
+                        if (dc.getMode() == DependantColor.Mode.PARENT) {
+                            settings.addProperty(name, "parent");
+                        } else if (dc.getMode() == DependantColor.Mode.DARKER) {
+                            settings.addProperty(name, "darker");
+                        } else if (dc.getCustomColor() != null) {
                             Color c = dc.getCustomColor();
-                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
-                        } else settings.addProperty(name, "parent");
+                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                                c.getBlue()));
+                        } else {
+                            settings.addProperty(name, "parent");
+                        }
                     } else if (val instanceof DependantOriginalColor) {
                         DependantOriginalColor doc = (DependantOriginalColor) val;
-                        if (doc.getMode() == DependantOriginalColor.Mode.ORIGINAL) settings.addProperty(name, "original");
-                        else if (doc.getMode() == DependantOriginalColor.Mode.PARENT) settings.addProperty(name, "parent");
-                        else if (doc.getCustomColor() != null) {
+                        if (doc.getMode() == DependantOriginalColor.Mode.ORIGINAL) {
+                            settings.addProperty(name, "original");
+                        } else if (doc.getMode() == DependantOriginalColor.Mode.PARENT) {
+                            settings.addProperty(name, "parent");
+                        } else if (doc.getCustomColor() != null) {
                             Color c = doc.getCustomColor();
-                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
-                        } else settings.addProperty(name, "original");
+                            settings.addProperty(name, String.format("#%02x%02x%02x", c.getRed(), c.getGreen(),
+                                c.getBlue()));
+                        } else {
+                            settings.addProperty(name, "original");
+                        }
                     } else {
                         settings.addProperty(name, val.toString());
                     }
@@ -2753,9 +3430,12 @@ public class GephiControlService {
                 Object bgVal = pm.getProperties().getValue("background.color");
                 if (bgVal instanceof Color) {
                     Color c = (Color) bgVal;
-                    settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()));
+                    settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(),
+                        c.getGreen(), c.getBlue()));
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // No background colour in these settings: it is left out.
+            }
 
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
@@ -2768,28 +3448,36 @@ public class GephiControlService {
 
     public JsonObject setPreviewSettings(Map<String, Object> settings) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
             PreviewModel pm = pc.getModel(ws);
-            if (pm == null) return error("Preview model not available");
+            if (pm == null) {
+                return error("Preview model not available");
+            }
 
             int set = 0;
             for (Map.Entry<String, Object> e : settings.entrySet()) {
                 String key = e.getKey();
                 Object val = e.getValue();
-                if (val == null) continue;  // Skip null values to avoid corrupting preview model
+                if (val == null) {
+                    continue;  // Skip null values to avoid corrupting preview model
 
-                // Background color: set on the preview model under Gephi's canonical key
-                // (PreviewProperty.BACKGROUND_COLOR) so the Preview panel, the renderers,
-                // and exportPng's export-time read all share one source of truth. The old
-                // cached exportBackgroundColor field was process-wide sticky state: once
-                // set it tinted every later export in every workspace and project, even
-                // after the user changed the background in Gephi's own Preview panel.
+                    // Background color: set on the preview model under Gephi's canonical key
+                    // (PreviewProperty.BACKGROUND_COLOR) so the Preview panel, the renderers,
+                    // and exportPng's export-time read all share one source of truth. The old
+                    // cached exportBackgroundColor field was process-wide sticky state: once
+                    // set it tinted every later export in every workspace and project, even
+                    // after the user changed the background in Gephi's own Preview panel.
+                }
                 if ("background.color".equalsIgnoreCase(key) || "backgroundColor".equalsIgnoreCase(key)) {
                     try {
                         String hex = val.toString().trim();
-                        if (hex.startsWith("#")) hex = hex.substring(1);
+                        if (hex.startsWith("#")) {
+                            hex = hex.substring(1);
+                        }
                         Color bgColor = new Color(Integer.parseInt(hex, 16));
                         PreviewProperty bgProp = pm.getProperties().getProperty(PreviewProperty.BACKGROUND_COLOR);
                         if (bgProp != null) {
@@ -2818,9 +3506,14 @@ public class GephiControlService {
                     Object coerced = val;
                     if (val instanceof String) {
                         String sv = ((String) val).trim();
-                        if (sv.equalsIgnoreCase("true") || sv.equalsIgnoreCase("false")) coerced = Boolean.parseBoolean(sv);
-                        else {
-                            try { coerced = Float.parseFloat(sv); } catch (NumberFormatException ignore) { }
+                        if (sv.equalsIgnoreCase("true") || sv.equalsIgnoreCase("false")) {
+                            coerced = Boolean.parseBoolean(sv);
+                        } else {
+                            try {
+                                coerced = Float.parseFloat(sv);
+                            } catch (NumberFormatException ignore) {
+                                // Not a number: the text is kept as given.
+                            }
                         }
                     } else if (val instanceof Number) {
                         coerced = ((Number) val).floatValue();
@@ -2837,7 +3530,9 @@ public class GephiControlService {
                     try {
                         if (type == Color.class && val instanceof String) {
                             String hex = (String) val;
-                            if (hex.startsWith("#")) hex = hex.substring(1);
+                            if (hex.startsWith("#")) {
+                                hex = hex.substring(1);
+                            }
                             prop.setValue(new Color(Integer.parseInt(hex, 16)));
                         } else if (type == Boolean.class || type == boolean.class) {
                             prop.setValue(Boolean.parseBoolean(val.toString()));
@@ -2854,15 +3549,25 @@ public class GephiControlService {
                             int fontStyle = java.awt.Font.PLAIN;
                             int numStart = -1;
                             for (int ci = 0; ci < fontStr.length(); ci++) {
-                                if (Character.isDigit(fontStr.charAt(ci))) { numStart = ci; break; }
+                                if (Character.isDigit(fontStr.charAt(ci))) {
+                                    numStart = ci;
+                                    break;
+                                }
                             }
                             if (numStart > 0) {
                                 name = fontStr.substring(0, numStart).trim();
                                 String[] rest = fontStr.substring(numStart).trim().split("\\s+");
-                                try { fontSize = Integer.parseInt(rest[0]); } catch (NumberFormatException ignored) {}
+                                try {
+                                    fontSize = Integer.parseInt(rest[0]);
+                                } catch (NumberFormatException ignored) {
+                                    // Not a number: the default font size stays.
+                                }
                                 for (int pi = 1; pi < rest.length; pi++) {
-                                    if ("Bold".equalsIgnoreCase(rest[pi])) fontStyle |= java.awt.Font.BOLD;
-                                    else if ("Italic".equalsIgnoreCase(rest[pi])) fontStyle |= java.awt.Font.ITALIC;
+                                    if ("Bold".equalsIgnoreCase(rest[pi])) {
+                                        fontStyle |= java.awt.Font.BOLD;
+                                    } else if ("Italic".equalsIgnoreCase(rest[pi])) {
+                                        fontStyle |= java.awt.Font.ITALIC;
+                                    }
                                 }
                             } else if (numStart < 0) {
                                 name = fontStr;
@@ -2878,7 +3583,9 @@ public class GephiControlService {
                                 prop.setValue(new DependantColor(DependantColor.Mode.DARKER));
                             } else if (s.startsWith("#")) {
                                 prop.setValue(new DependantColor(new Color(Integer.parseInt(s.substring(1), 16))));
-                            } else { continue; }
+                            } else {
+                                continue;
+                            }
                         } else if (type == DependantOriginalColor.class && val instanceof String) {
                             String s = val.toString().trim().toLowerCase();
                             if ("parent".equals(s)) {
@@ -2886,8 +3593,11 @@ public class GephiControlService {
                             } else if ("original".equals(s)) {
                                 prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.ORIGINAL));
                             } else if (s.startsWith("#")) {
-                                prop.setValue(new DependantOriginalColor(new Color(Integer.parseInt(s.substring(1), 16))));
-                            } else { continue; }
+                                prop.setValue(
+                                    new DependantOriginalColor(new Color(Integer.parseInt(s.substring(1), 16))));
+                            } else {
+                                continue;
+                            }
                         } else if (type == EdgeColor.class && val instanceof String) {
                             // For "source"/"target": color edges individually instead of using
                             // EdgeColor mode (which corrupts SVG rendering in Gephi 0.10)
@@ -2898,11 +3608,15 @@ public class GephiControlService {
                                 Node[] graphNodes = graph.getNodes().toArray();
                                 Edge[] graphEdges = graph.getEdges().toArray();
                                 java.util.Map<Node, Color> nodeColors = new java.util.HashMap<>();
-                                for (Node n : graphNodes) nodeColors.put(n, n.getColor());
+                                for (Node n : graphNodes) {
+                                    nodeColors.put(n, n.getColor());
+                                }
                                 for (Edge edge : graphEdges) {
                                     Node ref = useSource ? edge.getSource() : edge.getTarget();
                                     Color c = nodeColors.get(ref);
-                                    if (c != null) edge.setColor(c);
+                                    if (c != null) {
+                                        edge.setColor(c);
+                                    }
                                 }
                                 prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
                             } else if ("mixed".equals(s)) {
@@ -2911,7 +3625,9 @@ public class GephiControlService {
                                 prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
                             } else if (s.startsWith("#")) {
                                 prop.setValue(new EdgeColor(new Color(Integer.parseInt(s.substring(1), 16))));
-                            } else { continue; }
+                            } else {
+                                continue;
+                            }
                         } else {
                             continue; // Skip unknown types
                         }
@@ -2946,11 +3662,15 @@ public class GephiControlService {
      */
     public JsonObject exportGexf(String filePath, boolean visible) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter("gexf");
-            if (exporter == null) return error("GEXF exporter not available");
+            if (exporter == null) {
+                return error("GEXF exporter not available");
+            }
             if (exporter instanceof GraphExporter) {
                 ((GraphExporter) exporter).setExportVisible(visible);
                 ((GraphExporter) exporter).setWorkspace(ws);
@@ -2959,7 +3679,9 @@ public class GephiControlService {
             JsonObject r = success("Exported to " + filePath);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     /** GEXF export returned inline as a string — no file round-trip. */
@@ -2976,11 +3698,15 @@ public class GephiControlService {
      */
     public JsonObject exportGexfContent(boolean visible) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter("gexf");
-            if (exporter == null) return error("GEXF exporter not available");
+            if (exporter == null) {
+                return error("GEXF exporter not available");
+            }
             if (exporter instanceof GraphExporter) {
                 ((GraphExporter) exporter).setExportVisible(visible);
                 ((GraphExporter) exporter).setWorkspace(ws);
@@ -2991,7 +3717,9 @@ public class GephiControlService {
             addViewInfo(r, currentGraphModel(), visible);
             r.addProperty("content", sw.toString());
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportPng(String filePath, int w, int h) {
@@ -3001,11 +3729,15 @@ public class GephiControlService {
         // refresh here either — PNGExporter.execute() calls PreviewController.refreshPreview()
         // itself before rendering, so doing it again here would just rebuild it twice.
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter("png");
-            if (exporter == null) return error("PNG exporter not available");
+            if (exporter == null) {
+                return error("PNG exporter not available");
+            }
             if (!(exporter instanceof PNGExporter)) {
                 return error("Unexpected PNG exporter implementation: " + exporter.getClass().getName());
             }
@@ -3028,7 +3760,8 @@ public class GephiControlService {
             if (bgColor != null && !bgColor.equals(Color.WHITE)) {
                 BufferedImage exported = ImageIO.read(new File(filePath));
                 if (exported != null) {
-                    BufferedImage result = new BufferedImage(exported.getWidth(), exported.getHeight(), BufferedImage.TYPE_INT_RGB);
+                    BufferedImage result = new BufferedImage(exported.getWidth(), exported.getHeight(),
+                        BufferedImage.TYPE_INT_RGB);
                     Graphics2D g2d = result.createGraphics();
                     g2d.setColor(bgColor);
                     g2d.fillRect(0, 0, result.getWidth(), result.getHeight());
@@ -3039,17 +3772,23 @@ public class GephiControlService {
             }
 
             return success("Exported to " + filePath);
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     /** The workspace's preview background color, or null when none is available. */
     private static Color previewBackgroundColor(Workspace ws) {
         PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
         PreviewModel pm = pc != null ? pc.getModel(ws) : null;
-        if (pm == null) return null;
+        if (pm == null) {
+            return null;
+        }
         Object bg = pm.getProperties().getValue(PreviewProperty.BACKGROUND_COLOR);
         // Legacy spelling: earlier plugin builds stored the color under "background.color".
-        if (!(bg instanceof Color)) bg = pm.getProperties().getValue("background.color");
+        if (!(bg instanceof Color)) {
+            bg = pm.getProperties().getValue("background.color");
+        }
         return bg instanceof Color ? (Color) bg : null;
     }
 
@@ -3072,20 +3811,28 @@ public class GephiControlService {
      */
     public JsonObject exportScreenshot(String filePath, int scaleFactor, boolean transparentBackground) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
 
         File targetFile = new File(filePath).getAbsoluteFile();
         File targetDir = targetFile.getParentFile();
-        if (targetDir != null) targetDir.mkdirs();
+        if (targetDir != null) {
+            targetDir.mkdirs();
+        }
 
         // ScreenshotController is not independently registered in Lookup — it is only
         // reachable via VisualizationController.getScreenshotController() (the same
         // VisualizationController singleton getSelection/focusView already use).
         org.gephi.visualization.api.VisualizationController vc = Lookup.getDefault()
             .lookup(org.gephi.visualization.api.VisualizationController.class);
-        if (vc == null) return error("Visualization controller not available");
+        if (vc == null) {
+            return error("Visualization controller not available");
+        }
         org.gephi.visualization.api.ScreenshotController sc = vc.getScreenshotController();
-        if (sc == null) return error("Screenshot controller not available");
+        if (sc == null) {
+            return error("Screenshot controller not available");
+        }
 
         // This takeScreenshot writes straight to the file, whatever the toolbar's screenshot
         // settings, never opens a dialog, and completes once the PNG is written. It is called
@@ -3125,14 +3872,18 @@ public class GephiControlService {
      * Returns the final observed size (may differ from expected on timeout).
      */
     private static int waitForSelectionCount(
-            org.gephi.visualization.api.VisualizationController vc, int expected, long timeoutMs) {
+        org.gephi.visualization.api.VisualizationController vc, int expected, long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         int last = -1;
         while (System.currentTimeMillis() < deadline) {
             org.gephi.visualization.api.VisualizationModel model = vc.getModel();
             last = model != null ? model.getSelectedNodes().size() : 0;
-            if (last == expected) return last;
-            try { Thread.sleep(30); } catch (InterruptedException e) {
+            if (last == expected) {
+                return last;
+            }
+            try {
+                Thread.sleep(30);
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return last;
             }
@@ -3145,28 +3896,41 @@ public class GephiControlService {
      * always US Letter; only the orientation follows the layout.
      */
     static boolean landscapeFor(Graph g) {
-        float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, minY = Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        float minX = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE;
+        float minY = Float.MAX_VALUE;
+        float maxY = -Float.MAX_VALUE;
         lockRead(g);
         try {
             for (Node n : g.getNodes().toArray()) {
-                minX = Math.min(minX, n.x()); maxX = Math.max(maxX, n.x());
-                minY = Math.min(minY, n.y()); maxY = Math.max(maxY, n.y());
+                minX = Math.min(minX, n.x());
+                maxX = Math.max(maxX, n.x());
+                minY = Math.min(minY, n.y());
+                maxY = Math.max(maxY, n.y());
             }
-        } finally { g.readUnlock(); }
+        } finally {
+            g.readUnlock();
+        }
         return maxX - minX > maxY - minY;
     }
 
     public JsonObject exportPdf(String filePath) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             Graph g = currentGraphModel().getGraph();
-            if (g.getNodeCount() == 0) return error("Cannot export PDF: graph has no nodes");
+            if (g.getNodeCount() == 0) {
+                return error("Cannot export PDF: graph has no nodes");
+            }
             // No explicit preview refresh here — PDFExporter.execute() calls
             // PreviewController.refreshPreview() itself before rendering.
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter("pdf");
-            if (exporter == null) return error("PDF exporter not available");
+            if (exporter == null) {
+                return error("PDF exporter not available");
+            }
             if (!(exporter instanceof PDFExporter)) {
                 return error("Unexpected PDF exporter implementation: " + exporter.getClass().getName());
             }
@@ -3179,43 +3943,62 @@ public class GephiControlService {
             pdf.setMarginBottom(36f);
             pdf.setMarginLeft(36f);
             pdf.setMarginRight(36f);
-            if (exporter instanceof GraphExporter) exporter.setWorkspace(ws);
+            if (exporter instanceof GraphExporter) {
+                exporter.setWorkspace(ws);
+            }
             ec.exportFile(new File(filePath), exporter);
             JsonObject r = success("Exported to " + filePath);
-            r.addProperty("page", landscape ? "US Letter, landscape (11 x 8.5 in)" : "US Letter, portrait (8.5 x 11 in)");
+            r.addProperty("page", landscape ? "US Letter, landscape (11 x 8.5 in)"
+                : "US Letter, portrait (8.5 x 11 in)");
             return r;
         } catch (IllegalArgumentException e) {
             return error("Export failed: graph nodes may not be positioned — run a layout first");
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportSvg(String filePath) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             // No explicit preview refresh here — SVGExporter.execute() calls
             // PreviewController.refreshPreview() itself before rendering.
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter("svg");
-            if (exporter == null) return error("SVG exporter not available");
-            if (exporter instanceof GraphExporter) exporter.setWorkspace(ws);
+            if (exporter == null) {
+                return error("SVG exporter not available");
+            }
+            if (exporter instanceof GraphExporter) {
+                exporter.setWorkspace(ws);
+            }
             ec.exportFile(new File(filePath), exporter);
             return success("Exported to " + filePath);
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportGraphml(String filePath) {
         return exportGraphml(filePath, true);
     }
 
-    /** @param visible see exportGexf — same contract, response self-declares the view. */
+    /**
+     * @param visible see exportGexf — same contract, response self-declares the view.
+     */
     public JsonObject exportGraphml(String filePath, boolean visible) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter("graphml");
-            if (exporter == null) return error("GraphML exporter not available");
+            if (exporter == null) {
+                return error("GraphML exporter not available");
+            }
             if (exporter instanceof GraphExporter) {
                 ((GraphExporter) exporter).setExportVisible(visible);
                 exporter.setWorkspace(ws);
@@ -3224,7 +4007,9 @@ public class GephiControlService {
             JsonObject r = success("Exported to " + filePath);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     public JsonObject exportCsv(String filePath, String separator, String target) {
@@ -3232,7 +4017,9 @@ public class GephiControlService {
         // and writing it to disk is bulk work with no Swing dependency — it has no
         // business on the EDT (see the threading note above setEdgeColor).
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         // Always use manual export — Gephi's built-in CSV exporter produces an adjacency matrix
         return exportCsvManual(filePath, separator, target);
     }
@@ -3242,7 +4029,7 @@ public class GephiControlService {
             GraphModel gm = currentGraphModel();
             String csvText = buildCsv(gm, separator, target);
             try (java.io.Writer fw = new java.io.OutputStreamWriter(
-                    new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
+                     new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
                 fw.write(csvText);
             }
             JsonObject r = success("Exported to " + filePath);
@@ -3265,14 +4052,16 @@ public class GephiControlService {
                 // Export nodes
                 sb.append(csv("Id", sep)).append(sep).append(csv("Label", sep));
                 for (Column col : gm.getNodeTable()) {
-                    if (!col.isProperty()) sb.append(sep).append(csv(col.getTitle(), sep));
+                    if (!col.isProperty()) {
+                        sb.append(sep).append(csv(col.getTitle(), sep));
+                    }
                 }
                 sb.append("\n");
                 lockRead(g);
                 try {
                     for (Node n : g.getNodes().toArray()) {
                         sb.append(csv(String.valueOf(n.getId()), sep)).append(sep)
-                          .append(csv(n.getLabel() != null ? n.getLabel() : "", sep));
+                            .append(csv(n.getLabel() != null ? n.getLabel() : "", sep));
                         for (Column col : gm.getNodeTable()) {
                             if (!col.isProperty()) {
                                 Object v = n.getAttribute(col);
@@ -3281,22 +4070,29 @@ public class GephiControlService {
                         }
                         sb.append("\n");
                     }
-                } finally { g.readUnlock(); }
+                } finally {
+                    g.readUnlock();
+                }
             }
 
             if ("edges".equalsIgnoreCase(target) || "both".equalsIgnoreCase(target)) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(csv("Source", sep)).append(sep).append(csv("Target", sep)).append(sep).append(csv("Weight", sep));
+                if (sb.length() > 0) {
+                    sb.append("\n");
+                }
+                sb.append(csv("Source", sep)).append(sep).append(csv("Target", sep)).append(sep)
+                    .append(csv("Weight", sep));
                 for (Column col : gm.getEdgeTable()) {
-                    if (!col.isProperty()) sb.append(sep).append(csv(col.getTitle(), sep));
+                    if (!col.isProperty()) {
+                        sb.append(sep).append(csv(col.getTitle(), sep));
+                    }
                 }
                 sb.append("\n");
                 lockRead(g);
                 try {
                     for (Edge e : g.getEdges().toArray()) {
                         sb.append(csv(String.valueOf(e.getSource().getId()), sep)).append(sep)
-                          .append(csv(String.valueOf(e.getTarget().getId()), sep)).append(sep)
-                          .append(csv(String.valueOf(e.getWeight()), sep));
+                            .append(csv(String.valueOf(e.getTarget().getId()), sep)).append(sep)
+                            .append(csv(String.valueOf(e.getWeight()), sep));
                         for (Column col : gm.getEdgeTable()) {
                             if (!col.isProperty()) {
                                 Object v = e.getAttribute(col);
@@ -3305,7 +4101,9 @@ public class GephiControlService {
                         }
                         sb.append("\n");
                     }
-                } finally { g.readUnlock(); }
+                } finally {
+                    g.readUnlock();
+                }
             }
         }
         return sb.toString();
@@ -3317,9 +4115,11 @@ public class GephiControlService {
      * a label or attribute containing the separator silently corrupts the columns.
      */
     static String csv(String value, String sep) {
-        if (value == null) value = "";
+        if (value == null) {
+            value = "";
+        }
         boolean needsQuote = value.contains(sep) || value.contains("\"")
-                || value.contains("\n") || value.contains("\r");
+            || value.contains("\n") || value.contains("\r");
         return needsQuote ? "\"" + value.replace("\"", "\"\"") + "\"" : value;
     }
 
@@ -3331,25 +4131,6 @@ public class GephiControlService {
 
     public JsonObject importFile(String filePath, Float maxNodeSize) {
         return importFile(filePath, maxNodeSize, null);
-    }
-
-    /** Collect up to {@code limit} import issues (level and message) from a report. */
-    static void addIssues(JsonArray out, org.gephi.io.importer.api.Report report, int limit) {
-        if (report == null) return;
-        for (org.gephi.io.importer.api.Issue issue : report.getIssuesList(limit)) {
-            if (out.size() >= limit) return;
-            JsonObject o = new JsonObject();
-            o.addProperty("level", String.valueOf(issue.getLevel()));
-            o.addProperty("message", issue.getMessage());
-            out.add(o);
-        }
-    }
-
-    private static Processor findProcessor(String simpleName) {
-        for (Processor p : Lookup.getDefault().lookupAll(Processor.class)) {
-            if (p.getClass().getSimpleName().equals(simpleName)) return p;
-        }
-        return null;
     }
 
     /**
@@ -3369,31 +4150,46 @@ public class GephiControlService {
         // reopen" while the import was in fact still running and went on to succeed.
         {
             File file = new File(filePath);
-            if (!file.exists()) return error("File not found: " + filePath);
+            if (!file.exists()) {
+                return error("File not found: " + filePath);
+            }
             try {
                 ImportController ic = Lookup.getDefault().lookup(ImportController.class);
                 Container c = ic.importFile(file);
-                if (c == null) return error("Import failed - unsupported format or empty file");
+                if (c == null) {
+                    return error("Import failed - unsupported format or empty file");
+                }
 
                 boolean append = "append".equalsIgnoreCase(mode);
                 if (mode != null && !append && !"new_workspace".equalsIgnoreCase(mode)
-                        && !"new".equalsIgnoreCase(mode)) {
+                    && !"new".equalsIgnoreCase(mode)) {
                     return error("Unknown import mode '" + mode + "': use \"new_workspace\" (the default)"
                         + " or \"append\"");
                 }
                 ProjectController pc = getProjectController();
-                if (pc.getCurrentProject() == null) onProjectThread(() -> { pc.newProject(); return null; });
+                if (pc.getCurrentProject() == null) {
+                    onProjectThread(() -> {
+                        pc.newProject();
+                        return null;
+                    });
+                }
                 Workspace previous = currentWorkspace();
                 boolean previousEmpty = false;
                 if (previous != null) {
                     Graph pg = getGraphController().getGraphModel(previous).getGraph();
                     previousEmpty = pg.getNodeCount() == 0 && pg.getEdgeCount() == 0;
                 }
-                if (append && previous == null) return error("No workspace to append to");
+                if (append && previous == null) {
+                    return error("No workspace to append to");
+                }
 
                 Processor processor = findProcessor(append ? "AppendProcessor" : "DefaultProcessor");
-                if (processor == null) processor = Lookup.getDefault().lookup(Processor.class);
-                if (processor == null) return error("No processor found");
+                if (processor == null) {
+                    processor = Lookup.getDefault().lookup(Processor.class);
+                }
+                if (processor == null) {
+                    return error("No processor found");
+                }
 
                 // Gephi's import containers auto-scale by default: before processing, its
                 // DefaultScaler recenters every node on the centroid, rescales sizes into
@@ -3413,9 +4209,11 @@ public class GephiControlService {
                 } catch (Exception e) {
                     JsonObject err = error("Import failed: " + e.getMessage() + (append
                         ? ". The file's time format or id type differs from this workspace's; import it"
-                          + " without mode \"append\" to open it in its own workspace." : ""));
+                        + " without mode \"append\" to open it in its own workspace." : ""));
                     addIssues(issues, processor.getReport(), 20);
-                    if (issues.size() > 0) err.add("import_issues", issues);
+                    if (issues.size() > 0) {
+                        err.add("import_issues", issues);
+                    }
                     return err;
                 }
                 addIssues(issues, processor.getReport(), 20);
@@ -3428,7 +4226,9 @@ public class GephiControlService {
                         if (tidy) {
                             // The import already made its workspace current; switching to it
                             // again would close and reopen it for nothing.
-                            if (pc.getCurrentWorkspace() != ws) pc.openWorkspace(ws);
+                            if (pc.getCurrentWorkspace() != ws) {
+                                pc.openWorkspace(ws);
+                            }
                             pc.deleteWorkspace(previous);
                         }
                         return null;
@@ -3456,10 +4256,12 @@ public class GephiControlService {
                 }
 
                 Workspace effectiveWs = importedWs != null ? importedWs : ws;
-                Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
+                final Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
                 JsonObject r = success("Imported from " + file.getName());
                 r.addProperty("import_mode", append ? "append" : "new_workspace");
-                if (issues.size() > 0) r.add("import_issues", issues);
+                if (issues.size() > 0) {
+                    r.add("import_issues", issues);
+                }
                 if (capped > 0) {
                     r.addProperty("nodes_size_capped", capped);
                     r.addProperty("max_node_size", maxNodeSize);
@@ -3467,8 +4269,35 @@ public class GephiControlService {
                 r.addProperty("node_count", g.getNodeCount());
                 r.addProperty("edge_count", g.getEdgeCount());
                 return r;
-            } catch (Exception e) { return error("Import failed: " + e.getMessage()); }
+            } catch (Exception e) {
+                return error("Import failed: " + e.getMessage());
+            }
         }
+    }
+
+    /** Collect up to {@code limit} import issues (level and message) from a report. */
+    static void addIssues(JsonArray out, org.gephi.io.importer.api.Report report, int limit) {
+        if (report == null) {
+            return;
+        }
+        for (org.gephi.io.importer.api.Issue issue : report.getIssuesList(limit)) {
+            if (out.size() >= limit) {
+                return;
+            }
+            JsonObject o = new JsonObject();
+            o.addProperty("level", String.valueOf(issue.getLevel()));
+            o.addProperty("message", issue.getMessage());
+            out.add(o);
+        }
+    }
+
+    private static Processor findProcessor(String simpleName) {
+        for (Processor p : Lookup.getDefault().lookupAll(Processor.class)) {
+            if (p.getClass().getSimpleName().equals(simpleName)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     // ─── Graph Operations ────────────────────────────────────────────
@@ -3476,7 +4305,9 @@ public class GephiControlService {
     public JsonObject clearGraph() {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
             lockWrite(g);
@@ -3488,15 +4319,21 @@ public class GephiControlService {
                 r.addProperty("nodes_removed", nodeCount);
                 r.addProperty("edges_removed", edgeCount);
                 return r;
-            } finally { unlockWrite(g); }
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /** Nodes with no ties at all, which remove-isolates deletes. Reads only; call under a lock. */
     static java.util.List<Node> isolatedNodes(Graph g) {
         java.util.List<Node> isolates = new java.util.ArrayList<>();
         for (Node n : g.getNodes().toArray()) {
-            if (g.getDegree(n) == 0) isolates.add(n);
+            if (g.getDegree(n) == 0) {
+                isolates.add(n);
+            }
         }
         return isolates;
     }
@@ -3508,7 +4345,9 @@ public class GephiControlService {
     /** Remove every node with no ties, or with {@code dryRun} only count them and change nothing. */
     public JsonObject removeIsolates(boolean dryRun) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             Graph g = currentGraphModel().getGraph();
             if (dryRun) {
@@ -3520,28 +4359,40 @@ public class GephiControlService {
                     r.addProperty("would_remove", count);
                     r.addProperty("remaining_nodes", g.getNodeCount() - count);
                     return r;
-                } finally { g.readUnlock(); }
+                } finally {
+                    g.readUnlock();
+                }
             }
             java.util.List<Node> isolates;
             lockWrite(g);
             try {
                 isolates = isolatedNodes(g);
-                for (Node n : isolates) g.removeNode(n);
-            } finally { unlockWrite(g); }
+                for (Node n : isolates) {
+                    g.removeNode(n);
+                }
+            } finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Removed " + isolates.size() + " isolated nodes");
             r.addProperty("removed", isolates.size());
             r.addProperty("remaining_nodes", g.getNodeCount());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject extractEgoNetwork(String nodeId, int depth) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             Graph g = currentGraphModel().getGraph();
             Node center = g.getNode(nodeId);
-            if (center == null) return error("Node not found: " + nodeId);
+            if (center == null) {
+                return error("Node not found: " + nodeId);
+            }
 
             // BFS to find nodes within depth
             java.util.Set<Node> keep = new java.util.LinkedHashSet<>();
@@ -3554,7 +4405,9 @@ public class GephiControlService {
             while (!queue.isEmpty()) {
                 Node current = queue.poll();
                 int dist = distances.get(current);
-                if (dist >= depth) continue;
+                if (dist >= depth) {
+                    continue;
+                }
                 for (Node neighbor : g.getNeighbors(current).toArray()) {
                     if (!keep.contains(neighbor)) {
                         keep.add(neighbor);
@@ -3569,16 +4422,24 @@ public class GephiControlService {
             lockWrite(g);
             try {
                 for (Node n : g.getNodes().toArray()) {
-                    if (!keep.contains(n)) toRemove.add(n);
+                    if (!keep.contains(n)) {
+                        toRemove.add(n);
+                    }
                 }
-                for (Node n : toRemove) g.removeNode(n);
-            } finally { unlockWrite(g); }
+                for (Node n : toRemove) {
+                    g.removeNode(n);
+                }
+            } finally {
+                unlockWrite(g);
+            }
 
             JsonObject r = success("Ego network extracted for " + nodeId);
             r.addProperty("kept_nodes", keep.size());
             r.addProperty("removed_nodes", toRemove.size());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject extractGiantComponent() {
@@ -3586,9 +4447,11 @@ public class GephiControlService {
         // Node removal runs on the calling thread too — it doesn't need it either.
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
-            Graph g = gm.getGraph();
+            final Graph g = gm.getGraph();
 
             // Run connected components (on HTTP thread, not EDT)
             StatisticsBuilder ccBuilder = null;
@@ -3599,7 +4462,9 @@ public class GephiControlService {
                     break;
                 }
             }
-            if (ccBuilder == null) return error("ConnectedComponents statistic not found");
+            if (ccBuilder == null) {
+                return error("ConnectedComponents statistic not found");
+            }
 
             Statistics stat = ccBuilder.getStatistics();
             stat.execute(gm);
@@ -3615,7 +4480,9 @@ public class GephiControlService {
                     }
                 }
             }
-            if (ccCol == null) return error("Component column not found after running statistics");
+            if (ccCol == null) {
+                return error("Component column not found after running statistics");
+            }
 
             // Count nodes per component
             java.util.Map<Integer, Integer> componentSizes = new java.util.HashMap<>();
@@ -3642,26 +4509,39 @@ public class GephiControlService {
             for (Node n : allNodes) {
                 Object v = n.getAttribute(fccCol);
                 int comp = v instanceof Number ? ((Number) v).intValue() : -1;
-                if (comp != giantComp) toRemove.add(n);
+                if (comp != giantComp) {
+                    toRemove.add(n);
+                }
             }
             lockWrite(g);
-            try { for (Node n : toRemove) g.removeNode(n); }
-            finally { unlockWrite(g); }
+            try {
+                for (Node n : toRemove) {
+                    g.removeNode(n);
+                }
+            } finally {
+                unlockWrite(g);
+            }
             JsonObject r = success("Giant component extracted");
             r.addProperty("kept_nodes", giantSize);
             r.addProperty("removed_nodes", toRemove.size());
             r.addProperty("component_count", componentSizes.size());
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     public JsonObject setEdgeThicknessByWeight(float minThickness, float maxThickness) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             PreviewController pc = Lookup.getDefault().lookup(PreviewController.class);
             PreviewModel pm = pc.getModel(ws);
-            if (pm == null) return error("Preview model not available");
+            if (pm == null) {
+                return error("Preview model not available");
+            }
 
             // Set edge thickness to be rescaled based on weight
             // Use the preview property for edge thickness
@@ -3698,7 +4578,9 @@ public class GephiControlService {
     public JsonObject resetFilters() {
         try {
             Workspace ws = currentWorkspace();
-            if (ws == null) return error("No project open");
+            if (ws == null) {
+                return error("No project open");
+            }
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
             // setVisibleView() takes Gephi's own blocking write lock; hold our deadlock-safe
@@ -3706,9 +4588,13 @@ public class GephiControlService {
             lockWrite(g);
             try {
                 gm.setVisibleView(null);
-            } finally { unlockWrite(g); }
+            } finally {
+                unlockWrite(g);
+            }
             return success("Filters reset - full graph view restored");
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     // ─── Shutdown ────────────────────────────────────────────────────
@@ -3726,10 +4612,14 @@ public class GephiControlService {
     public String graphLockProbe() {
         try {
             GraphModel gm = currentGraphModel();
-            if (gm == null) return "none";
+            if (gm == null) {
+                return "none";
+            }
             Graph g = gm.getGraph();
             java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
-            if (rl == null) return "unknown";
+            if (rl == null) {
+                return "unknown";
+            }
             if (rl.tryLock(150, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 rl.unlock();
                 return "ok";
@@ -3753,9 +4643,13 @@ public class GephiControlService {
         o.addProperty("queued", -1);
         try {
             GraphModel gm = currentGraphModel();
-            if (gm == null) return o;
+            if (gm == null) {
+                return o;
+            }
             org.gephi.graph.api.GraphLock lock = gm.getGraph().getLock();
-            if (lock == null) return o;
+            if (lock == null) {
+                return o;
+            }
             java.lang.reflect.Field f = lock.getClass().getDeclaredField("readWriteLock");
             f.setAccessible(true);
             Object v = f.get(lock);
@@ -3780,10 +4674,14 @@ public class GephiControlService {
      * (observe, never consume) so Gephi's own tools keep working.
      */
     public synchronized void ensureClickListener() {
-        if (clickListenerInstalled) return;
+        if (clickListenerInstalled) {
+            return;
+        }
         org.gephi.visualization.api.VisualizationController vc =
             Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
-        if (vc == null) return;
+        if (vc == null) {
+            return;
+        }
         vc.addListener(new org.gephi.visualization.api.VisualizationEventListener() {
             @Override
             public boolean handleEvent(org.gephi.visualization.api.VisualizationEvent event) {
@@ -3791,7 +4689,9 @@ public class GephiControlService {
                     Object data = event.getData();
                     if (data instanceof Node[]) {
                         Node[] nodes = (Node[]) data;
-                        if (nodes.length > 0) recordClick(nodes);
+                        if (nodes.length > 0) {
+                            recordClick(nodes);
+                        }
                     }
                 } catch (Throwable t) {
                     // Never disturb the viz event thread.
@@ -3822,14 +4722,22 @@ public class GephiControlService {
      * on their own — it fires at most once, and only while selection is still off.
      */
     void ensureRectangleSelection() {
-        if (rectangleAutoEnabled) return;
+        if (rectangleAutoEnabled) {
+            return;
+        }
         try {
             org.gephi.visualization.api.VisualizationController vc = Lookup.getDefault()
                 .lookup(org.gephi.visualization.api.VisualizationController.class);
-            if (vc == null) return;
+            if (vc == null) {
+                return;
+            }
             org.gephi.visualization.api.VisualizationModel model = vc.getModel();
-            if (model == null) return;  // view not started; try again next call
-            if (!model.isRectangleSelection()) vc.setRectangleSelection();
+            if (model == null) {
+                return;  // view not started; try again next call
+            }
+            if (!model.isRectangleSelection()) {
+                vc.setRectangleSelection();
+            }
             rectangleAutoEnabled = true;
         } catch (Throwable t) {
             // Never disturb a health/selection call over a viz hiccup.
@@ -3852,7 +4760,9 @@ public class GephiControlService {
         entry.add("nodes", arr);
         synchronized (clickJournal) {
             clickJournal.addLast(entry);
-            while (clickJournal.size() > CLICK_JOURNAL_MAX) clickJournal.removeFirst();
+            while (clickJournal.size() > CLICK_JOURNAL_MAX) {
+                clickJournal.removeFirst();
+            }
         }
     }
 
@@ -3901,7 +4811,9 @@ public class GephiControlService {
                 if (sel != null) {
                     for (Node n : sel) {
                         totalSelected++;
-                        if (selected.size() < SELECTION_MAX_NODES) selected.add(nodeRef(n));
+                        if (selected.size() < SELECTION_MAX_NODES) {
+                            selected.add(nodeRef(n));
+                        }
                     }
                 }
             }
@@ -3915,8 +4827,12 @@ public class GephiControlService {
         }
         JsonArray clicks = new JsonArray();
         synchronized (clickJournal) {
-            for (JsonObject e : clickJournal) clicks.add(e.deepCopy());
-            if (clear) clickJournal.clear();
+            for (JsonObject e : clickJournal) {
+                clicks.add(e.deepCopy());
+            }
+            if (clear) {
+                clickJournal.clear();
+            }
         }
         r.add("clicks", clicks);
         r.addProperty("click_count", clicks.size());
@@ -3932,13 +4848,17 @@ public class GephiControlService {
      * highlight) and set zoom. No-op modes never touch the graph write lock.
      */
     public JsonObject focusView(String mode, String nodeId, String source, String target,
-                                Double x, Double y, Double w, Double h,
-                                Double zoom, java.util.List<String> select) {
+        Double x, Double y, Double w, Double h,
+        Double zoom, java.util.List<String> select) {
         org.gephi.visualization.api.VisualizationController vc =
             Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
-        if (vc == null) return error("No visualization available (headless or view not started)");
+        if (vc == null) {
+            return error("No visualization available (headless or view not started)");
+        }
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
+        if (gm == null) {
+            return error("No workspace open");
+        }
         Graph g = gm.getGraph();
         try {
             String m = mode == null ? "graph" : mode.toLowerCase();
@@ -3950,29 +4870,51 @@ public class GephiControlService {
                     vc.centerOnZero();
                     break;
                 case "node": {
-                    if (nodeId == null) return error("Missing 'id' for mode=node");
+                    if (nodeId == null) {
+                        return error("Missing 'id' for mode=node");
+                    }
                     Node n = g.getNode(nodeId);
-                    if (n == null) return error("Node not found: " + nodeId);
+                    if (n == null) {
+                        return error("Node not found: " + nodeId);
+                    }
                     vc.centerOnNode(n);
                     break;
                 }
                 case "edge": {
-                    if (source == null || target == null) return error("Missing 'source'/'target' for mode=edge");
-                    Node ns = g.getNode(source), nt = g.getNode(target);
-                    if (ns == null || nt == null) return error("Edge endpoints not found");
+                    if (source == null || target == null) {
+                        return error("Missing 'source'/'target' for mode=edge");
+                    }
+                    Node ns = g.getNode(source);
+                    Node nt = g.getNode(target);
+                    if (ns == null || nt == null) {
+                        return error("Edge endpoints not found");
+                    }
                     Edge e = g.getEdge(ns, nt, 1);  // directed
-                    if (e == null) e = g.getEdge(ns, nt, 0);  // undirected
-                    if (e == null) e = g.getEdge(ns, nt);  // default
-                    if (e == null) e = g.getEdge(nt, ns, 1);
-                    if (e == null) e = g.getEdge(nt, ns, 0);
-                    if (e == null) e = g.getEdge(nt, ns);
-                    if (e == null) return error("Edge not found: " + source + " -> " + target);
+                    if (e == null) {
+                        e = g.getEdge(ns, nt, 0);  // undirected
+                    }
+                    if (e == null) {
+                        e = g.getEdge(ns, nt);  // default
+                    }
+                    if (e == null) {
+                        e = g.getEdge(nt, ns, 1);
+                    }
+                    if (e == null) {
+                        e = g.getEdge(nt, ns, 0);
+                    }
+                    if (e == null) {
+                        e = g.getEdge(nt, ns);
+                    }
+                    if (e == null) {
+                        return error("Edge not found: " + source + " -> " + target);
+                    }
                     vc.centerOnEdge(e);
                     break;
                 }
                 case "region": {
-                    if (x == null || y == null || w == null || h == null)
+                    if (x == null || y == null || w == null || h == null) {
                         return error("Missing x/y/w/h for mode=region");
+                    }
                     vc.centerOn(x.floatValue(), y.floatValue(), w.floatValue(), h.floatValue());
                     break;
                 }
@@ -3989,7 +4931,9 @@ public class GephiControlService {
                     java.util.List<Node> nodes = new java.util.ArrayList<>();
                     for (String id : select) {
                         Node n = g.getNode(id);
-                        if (n != null) nodes.add(n);
+                        if (n != null) {
+                            nodes.add(n);
+                        }
                     }
                     vc.selectNodes(nodes.toArray(new Node[0]));
                     expected = nodes.size();
@@ -4001,10 +4945,14 @@ public class GephiControlService {
                 // too. Also correct for IDs that didn't resolve to a real node.
                 selectedCount = waitForSelectionCount(vc, expected, 1000);
             }
-            if (zoom != null) vc.setZoom(zoom.floatValue());
+            if (zoom != null) {
+                vc.setZoom(zoom.floatValue());
+            }
             JsonObject r = success("View focused (" + m + ")");
             r.addProperty("mode", m);
-            if (selectedCount != null) r.addProperty("selected", selectedCount);
+            if (selectedCount != null) {
+                r.addProperty("selected", selectedCount);
+            }
             return r;
         } catch (Exception e) {
             return error("Focus failed: " + e.getMessage());
@@ -4021,7 +4969,9 @@ public class GephiControlService {
     public JsonObject setSelectionMode(String mode) {
         org.gephi.visualization.api.VisualizationController vc =
             Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
-        if (vc == null) return error("No visualization available (headless or view not started)");
+        if (vc == null) {
+            return error("No visualization available (headless or view not started)");
+        }
         String m = mode == null ? "rectangle" : mode.toLowerCase();
         try {
             switch (m) {
@@ -4050,7 +5000,9 @@ public class GephiControlService {
     public JsonObject getPerspective() {
         org.gephi.perspective.api.PerspectiveController pc =
             Lookup.getDefault().lookup(org.gephi.perspective.api.PerspectiveController.class);
-        if (pc == null) return error("No perspective controller (headless?)");
+        if (pc == null) {
+            return error("No perspective controller (headless?)");
+        }
         try {
             org.gephi.perspective.spi.Perspective selected = pc.getSelectedPerspective();
             JsonObject r = success("Perspectives listed");
@@ -4074,8 +5026,12 @@ public class GephiControlService {
     public JsonObject switchPerspective(String name) {
         org.gephi.perspective.api.PerspectiveController pc =
             Lookup.getDefault().lookup(org.gephi.perspective.api.PerspectiveController.class);
-        if (pc == null) return error("No perspective controller (headless?)");
-        if (name == null) return error("Missing 'name'");
+        if (pc == null) {
+            return error("No perspective controller (headless?)");
+        }
+        if (name == null) {
+            return error("Missing 'name'");
+        }
         org.gephi.perspective.spi.Perspective match = null;
         for (org.gephi.perspective.spi.Perspective p : pc.getPerspectives()) {
             if (name.equalsIgnoreCase(p.getName()) || name.equalsIgnoreCase(p.getDisplayName())) {
@@ -4083,7 +5039,9 @@ public class GephiControlService {
                 break;
             }
         }
-        if (match == null) return error("Perspective not found: " + name);
+        if (match == null) {
+            return error("Perspective not found: " + name);
+        }
         final org.gephi.perspective.spi.Perspective target = match;
         // Switching the perspective mutates the NetBeans window system — do it on the EDT.
         return runOnEDT(() -> {
@@ -4111,8 +5069,11 @@ public class GephiControlService {
         for (CategoryBuilder cb : Lookup.getDefault().lookupAll(CategoryBuilder.class)) {
             try {
                 FilterBuilder[] bs = cb.getBuilders(ws);
-                if (bs != null) java.util.Collections.addAll(out, bs);
-            } catch (Exception ignore) { /* some category builders need a specific state */ }
+                if (bs != null) {
+                    java.util.Collections.addAll(out, bs);
+                }
+            } catch (Exception ignore) { /* some category builders need a specific state */
+            }
         }
         return out;
     }
@@ -4126,61 +5087,89 @@ public class GephiControlService {
     private java.util.List<Map.Entry<String, FilterBuilder>> namedFilterBuilders(Workspace ws) {
         java.util.List<Map.Entry<String, FilterBuilder>> out = new java.util.ArrayList<>();
         for (FilterBuilder b : Lookup.getDefault().lookupAll(FilterBuilder.class)) {
-            try { out.add(Map.entry(plainText(b.getName()), b)); } catch (Exception ignore) {}
+            try {
+                out.add(Map.entry(plainText(b.getName()), b));
+            } catch (Exception ignore) {
+                // A filter whose name cannot be read is left out of the list.
+            }
         }
         for (CategoryBuilder cb : Lookup.getDefault().lookupAll(CategoryBuilder.class)) {
             try {
                 FilterBuilder[] bs = cb.getBuilders(ws);
-                if (bs == null) continue;
+                if (bs == null) {
+                    continue;
+                }
                 for (FilterBuilder b : bs) {
                     String category = b.getCategory() != null ? b.getCategory().getName() : null;
                     String name = plainText(b.getName());
                     out.add(Map.entry(category == null ? name : plainText(category) + ": " + name, b));
                 }
-            } catch (Exception ignore) { /* some category builders need a specific state */ }
+            } catch (Exception ignore) { /* some category builders need a specific state */
+            }
         }
         return out;
     }
 
     /** The text of a Gephi label that may carry HTML markup. */
     static String plainText(String label) {
-        if (label == null) return "";
+        if (label == null) {
+            return "";
+        }
         return label.replaceAll("<[^>]*>", " ").replace("&amp;", "&").replace("&lt;", "<")
             .replace("&gt;", ">").replaceAll("\\s+", " ").trim();
     }
 
     /** The filter builder a name refers to: the plain name, or Gephi's own label. */
     private FilterBuilder findFilterBuilder(Workspace ws, String name) {
-        if (name == null) return null;
+        if (name == null) {
+            return null;
+        }
         FilterBuilder byLabel = null;
         for (Map.Entry<String, FilterBuilder> e : namedFilterBuilders(ws)) {
-            if (name.equalsIgnoreCase(e.getKey())) return e.getValue();
+            if (name.equalsIgnoreCase(e.getKey())) {
+                return e.getValue();
+            }
             try {
-                if (byLabel == null && name.equalsIgnoreCase(e.getValue().getName())) byLabel = e.getValue();
-            } catch (Exception ignore) {}
+                if (byLabel == null && name.equalsIgnoreCase(e.getValue().getName())) {
+                    byLabel = e.getValue();
+                }
+            } catch (Exception ignore) {
+                // A filter whose name cannot be read cannot match by name.
+            }
         }
         return byLabel;
     }
 
     /** Coerce a JSON value to a filter property's type; handles Range from a [lo, hi] pair. */
     static Object convertFilterProperty(Object val, Class<?> type) {
-        if (val == null) return null;
+        if (val == null) {
+            return null;
+        }
         if (type == org.gephi.filters.api.Range.class) {
             java.util.List<?> pair = null;
-            if (val instanceof java.util.List) pair = (java.util.List<?>) val;
-            else if (val instanceof com.google.gson.JsonArray) {
+            if (val instanceof java.util.List) {
+                pair = (java.util.List<?>) val;
+            } else if (val instanceof com.google.gson.JsonArray) {
                 java.util.List<Object> l = new java.util.ArrayList<>();
-                for (com.google.gson.JsonElement e : (com.google.gson.JsonArray) val) l.add(e.getAsDouble());
+                for (com.google.gson.JsonElement e : (com.google.gson.JsonArray) val) {
+                    l.add(e.getAsDouble());
+                }
                 pair = l;
             }
-            if (pair == null || pair.size() != 2) return null;
-            double loD = pair.get(0) instanceof Number ? ((Number) pair.get(0)).doubleValue() : Double.parseDouble(pair.get(0).toString());
-            double hiD = pair.get(1) instanceof Number ? ((Number) pair.get(1)).doubleValue() : Double.parseDouble(pair.get(1).toString());
+            if (pair == null || pair.size() != 2) {
+                return null;
+            }
+            double loD = pair.get(0) instanceof Number ? ((Number) pair.get(0)).doubleValue()
+                : Double.parseDouble(pair.get(0).toString());
+            double hiD = pair.get(1) instanceof Number ? ((Number) pair.get(1)).doubleValue()
+                : Double.parseDouble(pair.get(1).toString());
             // Range requires both bounds to be the SAME Number class. Use Integer when
             // both are whole (degree/count filters), Double otherwise (continuous columns).
             boolean whole = loD == Math.floor(loD) && hiD == Math.floor(hiD)
                 && !Double.isInfinite(loD) && !Double.isInfinite(hiD);
-            if (whole) return new org.gephi.filters.api.Range((int) loD, (int) hiD);
+            if (whole) {
+                return new org.gephi.filters.api.Range((int) loD, (int) hiD);
+            }
             return new org.gephi.filters.api.Range(loD, hiD);
         }
         return convertLayoutProperty(val, type);
@@ -4188,14 +5177,24 @@ public class GephiControlService {
 
     public JsonObject listFilters() {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No workspace open");
+        if (ws == null) {
+            return error("No workspace open");
+        }
         JsonArray arr = new JsonArray();
         for (Map.Entry<String, FilterBuilder> e : namedFilterBuilders(ws)) {
             FilterBuilder b = e.getValue();
             JsonObject o = new JsonObject();
             o.addProperty("name", e.getKey());
-            try { o.addProperty("category", b.getCategory() == null ? null : b.getCategory().getName()); } catch (Exception ignore) {}
-            try { o.addProperty("description", b.getDescription()); } catch (Exception ignore) {}
+            try {
+                o.addProperty("category", b.getCategory() == null ? null : b.getCategory().getName());
+            } catch (Exception ignore) {
+                // The category is optional.
+            }
+            try {
+                o.addProperty("description", b.getDescription());
+            } catch (Exception ignore) {
+                // The description is optional.
+            }
             // Introspect the filter's settable properties so callers know what params to pass.
             try {
                 Filter f = b.getFilter(ws);
@@ -4209,7 +5208,8 @@ public class GephiControlService {
                     }
                     o.add("properties", props);
                 }
-            } catch (Exception ignore) { /* introspection best-effort */ }
+            } catch (Exception ignore) { /* introspection best-effort */
+            }
             arr.add(o);
         }
         JsonObject r = success("Filters listed");
@@ -4219,29 +5219,48 @@ public class GephiControlService {
 
     public JsonObject applyFilter(String name, Map<String, Object> params, String action, String column) {
         FilterController fc = Lookup.getDefault().lookup(FilterController.class);
-        if (fc == null) return error("No filter controller available");
+        if (fc == null) {
+            return error("No filter controller available");
+        }
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No workspace open");
+        if (ws == null) {
+            return error("No workspace open");
+        }
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
-        if (name == null) return error("Missing 'name'");
+        if (gm == null) {
+            return error("No workspace open");
+        }
+        if (name == null) {
+            return error("Missing 'name'");
+        }
 
         FilterBuilder builder = findFilterBuilder(ws, name);
-        if (builder == null) return error("Filter not found: " + name + " (gephi_list_filters lists them)");
+        if (builder == null) {
+            return error("Filter not found: " + name + " (gephi_list_filters lists them)");
+        }
 
         Filter filter = builder.getFilter(ws);
-        if (filter == null) return error("Filter builder produced no filter: " + name);
+        if (filter == null) {
+            return error("Filter builder produced no filter: " + name);
+        }
 
         // Set each named property; report the valid names if a param doesn't match.
         FilterProperty[] props = filter.getProperties();
         if (params != null && !params.isEmpty()) {
             java.util.List<String> propNames = new java.util.ArrayList<>();
-            if (props != null) for (FilterProperty p : props) propNames.add(p.getName());
+            if (props != null) {
+                for (FilterProperty p : props) {
+                    propNames.add(p.getName());
+                }
+            }
             for (Map.Entry<String, Object> e : params.entrySet()) {
                 FilterProperty match = null;
                 if (props != null) {
                     for (FilterProperty p : props) {
-                        if (e.getKey().equalsIgnoreCase(p.getName())) { match = p; break; }
+                        if (e.getKey().equalsIgnoreCase(p.getName())) {
+                            match = p;
+                            break;
+                        }
                     }
                 }
                 if (match == null) {
@@ -4253,8 +5272,11 @@ public class GephiControlService {
                     return error("Could not coerce '" + e.getKey() + "' to " + match.getValueType().getSimpleName()
                         + " (Range wants a [lo, hi] pair)");
                 }
-                try { match.setValue(converted); }
-                catch (Exception ex) { return error("Failed to set '" + e.getKey() + "': " + ex.getMessage()); }
+                try {
+                    match.setValue(converted);
+                } catch (Exception ex) {
+                    return error("Failed to set '" + e.getKey() + "': " + ex.getMessage());
+                }
             }
         }
 
@@ -4271,7 +5293,9 @@ public class GephiControlService {
             case "new_workspace":
                 break;
             case "column":
-                if (column == null) return error("action=column requires a 'column' name");
+                if (column == null) {
+                    return error("action=column requires a 'column' name");
+                }
                 break;
             default:
                 return error("Unknown action: " + action + " (use select|new_workspace|column)");
@@ -4293,7 +5317,9 @@ public class GephiControlService {
                 lockWrite(lockGraph);
                 try {
                     fc.filterVisible(query);
-                } finally { unlockWrite(lockGraph); }
+                } finally {
+                    unlockWrite(lockGraph);
+                }
                 r = success("Filter applied to the visible graph");
                 r.addProperty("nodes_before", nodesBefore);
                 r.addProperty("edges_before", edgesBefore);
@@ -4305,7 +5331,9 @@ public class GephiControlService {
                 boolean settled = awaitVisibleViewSettled(gm, nodesBefore);
                 r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
                 r.addProperty("edges_after", gm.getGraphVisible().getEdgeCount());
-                if (!settled) r.addProperty("counts_settled", false);
+                if (!settled) {
+                    r.addProperty("counts_settled", false);
+                }
                 break;
             case "new_workspace":
                 // Materializes the filtered subgraph into a fresh workspace — the
@@ -4314,15 +5342,21 @@ public class GephiControlService {
                 lockWrite(lockGraph);
                 try {
                     fc.exportToNewWorkspace(query);
-                } finally { unlockWrite(lockGraph); }
+                } finally {
+                    unlockWrite(lockGraph);
+                }
                 r = success("Filtered subgraph exported to a new workspace");
                 break;
             case "column":
-                if (column == null) return error("action=column requires a 'column' name");
+                if (column == null) {
+                    return error("action=column requires a 'column' name");
+                }
                 lockWrite(lockGraph);
                 try {
                     fc.exportToColumn(column, query);
-                } finally { unlockWrite(lockGraph); }
+                } finally {
+                    unlockWrite(lockGraph);
+                }
                 r = success("Filter membership written to boolean column: " + column);
                 r.addProperty("column", column);
                 break;
@@ -4347,8 +5381,12 @@ public class GephiControlService {
         boolean moved = false;
         while (System.currentTimeMillis() < deadline) {
             int now = gm.getGraphVisible().getNodeCount();
-            if (now != before) moved = true;
-            if (now == last && (moved || now != before)) return true;
+            if (now != before) {
+                moved = true;
+            }
+            if (now == last && (moved || now != before)) {
+                return true;
+            }
             last = now;
             try {
                 Thread.sleep(25);
@@ -4366,11 +5404,17 @@ public class GephiControlService {
 
     /** A filter from its name and settings, or the reason it could not be made. */
     private Object buildFilter(Workspace ws, String name, Map<String, Object> params) {
-        if (name == null) return "Each filter needs a 'name'";
+        if (name == null) {
+            return "Each filter needs a 'name'";
+        }
         FilterBuilder builder = findFilterBuilder(ws, name);
-        if (builder == null) return "Filter not found: " + name + " (gephi_list_filters lists them)";
+        if (builder == null) {
+            return "Filter not found: " + name + " (gephi_list_filters lists them)";
+        }
         Filter filter = builder.getFilter(ws);
-        if (filter == null) return "Filter builder produced no filter: " + name;
+        if (filter == null) {
+            return "Filter builder produced no filter: " + name;
+        }
         FilterProperty[] props = filter.getProperties();
         if (params != null) {
             for (Map.Entry<String, Object> e : params.entrySet()) {
@@ -4379,7 +5423,9 @@ public class GephiControlService {
                 if (props != null) {
                     for (FilterProperty p : props) {
                         names.add(p.getName());
-                        if (match == null && e.getKey().equalsIgnoreCase(p.getName())) match = p;
+                        if (match == null && e.getKey().equalsIgnoreCase(p.getName())) {
+                            match = p;
+                        }
                     }
                 }
                 if (match == null) {
@@ -4390,8 +5436,11 @@ public class GephiControlService {
                     return "Could not coerce '" + e.getKey() + "' to " + match.getValueType().getSimpleName()
                         + " (Range wants a [lo, hi] pair)";
                 }
-                try { match.setValue(converted); }
-                catch (Exception ex) { return "Failed to set '" + e.getKey() + "': " + ex.getMessage(); }
+                try {
+                    match.setValue(converted);
+                } catch (Exception ex) {
+                    return "Failed to set '" + e.getKey() + "': " + ex.getMessage();
+                }
             }
         }
         return filter;
@@ -4399,7 +5448,9 @@ public class GephiControlService {
 
     private FilterBuilder operatorBuilder(Workspace ws, String simpleName) {
         for (FilterBuilder b : allFilterBuilders(ws)) {
-            if (b.getClass().getSimpleName().equals(simpleName)) return b;
+            if (b.getClass().getSimpleName().equals(simpleName)) {
+                return b;
+            }
         }
         return null;
     }
@@ -4412,20 +5463,30 @@ public class GephiControlService {
      */
     @SuppressWarnings("unchecked")
     public JsonObject applyFilters(java.util.List<Map<String, Object>> specs, String combine, String action,
-                                   String column, boolean dryRun) {
+        String column, boolean dryRun) {
         FilterController fc = Lookup.getDefault().lookup(FilterController.class);
-        if (fc == null) return error("No filter controller available");
+        if (fc == null) {
+            return error("No filter controller available");
+        }
         Workspace ws = currentWorkspace();
         GraphModel gm = currentGraphModel();
-        if (ws == null || gm == null) return error("No workspace open");
-        if (specs == null || specs.isEmpty()) return error("Give at least one filter in 'filters'");
+        if (ws == null || gm == null) {
+            return error("No workspace open");
+        }
+        if (specs == null || specs.isEmpty()) {
+            return error("Give at least one filter in 'filters'");
+        }
         String mode = combine == null ? "all" : combine.toLowerCase(java.util.Locale.ROOT);
-        if (!mode.equals("all") && !mode.equals("any")) return error("combine must be \"all\" or \"any\"");
+        if (!mode.equals("all") && !mode.equals("any")) {
+            return error("combine must be \"all\" or \"any\"");
+        }
         String act = action == null ? "select" : action.toLowerCase(java.util.Locale.ROOT);
         if (!dryRun && !act.equals("select") && !act.equals("new_workspace") && !act.equals("column")) {
             return error("Unknown action: " + action + " (use select|new_workspace|column)");
         }
-        if (!dryRun && act.equals("column") && column == null) return error("action=column requires a 'column' name");
+        if (!dryRun && act.equals("column") && column == null) {
+            return error("action=column requires a 'column' name");
+        }
 
         java.util.List<Query> parts = new java.util.ArrayList<>();
         JsonArray applied = new JsonArray();
@@ -4433,7 +5494,9 @@ public class GephiControlService {
             String name = spec.get("name") == null ? null : spec.get("name").toString();
             Object params = spec.get("params");
             Object built = buildFilter(ws, name, params instanceof Map ? (Map<String, Object>) params : null);
-            if (built instanceof String) return error((String) built);
+            if (built instanceof String) {
+                return error((String) built);
+            }
             Filter filter = (Filter) built;
             Query q = fc.createQuery(filter);
             boolean exclude = Boolean.TRUE.equals(spec.get("exclude"))
@@ -4441,7 +5504,9 @@ public class GephiControlService {
             if (exclude) {
                 String not = filter instanceof org.gephi.filters.spi.EdgeFilter ? "NOTBuilderEdge" : "NOTBuilderNode";
                 FilterBuilder nb = operatorBuilder(ws, not);
-                if (nb == null) return error("Gephi's NOT operator is not available");
+                if (nb == null) {
+                    return error("Gephi's NOT operator is not available");
+                }
                 Query nq = fc.createQuery(nb.getFilter(ws));
                 fc.setSubQuery(nq, q);
                 q = nq;
@@ -4454,9 +5519,14 @@ public class GephiControlService {
             query = parts.get(0);
         } else {
             FilterBuilder ob = operatorBuilder(ws, mode.equals("all") ? "INTERSECTIONBuilder" : "UNIONBuilder");
-            if (ob == null) return error("Gephi's " + (mode.equals("all") ? "INTERSECTION" : "UNION") + " operator is not available");
+            if (ob == null) {
+                return error("Gephi's " + (mode.equals("all") ? "INTERSECTION" : "UNION")
+                    + " operator is not available");
+            }
             query = fc.createQuery(ob.getFilter(ws));
-            for (Query part : parts) fc.setSubQuery(query, part);
+            for (Query part : parts) {
+                fc.setSubQuery(query, part);
+            }
         }
 
         int nodesBefore = gm.getGraph().getNodeCount();
@@ -4466,32 +5536,47 @@ public class GephiControlService {
         if (dryRun) {
             org.gephi.graph.api.GraphView view;
             lockWrite(lockGraph);
-            try { view = fc.filter(query); } finally { unlockWrite(lockGraph); }
+            try {
+                view = fc.filter(query);
+            } finally {
+                unlockWrite(lockGraph);
+            }
             Graph kept = gm.getGraph(view);
             r = success("Dry run: nothing was changed");
             r.addProperty("nodes_kept", kept.getNodeCount());
             r.addProperty("edges_kept", kept.getEdgeCount());
             r.addProperty("nodes_removed", nodesBefore - kept.getNodeCount());
             r.addProperty("edges_removed", edgesBefore - kept.getEdgeCount());
-            if (!view.isMainView()) gm.destroyView(view);
+            if (!view.isMainView()) {
+                gm.destroyView(view);
+            }
         } else {
             fc.add(query);
             lockWrite(lockGraph);
             try {
                 switch (act) {
-                    case "new_workspace": fc.exportToNewWorkspace(query); break;
-                    case "column": fc.exportToColumn(column, query); break;
-                    default: fc.filterVisible(query);
+                    case "new_workspace":
+                        fc.exportToNewWorkspace(query);
+                        break;
+                    case "column":
+                        fc.exportToColumn(column, query);
+                        break;
+                    default:
+                        fc.filterVisible(query);
                 }
-            } finally { unlockWrite(lockGraph); }
+            } finally {
+                unlockWrite(lockGraph);
+            }
             if (act.equals("select")) {
                 r = success("Filters applied to the visible graph");
-                boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
+                final boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
                 r.addProperty("nodes_before", nodesBefore);
                 r.addProperty("edges_before", edgesBefore);
                 r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
                 r.addProperty("edges_after", gm.getGraphVisible().getEdgeCount());
-                if (!settled) r.addProperty("counts_settled", false);
+                if (!settled) {
+                    r.addProperty("counts_settled", false);
+                }
             } else if (act.equals("new_workspace")) {
                 r = success("Filtered subgraph exported to a new workspace");
             } else {
@@ -4518,10 +5603,14 @@ public class GephiControlService {
 
     /** {@code checkOnly}: report whether the change would be refused, without changing anything. */
     public JsonObject setTimeFromColumns(String target, String startName, String endName, String dateFormat,
-                                         boolean checkOnly) {
+        boolean checkOnly) {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
-        if (startName == null && endName == null) return error("Name a 'start' column, an 'end' column, or both");
+        if (gm == null) {
+            return error("No workspace open");
+        }
+        if (startName == null && endName == null) {
+            return error("Name a 'start' column, an 'end' column, or both");
+        }
         if (gm.getConfiguration().getTimeRepresentation() != org.gephi.graph.api.TimeRepresentation.INTERVAL) {
             return error("This workspace stores time as timestamps, so start and end columns cannot be"
                 + " turned into intervals. Import the data into a new workspace first.");
@@ -4529,42 +5618,62 @@ public class GephiControlService {
         Table table = tableFor(gm, target);
         Column start = startName == null ? null : findColumn(table, startName);
         Column end = endName == null ? null : findColumn(table, endName);
-        if (startName != null && start == null) return error("Column not found: " + startName);
-        if (endName != null && end == null) return error("Column not found: " + endName);
+        if (startName != null && start == null) {
+            return error("Column not found: " + startName);
+        }
+        if (endName != null && end == null) {
+            return error("Column not found: " + endName);
+        }
         org.gephi.datalab.api.AttributeColumnsMergeStrategiesController mc =
             Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsMergeStrategiesController.class);
-        if (mc == null) return error("No datalab controller available");
+        if (mc == null) {
+            return error("No datalab controller available");
+        }
         boolean numeric = (start == null || isNumberColumn(start)) && (end == null || isNumberColumn(end));
         if (!numeric) {
             if (dateFormat == null) {
                 return error("The columns hold text, so give 'date_format' as a Java date pattern,"
                     + " for example \"yyyy-MM-dd\" or \"dd/MM/yyyy\"");
             }
-            try { new java.text.SimpleDateFormat(dateFormat); }
-            catch (IllegalArgumentException e) { return error("Not a date pattern: " + dateFormat); }
+            try {
+                new java.text.SimpleDateFormat(dateFormat);
+            } catch (IllegalArgumentException e) {
+                return error("Not a date pattern: " + dateFormat);
+            }
         }
-        if (checkOnly) return success("Ready");
+        if (checkOnly) {
+            return success("Ready");
+        }
         Graph g = gm.getGraph();
         int withTime = 0;
         lockWrite(g);
         try {
             if (numeric) {
-                mc.mergeNumericColumnsToTimeInterval(table, start, end, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+                mc.mergeNumericColumnsToTimeInterval(table, start, end, Double.NEGATIVE_INFINITY,
+                    Double.POSITIVE_INFINITY);
             } else {
                 java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat(dateFormat);
                 mc.mergeDateColumnsToTimeInterval(table, start, end, fmt, null, null);
             }
             for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
-                if (el.getIntervals().length > 0) withTime++;
+                if (el.getIntervals().length > 0) {
+                    withTime++;
+                }
             }
         } catch (Exception e) {
             return error("Could not set time from the columns: " + e.getMessage());
-        } finally { unlockWrite(g); }
+        } finally {
+            unlockWrite(g);
+        }
         JsonObject r = success("Time set on " + withTime + " " + ("edge".equalsIgnoreCase(target) ? "edges" : "nodes"));
         r.addProperty("with_time", withTime);
         org.gephi.graph.api.Interval b = gm.getTimeBounds();
-        if (b != null && !Double.isInfinite(b.getLow())) r.addProperty("time_min", b.getLow());
-        if (b != null && !Double.isInfinite(b.getHigh())) r.addProperty("time_max", b.getHigh());
+        if (b != null && !Double.isInfinite(b.getLow())) {
+            r.addProperty("time_min", b.getLow());
+        }
+        if (b != null && !Double.isInfinite(b.getHigh())) {
+            r.addProperty("time_max", b.getHigh());
+        }
         return r;
     }
 
@@ -4578,19 +5687,27 @@ public class GephiControlService {
      * workspace stores time; an element with no time data counts as always present.
      */
     static boolean presentIn(org.gephi.graph.api.Element e, double low, double high,
-                             org.gephi.graph.api.TimeRepresentation rep) {
+        org.gephi.graph.api.TimeRepresentation rep) {
         if (rep == org.gephi.graph.api.TimeRepresentation.INTERVAL) {
             org.gephi.graph.api.Interval[] intervals = e.getIntervals();
-            if (intervals.length == 0) return true;
+            if (intervals.length == 0) {
+                return true;
+            }
             for (org.gephi.graph.api.Interval i : intervals) {
-                if (i.getLow() <= high && i.getHigh() >= low) return true;
+                if (i.getLow() <= high && i.getHigh() >= low) {
+                    return true;
+                }
             }
             return false;
         }
         double[] stamps = e.getTimestamps();
-        if (stamps.length == 0) return true;
+        if (stamps.length == 0) {
+            return true;
+        }
         for (double t : stamps) {
-            if (t >= low && t <= high) return true;
+            if (t >= low && t <= high) {
+                return true;
+            }
         }
         return false;
     }
@@ -4601,10 +5718,14 @@ public class GephiControlService {
      * and Gephi's timeline, are left as they were.
      */
     public JsonObject timeSlice(double low, double high) {
-        if (!(low <= high)) return error("'start' must not be after 'end'");
-        ProjectController pc = getProjectController();
+        if (!(low <= high)) {
+            return error("'start' must not be after 'end'");
+        }
+        final ProjectController pc = getProjectController();
         Workspace source = currentWorkspace();
-        if (source == null) return error("No workspace open");
+        if (source == null) {
+            return error("No workspace open");
+        }
         GraphModel gm = getGraphController().getGraphModel(source);
         if (!gm.isDynamic()) {
             return error("This network has no time data. gephi_set_time_from_columns gives it time from"
@@ -4616,9 +5737,19 @@ public class GephiControlService {
         org.gephi.graph.api.TimeRepresentation rep = gm.getConfiguration().getTimeRepresentation();
         lockRead(g);
         try {
-            for (Node n : g.getNodes().toArray()) if (presentIn(n, low, high, rep)) keep.add(n);
-            for (Edge e : g.getEdges().toArray()) if (!presentIn(e, low, high, rep)) dropEdges.add(e.getId());
-        } finally { g.readUnlock(); }
+            for (Node n : g.getNodes().toArray()) {
+                if (presentIn(n, low, high, rep)) {
+                    keep.add(n);
+                }
+            }
+            for (Edge e : g.getEdges().toArray()) {
+                if (!presentIn(e, low, high, rep)) {
+                    dropEdges.add(e.getId());
+                }
+            }
+        } finally {
+            g.readUnlock();
+        }
         String name = workspaceName(source) + " " + fmtTime(low) + "–" + fmtTime(high);
         Workspace[] made = new Workspace[1];
         onProjectThread(() -> {
@@ -4631,9 +5762,13 @@ public class GephiControlService {
             try {
                 for (Object id : dropEdges) {
                     Edge e = tg.getEdge(id);
-                    if (e != null) tg.removeEdge(e);
+                    if (e != null) {
+                        tg.removeEdge(e);
+                    }
                 }
-            } finally { tg.writeUnlock(); }
+            } finally {
+                tg.writeUnlock();
+            }
             pc.renameWorkspace(made[0], name);
             pc.openWorkspace(made[0]);
             return null;
@@ -4664,7 +5799,10 @@ public class GephiControlService {
         final long tiedPaths;
 
         PathResult(java.util.List<Node> nodes, java.util.List<Edge> edges, double length, long tiedPaths) {
-            this.nodes = nodes; this.edges = edges; this.length = length; this.tiedPaths = tiedPaths;
+            this.nodes = nodes;
+            this.edges = edges;
+            this.length = length;
+            this.tiedPaths = tiedPaths;
         }
     }
 
@@ -4678,7 +5816,7 @@ public class GephiControlService {
     static PathResult shortestPath(Graph g, Node from, Node to, String weighting, boolean followDirection) {
         java.util.Map<Node, Double> dist = new java.util.HashMap<>();
         java.util.Map<Node, Long> ways = new java.util.HashMap<>();
-        java.util.Map<Node, Edge> via = new java.util.HashMap<>();
+        final java.util.Map<Node, Edge> via = new java.util.HashMap<>();
         java.util.PriorityQueue<Object[]> queue = new java.util.PriorityQueue<>(
             (a, b) -> Double.compare((Double) a[1], (Double) b[1]));
         dist.put(from, 0.0);
@@ -4689,15 +5827,25 @@ public class GephiControlService {
         while (!queue.isEmpty()) {
             Object[] head = queue.poll();
             Node n = (Node) head[0];
-            if (!done.add(n)) continue;
-            if (n == to) break;
+            if (!done.add(n)) {
+                continue;
+            }
+            if (n == to) {
+                break;
+            }
             for (Edge e : g.getEdges(n).toArray()) {
                 Node other = g.getOpposite(n, e);
-                if (followDirection && e.isDirected() && e.getSource() != n) continue;
-                if (e.isSelfLoop() || done.contains(other)) continue;
+                if (followDirection && e.isDirected() && e.getSource() != n) {
+                    continue;
+                }
+                if (e.isSelfLoop() || done.contains(other)) {
+                    continue;
+                }
                 double w = e.getWeight();
                 double step = "distance".equals(weighting) ? w : "strength".equals(weighting) ? 1.0 / w : 1.0;
-                if (!(step > 0) || Double.isInfinite(step)) continue;
+                if (!(step > 0) || Double.isInfinite(step)) {
+                    continue;
+                }
                 double d = dist.get(n) + step;
                 Double known = dist.get(other);
                 if (known == null || d < known - eps) {
@@ -4710,7 +5858,9 @@ public class GephiControlService {
                 }
             }
         }
-        if (!dist.containsKey(to) || !done.contains(to)) return null;
+        if (!dist.containsKey(to) || !done.contains(to)) {
+            return null;
+        }
         java.util.LinkedList<Node> nodes = new java.util.LinkedList<>();
         java.util.LinkedList<Edge> edges = new java.util.LinkedList<>();
         Node cur = to;
@@ -4725,9 +5875,11 @@ public class GephiControlService {
     }
 
     public JsonObject findShortestPath(String fromId, String toId, String weighting, boolean followDirection,
-                                       String markColumn) {
+        String markColumn) {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
+        if (gm == null) {
+            return error("No workspace open");
+        }
         String w = weighting == null ? "none" : weighting.toLowerCase(java.util.Locale.ROOT);
         if (!w.equals("none") && !w.equals("distance") && !w.equals("strength")) {
             return error("weighting must be \"none\", \"distance\" or \"strength\"");
@@ -4738,11 +5890,17 @@ public class GephiControlService {
         try {
             Node from = g.getNode(fromId);
             Node to = g.getNode(toId);
-            if (from == null) return error("Node not found: " + fromId);
-            if (to == null) return error("Node not found: " + toId);
+            if (from == null) {
+                return error("Node not found: " + fromId);
+            }
+            if (to == null) {
+                return error("Node not found: " + toId);
+            }
             path = from == to ? new PathResult(java.util.List.of(from), java.util.List.of(), 0, 1)
                 : shortestPath(g, from, to, w, followDirection);
-        } finally { g.readUnlock(); }
+        } finally {
+            g.readUnlock();
+        }
         if (path == null) {
             JsonObject r = success("No path from " + fromId + " to " + toId
                 + (followDirection && gm.isDirected() ? " following edge directions" : ""));
@@ -4759,7 +5917,9 @@ public class GephiControlService {
         JsonObject r = success("Path of " + path.edges.size() + " step(s)");
         r.addProperty("found", true);
         r.addProperty("steps", path.edges.size());
-        if (!w.equals("none")) r.addProperty("length", path.length);
+        if (!w.equals("none")) {
+            r.addProperty("length", path.length);
+        }
         r.addProperty("weighting", w);
         r.addProperty("equally_short_paths", path.tiedPaths);
         r.add("path", nodes);
@@ -4767,16 +5927,27 @@ public class GephiControlService {
             lockWrite(g);
             try {
                 Column nc = findColumn(gm.getNodeTable(), markColumn);
-                if (nc == null) nc = gm.getNodeTable().addColumn(markColumn, Boolean.class);
-                Column ec = findColumn(gm.getEdgeTable(), markColumn);
-                if (ec == null) ec = gm.getEdgeTable().addColumn(markColumn, Boolean.class);
-                if (nc.getTypeClass() != Boolean.class || ec.getTypeClass() != Boolean.class) {
-                    return error("Column '" + markColumn + "' already exists and is not true/false; choose another name");
+                if (nc == null) {
+                    nc = gm.getNodeTable().addColumn(markColumn, Boolean.class);
                 }
-                for (Node n : g.getNodes().toArray()) n.setAttribute(nc, path.nodes.contains(n));
+                Column ec = findColumn(gm.getEdgeTable(), markColumn);
+                if (ec == null) {
+                    ec = gm.getEdgeTable().addColumn(markColumn, Boolean.class);
+                }
+                if (nc.getTypeClass() != Boolean.class || ec.getTypeClass() != Boolean.class) {
+                    return error("Column '" + markColumn
+                        + "' already exists and is not true/false; choose another name");
+                }
+                for (Node n : g.getNodes().toArray()) {
+                    n.setAttribute(nc, path.nodes.contains(n));
+                }
                 java.util.Set<Edge> onPath = new java.util.HashSet<>(path.edges);
-                for (Edge e : g.getEdges().toArray()) e.setAttribute(ec, onPath.contains(e));
-            } finally { unlockWrite(g); }
+                for (Edge e : g.getEdges().toArray()) {
+                    e.setAttribute(ec, onPath.contains(e));
+                }
+            } finally {
+                unlockWrite(g);
+            }
             r.addProperty("mark_column", markColumn);
         }
         return r;
@@ -4790,38 +5961,58 @@ public class GephiControlService {
      * "fill_empty" writes {@code value} where the column is empty; "clear" empties it.
      */
     public JsonObject editColumn(String target, String columnName, String action, String value,
-                                 String type, String newName) {
+        String type, String newName) {
         return editColumn(target, columnName, action, value, type, newName, false);
     }
 
     /** {@code checkOnly}: report whether the edit would be refused, without changing anything. */
     public JsonObject editColumn(String target, String columnName, String action, String value,
-                                 String type, String newName, boolean checkOnly) {
+        String type, String newName, boolean checkOnly) {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
-        if (columnName == null || action == null) return error("Give 'column' and 'action'");
+        if (gm == null) {
+            return error("No workspace open");
+        }
+        if (columnName == null || action == null) {
+            return error("Give 'column' and 'action'");
+        }
         org.gephi.datalab.api.AttributeColumnsController acc =
             Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsController.class);
-        if (acc == null) return error("No datalab controller available");
+        if (acc == null) {
+            return error("No datalab controller available");
+        }
         Table table = tableFor(gm, target);
         Column col = findColumn(table, columnName);
-        if (col == null) return error("Column not found: " + columnName);
+        if (col == null) {
+            return error("Column not found: " + columnName);
+        }
         String title = col.getTitle();
         Graph g = gm.getGraph();
         lockWrite(g);
         try {
             switch (action.toLowerCase(java.util.Locale.ROOT)) {
                 case "delete": {
-                    if (!acc.canDeleteColumn(col)) return error("Gephi keeps the '" + title + "' column; it cannot be deleted");
-                    if (checkOnly) return success("Ready");
+                    if (!acc.canDeleteColumn(col)) {
+                        return error("Gephi keeps the '" + title + "' column; it cannot be deleted");
+                    }
+                    if (checkOnly) {
+                        return success("Ready");
+                    }
                     acc.deleteAttributeColumn(table, col);
                     return success("Deleted column " + title);
                 }
                 case "rename": {
-                    if (newName == null || newName.isBlank()) return error("Give the new name in 'new_name'");
-                    if (!acc.canDeleteColumn(col)) return error("Gephi's own '" + title + "' column cannot be renamed");
-                    if (findColumn(table, newName) != null) return error("A column named " + newName + " already exists");
-                    if (checkOnly) return success("Ready");
+                    if (newName == null || newName.isBlank()) {
+                        return error("Give the new name in 'new_name'");
+                    }
+                    if (!acc.canDeleteColumn(col)) {
+                        return error("Gephi's own '" + title + "' column cannot be renamed");
+                    }
+                    if (findColumn(table, newName) != null) {
+                        return error("A column named " + newName + " already exists");
+                    }
+                    if (checkOnly) {
+                        return success("Ready");
+                    }
                     Column copy = acc.duplicateColumn(table, col, newName, col.getTypeClass());
                     acc.deleteAttributeColumn(table, col);
                     JsonObject r = success("Renamed " + title + " to " + copy.getTitle());
@@ -4830,10 +6021,16 @@ public class GephiControlService {
                 }
                 case "convert": {
                     Class<?> cls = typeStringToClass(type);
-                    if (cls == null) return error("Give 'type': string, integer, long, float, double or boolean");
-                    if (!acc.canDeleteColumn(col)) return error("Gephi's own '" + title + "' column cannot be converted");
-                    if (checkOnly) return success("Ready");
-                    int before = countValues(gm, target, col);
+                    if (cls == null) {
+                        return error("Give 'type': string, integer, long, float, double or boolean");
+                    }
+                    if (!acc.canDeleteColumn(col)) {
+                        return error("Gephi's own '" + title + "' column cannot be converted");
+                    }
+                    if (checkOnly) {
+                        return success("Ready");
+                    }
+                    final int before = countValues(gm, target, col);
                     Column tmp = acc.duplicateColumn(table, col, title + " (converting)", cls);
                     acc.deleteAttributeColumn(table, col);
                     Column converted = acc.duplicateColumn(table, tmp, title, cls);
@@ -4849,24 +6046,44 @@ public class GephiControlService {
                     return r;
                 }
                 case "fill_empty": {
-                    if (value == null) return error("Give the value to write in 'value'");
-                    if (!acc.canChangeColumnData(col)) return error("The '" + title + "' column cannot be changed");
-                    if (checkOnly) return success("Ready");
+                    if (value == null) {
+                        return error("Give the value to write in 'value'");
+                    }
+                    if (!acc.canChangeColumnData(col)) {
+                        return error("The '" + title + "' column cannot be changed");
+                    }
+                    if (checkOnly) {
+                        return success("Ready");
+                    }
                     java.util.List<Node> nodes = new java.util.ArrayList<>();
                     java.util.List<Edge> edges = new java.util.ArrayList<>();
                     for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
-                        if (el.getAttribute(col) != null) continue;
-                        if (el instanceof Node) nodes.add((Node) el); else edges.add((Edge) el);
+                        if (el.getAttribute(col) != null) {
+                            continue;
+                        }
+                        if (el instanceof Node) {
+                            nodes.add((Node) el);
+                        } else {
+                            edges.add((Edge) el);
+                        }
                     }
-                    if (!nodes.isEmpty()) acc.fillNodesColumnWithValue(nodes.toArray(new Node[0]), col, value);
-                    if (!edges.isEmpty()) acc.fillEdgesColumnWithValue(edges.toArray(new Edge[0]), col, value);
+                    if (!nodes.isEmpty()) {
+                        acc.fillNodesColumnWithValue(nodes.toArray(new Node[0]), col, value);
+                    }
+                    if (!edges.isEmpty()) {
+                        acc.fillEdgesColumnWithValue(edges.toArray(new Edge[0]), col, value);
+                    }
                     JsonObject r = success("Filled " + (nodes.size() + edges.size()) + " empty value(s) in " + title);
                     r.addProperty("filled", nodes.size() + edges.size());
                     return r;
                 }
                 case "clear": {
-                    if (!acc.canClearColumnData(col)) return error("The '" + title + "' column cannot be cleared");
-                    if (checkOnly) return success("Ready");
+                    if (!acc.canClearColumnData(col)) {
+                        return error("The '" + title + "' column cannot be cleared");
+                    }
+                    if (checkOnly) {
+                        return success("Ready");
+                    }
                     acc.clearColumnData(table, col);
                     return success("Cleared every value in " + title);
                 }
@@ -4875,12 +6092,18 @@ public class GephiControlService {
             }
         } catch (Exception e) {
             return error("Failed: " + e.getMessage());
-        } finally { unlockWrite(g); }
+        } finally {
+            unlockWrite(g);
+        }
     }
 
     private static int countValues(GraphModel gm, String target, Column col) {
         int n = 0;
-        for (org.gephi.graph.api.Element el : elementsFor(gm, target)) if (el.getAttribute(col) != null) n++;
+        for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
+            if (el.getAttribute(col) != null) {
+                n++;
+            }
+        }
         return n;
     }
 
@@ -4903,7 +6126,9 @@ public class GephiControlService {
     static JsonObject columnValueFrequenciesCore(GraphModel gm, String target, String columnId) {
         Table table = tableFor(gm, target);
         Column col = findColumn(table, columnId);
-        if (col == null) return error("Column not found: " + columnId);
+        if (col == null) {
+            return error("Column not found: " + columnId);
+        }
         java.util.LinkedHashMap<String, Integer> freq = new java.util.LinkedHashMap<>();
         int total = 0;
         for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
@@ -4918,7 +6143,9 @@ public class GephiControlService {
         r.addProperty("total", total);
         r.addProperty("distinct_values", freq.size());
         JsonObject f = new JsonObject();
-        for (Map.Entry<String, Integer> e : freq.entrySet()) f.addProperty(e.getKey(), e.getValue());
+        for (Map.Entry<String, Integer> e : freq.entrySet()) {
+            f.addProperty(e.getKey(), e.getValue());
+        }
         r.add("frequencies", f);
         return r;
     }
@@ -4930,13 +6157,19 @@ public class GephiControlService {
     static JsonObject detectDuplicatesCore(GraphModel gm, String target, String columnId, boolean caseSensitive) {
         Table table = tableFor(gm, target);
         Column col = findColumn(table, columnId);
-        if (col == null) return error("Column not found: " + columnId);
+        if (col == null) {
+            return error("Column not found: " + columnId);
+        }
         java.util.LinkedHashMap<String, java.util.List<String>> groups = new java.util.LinkedHashMap<>();
         for (org.gephi.graph.api.Element el : elementsFor(gm, target)) {
             Object v = el.getAttribute(col);
-            if (v == null) continue;
+            if (v == null) {
+                continue;
+            }
             String key = v.toString();
-            if (!caseSensitive) key = key.toLowerCase();
+            if (!caseSensitive) {
+                key = key.toLowerCase();
+            }
             groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(String.valueOf(el.getId()));
         }
         JsonArray dupes = new JsonArray();
@@ -4945,7 +6178,9 @@ public class GephiControlService {
             if (ids.size() >= 2) {
                 groupCount++;
                 JsonArray a = new JsonArray();
-                for (String id : ids) a.add(id);
+                for (String id : ids) {
+                    a.add(id);
+                }
                 dupes.add(a);
             }
         }
@@ -4958,35 +6193,53 @@ public class GephiControlService {
 
     public JsonObject columnValueFrequencies(String target, String columnId) {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
-        if (columnId == null) return error("Missing 'column'");
+        if (gm == null) {
+            return error("No workspace open");
+        }
+        if (columnId == null) {
+            return error("Missing 'column'");
+        }
         return columnValueFrequenciesCore(gm, target, columnId);
     }
 
     public JsonObject detectDuplicates(String target, String columnId, boolean caseSensitive) {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
-        if (columnId == null) return error("Missing 'column'");
+        if (gm == null) {
+            return error("No workspace open");
+        }
+        if (columnId == null) {
+            return error("Missing 'column'");
+        }
         return detectDuplicatesCore(gm, target, columnId, caseSensitive);
     }
 
     /** Merge several nodes into one, reassigning edges; deletes the merged-away nodes. */
     public JsonObject mergeNodes(java.util.List<String> ids, String intoId) {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
-        if (ids == null || ids.isEmpty()) return error("Missing 'ids'");
+        if (gm == null) {
+            return error("No workspace open");
+        }
+        if (ids == null || ids.isEmpty()) {
+            return error("Missing 'ids'");
+        }
         org.gephi.datalab.api.GraphElementsController gec =
             Lookup.getDefault().lookup(org.gephi.datalab.api.GraphElementsController.class);
-        if (gec == null) return error("No datalab controller available");
+        if (gec == null) {
+            return error("No datalab controller available");
+        }
         Graph g = gm.getGraph();
         java.util.List<Node> nodes = new java.util.ArrayList<>();
         for (String id : ids) {
             Node n = g.getNode(id);
-            if (n == null) return error("Node not found: " + id);
+            if (n == null) {
+                return error("Node not found: " + id);
+            }
             nodes.add(n);
         }
         Node into = intoId != null ? g.getNode(intoId) : nodes.get(0);
-        if (into == null) return error("Merge target node not found: " + intoId);
+        if (into == null) {
+            return error("Merge target node not found: " + intoId);
+        }
         try {
             // Empty column/strategy arrays: reassign edges and keep the `into` node's
             // own attribute values (no per-column value merge). Passing null throws
@@ -5011,12 +6264,16 @@ public class GephiControlService {
      */
     public JsonObject colorEdgesByPartition(String columnName, Map<String, int[]> colorMap) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
+        if (ws == null) {
+            return error("No project open");
+        }
         try {
             GraphModel gm = currentGraphModel();
             Graph graph = gm.getGraph();
             Column col = findColumn(gm.getEdgeTable(), columnName);
-            if (col == null) return error("Edge column not found: " + columnName);
+            if (col == null) {
+                return error("Edge column not found: " + columnName);
+            }
 
             java.util.Map<String, Color> palette = new java.util.LinkedHashMap<>();
             if (colorMap != null && !colorMap.isEmpty()) {
@@ -5028,7 +6285,9 @@ public class GephiControlService {
                 java.util.Map<String, Integer> counts = new java.util.HashMap<>();
                 for (Edge ed : graph.getEdges().toArray()) {
                     Object v = ed.getAttribute(col);
-                    if (v != null) counts.merge(v.toString(), 1, Integer::sum);
+                    if (v != null) {
+                        counts.merge(v.toString(), 1, Integer::sum);
+                    }
                 }
                 palette.putAll(partitionPalette(counts));
             }
@@ -5036,15 +6295,19 @@ public class GephiControlService {
             org.gephi.appearance.api.Function f = applyAppearance(ws, col, true,
                 org.gephi.appearance.plugin.PartitionElementColorTransformer.class,
                 fn -> applyPaletteToPartition(((org.gephi.appearance.api.PartitionFunction) fn).getPartition(),
-                                              fn.getGraph(), palette));
-            if (f == null) return noAppearanceFunction("edge partition colouring", col);
+                    fn.getGraph(), palette));
+            if (f == null) {
+                return noAppearanceFunction("edge partition colouring", col);
+            }
             int colored = countVisible(gm, true, v -> v != null && palette.containsKey(v.toString()), col);
             JsonObject r = success("Colored " + colored + " edges by " + columnName);
             r.addProperty("partitions", palette.size());
             addPaletteNote(r, palette.size());
             addViewInfo(r, gm, true);
             return r;
-        } catch (Exception e) { return error("Failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -5058,16 +6321,24 @@ public class GephiControlService {
         return exportByFormat(filePath, format, true);
     }
 
-    /** @param visible see exportGexf — same contract, response self-declares the view. */
+    /**
+     * @param visible see exportGexf — same contract, response self-declares the view.
+     */
     public JsonObject exportByFormat(String filePath, String format, boolean visible) {
         Workspace ws = currentWorkspace();
-        if (ws == null) return error("No project open");
-        if (filePath == null || format == null) return error("Missing 'file' or 'format'");
+        if (ws == null) {
+            return error("No project open");
+        }
+        if (filePath == null || format == null) {
+            return error("Missing 'file' or 'format'");
+        }
         try {
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter(format);
-            if (exporter == null) return error("No exporter for format: " + format
-                + " (try vna, pajek, dl, spreadsheet, gdf, gml, json, gexf, graphml, csv)");
+            if (exporter == null) {
+                return error("No exporter for format: " + format
+                    + " (try vna, pajek, dl, spreadsheet, gdf, gml, json, gexf, graphml, csv)");
+            }
             if (exporter instanceof GraphExporter) {
                 ((GraphExporter) exporter).setExportVisible(visible);
                 ((GraphExporter) exporter).setWorkspace(ws);
@@ -5077,7 +6348,9 @@ public class GephiControlService {
             r.addProperty("format", format);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
-        } catch (Exception e) { return error("Export failed: " + e.getMessage()); }
+        } catch (Exception e) {
+            return error("Export failed: " + e.getMessage());
+        }
     }
 
     // ─── Timeline / dynamic (Group G) ────────────────────────────────
@@ -5090,7 +6363,9 @@ public class GephiControlService {
      */
     public JsonObject getTimeline() {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
+        if (gm == null) {
+            return error("No workspace open");
+        }
         JsonObject r = success("Timeline state");
         try {
             r.addProperty("graph_is_dynamic", gm.isDynamic());
@@ -5100,14 +6375,20 @@ public class GephiControlService {
                 r.addProperty("time_max", b.getHigh());
             }
             r.addProperty("time_format", String.valueOf(gm.getTimeFormat()));
-        } catch (Exception e) { r.addProperty("bounds_error", e.getMessage()); }
+        } catch (Exception e) {
+            r.addProperty("bounds_error", e.getMessage());
+        }
         org.gephi.timeline.api.TimelineController tc =
             Lookup.getDefault().lookup(org.gephi.timeline.api.TimelineController.class);
         if (tc != null) {
             try {
                 JsonArray cols = new JsonArray();
                 String[] dc = tc.getDynamicGraphColumns();
-                if (dc != null) for (String c : dc) cols.add(c);
+                if (dc != null) {
+                    for (String c : dc) {
+                        cols.add(c);
+                    }
+                }
                 r.add("dynamic_columns", cols);
                 org.gephi.timeline.api.TimelineModel tm = tc.getModel();
                 if (tm != null) {
@@ -5118,7 +6399,9 @@ public class GephiControlService {
                         r.addProperty("interval_end", tm.getIntervalEnd());
                     }
                 }
-            } catch (Exception e) { r.addProperty("timeline_error", e.getMessage()); }
+            } catch (Exception e) {
+                r.addProperty("timeline_error", e.getMessage());
+            }
         } else {
             r.addProperty("timeline_controller", "unavailable");
         }
@@ -5136,15 +6419,22 @@ public class GephiControlService {
     /** Create a boolean column flagging rows whose column value matches a regex. */
     public JsonObject createRegexColumn(String target, String columnId, String newColumnTitle, String regex) {
         GraphModel gm = currentGraphModel();
-        if (gm == null) return error("No workspace open");
-        if (columnId == null || regex == null || newColumnTitle == null)
+        if (gm == null) {
+            return error("No workspace open");
+        }
+        if (columnId == null || regex == null || newColumnTitle == null) {
             return error("Missing 'column', 'regex', or 'new_column'");
+        }
         org.gephi.datalab.api.AttributeColumnsController acc =
             Lookup.getDefault().lookup(org.gephi.datalab.api.AttributeColumnsController.class);
-        if (acc == null) return error("No datalab controller available");
+        if (acc == null) {
+            return error("No datalab controller available");
+        }
         Table table = tableFor(gm, target);
         Column col = findColumn(table, columnId);
-        if (col == null) return error("Column not found: " + columnId);
+        if (col == null) {
+            return error("Column not found: " + columnId);
+        }
         try {
             java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(regex);
             Column created = acc.createBooleanMatchesColumn(table, col, newColumnTitle, pattern);

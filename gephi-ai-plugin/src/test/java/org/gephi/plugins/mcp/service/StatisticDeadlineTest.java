@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,14 +36,22 @@ class StatisticDeadlineTest {
         final AtomicBoolean cancelled = new AtomicBoolean();
 
         @Override public void run() {
-            while (!cancelled.get()) Thread.onSpinWait();
+            while (!cancelled.get()) {
+                Thread.onSpinWait();
+            }
         }
-        @Override public boolean cancel() { cancelled.set(true); return true; }
-        @Override public void setProgressTicket(ProgressTicket t) {}
+
+        @Override public boolean cancel() {
+            cancelled.set(true);
+            return true;
+        }
+
+        @Override public void setProgressTicket(ProgressTicket t) {
+        }
     }
 
     @Test
-    void aTaskThatNeverFinishesIsStoppedAtTheDeadline() {
+    void taskThatNeverFinishesIsStoppedAtTheDeadline() {
         Spinner s = new Spinner();
         long start = System.nanoTime();
         boolean stopped = GephiControlService.runWithDeadline(s, s, 200);
@@ -54,9 +63,10 @@ class StatisticDeadlineTest {
     }
 
     @Test
-    void aTaskThatFinishesInTimeIsNotReportedAsStoppedOrCancelledLater() throws Exception {
+    void taskThatFinishesInTimeIsNotReportedAsStoppedOrCancelledLater() throws Exception {
         Spinner s = new Spinner();
-        boolean stopped = GephiControlService.runWithDeadline(() -> {}, s, 200);
+        boolean stopped = GephiControlService.runWithDeadline(() -> {
+        }, s, 200);
         Thread.sleep(400);
 
         assertFalse(stopped);
@@ -66,7 +76,8 @@ class StatisticDeadlineTest {
     @Test
     void noDeadlineMeansNoWatchdog() {
         Spinner s = new Spinner();
-        assertFalse(GephiControlService.runWithDeadline(() -> {}, s, 0));
+        assertFalse(GephiControlService.runWithDeadline(() -> {
+        }, s, 0));
         assertFalse(s.cancelled.get());
     }
 }

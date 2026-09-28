@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,7 +34,9 @@ class ShortestPathTest {
     private static GraphModel diamond(boolean directed) {
         GraphModel gm = GraphModel.Factory.newInstance();
         Graph g = directed ? gm.getDirectedGraph() : gm.getUndirectedGraph();
-        for (String id : new String[] {"a", "b", "c", "d"}) g.addNode(gm.factory().newNode(id));
+        for (String id : new String[]{"a", "b", "c", "d"}) {
+            g.addNode(gm.factory().newNode(id));
+        }
         edge(gm, g, "a", "b", 1, directed);
         edge(gm, g, "b", "d", 1, directed);
         edge(gm, g, "a", "c", 3, directed);
@@ -52,7 +55,7 @@ class ShortestPathTest {
     }
 
     private static GephiControlService.PathResult path(GraphModel gm, String from, String to,
-                                                       String weighting, boolean follow) {
+        String weighting, boolean follow) {
         Graph g = gm.getGraph();
         return GephiControlService.shortestPath(g, g.getNode(from), g.getNode(to), weighting, follow);
     }

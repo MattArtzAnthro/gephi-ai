@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,23 +58,38 @@ class PanelExecutionTest {
         final AtomicBoolean cancelled = new AtomicBoolean();
         final AtomicBoolean ran = new AtomicBoolean();
 
-        SlowStat(long millis) { this.millis = millis; }
+        SlowStat(long millis) {
+            this.millis = millis;
+        }
 
         @Override public void execute(GraphModel gm) {
             ran.set(true);
             long end = System.currentTimeMillis() + millis;
-            while (!cancelled.get() && System.currentTimeMillis() < end) Thread.onSpinWait();
+            while (!cancelled.get() && System.currentTimeMillis() < end) {
+                Thread.onSpinWait();
+            }
         }
-        @Override public String getReport() { return ""; }
-        @Override public boolean cancel() { cancelled.set(true); return true; }
-        @Override public void setProgressTicket(ProgressTicket t) {}
+
+        @Override public String getReport() {
+            return "";
+        }
+
+        @Override public boolean cancel() {
+            cancelled.set(true);
+            return true;
+        }
+
+        @Override public void setProgressTicket(ProgressTicket t) {
+        }
     }
 
     /** Runs the statistic on its own thread and reports back, as Gephi's panel controller does. */
     static class FakeStatsUI implements StatisticsControllerUI {
         Throwable failWith;
 
-        @Override public void execute(Statistics s) { execute(s, null); }
+        @Override public void execute(Statistics s) {
+            execute(s, null);
+        }
 
         @Override public void execute(Statistics s, LongTaskListener listener) {
             new Thread(() -> {
@@ -91,11 +107,12 @@ class PanelExecutionTest {
             }).start();
         }
 
-        @Override public void setStatisticsUIVisible(StatisticsUI ui, boolean visible) {}
+        @Override public void setStatisticsUIVisible(StatisticsUI ui, boolean visible) {
+        }
     }
 
     @Test
-    void aStatisticRunThroughThePanelIsWaitedFor() throws Exception {
+    void statisticRunThroughThePanelIsWaitedFor() throws Exception {
         SlowStat stat = new SlowStat(150);
 
         boolean stopped = GephiControlService.executeStatistic(stat, null, 0, new FakeStatsUI(), DIRECT);
@@ -106,7 +123,7 @@ class PanelExecutionTest {
     }
 
     @Test
-    void aStatisticPastItsDeadlineIsStoppedAndReported() throws Exception {
+    void statisticPastItsDeadlineIsStoppedAndReported() throws Exception {
         SlowStat stat = new SlowStat(60_000);
 
         long start = System.nanoTime();
@@ -118,7 +135,7 @@ class PanelExecutionTest {
     }
 
     @Test
-    void aFailureReportedByGephiEndsTheWaitWithTheError() {
+    void failureReportedByGephiEndsTheWaitWithTheError() {
         FakeStatsUI ui = new FakeStatsUI();
         ui.failWith = new IllegalStateException("boom");
 
@@ -137,7 +154,7 @@ class PanelExecutionTest {
     }
 
     @Test
-    void aStopRequestCancelsTheRunningStatisticAndMarksItStopped() throws Exception {
+    void stopRequestCancelsTheRunningStatisticAndMarksItStopped() throws Exception {
         SlowStat stat = new SlowStat(60_000);
         GephiControlService.RUNNING_STATISTICS.put(stat, "Slow");
         try {
@@ -149,9 +166,11 @@ class PanelExecutionTest {
                 }
             });
             run.start();
-            while (!stat.ran.get()) Thread.onSpinWait();
+            while (!stat.ran.get()) {
+                Thread.onSpinWait();
+            }
 
-            com.google.gson.JsonObject r = GephiControlService.getInstance().stopStatistics();
+            final com.google.gson.JsonObject r = GephiControlService.getInstance().stopStatistics();
 
             run.join(10_000);
             assertFalse(run.isAlive(), "the statistic kept running after the stop");
@@ -165,7 +184,7 @@ class PanelExecutionTest {
     }
 
     @Test
-    void aStopWithNothingRunningSaysSo() {
+    void stopWithNothingRunningSaysSo() {
         com.google.gson.JsonObject r = GephiControlService.getInstance().stopStatistics();
 
         assertTrue(r.get("message").getAsString().contains("No statistic"), r.toString());
@@ -176,31 +195,59 @@ class PanelExecutionTest {
         final List<String> calls = new ArrayList<>();
         Layout selected;
 
-        @Override public LayoutModel getModel() { return null; }
-        @Override public LayoutModel getModel(Workspace w) { return null; }
+        @Override public LayoutModel getModel() {
+            return null;
+        }
+
+        @Override public LayoutModel getModel(Workspace w) {
+            return null;
+        }
+
         @Override public void setLayout(Layout l) {
             selected = l;
             calls.add("setLayout linLog=" + value(l, "linLogMode"));
         }
-        @Override public void executeLayout() { calls.add("execute"); }
-        @Override public void executeLayout(int n) { calls.add("execute " + n); }
-        public void executeLayout(Layout l) { calls.add("executeNow"); }
-        @Override public boolean canExecute() { return true; }
-        @Override public void stopLayout() { calls.add("stop"); }
-        @Override public boolean canStop() { return false; }
+
+        @Override public void executeLayout() {
+            calls.add("execute");
+        }
+
+        @Override public void executeLayout(int n) {
+            calls.add("execute " + n);
+        }
+
+        public void executeLayout(Layout l) {
+            calls.add("executeNow");
+        }
+
+        @Override public boolean canExecute() {
+            return true;
+        }
+
+        @Override public void stopLayout() {
+            calls.add("stop");
+        }
+
+        @Override public boolean canStop() {
+            return false;
+        }
     }
 
     static Object value(Layout layout, String key) {
         for (LayoutProperty p : layout.getProperties()) {
             if (p.getCanonicalName() != null && p.getCanonicalName().contains("." + key + ".")) {
-                try { return p.getProperty().getValue(); } catch (Exception e) { return null; }
+                try {
+                    return p.getProperty().getValue();
+                } catch (Exception e) {
+                    return null;
+                }
             }
         }
         return null;
     }
 
     @Test
-    void aLayoutIsSelectedThenGivenItsSettingsThenShownAgainThenRun() {
+    void layoutIsSelectedThenGivenItsSettingsThenShownAgainThenRun() {
         FakeLayoutController lc = new FakeLayoutController();
         Layout layout = new ForceAtlas2Builder().buildLayout();
         Map<String, Object> props = new LinkedHashMap<>();
@@ -224,7 +271,11 @@ class PanelExecutionTest {
         layout.resetPropertiesValues();
         for (LayoutProperty p : layout.getProperties()) {
             if (p.getCanonicalName().contains(".linLogMode.")) {
-                try { p.getProperty().setValue(true); } catch (Exception e) { throw new AssertionError(e); }
+                try {
+                    p.getProperty().setValue(true);
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
             }
         }
 
@@ -238,23 +289,53 @@ class PanelExecutionTest {
         double window = 1;
         double tick = 1;
 
-        FakeDynamicStat() {}
-        FakeDynamicStat(double window, double tick) { this.window = window; this.tick = tick; }
+        FakeDynamicStat() {
+        }
 
-        @Override public void execute(GraphModel gm) {}
-        @Override public String getReport() { return ""; }
-        @Override public void loop(org.gephi.graph.api.GraphView v, org.gephi.graph.api.Interval i) {}
-        @Override public void end() {}
-        @Override public double getWindow() { return window; }
-        @Override public void setWindow(double w) { window = w; }
-        @Override public double getTick() { return tick; }
-        @Override public void setTick(double t) { tick = t; }
-        @Override public org.gephi.graph.api.Interval getBounds() { return null; }
-        @Override public void setBounds(org.gephi.graph.api.Interval b) {}
+        FakeDynamicStat(double window, double tick) {
+            this.window = window;
+            this.tick = tick;
+        }
+
+        @Override public void execute(GraphModel gm) {
+        }
+
+        @Override public String getReport() {
+            return "";
+        }
+
+        @Override public void loop(org.gephi.graph.api.GraphView v, org.gephi.graph.api.Interval i) {
+        }
+
+        @Override public void end() {
+        }
+
+        @Override public double getWindow() {
+            return window;
+        }
+
+        @Override public void setWindow(double w) {
+            window = w;
+        }
+
+        @Override public double getTick() {
+            return tick;
+        }
+
+        @Override public void setTick(double t) {
+            tick = t;
+        }
+
+        @Override public org.gephi.graph.api.Interval getBounds() {
+            return null;
+        }
+
+        @Override public void setBounds(org.gephi.graph.api.Interval b) {
+        }
     }
 
     @Test
-    void aDynamicStatisticIsRefusedOnANetworkWithoutTimeData() {
+    void dynamicStatisticIsRefusedOnANetworkWithoutTimeData() {
         GraphModel gm = GraphModel.Factory.newInstance();
         gm.getDirectedGraph().addNode(gm.factory().newNode("a"));
 
@@ -264,7 +345,7 @@ class PanelExecutionTest {
     }
 
     @Test
-    void aDynamicStatisticIsAllowedWhenTheNetworkHasTimeData() {
+    void dynamicStatisticIsAllowedWhenTheNetworkHasTimeData() {
         org.gephi.graph.api.Configuration config = org.gephi.graph.api.Configuration.builder()
             .timeRepresentation(org.gephi.graph.api.TimeRepresentation.INTERVAL).build();
         GraphModel gm = GraphModel.Factory.newInstance(config);
@@ -286,28 +367,28 @@ class PanelExecutionTest {
     }
 
     @Test
-    void aDynamicStatisticWithoutAStepIsRefusedAndTheTimeSpanIsGiven() {
+    void dynamicStatisticWithoutAStepIsRefusedAndTheTimeSpanIsGiven() {
         // Gephi's dynamic statistics start with window 0 and tick 0; its settings dialog fills
         // them in. Run with tick 0, Gephi's loop never advances.
         String problem = GephiControlService.dynamicStatisticProblem(new FakeDynamicStat(0, 0),
-                                                                     timedNetwork(1990, 2000));
+            timedNetwork(1990, 2000));
 
         assertTrue(problem != null && problem.contains("tick") && problem.contains("1990")
             && problem.contains("2000"), String.valueOf(problem));
     }
 
     @Test
-    void aWindowWiderThanTheNetworksTimeSpanIsRefused() {
+    void windowWiderThanTheNetworksTimeSpanIsRefused() {
         String problem = GephiControlService.dynamicStatisticProblem(new FakeDynamicStat(50, 1),
-                                                                     timedNetwork(1990, 2000));
+            timedNetwork(1990, 2000));
 
         assertTrue(problem != null && problem.contains("window"), String.valueOf(problem));
     }
 
     @Test
-    void aDynamicStatisticWithAWindowAndStepInsideTheSpanRuns() {
+    void dynamicStatisticWithAWindowAndStepInsideTheSpanRuns() {
         assertEquals(null, GephiControlService.dynamicStatisticProblem(new FakeDynamicStat(2, 1),
-                                                                       timedNetwork(1990, 2000)));
+            timedNetwork(1990, 2000)));
     }
 
     @Test

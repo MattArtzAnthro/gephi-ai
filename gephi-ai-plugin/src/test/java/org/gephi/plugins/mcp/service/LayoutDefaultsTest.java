@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.gephi.graph.api.GraphModel;
-import org.gephi.layout.plugin.forceAtlas2.ForceAtlas2Builder;
 import org.gephi.layout.plugin.force.yifanHu.YifanHu;
+import org.gephi.layout.plugin.forceAtlas2.ForceAtlas2Builder;
 import org.gephi.layout.plugin.openord.OpenOrdLayoutBuilder;
 import org.gephi.layout.spi.Layout;
 import org.gephi.layout.spi.LayoutProperty;
@@ -61,16 +62,16 @@ class LayoutDefaultsTest {
         layout.setGraphModel(GraphModel.Factory.newInstance());
 
         assertEquals(0d, numericProperty(layout, "Layout Size"), 0d,
-                "expected an un-reset OpenOrd to report Layout Size 0");
+            "expected an un-reset OpenOrd to report Layout Size 0");
         assertEquals(0d, numericProperty(layout, "Num Iterations"), 0d,
-                "expected an un-reset OpenOrd to report Num Iterations 0");
+            "expected an un-reset OpenOrd to report Num Iterations 0");
 
         layout.resetPropertiesValues();
 
         assertTrue(numericProperty(layout, "Layout Size") > 0d,
-                "reset must give OpenOrd a non-zero coordinate span, or the layout collapses");
+            "reset must give OpenOrd a non-zero coordinate span, or the layout collapses");
         assertTrue(numericProperty(layout, "Num Iterations") > 0d,
-                "reset must give OpenOrd a non-zero iteration count");
+            "reset must give OpenOrd a non-zero iteration count");
     }
 
     /** Yifan Hu: optimalDistance/stepRatio 0 made the algorithm a silent no-op. */
@@ -81,16 +82,16 @@ class LayoutDefaultsTest {
         layout.setGraphModel(GraphModel.Factory.newInstance());
 
         assertEquals(0d, numericProperty(layout, "Optimal Distance"), 0d,
-                "expected an un-reset Yifan Hu to report Optimal Distance 0");
+            "expected an un-reset Yifan Hu to report Optimal Distance 0");
         assertEquals(0d, numericProperty(layout, "Step ratio"), 0d,
-                "expected an un-reset Yifan Hu to report Step ratio 0");
+            "expected an un-reset Yifan Hu to report Step ratio 0");
 
         layout.resetPropertiesValues();
 
         assertTrue(numericProperty(layout, "Optimal Distance") > 0d,
-                "reset must give Yifan Hu a non-zero optimal distance, or it does nothing");
+            "reset must give Yifan Hu a non-zero optimal distance, or it does nothing");
         assertTrue(numericProperty(layout, "Step ratio") > 0d,
-                "reset must give Yifan Hu a non-zero step ratio");
+            "reset must give Yifan Hu a non-zero step ratio");
     }
 
     /**
@@ -104,8 +105,8 @@ class LayoutDefaultsTest {
         layout.setGraphModel(GraphModel.Factory.newInstance());
 
         assertTrue(numericProperty(layout, "Scaling") > 0d,
-                "ForceAtlas 2 is expected to arrive already initialized");
+            "ForceAtlas 2 is expected to arrive already initialized");
         assertTrue(numericProperty(layout, "Tolerance (speed)") > 0d,
-                "ForceAtlas 2 is expected to arrive already initialized");
+            "ForceAtlas 2 is expected to arrive already initialized");
     }
 }
