@@ -142,6 +142,7 @@ The health check tells you once per session when something is out of date.
 - **"Executable not found in $PATH":** the app cannot find `uvx` or `gephi-ai`. Install with `uvx` or `pipx` rather than inside a project virtual environment, or point your config at the executable's full path.
 - **Every tool appears twice:** two connection methods are active. Remove one (bundle: **Settings > Extensions**; config file: delete the `gephi-ai` block, or `gephi-mcp` in an older setup).
 - **"Graph is busy" keeps appearing:** fully quit and reopen Gephi.
+- **Reporting a bug:** attach Gephi's log (`messages.log` in Gephi's user folder, under `var/log`; on macOS `~/Library/Application Support/gephi/0.11/var/log/`). From plugin 1.5.2, a request that fails inside Gephi records its stack trace there.
 - **Opening `http://127.0.0.1:8080` in a browser returns `403`:** this is intended. The API refuses browsers so that a web page cannot drive Gephi. `curl http://127.0.0.1:8080/health` shows whether the plugin is running.
 
 ## Security

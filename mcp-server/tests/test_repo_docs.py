@@ -219,3 +219,14 @@ def test_color_by_partition_leaves_the_palette_to_the_plugin():
     doc = _tool_doc("gephi_color_by_partition")
     assert "gray" not in doc.lower() and "grey" not in doc.lower()
     assert "largest group" in doc
+
+
+def test_the_skill_explains_the_plugins_already_running_refusal():
+    """The plugin refuses a second run of a statistic with "already running"; both skill copies
+    must tell the model what that means, or it retries in a loop behind the graph lock."""
+    java = (REPO / "gephi-ai-plugin/src/main/java/org/gephi/plugins/mcp/service/"
+            "GephiControlService.java").read_text(encoding="utf-8")
+    assert "is already running; wait for it to finish" in java
+    for copy in ("claude-code", "gephi-network-analysis"):
+        skill = (REPO / "plugins" / copy / "skills" / "gephi" / "SKILL.md").read_text(encoding="utf-8")
+        assert '"already running"' in skill and "gephi_stop_statistic" in skill, copy

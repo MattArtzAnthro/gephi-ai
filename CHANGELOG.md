@@ -17,6 +17,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   exception now logs it before returning the error. A PNG export crash had come back as a
   one-line message with nothing to report.
 
+### Documentation
+- The skill, tool reference and version notes explain the "already running" refusal and say to
+  wait or use `gephi_stop_statistic`, never to retry in a loop. The README says where Gephi's log
+  is for bug reports. A test keeps the skill's wording tied to the plugin's message.
+
 ### Development
 - **Plugin unit tests stay off port 8080 and run headless.** NetBeans runs the module's
   installer inside the test JVM, and it started the API server on 8080. With a Gephi already

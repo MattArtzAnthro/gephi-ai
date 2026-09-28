@@ -52,3 +52,6 @@ item applies.
   touch the toolbar's screenshot settings. PDFs are US Letter, landscape for a wide layout.
   `gephi_health_check` reports `gephi_version` and, when an update needs a newer Gephi, says to
   update Gephi first; `gephi_run_statistic` adds `panel_result`, the Statistics panel's line.
+- **1.5.2 and later:** a second request for a statistic that is already running is refused with
+  "already running" instead of starting a duplicate run. Failed requests log their stack trace in
+  Gephi's own log, which is worth attaching to a bug report.

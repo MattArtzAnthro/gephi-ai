@@ -2052,6 +2052,8 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
     the error gives the network's time range.
 
     `name` matches an entry from gephi_list_statistics (case-insensitive).
+    A statistic that is already running is refused ("already running"); wait for it, or
+    call gephi_stop_statistic and run it again.
     `params`: optional {property: value} map set on the statistic before it runs
     (setters, bare fields, and enums-by-name all work). Results land in
     node/edge columns as usual (check gephi_list_columns, then size or color by

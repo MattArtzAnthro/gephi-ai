@@ -387,7 +387,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_run_statistic
 - **Params**: `{name: str, params?: dict}`. `name` matches an entry from `gephi_list_statistics` (case-insensitive); `params` is an optional `{property: value}` map set on the statistic before it runs
-- **Notes**: the passthrough to Gephi's plugin ecosystem: install a metric plugin in Gephi (Tools > Plugins) and it is immediately runnable here. `gephi_run_statistic("Weighted Degree")` writes a "Weighted Degree" column, the sum of each node's edge weights. Plugin statistics configured by a UI dialog usually need `params` (their fields start null/zero). Results land in node/edge columns as usual. `panel_result` (plugin 1.5.0 on) is the line Gephi's Statistics panel shows for the run, when the statistic gives one: the headline for a plugin metric with no named field in the reply. It is display text and may be rounded.
+- **Notes**: the passthrough to Gephi's plugin ecosystem: install a metric plugin in Gephi (Tools > Plugins) and it is immediately runnable here. `gephi_run_statistic("Weighted Degree")` writes a "Weighted Degree" column, the sum of each node's edge weights. Plugin statistics configured by a UI dialog usually need `params` (their fields start null/zero). Results land in node/edge columns as usual. `panel_result` (plugin 1.5.0 on) is the line Gephi's Statistics panel shows for the run, when the statistic gives one: the headline for a plugin metric with no named field in the reply. It is display text and may be rounded. From plugin 1.5.2, a statistic that is already running is refused with "already running" rather than started a second time.
 
 ### gephi_stop_statistic
 - **Method**: POST `/statistics/stop`
