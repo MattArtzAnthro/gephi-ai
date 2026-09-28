@@ -126,3 +126,18 @@ def test_a_command_pre_approves_its_gephi_tools(session):
         "gephi_health_check never ran under the command's own permissions"
     assert not [d for d in _denied(events) if d.startswith(TOOL)], \
         f"the command's allowed-tools did not approve: {_denied(events)}"
+
+
+def test_a_command_pre_approves_the_skill_it_loads(session):
+    # Commands grant Skill(gephi-network-analysis:gephi) rather than any skill. A grant whose
+    # name Claude Code does not match would leave the skill load waiting for approval.
+    for _ in range(3):
+        events = session("/gephi-network-analysis:explore Step one only: load the "
+                         "gephi-network-analysis:gephi skill with the Skill tool, then say "
+                         "'loaded' and stop. Do nothing else.", bypass_permissions=False)
+        assert "Skill" not in _denied(events), \
+            f"the command's allowed-tools did not approve the skill: {_denied(events)}"
+        ran = [i for name, i, _ in _calls(events) if name == "Skill"]
+        if ran:
+            break
+    assert ran, "the model never loaded the skill, so the grant was not exercised"

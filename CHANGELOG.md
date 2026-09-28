@@ -12,6 +12,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   the lock with a time limit and return "Graph is busy" instead of hanging.
 
 ### Changed
+- **Commands pre-approve only what they use.** Each slash command now pre-approves the
+  plugin's own `gephi` skill by name instead of any skill, and `/teach` no longer
+  pre-approves shell commands. Anything else still asks first.
+- **The Claude Code plugin has an icon** (`.claude-plugin/icon.svg`).
 - **"Graph is busy" names a likelier cause.** The message said the renderer held the lock;
   in testing the holder was a long-running statistic, so it now says so.
 

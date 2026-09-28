@@ -1,7 +1,7 @@
 ---
 description: Independently verify a plain-language claim about the current graph (confirmed / refuted / cannot tell, with the number)
 argument-hint: "\"<the claim>\" [export-path.json]"
-allowed-tools: Agent, Task, Skill
+allowed-tools: Agent, Task, Skill(gephi-network-analysis:gephi)
 ---
 
 # Verify a structural claim

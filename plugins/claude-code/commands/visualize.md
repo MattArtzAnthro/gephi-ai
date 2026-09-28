@@ -1,7 +1,7 @@
 ---
 description: Take the current graph to a finished map: layout, sizes, colors, visual check, export (dispatches the layout-iterator agent)
 argument-hint: "[partition column, e.g. modularity_class]"
-allowed-tools: Agent, Task, Skill
+allowed-tools: Agent, Task, Skill(gephi-network-analysis:gephi)
 ---
 
 # Visualize

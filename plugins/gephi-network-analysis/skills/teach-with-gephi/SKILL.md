@@ -53,8 +53,8 @@ before the session: rules 7 and 11 teach from it.
    "this group", "what did I grab?"), read `gephi_get_selection` first and answer
    about the exact nodes they selected. Never ask them to type node names.
 
-5. **Explain choices as you make them.** Small strong gravity and a LinLog second
-   pass are not incantations: say what each does in one sentence when you set it.
+5. **Explain choices as you make them.** Small strong gravity and a second LinLog
+   run are not incantations: say what each does in one sentence when you set it.
    Same for the validated palette, sizing by degree, and edge opacity.
 
 6. **Check the instrument.** Follow the session start rule at the beginning; if

@@ -1,7 +1,7 @@
 ---
 description: Test a hypothetical edit against the loaded graph without touching it ("what would happen if I removed this node?")
 argument-hint: "<plain-language what-if question>, e.g. \"what if I removed the top 3 hubs?\""
-allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill
+allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill(gephi-network-analysis:gephi)
 ---
 
 # Counterfactual test

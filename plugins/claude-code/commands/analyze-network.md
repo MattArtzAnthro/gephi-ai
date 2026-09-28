@@ -1,6 +1,6 @@
 ---
 description: Run comprehensive structural analysis and report network properties
-allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill
+allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill(gephi-network-analysis:gephi)
 ---
 
 # Comprehensive Network Analysis

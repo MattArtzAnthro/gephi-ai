@@ -60,3 +60,29 @@ def test_agent_and_command_tool_lists_name_the_plugins_tools():
             assert entry.startswith(PLUGIN_PREFIX), f"{path.name}: {entry} is not the plugin's name"
             name = entry[len(PLUGIN_PREFIX):]
             assert name == "*" or name in registered, f"{path.name}: {entry} is not a tool"
+
+
+def test_commands_grant_only_the_skill_they_load():
+    # The plugin directory holds a bare Skill grant for review: it pre-approves every skill.
+    manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    skills = {f"{manifest['name']}:{p.parent.name}" for p in (PLUGIN / "skills").glob("*/SKILL.md")}
+    for command in sorted((PLUGIN / "commands").glob("*.md")):
+        grants = [t for t in _field(command, "allowed-tools") or [] if t.startswith("Skill")]
+        assert grants, f"{command.name} grants no skill, but tells the model to load one"
+        for grant in grants:
+            name = re.fullmatch(r"Skill\((.+)\)", grant)
+            assert name, f"{command.name}: '{grant}' pre-approves every skill; name the one it loads"
+            assert name.group(1) in skills, f"{command.name}: {name.group(1)} is not this plugin's skill"
+
+
+def test_no_command_pre_approves_a_shell():
+    for command in sorted((PLUGIN / "commands").glob("*.md")):
+        grants = _field(command, "allowed-tools") or []
+        assert not [t for t in grants if t.split("(")[0] == "Bash"], f"{command.name} pre-approves Bash"
+
+
+def test_the_plugin_ships_a_square_icon():
+    icon = PLUGIN / ".claude-plugin" / "icon.svg"
+    view_box = re.search(r'viewBox="0 0 (\d+) (\d+)"', icon.read_text(encoding="utf-8"))
+    assert view_box and view_box.group(1) == view_box.group(2), "the icon is not square"
+    assert int(view_box.group(1)) >= 128, "the directory wants an icon of at least 128px"

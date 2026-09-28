@@ -1,7 +1,7 @@
 ---
 description: Build a word co-occurrence network from free text (transcripts, notes, survey answers) and lay it out
 argument-hint: "[path to a text file, or paste the text]"
-allowed-tools: Agent, Task, Skill, Read
+allowed-tools: Agent, Task, Skill(gephi-network-analysis:gephi), Read
 ---
 
 # Build a text network

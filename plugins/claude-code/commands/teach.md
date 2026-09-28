@@ -1,7 +1,7 @@
 ---
 description: Narrated, watch-along network analysis in Gephi for teaching and demos
 argument-hint: "[topic or dataset, e.g. 'community detection on this GEXF']"
-allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill, Read, Bash
+allowed-tools: mcp__plugin_gephi-network-analysis_gephi-mcp__*, Skill(gephi-network-analysis:gephi), Read
 ---
 
 # Teaching Mode
@@ -58,8 +58,8 @@ operate is how people learn what network analysis actually does.
    "this group", "what did I grab?"), read `gephi_get_selection` first and answer
    about the exact nodes they selected. Never ask them to type node names.
 
-5. **Explain choices as you make them.** Small strong gravity and a LinLog second
-   pass are not incantations: say what each does in one sentence when you set it.
+5. **Explain choices as you make them.** Small strong gravity and a second LinLog
+   run are not incantations: say what each does in one sentence when you set it.
    Same for the validated palette, sizing by degree, and edge opacity.
 
 6. **Check the instrument.** Follow the session start rule at the beginning; if
