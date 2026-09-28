@@ -4,6 +4,16 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Workflow packages 1.19.2
+
+### Changed
+- **The Claude Code plugin shows as "Gephi AI"** in plugin listings (`displayName`). Its id,
+  `gephi-network-analysis`, is unchanged, so installs and tool names stay the same.
+
+### Fixed
+- **The Gephi health-check hook works where the plugin path has a space**, as it does in
+  Cowork's install folder under "Application Support". The hook command now quotes the path.
+
 ## MCP server 1.21.1 / Java plugin 1.5.1 / workflow packages 1.19.1
 
 ### Removed
