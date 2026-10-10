@@ -27,6 +27,15 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   installer inside the test JVM, and it started the API server on 8080. With a Gephi already
   holding that port, the bind failure opened an error dialog on the desktop mid-run.
 
+## Workflow packages 1.20.1
+
+### Changed
+- **The skill assumes exploration by default.** Unless the person says otherwise, a session now
+  treats the work as exploring the network rather than producing a finished map, and the layout
+  step defaults to a map for exploring on screen. It switches to a map for showing others when
+  the person asks for a figure, an export, or a map for publication. The default had been a map
+  for showing others, which worked against the skill's own aim of keeping inquiry open.
+
 ## Workflow packages 1.20.0
 
 ### Changed

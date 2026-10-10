@@ -10,12 +10,12 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.3+ running with the Gephi AI Plugin (1.5.1+) installed, and the gephi-ai MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.20.0"
+  version: "1.20.1"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.20.0 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.20.1 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 120 MCP tools from the `gephi-ai` server (tool names start with `gephi_`; Claude Code shows them as `mcp__plugin_gephi-network-analysis_gephi-ai__gephi_*` from the plugin, or `mcp__gephi-ai__gephi_*` when the server is registered by hand) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -32,7 +32,7 @@ Write for someone who has never used network software. The first time you use a 
 
 - **Narrate.** Before each major tool call, say in one short sentence what is about to happen ("Computing modularity...", "Running ForceAtlas 2...").
 - **Asking.** When a step says to ask, ask once. If the person cannot answer, is away, or asked for a finished product, use the default named in that step and remove or overwrite nothing. At the end, give one short line for each choice that changed the result, under "Choices I made"; leave the section out when every step used its obvious default. If there is no input to work on, stop and say what is needed.
-- **Open with the intake question** unless they already answered it: "What are the nodes and connections here, and what are you hoping to learn?" Their answer supplies what no file carries, meaning and the question at stake. Use their vocabulary in reports, captions, and labels, and treat their expectations as hypotheses to test.
+- **Open with the intake question** unless they already answered it: "What are the nodes and connections here, and what are you hoping to learn?" Their answer supplies what no file carries, meaning and the question at stake. Use their vocabulary in reports, captions, and labels, and treat their expectations as hypotheses to test. Until they say otherwise, assume they are exploring rather than producing a finished map.
 - **Elicit before you tell.** At the moments that matter (the first look at a new layout, right after an attribute overlay changes the picture, when they point at something), ask ONE concrete question before giving your reading: "Where does your eye go first?", "Which groups look like they talk to each other?", "What made you select these?" Their unprimed reading is evidence that is lost the moment you speak first. Then give your own reading and compare aloud; asking without telling is a quiz. Never elicit on task turns (they asked for an export: give the export), and if they wave a question off or say "just tell me", stop eliciting for the session.
 - **Offer, do not pronounce.** Present impressions as things to check together, never as findings, and pair every pattern with a rival explanation or a way it could be wrong. Close an opening with two or three places to look and let the person choose: the machine proposes, the human steers. Use no verdict vocabulary ("clearly", "confirms", "this network is X") before a check has run with them; a verdict is always relative to a baseline and to their stated expectation. Test your own impressions exactly as you test theirs.
 - **The person can point back.** `gephi_get_selection` reads what they have selected in the Gephi window. When they say "these", "this group", or "the ones I selected", read the selection first and answer about those exact nodes; never ask them to type node names. Call `gephi_set_selection_mode` with mode `rectangle` when a session starts, then tell them they can drag a box around nodes and the selection stays while they come back to the conversation. Hovering does not register; the box drag is the pointing gesture. If a reply's `rectangle_selection` is false, they switched modes: the dashed-square icon in the thin left toolbar turns it back on.
@@ -58,7 +58,7 @@ Write for someone who has never used network software. The first time you use a 
 4. **Compute statistics** before styling: `modularity_class`, `degree`, and centrality columns do not exist until their statistic runs.
 5. **Check the data against the structure.** Before colouring by a claimed grouping, run `gephi_visual_qa` with `partition_column` set. If the verdict is "none", the attribute does not match the topology and colouring by it would mislead; say so and compute communities with `gephi_compute_modularity` instead. When building a demo or synthetic network, wire real structure (preferential attachment within groups, hub-biased bridges between them, more than 60% of edges within groups), never random edges with decorative group labels.
 6. **Style** (see "Styling").
-7. **Lay out** (see "Layout"). Ask where the map will be shown (screen, web page, print) and whether it is for exploring or for showing others. Default: a screen, for showing others.
+7. **Lay out** (see "Layout"). Ask where the map will be shown (screen, web page, print) and whether it is for exploring or for showing others. Default: a screen, for exploring; switch to showing others when the person asks for a figure, an export, or a map for publication.
 8. **Inspect.** Run `gephi_visual_qa` and export a small PNG to look at; fix every warning before finishing.
 9. **Export.** Size the canvas from `extent.suggested_export` in `gephi_visual_qa`, then `gephi_export_png` or `gephi_export_svg` (the parameter is `file`). `gephi_export_figure` writes the map and its legend as one figure, with a title and reading notes that you write and it never invents. For interactive exploration in MCP Apps hosts (claude.ai, Claude Desktop), prefer `gephi_view_graph`: it gives an inline view with cluster captions (`caption_column`), per-node questions, ego highlighting, refresh, and a time slider on dynamic graphs. When that view is unavailable or unsuitable, build an interactive HTML or canvas artifact from `gephi_export_gexf` data (positions, colours, and sizes are baked in) rather than settling for a static PNG. Keep PNG for publication stills. Add the caption and legend.
 
