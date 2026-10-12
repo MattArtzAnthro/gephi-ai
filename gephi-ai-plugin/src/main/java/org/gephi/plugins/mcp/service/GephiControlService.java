@@ -57,6 +57,7 @@ import org.gephi.layout.spi.LayoutBuilder;
 import org.gephi.layout.spi.LayoutProperty;
 import org.gephi.preview.api.PreviewController;
 import org.gephi.preview.api.PreviewModel;
+import org.gephi.preview.api.PreviewProperties;
 import org.gephi.preview.api.PreviewProperty;
 import org.gephi.preview.types.DependantColor;
 import org.gephi.preview.types.DependantOriginalColor;
@@ -732,6 +733,50 @@ public class GephiControlService {
     }
 
     /**
+     * The node with this id, or null. Ids arrive as text, but a graph imported with integer or
+     * long ids keys its nodes by number, so when the text itself finds nothing it is read as the
+     * graph's id type and looked up again.
+     */
+    static Node nodeById(Graph g, String id) {
+        if (id == null) {
+            return null;
+        }
+        Node n = g.getNode(id);
+        if (n != null) {
+            return n;
+        }
+        Object typed = typedNodeId(g.getModel().getConfiguration().getNodeIdType(), id);
+        return typed == null ? null : g.getNode(typed);
+    }
+
+    /** The id to create a node with: the text as the graph's id type when the graph keys by number. */
+    static Object nodeIdFor(GraphModel gm, String id) {
+        Object typed = typedNodeId(gm.getConfiguration().getNodeIdType(), id);
+        return typed != null ? typed : id;
+    }
+
+    /** Text read as a numeric id type, or null when the type is not numeric or the text not a number. */
+    static Object typedNodeId(Class<?> type, String text) {
+        try {
+            if (type == Integer.class) {
+                return Integer.valueOf(text.trim());
+            }
+            if (type == Long.class) {
+                return Long.valueOf(text.trim());
+            }
+            if (type == Short.class) {
+                return Short.valueOf(text.trim());
+            }
+            if (type == Byte.class) {
+                return Byte.valueOf(text.trim());
+            }
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        return null;
+    }
+
+    /**
      * Core node-add against an explicit model. Package-private + static so it is testable with a standalone
      * GraphModel.
      */
@@ -740,10 +785,10 @@ public class GephiControlService {
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                if (g.getNode(id) != null) {
+                if (nodeById(g, id) != null) {
                     return error("Node exists: " + id);
                 }
-                Node n = gm.factory().newNode(id);
+                Node n = gm.factory().newNode(nodeIdFor(gm, id));
                 n.setLabel(label != null ? label : id);
                 n.setX((float) (Math.random() * 1000 - 500));
                 n.setY((float) (Math.random() * 1000 - 500));
@@ -783,12 +828,12 @@ public class GephiControlService {
             try {
                 for (Map<String, Object> nd : nodes) {
                     String id = (String) nd.get("id");
-                    if (id == null || g.getNode(id) != null) {
+                    if (id == null || nodeById(g, id) != null) {
                         skipped++;
                         continue;
                     }
                     String label = (String) nd.getOrDefault("label", id);
-                    Node n = gm.factory().newNode(id);
+                    Node n = gm.factory().newNode(nodeIdFor(gm, id));
                     n.setLabel(label);
                     n.setX((float) (Math.random() * 1000 - 500));
                     n.setY((float) (Math.random() * 1000 - 500));
@@ -826,7 +871,7 @@ public class GephiControlService {
             Graph g = getGraphController().getGraphModel(ws).getGraph();
             lockWrite(g);
             try {
-                Node n = g.getNode(id);
+                Node n = nodeById(g, id);
                 if (n == null) {
                     return error("Node not found: " + id);
                 }
@@ -855,7 +900,7 @@ public class GephiControlService {
                 int removed = 0;
                 int notFound = 0;
                 for (String id : ids) {
-                    Node n = g.getNode(id);
+                    Node n = nodeById(g, id);
                     if (n == null) {
                         notFound++;
                         continue;
@@ -1125,7 +1170,7 @@ public class GephiControlService {
             }
             GraphModel gm = getGraphController().getGraphModel(ws);
             Graph g = gm.getGraph();
-            Node n = g.getNode(id);
+            Node n = nodeById(g, id);
             if (n == null) {
                 return error("Node not found: " + id);
             }
@@ -1174,7 +1219,7 @@ public class GephiControlService {
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node n = g.getNode(id);
+                Node n = nodeById(g, id);
                 if (n == null) {
                     return error("Node not found: " + id);
                 }
@@ -1197,7 +1242,7 @@ public class GephiControlService {
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node n = g.getNode(id);
+                Node n = nodeById(g, id);
                 if (n == null) {
                     return error("Node not found: " + id);
                 }
@@ -1225,7 +1270,7 @@ public class GephiControlService {
                 int notFound = 0;
                 for (Map<String, Object> pos : positions) {
                     String id = (String) pos.get("id");
-                    Node n = g.getNode(id);
+                    Node n = nodeById(g, id);
                     if (n == null) {
                         notFound++;
                         continue;
@@ -1280,8 +1325,8 @@ public class GephiControlService {
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(src);
-                Node t = g.getNode(tgt);
+                Node s = nodeById(g, src);
+                Node t = nodeById(g, tgt);
                 if (s == null) {
                     return error("Source not found: " + src);
                 }
@@ -1333,8 +1378,8 @@ public class GephiControlService {
                         skipped++;
                         continue;
                     }
-                    Node s = g.getNode(src);
-                    Node t = g.getNode(tgt);
+                    Node s = nodeById(g, src);
+                    Node t = nodeById(g, tgt);
                     if (s == null || t == null) {
                         skipped++;
                         continue;
@@ -1395,8 +1440,8 @@ public class GephiControlService {
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source);
-                Node t = g.getNode(target);
+                Node s = nodeById(g, source);
+                Node t = nodeById(g, target);
                 if (s == null || t == null) {
                     return error("Node not found");
                 }
@@ -1423,8 +1468,8 @@ public class GephiControlService {
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source);
-                Node t = g.getNode(target);
+                Node s = nodeById(g, source);
+                Node t = nodeById(g, target);
                 if (s == null || t == null) {
                     return error("Node not found");
                 }
@@ -1451,8 +1496,8 @@ public class GephiControlService {
             Graph g = currentGraphModel().getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source);
-                Node t = g.getNode(target);
+                Node s = nodeById(g, source);
+                Node t = nodeById(g, target);
                 if (s == null || t == null) {
                     return error("Node not found");
                 }
@@ -1716,7 +1761,7 @@ public class GephiControlService {
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                Node n = g.getNode(id);
+                Node n = nodeById(g, id);
                 if (n == null) {
                     return error("Node not found: " + id);
                 }
@@ -1746,7 +1791,7 @@ public class GephiControlService {
                 int notFound = 0;
                 for (Map<String, Object> update : updates) {
                     String id = (String) update.get("id");
-                    Node n = g.getNode(id);
+                    Node n = nodeById(g, id);
                     if (n == null) {
                         notFound++;
                         continue;
@@ -1783,8 +1828,8 @@ public class GephiControlService {
             Graph g = gm.getGraph();
             lockWrite(g);
             try {
-                Node s = g.getNode(source);
-                Node t = g.getNode(target);
+                Node s = nodeById(g, source);
+                Node t = nodeById(g, target);
                 if (s == null || t == null) {
                     return error("Node not found");
                 }
@@ -1902,7 +1947,7 @@ public class GephiControlService {
                 return error("No project open");
             }
             Graph graph = currentGraphModel().getGraph();
-            Node n = graph.getNode(id);
+            Node n = nodeById(graph, id);
             if (n == null) {
                 return error("Node not found: " + id);
             }
@@ -1920,7 +1965,7 @@ public class GephiControlService {
                 return error("No project open");
             }
             Graph graph = currentGraphModel().getGraph();
-            Node n = graph.getNode(id);
+            Node n = nodeById(graph, id);
             if (n == null) {
                 return error("Node not found: " + id);
             }
@@ -1951,8 +1996,8 @@ public class GephiControlService {
             Graph graph = currentGraphModel().getGraph();
             lockWrite(graph);
             try {
-                Node s = graph.getNode(source);
-                Node t = graph.getNode(target);
+                Node s = nodeById(graph, source);
+                Node t = nodeById(graph, target);
                 if (s == null || t == null) {
                     return error("Node not found");
                 }
@@ -1981,7 +2026,7 @@ public class GephiControlService {
             int notFound = 0;
             for (Map<String, Object> nc : nodeColors) {
                 String id = (String) nc.get("id");
-                Node n = graph.getNode(id);
+                Node n = nodeById(graph, id);
                 if (n == null) {
                     notFound++;
                     continue;
@@ -2905,6 +2950,23 @@ public class GephiControlService {
     }
 
     /**
+     * The Statistics panel's controller, or null when the panel cannot run a statistic in this
+     * workspace. The panel's controller is registered whenever Gephi's desktop modules are
+     * loaded, but it runs nothing until the Statistics window has given the workspace its model;
+     * before that its execute() returns at once and never reports back, so waiting on it would
+     * hold the request for the full wait cap. The window adds that model to the workspace, so
+     * its absence means the statistic has to run directly.
+     */
+    static org.gephi.desktop.statistics.api.StatisticsControllerUI statisticsPanelFor(Workspace ws,
+        org.gephi.desktop.statistics.api.StatisticsControllerUI panel) {
+        if (panel == null || ws == null
+            || ws.getLookup().lookup(org.gephi.desktop.statistics.api.StatisticsModelUI.class) == null) {
+            return null;
+        }
+        return panel;
+    }
+
+    /**
      * Run a statistic through Gephi's Statistics panel when the desktop interface is present, so
      * the panel shows it running, its result and its report, as if the user had clicked Run.
      * Without the panel (headless, tests) the statistic runs directly. Returns true when the
@@ -3073,7 +3135,8 @@ public class GephiControlService {
             }
             try {
                 stopped = executeStatistic(stat, gm, timeoutMs,
-                    Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class),
+                    statisticsPanelFor(ws,
+                        Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class)),
                     this::onEdt);
             } finally {
                 RUNNING_STATISTICS.remove(stat);
@@ -3471,7 +3534,9 @@ public class GephiControlService {
 
             // Include background color if not already captured by the main loop
             try {
-                Object bgVal = pm.getProperties().getValue("background.color");
+                // Reported under the name gephi_set_preview_settings takes, so a value can be
+                // read back by the key it was written with.
+                Object bgVal = pm.getProperties().getValue(PreviewProperty.BACKGROUND_COLOR);
                 if (bgVal instanceof Color) {
                     Color c = (Color) bgVal;
                     settings.addProperty("background.color", String.format("#%02x%02x%02x", c.getRed(),
@@ -3501,196 +3566,296 @@ public class GephiControlService {
             if (pm == null) {
                 return error("Preview model not available");
             }
+            PreviewProperties props = pm.getProperties();
+            // Gephi's renderers register every preview property when the model is made. A name
+            // that is neither registered nor one of the model's plain values is a typo: storing
+            // it would change nothing in an export while the reply counted it as set.
+            boolean registryKnown = props.getProperties().length > 0;
 
             int set = 0;
+            java.util.List<String> unknown = new java.util.ArrayList<>();
+            java.util.List<String> unapplied = new java.util.ArrayList<>();
             for (Map.Entry<String, Object> e : settings.entrySet()) {
                 String key = e.getKey();
                 Object val = e.getValue();
                 if (val == null) {
                     continue;  // Skip null values to avoid corrupting preview model
-
-                    // Background color: set on the preview model under Gephi's canonical key
-                    // (PreviewProperty.BACKGROUND_COLOR) so the Preview panel, the renderers,
-                    // and exportPng's export-time read all share one source of truth. The old
-                    // cached exportBackgroundColor field was process-wide sticky state: once
-                    // set it tinted every later export in every workspace and project, even
-                    // after the user changed the background in Gephi's own Preview panel.
                 }
-                if ("background.color".equalsIgnoreCase(key) || "backgroundColor".equalsIgnoreCase(key)) {
-                    try {
-                        String hex = val.toString().trim();
-                        if (hex.startsWith("#")) {
-                            hex = hex.substring(1);
-                        }
-                        Color bgColor = new Color(Integer.parseInt(hex, 16));
-                        PreviewProperty bgProp = pm.getProperties().getProperty(PreviewProperty.BACKGROUND_COLOR);
-                        if (bgProp != null) {
-                            bgProp.setValue(bgColor);
-                        } else {
-                            pm.getProperties().putValue(PreviewProperty.BACKGROUND_COLOR, bgColor);
-                        }
-                        set++;
-                    } catch (NumberFormatException nfe) {
+                // Background color: set on the preview model under Gephi's canonical key
+                // (PreviewProperty.BACKGROUND_COLOR) so the Preview panel, the renderers,
+                // and exportPng's export-time read all share one source of truth. The old
+                // cached exportBackgroundColor field was process-wide sticky state: once
+                // set it tinted every later export in every workspace and project, even
+                // after the user changed the background in Gephi's own Preview panel.
+                if ("background.color".equalsIgnoreCase(key) || "backgroundColor".equalsIgnoreCase(key)
+                    || PreviewProperty.BACKGROUND_COLOR.equalsIgnoreCase(key)) {
+                    Color bgColor = parseHexColor(val.toString());
+                    if (bgColor == null) {
                         LOGGER.warning("MCP: Invalid background color: " + val);
-                    }
-                    continue;
-                }
-
-                PreviewProperty prop = pm.getProperties().getProperty(key);
-                if (prop == null) {
-                    // Property registry may not be initialized in this workspace
-                    // (e.g. Preview never opened). putValue works regardless and
-                    // renderers read it at export time. Non-scalar values are
-                    // never valid preview properties — storing one corrupts the
-                    // model, so skip them.
-                    if (val instanceof Map || val instanceof List) {
-                        LOGGER.warning("MCP: Skipping non-scalar preview value for " + key);
+                        unapplied.add(key);
                         continue;
                     }
-                    Object coerced = val;
-                    if (val instanceof String) {
-                        String sv = ((String) val).trim();
-                        if (sv.equalsIgnoreCase("true") || sv.equalsIgnoreCase("false")) {
-                            coerced = Boolean.parseBoolean(sv);
-                        } else {
-                            try {
-                                coerced = Float.parseFloat(sv);
-                            } catch (NumberFormatException ignore) {
-                                // Not a number: the text is kept as given.
-                            }
-                        }
-                    } else if (val instanceof Number) {
-                        coerced = ((Number) val).floatValue();
-                    } else if (val instanceof Boolean) {
-                        coerced = val;
+                    PreviewProperty bgProp = props.getProperty(PreviewProperty.BACKGROUND_COLOR);
+                    if (bgProp != null) {
+                        bgProp.setValue(bgColor);
+                    } else {
+                        props.putValue(PreviewProperty.BACKGROUND_COLOR, bgColor);
                     }
-                    pm.getProperties().putValue(key, coerced);
                     set++;
                     continue;
                 }
-                if (prop != null) {
-                    // Convert value based on property type
-                    Class<?> type = prop.getType();
-                    try {
-                        if (type == Color.class && val instanceof String) {
-                            String hex = (String) val;
-                            if (hex.startsWith("#")) {
-                                hex = hex.substring(1);
-                            }
-                            prop.setValue(new Color(Integer.parseInt(hex, 16)));
-                        } else if (type == Boolean.class || type == boolean.class) {
-                            prop.setValue(Boolean.parseBoolean(val.toString()));
-                        } else if (type == Float.class || type == float.class) {
-                            prop.setValue(Float.parseFloat(val.toString()));
-                        } else if (type == Integer.class || type == int.class) {
-                            prop.setValue(Integer.parseInt(val.toString()));
-                        } else if (type == java.awt.Font.class && val instanceof String) {
-                            // Parse font string like "Courier New 12 Bold" -> Font object
-                            // Everything before first digit = name, first number = size, rest = style
-                            String fontStr = val.toString().trim();
-                            String name = "Arial";
-                            int fontSize = 12;
-                            int fontStyle = java.awt.Font.PLAIN;
-                            int numStart = -1;
-                            for (int ci = 0; ci < fontStr.length(); ci++) {
-                                if (Character.isDigit(fontStr.charAt(ci))) {
-                                    numStart = ci;
-                                    break;
-                                }
-                            }
-                            if (numStart > 0) {
-                                name = fontStr.substring(0, numStart).trim();
-                                String[] rest = fontStr.substring(numStart).trim().split("\\s+");
-                                try {
-                                    fontSize = Integer.parseInt(rest[0]);
-                                } catch (NumberFormatException ignored) {
-                                    // Not a number: the default font size stays.
-                                }
-                                for (int pi = 1; pi < rest.length; pi++) {
-                                    if ("Bold".equalsIgnoreCase(rest[pi])) {
-                                        fontStyle |= java.awt.Font.BOLD;
-                                    } else if ("Italic".equalsIgnoreCase(rest[pi])) {
-                                        fontStyle |= java.awt.Font.ITALIC;
-                                    }
-                                }
-                            } else if (numStart < 0) {
-                                name = fontStr;
-                            }
-                            prop.setValue(new java.awt.Font(name, fontStyle, fontSize));
-                        } else if (type == java.awt.Font.class) {
-                            continue; // Non-string font value, skip
-                        } else if (type == DependantColor.class && val instanceof String) {
-                            String s = val.toString().trim().toLowerCase();
-                            if ("parent".equals(s)) {
-                                prop.setValue(new DependantColor(DependantColor.Mode.PARENT));
-                            } else if ("darker".equals(s)) {
-                                prop.setValue(new DependantColor(DependantColor.Mode.DARKER));
-                            } else if (s.startsWith("#")) {
-                                prop.setValue(new DependantColor(new Color(Integer.parseInt(s.substring(1), 16))));
-                            } else {
-                                continue;
-                            }
-                        } else if (type == DependantOriginalColor.class && val instanceof String) {
-                            String s = val.toString().trim().toLowerCase();
-                            if ("parent".equals(s)) {
-                                prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.PARENT));
-                            } else if ("original".equals(s)) {
-                                prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.ORIGINAL));
-                            } else if (s.startsWith("#")) {
-                                prop.setValue(
-                                    new DependantOriginalColor(new Color(Integer.parseInt(s.substring(1), 16))));
-                            } else {
-                                continue;
-                            }
-                        } else if (type == EdgeColor.class && val instanceof String) {
-                            // For "source"/"target": color edges individually instead of using
-                            // EdgeColor mode (which corrupts SVG rendering in Gephi 0.10)
-                            String s = val.toString().trim().toLowerCase();
-                            if ("source".equals(s) || "target".equals(s)) {
-                                boolean useSource = "source".equals(s);
-                                Graph graph = currentGraphModel().getGraph();
-                                Node[] graphNodes = graph.getNodes().toArray();
-                                Edge[] graphEdges = graph.getEdges().toArray();
-                                java.util.Map<Node, Color> nodeColors = new java.util.HashMap<>();
-                                for (Node n : graphNodes) {
-                                    nodeColors.put(n, n.getColor());
-                                }
-                                for (Edge edge : graphEdges) {
-                                    Node ref = useSource ? edge.getSource() : edge.getTarget();
-                                    Color c = nodeColors.get(ref);
-                                    if (c != null) {
-                                        edge.setColor(c);
-                                    }
-                                }
-                                prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
-                            } else if ("mixed".equals(s)) {
-                                prop.setValue(new EdgeColor(EdgeColor.Mode.MIXED));
-                            } else if ("original".equals(s)) {
-                                prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
-                            } else if (s.startsWith("#")) {
-                                prop.setValue(new EdgeColor(new Color(Integer.parseInt(s.substring(1), 16))));
-                            } else {
-                                continue;
-                            }
-                        } else {
-                            continue; // Skip unknown types
-                        }
-                        set++;
-                    } catch (NumberFormatException nfe) {
-                        LOGGER.warning("MCP: Invalid number/color value for " + key + ": " + val);
-                        continue;
-                    } catch (Exception ex) {
-                        LOGGER.warning("MCP: Failed to set preview property " + key + ": " + ex.getMessage());
+
+                PreviewProperty prop = props.getProperty(key);
+                if (prop == null) {
+                    if (registryKnown && !props.hasProperty(key)) {
+                        unknown.add(key);
                         continue;
                     }
+                    // A plain model value (or a model whose registry is empty): putValue works
+                    // regardless and renderers read it at export time. Non-scalar values are
+                    // never valid preview properties; storing one corrupts the model.
+                    if (val instanceof Map || val instanceof List) {
+                        LOGGER.warning("MCP: Skipping non-scalar preview value for " + key);
+                        unapplied.add(key);
+                        continue;
+                    }
+                    props.putValue(key, coercePlainPreviewValue(val));
+                    set++;
+                    continue;
+                }
+                try {
+                    if (applyPreviewValue(prop, val)) {
+                        set++;
+                    } else {
+                        unapplied.add(key);
+                    }
+                } catch (RuntimeException ex) {
+                    LOGGER.warning("MCP: Failed to set preview property " + key + ": " + ex.getMessage());
+                    unapplied.add(key);
                 }
             }
             JsonObject r = success("Set " + set + " preview properties");
             r.addProperty("properties_set", set);
+            if (!unknown.isEmpty()) {
+                JsonArray a = new JsonArray();
+                unknown.forEach(a::add);
+                r.add("unknown_properties", a);
+            }
+            if (!unapplied.isEmpty()) {
+                JsonArray a = new JsonArray();
+                unapplied.forEach(a::add);
+                r.add("unapplied_properties", a);
+            }
+            if (!unknown.isEmpty() || !unapplied.isEmpty()) {
+                String notProperties = unknown.isEmpty() ? "" : "Not preview properties (see "
+                    + "gephi_get_preview_settings for the names): " + unknown + ".";
+                String unread = unapplied.isEmpty() ? "" : "Values that could not be read for their "
+                    + "setting, left unchanged: " + unapplied + ".";
+                r.addProperty("warning", (notProperties + " " + unread).trim());
+            }
             return r;
         } catch (Exception e) {
             return failure("Failed: ", e);
         }
+    }
+
+    /** A colour from "#rrggbb" or "rrggbb", or null when the text is not one. */
+    static Color parseHexColor(String text) {
+        String hex = text.trim();
+        if (hex.startsWith("#")) {
+            hex = hex.substring(1);
+        }
+        if (hex.length() != 6) {
+            return null;
+        }
+        try {
+            return new Color(Integer.parseInt(hex, 16));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** A plain preview value: "true"/"false" as booleans, numbers as floats, other text as given. */
+    static Object coercePlainPreviewValue(Object val) {
+        if (val instanceof String) {
+            String sv = ((String) val).trim();
+            if (sv.equalsIgnoreCase("true") || sv.equalsIgnoreCase("false")) {
+                return Boolean.parseBoolean(sv);
+            }
+            try {
+                return Float.parseFloat(sv);
+            } catch (NumberFormatException ignore) {
+                return val;
+            }
+        }
+        if (val instanceof Number) {
+            return ((Number) val).floatValue();
+        }
+        return val;
+    }
+
+    /** A true/false from a JSON boolean or the text "true"/"false", else null. */
+    static Boolean previewBoolean(Object val) {
+        if (val instanceof Boolean) {
+            return (Boolean) val;
+        }
+        String s = val.toString().trim();
+        if ("true".equalsIgnoreCase(s)) {
+            return Boolean.TRUE;
+        }
+        if ("false".equalsIgnoreCase(s)) {
+            return Boolean.FALSE;
+        }
+        return null;
+    }
+
+    /**
+     * Sets one registered preview property from a JSON value, converting it to the property's
+     * type. Returns false, changing nothing, when the value cannot be read as that type: a
+     * reading that guessed (any unrecognised text as false, say) would report success for a
+     * setting it never made.
+     */
+    private boolean applyPreviewValue(PreviewProperty prop, Object val) {
+        Class<?> type = prop.getType();
+        if (type == Color.class) {
+            Color c = val instanceof String ? parseHexColor((String) val) : null;
+            if (c == null) {
+                return false;
+            }
+            prop.setValue(c);
+            return true;
+        }
+        if (type == Boolean.class || type == boolean.class) {
+            Boolean b = previewBoolean(val);
+            if (b == null) {
+                return false;
+            }
+            prop.setValue(b);
+            return true;
+        }
+        if (type == Float.class || type == float.class) {
+            try {
+                prop.setValue(Float.parseFloat(val.toString().trim()));
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+        if (type == Integer.class || type == int.class) {
+            // JSON numbers arrive as doubles, so 30 reads as "30.0": parse as a number, then
+            // accept it only when it is whole.
+            try {
+                double d = Double.parseDouble(val.toString().trim());
+                if (d != Math.rint(d) || Math.abs(d) > Integer.MAX_VALUE) {
+                    return false;
+                }
+                prop.setValue((int) d);
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+        if (type == java.awt.Font.class) {
+            if (!(val instanceof String)) {
+                return false;
+            }
+            prop.setValue(parsePreviewFont((String) val));
+            return true;
+        }
+        if (!(val instanceof String)) {
+            return false;
+        }
+        String s = val.toString().trim().toLowerCase();
+        if (type == DependantColor.class) {
+            if ("parent".equals(s)) {
+                prop.setValue(new DependantColor(DependantColor.Mode.PARENT));
+            } else if ("darker".equals(s)) {
+                prop.setValue(new DependantColor(DependantColor.Mode.DARKER));
+            } else if (parseHexColor(s) != null && s.startsWith("#")) {
+                prop.setValue(new DependantColor(parseHexColor(s)));
+            } else {
+                return false;
+            }
+            return true;
+        }
+        if (type == DependantOriginalColor.class) {
+            if ("parent".equals(s)) {
+                prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.PARENT));
+            } else if ("original".equals(s)) {
+                prop.setValue(new DependantOriginalColor(DependantOriginalColor.Mode.ORIGINAL));
+            } else if (parseHexColor(s) != null && s.startsWith("#")) {
+                prop.setValue(new DependantOriginalColor(parseHexColor(s)));
+            } else {
+                return false;
+            }
+            return true;
+        }
+        if (type == EdgeColor.class) {
+            if ("source".equals(s) || "target".equals(s)) {
+                // For "source"/"target": color edges individually instead of using
+                // EdgeColor mode (which corrupts SVG rendering in Gephi 0.10)
+                boolean useSource = "source".equals(s);
+                Graph graph = currentGraphModel().getGraph();
+                java.util.Map<Node, Color> nodeColors = new java.util.HashMap<>();
+                for (Node n : graph.getNodes().toArray()) {
+                    nodeColors.put(n, n.getColor());
+                }
+                for (Edge edge : graph.getEdges().toArray()) {
+                    Color c = nodeColors.get(useSource ? edge.getSource() : edge.getTarget());
+                    if (c != null) {
+                        edge.setColor(c);
+                    }
+                }
+                prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
+            } else if ("mixed".equals(s)) {
+                prop.setValue(new EdgeColor(EdgeColor.Mode.MIXED));
+            } else if ("original".equals(s)) {
+                prop.setValue(new EdgeColor(EdgeColor.Mode.ORIGINAL));
+            } else if (parseHexColor(s) != null && s.startsWith("#")) {
+                prop.setValue(new EdgeColor(parseHexColor(s)));
+            } else {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * A font from text like "Courier New 12 Bold": everything before the first digit is the
+     * name, the first number the size, and the words after it the style.
+     */
+    static java.awt.Font parsePreviewFont(String text) {
+        String fontStr = text.trim();
+        String name = "Arial";
+        int fontSize = 12;
+        int fontStyle = java.awt.Font.PLAIN;
+        int numStart = -1;
+        for (int ci = 0; ci < fontStr.length(); ci++) {
+            if (Character.isDigit(fontStr.charAt(ci))) {
+                numStart = ci;
+                break;
+            }
+        }
+        if (numStart > 0) {
+            name = fontStr.substring(0, numStart).trim();
+            String[] rest = fontStr.substring(numStart).trim().split("\\s+");
+            try {
+                fontSize = Integer.parseInt(rest[0]);
+            } catch (NumberFormatException ignored) {
+                // Not a number: the default font size stays.
+            }
+            for (int pi = 1; pi < rest.length; pi++) {
+                if ("Bold".equalsIgnoreCase(rest[pi])) {
+                    fontStyle |= java.awt.Font.BOLD;
+                } else if ("Italic".equalsIgnoreCase(rest[pi])) {
+                    fontStyle |= java.awt.Font.ITALIC;
+                }
+            }
+        } else if (numStart < 0) {
+            name = fontStr;
+        }
+        return new java.awt.Font(name, fontStyle, fontSize);
     }
 
     // ─── Export ───────────────────────────────────────────────────────
@@ -4433,7 +4598,7 @@ public class GephiControlService {
         }
         try {
             Graph g = currentGraphModel().getGraph();
-            Node center = g.getNode(nodeId);
+            Node center = nodeById(g, nodeId);
             if (center == null) {
                 return error("Node not found: " + nodeId);
             }
@@ -4917,7 +5082,7 @@ public class GephiControlService {
                     if (nodeId == null) {
                         return error("Missing 'id' for mode=node");
                     }
-                    Node n = g.getNode(nodeId);
+                    Node n = nodeById(g, nodeId);
                     if (n == null) {
                         return error("Node not found: " + nodeId);
                     }
@@ -4928,8 +5093,8 @@ public class GephiControlService {
                     if (source == null || target == null) {
                         return error("Missing 'source'/'target' for mode=edge");
                     }
-                    Node ns = g.getNode(source);
-                    Node nt = g.getNode(target);
+                    Node ns = nodeById(g, source);
+                    Node nt = nodeById(g, target);
                     if (ns == null || nt == null) {
                         return error("Edge endpoints not found");
                     }
@@ -4974,7 +5139,7 @@ public class GephiControlService {
                 } else {
                     java.util.List<Node> nodes = new java.util.ArrayList<>();
                     for (String id : select) {
-                        Node n = g.getNode(id);
+                        Node n = nodeById(g, id);
                         if (n != null) {
                             nodes.add(n);
                         }
@@ -5346,7 +5511,6 @@ public class GephiControlService {
         }
 
         Query query = fc.createQuery(filter);
-        fc.add(query);
 
         // All three FilterController operations below end in Gephi's own BLOCKING
         // writeLock() (filterVisible via setVisibleView; the two exports process the
@@ -5358,6 +5522,11 @@ public class GephiControlService {
         switch (act) {
             case "select":
             case "visible":
+                // Only a filter on the visible graph joins the Filters panel's queries. Adding
+                // one makes it the current query, and Gephi's two exports read a current query
+                // from its last result: with none yet, the column export wrote nothing and the
+                // workspace export copied nothing, while both reported success.
+                fc.add(query);
                 lockWrite(lockGraph);
                 try {
                     fc.filterVisible(query);
@@ -5595,7 +5764,10 @@ public class GephiControlService {
                 gm.destroyView(view);
             }
         } else {
-            fc.add(query);
+            if (act.equals("select")) {
+                // Only here: see applyFilter for why the exports must not see it as current.
+                fc.add(query);
+            }
             lockWrite(lockGraph);
             try {
                 switch (act) {
@@ -5932,8 +6104,8 @@ public class GephiControlService {
         PathResult path;
         lockRead(g);
         try {
-            Node from = g.getNode(fromId);
-            Node to = g.getNode(toId);
+            Node from = nodeById(g, fromId);
+            Node to = nodeById(g, toId);
             if (from == null) {
                 return error("Node not found: " + fromId);
             }
@@ -5971,16 +6143,18 @@ public class GephiControlService {
             lockWrite(g);
             try {
                 Column nc = findColumn(gm.getNodeTable(), markColumn);
+                Column ec = findColumn(gm.getEdgeTable(), markColumn);
+                // Checked before either column is made, so a refused mark adds nothing.
+                if ((nc != null && nc.getTypeClass() != Boolean.class)
+                    || (ec != null && ec.getTypeClass() != Boolean.class)) {
+                    return error("Column '" + markColumn
+                        + "' already exists and is not true/false; choose another name");
+                }
                 if (nc == null) {
                     nc = gm.getNodeTable().addColumn(markColumn, Boolean.class);
                 }
-                Column ec = findColumn(gm.getEdgeTable(), markColumn);
                 if (ec == null) {
                     ec = gm.getEdgeTable().addColumn(markColumn, Boolean.class);
-                }
-                if (nc.getTypeClass() != Boolean.class || ec.getTypeClass() != Boolean.class) {
-                    return error("Column '" + markColumn
-                        + "' already exists and is not true/false; choose another name");
                 }
                 for (Node n : g.getNodes().toArray()) {
                     n.setAttribute(nc, path.nodes.contains(n));
@@ -6274,13 +6448,13 @@ public class GephiControlService {
         Graph g = gm.getGraph();
         java.util.List<Node> nodes = new java.util.ArrayList<>();
         for (String id : ids) {
-            Node n = g.getNode(id);
+            Node n = nodeById(g, id);
             if (n == null) {
                 return error("Node not found: " + id);
             }
             nodes.add(n);
         }
-        Node into = intoId != null ? g.getNode(intoId) : nodes.get(0);
+        Node into = intoId != null ? nodeById(g, intoId) : nodes.get(0);
         if (into == null) {
             return error("Merge target node not found: " + intoId);
         }
@@ -6379,6 +6553,11 @@ public class GephiControlService {
         try {
             ExportController ec = Lookup.getDefault().lookup(ExportController.class);
             Exporter exporter = ec.getExporter(format);
+            if (exporter == null && !format.startsWith(".")) {
+                // Gephi matches an exporter by its name ("GML exporter") or by an extension
+                // written with its dot (".gml"), so the bare extension finds nothing alone.
+                exporter = ec.getExporter("." + format);
+            }
             if (exporter == null) {
                 return error("No exporter for format: " + format
                     + " (try vna, pajek, dl, spreadsheet, gdf, gml, json, gexf, graphml, csv)");
@@ -6484,6 +6663,26 @@ public class GephiControlService {
             Column created = acc.createBooleanMatchesColumn(table, col, newColumnTitle, pattern);
             JsonObject r = success("Created boolean match column: " + newColumnTitle);
             r.addProperty("column", created != null ? created.getId() : newColumnTitle);
+            if (created != null) {
+                // Gephi tests the whole value (Matcher.matches), so "^Dept-" marks nothing where
+                // "Dept-.*" marks every label starting "Dept-". The count makes an all-false
+                // column visible instead of looking like success.
+                int matched = 0;
+                org.gephi.graph.api.Element[] rows = table.isNodeTable()
+                    ? gm.getGraph().getNodes().toArray() : gm.getGraph().getEdges().toArray();
+                for (org.gephi.graph.api.Element row : rows) {
+                    if (Boolean.TRUE.equals(row.getAttribute(created))) {
+                        matched++;
+                    }
+                }
+                r.addProperty("matched", matched);
+                r.addProperty("rows", rows.length);
+                if (matched == 0 && rows.length > 0) {
+                    r.addProperty("warning", "No value matched. The pattern must match the whole value:"
+                        + " use \"Dept-.*\" for values starting \"Dept-\", or \".*word.*\" for values"
+                        + " containing it.");
+                }
+            }
             return r;
         } catch (java.util.regex.PatternSyntaxException e) {
             return error("Invalid regex: " + e.getMessage());

@@ -63,6 +63,16 @@ def check(condition, good, bad_msg):
     if not condition:
         ok = False
 
+# PyPI refuses an archive whose member paths are not normalized ("./x"), and only at upload.
+import posixpath
+odd = [n for n in names if n != posixpath.normpath(n) or n.startswith("/")]
+check(not odd, "every member path is normalized",
+      f"non-normalized member paths, PyPI will refuse the upload: {odd[:3]}")
+# Tests and project files belong in the sdist, never in site-packages.
+check(not any(n.startswith(("tests/", "pyproject.toml", ".gitignore", "uv.lock")) for n in names),
+      "no tests or project files in the wheel",
+      "the wheel ships tests or project files into site-packages")
+
 # The register must ship, or every caveat silently disappears.
 register = next((n for n in names if n.endswith("caveats.json")
                  and not n.endswith("caveats.local.json")), None)

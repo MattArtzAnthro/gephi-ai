@@ -180,4 +180,23 @@ class ImportWorkspaceTest {
         assertSame(current, pc.getCurrentWorkspace());
         assertEquals(1, model(current).getGraph().getNodeCount(), "the refused file was partly added");
     }
+
+    @Test
+    void nodesOfAFileWithIntegerIdsAreFoundByTheirIds(@TempDir Path dir) throws Exception {
+        freshProject();
+        Path f = write(dir, "ints.gexf", "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<gexf xmlns=\"http://gexf.net/1.3\" version=\"1.3\">"
+            + "<graph defaultedgetype=\"undirected\" idtype=\"integer\"><nodes>"
+            + "<node id=\"1\"/><node id=\"2\"/><node id=\"3\"/></nodes>"
+            + "<edges><edge id=\"1\" source=\"1\" target=\"2\"/></edges></graph></gexf>");
+        GephiControlService service = GephiControlService.getInstance();
+        assertTrue(service.importFile(f.toString(), null).get("success").getAsBoolean());
+
+        JsonObject node = service.getNode("2");
+        assertTrue(node.get("success").getAsBoolean(), node.toString());
+        JsonObject path = service.findShortestPath("1", "2", null, true, null);
+        assertTrue(path.get("found").getAsBoolean(), path.toString());
+        JsonObject edge = service.addEdge("2", "3", 1.0, false);
+        assertTrue(edge.get("success").getAsBoolean(), edge.toString());
+    }
 }

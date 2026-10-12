@@ -75,7 +75,9 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
     # "Modularity Class"). attr_key maps id, title, and normalized forms of both to
     # the title key actually used in node["attributes"], so resolve_column_key can
     # accept whichever name the caller has.
-    titles, defaults, attr_key = {}, {}, {}
+    titles: dict[str, str] = {}
+    defaults: dict[str, str] = {}
+    attr_key: dict[str, str] = {}
     for attrs_el in _children(graph_el, "attributes"):
         if attrs_el.get("class") == "node":
             for a in _children(attrs_el, "attribute"):
@@ -303,7 +305,7 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
         partition_column = resolve_column_key(graph, partition_column)
         group = {n["key"]: n["attributes"].get(partition_column) for n in nodes}
         counted = [g for g in group.values() if g is not None]
-        shares = {}
+        shares: dict[object, int] = {}
         for g in counted:
             shares[g] = shares.get(g, 0) + 1
         n_total = len(counted) or 1

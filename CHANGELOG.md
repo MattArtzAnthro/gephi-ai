@@ -4,9 +4,13 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.21.2 / Java plugin 1.5.2 / workflow packages 1.20.2
 
 ### Fixed
+- **Packaging.** The wheel lists what it ships (the modules, `caveats.json`, the viewer)
+  instead of packaging the whole directory, which wrote every path as `./x`, a form PyPI
+  now refuses, and installed the tests, `pyproject.toml` and `.gitignore` into
+  site-packages. `scripts/verify-artifact.sh` fails on either.
 - **A statistic already running is not started a second time.** A second request for the same
   statistic now returns "already running" instead of starting another run alongside it, which
   repeated the work and kept the graph's read lock held for both runs.
@@ -16,6 +20,35 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **Failures inside Gephi leave a stack trace in Gephi's log.** Every request that fails with an
   exception now logs it before returning the error. A PNG export crash had come back as a
   one-line message with nothing to report.
+- **A statistic no longer waits an hour on a Statistics panel that cannot run it.** Until Gephi's
+  Statistics window has set up the workspace, the panel accepts a run and never reports back, so
+  the request held for the full one-hour wait. The statistic now runs directly in that case.
+- **Filtering into a column or a new workspace now writes what it reports.** `action="column"`
+  wrote no column and `action="new_workspace"` copied no nodes, while both reported success,
+  because the filter was made Gephi's current query before it had a result.
+- **Graphs with integer ids are found by id.** After importing a file whose nodes have integer
+  ids, every tool that takes a node id (get, label, edge, path, ego network and more) answered
+  "Node not found".
+- **Preview settings report what they could not set.** A misspelled property name was stored as
+  a new property and counted as set, and a value that did not fit its setting ("yes" for a
+  true/false setting, 30 for a whole-number setting sent as JSON) was dropped or read as false.
+  The reply now lists `unknown_properties` and `unapplied_properties`, whole numbers set
+  whole-number settings, and `background.color` reads back under the name it is written with.
+- **A refused path mark adds no column.** `gephi_find_shortest_path` with a `mark_column` that
+  already holds text refused, but had already added a column of that name to the other table.
+- **`gephi_export` finds an exporter by its file extension**, so `gml` and `net` work; the tool
+  description had said `gml` could not be exported.
+- **`gephi_create_regex_column` counts its matches** and warns when nothing matched. Gephi tests
+  the whole value, so `^Dept-` matches nothing where `Dept-.*` matches; the description now
+  says so.
+- **A request whose values have the wrong JSON type gets an error that names the request.**
+  Gson's own message was a bare type name such as "JsonObject", or empty.
+- **A probe run no longer fails on a local overlay that is not a JSON object.** It is replaced,
+  as an unreadable one already was.
+
+### Changed
+- **The workflow packages pin MCP server 1.21.2 and name Gephi AI plugin 1.5.2 as the minimum**,
+  so the fixes above reach anyone who updates.
 
 ### Documentation
 - The skill, tool reference and version notes explain the "already running" refusal and say to
@@ -23,6 +56,19 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   is for bug reports. A test keeps the skill's wording tied to the plugin's message.
 
 ### Development
+- **Coverage floors in CI.** JaCoCo checks the plugin's line and branch coverage in `mvn test`
+  (floors in `pom.xml`), and pytest-cov checks the MCP server's on Python 3.12 (`fail_under` in
+  `pyproject.toml`). `pytest-cov` and `pyyaml` are dev dependencies; `pyyaml` is what the Codex
+  package test reads skill frontmatter with.
+- **The release scripts and the Gephi check hook are tested.** `check-drift.sh` and
+  `verify-artifact.sh` run against throwaway repositories with stand-in network tools, and CI
+  now runs the hook test and shellchecks the plugin's scripts.
+- **mypy checks the viewer package.** CI ran `mypy ./*.py`, which reaches `gephi_mcp_viewer`
+  only through the editable install, so mypy treated it as a site package and silenced its
+  errors. It is now named on the command line in CI and in `scripts/check.sh`, and the twelve
+  type errors it had hidden are fixed (annotations only; no behaviour changes).
+- **Tests read the shipped caveat register only**, so a local probe run cannot make a test pass
+  on one machine and fail on another.
 - **Plugin unit tests stay off port 8080 and run headless.** NetBeans runs the module's
   installer inside the test JVM, and it started the API server on 8080. With a Gephi already
   holding that port, the bind failure opened an error dialog on the desktop mid-run.

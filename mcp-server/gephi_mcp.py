@@ -2444,9 +2444,10 @@ async def gephi_create_regex_column(column: str, new_column: str, regex: str,
 
     For each node/edge, tests `column`'s value against `regex` and writes
     True/False into a new column named `new_column` — without hiding anything.
-    Use it to mark a subset for later coloring/sizing/filtering (e.g. flag every
-    label starting "Dept-", or every id matching an email pattern). target is
-    "node" (default) or "edge". Errors on an invalid regex.
+    The regex must match the WHOLE value: "Dept-.*" flags every label starting
+    "Dept-", ".*smith.*" every value containing "smith". The reply counts the
+    rows that matched. Use it to mark a subset for later coloring/sizing/filtering.
+    target is "node" (default) or "edge". Errors on an invalid regex.
     """
     return fmt(await gephi.request("POST", "/datalab/regex-column",
                                    json_data={"target": target, "column": column,
@@ -2803,9 +2804,8 @@ async def gephi_export(file: str, format: str) -> str:
     """Export the graph in any format Gephi supports, by name — the general exporter.
 
     format is the exporter name: `vna`, `pajek`, `dl` (UCINET interchange),
-    `spreadsheet` (for non-technical readers), `gdf`, `json`, plus
-    `gexf`/`graphml`/`csv`. (Note: `gml` is import-only in this Gephi build — no
-    exporter — despite appearing in some format lists.) The common visual/graph
+    `spreadsheet` (for non-technical readers), `gdf`, `gml`, `json`, plus
+    `gexf`/`graphml`/`csv`. A file extension such as `net` also works. The common visual/graph
     formats keep their dedicated tools (gephi_export_gexf, gephi_export_png,
     gephi_export_csv, …); reach for this when you need one of the interchange
     formats they don't cover, e.g. handing the network to UCINET (`vna`/`dl`) or

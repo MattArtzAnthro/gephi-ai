@@ -5,15 +5,18 @@ important — to stay quiet when the defect does not apply. A register that fire
 becomes noise the reader learns to skip, which is the failure this feature exists to prevent.
 """
 
+import json
 import pathlib
 
 import pytest
 
+import stats_integrity
 from stats_integrity import (
     VERIFIED_STATUSES,
     GraphFacts,
     caveats_for,
     load_register,
+    needs_graph_facts,
 )
 
 UNKNOWN = GraphFacts(directed=None, weights_vary=None)
@@ -218,3 +221,69 @@ def test_every_probe_named_in_the_register_actually_exists():
         if probe:
             assert f"def test_{probe}" in probes or f"def {probe}" in probes, (
                 f"{entry['id']} names probe {probe!r}, which is not defined in the probe suite")
+
+
+# ── The guards: the layer stays quiet rather than wrong, and never breaks a measurement ──
+
+def _entry(applies_when, metrics=("degree",), status="unverified"):
+    return {"id": "x", "metrics": list(metrics), "says": "...", "applies_when": applies_when,
+            "verification": {"status": status, "why": "test"}}
+
+
+@pytest.mark.parametrize("applies_when, facts, fires", [
+    ({}, UNKNOWN, False),
+    ({"undirected": True}, UNDIRECTED_UNWEIGHTED, True),
+    ({"undirected": True}, UNKNOWN, False),
+    ({"directed": True}, DIRECTED_WEIGHTED, True),
+    ({"directed": True}, UNDIRECTED_UNWEIGHTED, False),
+    ({"weights_vary": True}, DIRECTED_WEIGHTED, True),
+    ({"weights_vary": True}, UNKNOWN, False),
+    ({"all_of": [{"directed": True}, {"weights_vary": True}]}, DIRECTED_WEIGHTED, True),
+    ({"all_of": [{"directed": True}, {"weights_vary": True}]}, UNKNOWN, False),
+    ({"some_new_predicate": True}, DIRECTED_WEIGHTED, False),
+])
+def test_each_predicate_fires_only_on_an_established_fact(applies_when, facts, fires):
+    found = caveats_for("degree", facts=facts, register=[_entry(applies_when)])
+
+    assert bool(found) is fires
+
+
+def test_a_parameter_given_as_text_is_compared_as_given():
+    entry = _entry({"param_not_default": {"name": "mode", "default": "fast"}})
+
+    assert caveats_for("degree", params={"mode": "exact"}, register=[entry])
+    assert not caveats_for("degree", params={"mode": "fast"}, register=[entry])
+
+
+def test_needing_graph_facts_follows_the_predicates_of_live_entries():
+    nested = _entry({"all_of": [{"always": True}, {"weights_vary": True}]})
+    argument_only = _entry({"param_not_default": {"name": "r", "default": 1.0}})
+    silenced = _entry({"directed": True}, status="not_reproduced")
+
+    assert needs_graph_facts("degree", register=[nested])
+    assert not needs_graph_facts("degree", register=[argument_only])
+    assert not needs_graph_facts("degree", register=[silenced])
+    assert not needs_graph_facts("pagerank", register=[nested])
+
+
+def test_a_malformed_register_never_breaks_a_measurement():
+    broken = [{"id": "x", "metrics": None, "applies_when": {"always": True}, "verification": {}}]
+
+    assert caveats_for("degree", register=broken) == []
+    assert needs_graph_facts("degree", register=broken) is False
+
+
+def test_an_explicit_register_path_is_read_without_the_overlay(tmp_path):
+    register = tmp_path / "caveats.json"
+    register.write_text(json.dumps({"caveats": [_entry({"always": True})]}))
+
+    assert [e["id"] for e in load_register(register)] == ["x"]
+
+
+def test_an_overlay_that_is_not_an_object_is_ignored(tmp_path, monkeypatch):
+    overlay = tmp_path / "caveats.local.json"
+    overlay.write_text("[]")
+    monkeypatch.setattr(stats_integrity, "local_overlay_path", lambda: overlay)
+    monkeypatch.setattr(stats_integrity, "_register_cache", None)
+
+    assert load_register() == json.loads(stats_integrity.REGISTER_PATH.read_text())["caveats"]

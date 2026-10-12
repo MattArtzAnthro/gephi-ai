@@ -12,10 +12,13 @@ projections; they are never required.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 
-def _adjacency(graph: dict) -> tuple[list[str], np.ndarray | object]:
+def _adjacency(graph: dict) -> tuple[list[str], Any]:
+    # scipy ships no type information; the matrix is a scipy.sparse csr_matrix.
     import scipy.sparse as sp
 
     ids = [n["key"] for n in graph["nodes"]]

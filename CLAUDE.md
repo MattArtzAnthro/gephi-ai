@@ -85,8 +85,11 @@ commands, agents). `RELEASING.md` is the release procedure and
 `scripts/check-drift.sh` reports which channel is behind.
 
 Before a pull request, run what CI runs:
-- `mvn verify` in `gephi-ai-plugin/`, which runs Gephi core's checkstyle and `SourceRulesTest`;
-- `ruff check .`, `mypy ./*.py` and `python -m pytest -q` in `mcp-server/`;
-- `shellcheck scripts/*.sh`.
+- `mvn verify` in `gephi-ai-plugin/`, which runs Gephi core's checkstyle, `SourceRulesTest` and the
+  JaCoCo coverage floor;
+- `ruff check .`, `mypy ./*.py gephi_mcp_viewer` and `python -m pytest -q --cov` (coverage floor in
+  `pyproject.toml`) in `mcp-server/`;
+- `shellcheck scripts/*.sh plugins/claude-code/scripts/*.sh` and
+  `bash plugins/claude-code/scripts/test-check-gephi.sh`.
 
 A `fix` commit carries a test that fails without it. Plugin changes also get the live smoke test in a separate Gephi; its docstring gives the command.

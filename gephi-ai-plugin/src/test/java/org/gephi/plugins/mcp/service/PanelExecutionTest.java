@@ -18,6 +18,8 @@ package org.gephi.plugins.mcp.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,13 +30,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import javax.swing.event.ChangeListener;
 import org.gephi.desktop.statistics.api.StatisticsControllerUI;
+import org.gephi.desktop.statistics.api.StatisticsModelUI;
 import org.gephi.graph.api.GraphModel;
 import org.gephi.layout.api.LayoutController;
 import org.gephi.layout.api.LayoutModel;
 import org.gephi.layout.plugin.forceAtlas2.ForceAtlas2Builder;
 import org.gephi.layout.spi.Layout;
 import org.gephi.layout.spi.LayoutProperty;
+import org.gephi.project.api.ProjectController;
 import org.gephi.project.api.Workspace;
 import org.gephi.statistics.spi.Statistics;
 import org.gephi.statistics.spi.StatisticsUI;
@@ -42,6 +47,7 @@ import org.gephi.utils.longtask.api.LongTaskListener;
 import org.gephi.utils.longtask.spi.LongTask;
 import org.gephi.utils.progress.ProgressTicket;
 import org.junit.jupiter.api.Test;
+import org.openide.util.Lookup;
 
 /**
  * Statistics and layouts run through Gephi's own controllers so its Statistics and Layout panels
@@ -396,5 +402,52 @@ class PanelExecutionTest {
         GraphModel gm = GraphModel.Factory.newInstance();
 
         assertEquals(null, GephiControlService.dynamicStatisticProblem(new SlowStat(1), gm));
+    }
+
+    @Test
+    void thePanelIsUsedOnlyOnceTheStatisticsWindowHasSetUpTheWorkspace() {
+        // Before the Statistics window gives the workspace its model, the panel's execute()
+        // returns without running anything or reporting back, so waiting on it would hang.
+        ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
+        pc.closeCurrentProject();
+        pc.newProject();
+        Workspace ws = pc.getCurrentWorkspace();
+        FakeStatsUI panel = new FakeStatsUI();
+
+        assertNull(GephiControlService.statisticsPanelFor(ws, panel));
+        assertNull(GephiControlService.statisticsPanelFor(null, panel));
+        assertNull(GephiControlService.statisticsPanelFor(ws, null));
+
+        ws.add(new FakeStatsModel());
+        assertSame(panel, GephiControlService.statisticsPanelFor(ws, panel));
+    }
+
+    /** What the Statistics window adds to each workspace it has set up. */
+    static class FakeStatsModel implements StatisticsModelUI {
+        @Override public String getResult(StatisticsUI ui) {
+            return null;
+        }
+
+        @Override public boolean isStatisticsUIVisible(StatisticsUI ui) {
+            return true;
+        }
+
+        @Override public boolean isRunning(StatisticsUI ui) {
+            return false;
+        }
+
+        @Override public Statistics getRunning(StatisticsUI ui) {
+            return null;
+        }
+
+        @Override public String getReport(Class<? extends Statistics> c) {
+            return null;
+        }
+
+        @Override public void addChangeListener(ChangeListener l) {
+        }
+
+        @Override public void removeChangeListener(ChangeListener l) {
+        }
     }
 }

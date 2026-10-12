@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import statistics
 from collections import Counter
+from collections.abc import Sequence
+from typing import Any
 
 
-def _gini(values: list[float]) -> float:
+def _gini(values: Sequence[float]) -> float:
     """Gini coefficient of a value distribution (0 = equal, 1 = one node has all)."""
     xs = sorted(values)
     n = len(xs)
@@ -40,7 +42,7 @@ def _assortativity(edge_degree_pairs: list[tuple[int, int]]) -> float | None:
     return cov / var
 
 
-def freeman_degree_centralization(degrees: list[float], n: int) -> float | None:
+def freeman_degree_centralization(degrees: Sequence[float], n: int) -> float | None:
     """How concentrated degree is, against the most concentrated arrangement on n nodes.
 
     Freeman's measure: the observed total departure from the maximum degree, over the departure
@@ -109,7 +111,7 @@ def structural_profile(graph: dict) -> dict:
         ((k2_mean - k_mean) ** 2) / (n * k_mean ** 3) if n and k_mean > 0 else 0.0
     )
 
-    profile = {
+    profile: dict[str, Any] = {
         "nodes": n,
         "edges": m,
         "directed": bool(graph.get("directed")),

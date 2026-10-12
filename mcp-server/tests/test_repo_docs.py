@@ -230,3 +230,19 @@ def test_the_skill_explains_the_plugins_already_running_refusal():
     for copy in ("claude-code", "gephi-network-analysis"):
         skill = (REPO / "plugins" / copy / "skills" / "gephi" / "SKILL.md").read_text(encoding="utf-8")
         assert '"already running"' in skill and "gephi_stop_statistic" in skill, copy
+
+
+def test_ci_enforces_both_coverage_floors_and_the_hook_test():
+    """The floors only work while CI runs them; dropping a step must fail here, not go quiet."""
+    ci = _read(".github/workflows/ci.yml")
+    assert "python -m pytest -q --cov" in ci
+    # Named explicitly: reached only through the editable install, the viewer is silenced.
+    assert "mypy ./*.py gephi_mcp_viewer" in ci
+    assert "test-check-gephi.sh" in ci
+    floor = re.search(r"^fail_under = (\d+)", _read("mcp-server/pyproject.toml"), re.M)
+    assert floor and int(floor.group(1)) > 0
+    pom = _read("gephi-ai-plugin/pom.xml")
+    for counter in ("line", "branch"):
+        minimum = re.search(rf"<coverage\.{counter}\.minimum>([\d.]+)<", pom)
+        assert minimum and float(minimum.group(1)) > 0, counter
+    assert "<goal>check</goal>" in pom and "jacoco-maven-plugin" in pom

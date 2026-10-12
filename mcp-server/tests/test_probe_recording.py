@@ -147,3 +147,55 @@ def test_the_register_records_what_the_probe_actually_measured(tmp_path):
 
     v = json.loads(path.read_text())["caveats"][0]["verification"]
     assert v["evidence"] == "10 runs identical; layout did not change it"
+
+
+# ── The local overlay a probe run writes ──
+
+def test_the_overlay_records_verdicts_with_their_evidence_and_reports_changes(tmp_path):
+    from probe_verdicts import write_overlay
+
+    overlay = tmp_path / "caveats.local.json"
+    changes = write_overlay(overlay, {"gephi-0001": "reproduced"}, today="2026-01-02",
+                            evidence={"gephi-0001": "3 runs, 3 different partitions"})
+
+    assert changes == ["  gephi-0001: unverified -> reproduced"]
+    assert json.loads(overlay.read_text()) == {"gephi-0001": {
+        "status": "reproduced", "checked_on": "2026-01-02",
+        "evidence": "3 runs, 3 different partitions"}}
+
+
+def test_the_overlay_keeps_earlier_verdicts_and_reports_only_what_moved(tmp_path):
+    from probe_verdicts import write_overlay
+
+    overlay = tmp_path / "caveats.local.json"
+    write_overlay(overlay, {"gephi-0001": "reproduced", "gephi-0002": "not_reproduced"},
+                  today="2026-01-02")
+
+    changes = write_overlay(overlay, {"gephi-0001": "reproduced"}, today="2026-02-03")
+
+    data = json.loads(overlay.read_text())
+    assert changes == []
+    assert data["gephi-0001"]["checked_on"] == "2026-02-03"
+    assert data["gephi-0002"]["status"] == "not_reproduced"
+
+
+@pytest.mark.parametrize("old", ["{not json", "[1, 2, 3]"])
+def test_an_unreadable_overlay_is_replaced_rather_than_failing_the_run(tmp_path, old):
+    from probe_verdicts import write_overlay
+
+    overlay = tmp_path / "caveats.local.json"
+    overlay.write_text(old)
+
+    changes = write_overlay(overlay, {"gephi-0001": "not_reproduced"}, today="2026-01-02")
+
+    assert changes == ["  gephi-0001: unverified -> not_reproduced"]
+    assert json.loads(overlay.read_text())["gephi-0001"]["status"] == "not_reproduced"
+
+
+def test_the_overlay_refuses_a_value_that_is_not_a_verdict_and_writes_nothing(tmp_path):
+    from probe_verdicts import write_overlay
+
+    overlay = tmp_path / "caveats.local.json"
+    with pytest.raises(ValueError, match="not a verdict"):
+        write_overlay(overlay, {"gephi-0001": "maybe"})
+    assert not overlay.exists()

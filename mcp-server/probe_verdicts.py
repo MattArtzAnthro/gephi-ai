@@ -70,6 +70,9 @@ def write_overlay(overlay_path: Path, verdicts: dict[str, str],
         existing = json.loads(overlay_path.read_text(encoding="utf-8"))
     except Exception:
         existing = {}
+    if not isinstance(existing, dict):
+        # The reader ignores an overlay that is not an object, so one cannot hold verdicts.
+        existing = {}
     changes = []
     for caveat_id, verdict in verdicts.items():
         was = existing.get(caveat_id, {}).get("status")

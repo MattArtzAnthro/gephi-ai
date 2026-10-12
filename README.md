@@ -36,7 +36,7 @@ You need [Gephi Desktop](https://gephi.org) 0.11.3 or newer and an AI assistant.
 
 ### 1. Add the plugin to Gephi
 
-1. Download `gephi-ai-1.5.1.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases).
+1. Download `gephi-ai-1.5.2.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases).
 2. In Gephi, open **Tools > Plugins > Downloaded > Add Plugins**, select the file, and click **Install**.
 3. Restart Gephi. **Tools > Gephi AI Server** shows that the plugin is running.
 
@@ -199,7 +199,7 @@ Every build checks the plugin before it compiles and tests it:
 - **Checkstyle** runs with Gephi core's own configuration (`gephi-ai-plugin/checkstyle.xml`), and any violation fails the build.
 - **`SourceRulesTest`** holds the rules that keep the plugin from freezing Gephi: graph locks released in `finally`, no loops over live graph iterators, no project changes or graph reads on the interface thread, named daemon threads, and the licence header on every file.
 
-The MCP server is a standard Python package in `mcp-server/`, tested with `pytest`, linted with `ruff`, and type-checked with `mypy`. The release scripts are checked with `shellcheck`, and the CI workflow with `actionlint`. On a pull request, CI also runs `scripts/check-fix-tests.sh`, which warns about a `fix` commit that changes no test. The live smoke test (`mcp-server/tests/live_smoke_test.py`) drives every tool against a running Gephi; its docstring gives the command for a separate test Gephi. Release steps are in [RELEASING.md](RELEASING.md).
+The MCP server is a standard Python package in `mcp-server/`, tested with `pytest`, linted with `ruff`, and type-checked with `mypy`. CI fails when coverage drops below the floors set in `mcp-server/pyproject.toml` and `gephi-ai-plugin/pom.xml`. The release scripts are checked with `shellcheck` and tested in throwaway repositories, and the CI workflow is checked with `actionlint`. On a pull request, CI also runs `scripts/check-fix-tests.sh`, which warns about a `fix` commit that changes no test. The live smoke test (`mcp-server/tests/live_smoke_test.py`) drives every tool against a running Gephi; its docstring gives the command for a separate test Gephi. Release steps are in [RELEASING.md](RELEASING.md).
 
 ## Citation
 

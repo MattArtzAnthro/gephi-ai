@@ -111,12 +111,30 @@ public class GephiAPIServer implements HttpHandler {
                 LOGGER.log(Level.WARNING, "API error", e);
                 JsonObject error = new JsonObject();
                 error.addProperty("success", false);
-                error.addProperty("error", e.getMessage());
+                error.addProperty("error", describeFailure(method, uri, e));
                 sendJson(exchange, 500, error);
             }
         } finally {
             exchange.close();
         }
+    }
+
+    /**
+     * The error text for a request that threw. A value of the wrong JSON type (an object where
+     * an id belongs, text where a number belongs) makes Gson throw with a bare type name such as
+     * "JsonObject", or with no message at all, which left the caller an empty or meaningless
+     * error. The text names the request and says what kind of problem it was.
+     */
+    static String describeFailure(String method, String uri, Exception e) {
+        String detail = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+        if (e instanceof com.google.gson.JsonParseException || e instanceof IllegalStateException
+            || e instanceof UnsupportedOperationException || e instanceof NumberFormatException
+            || e instanceof ClassCastException || e instanceof IndexOutOfBoundsException) {
+            return "Could not read the request to " + method + " " + uri
+                + ": the body is not a JSON object, or a value in it is missing or of the wrong type ("
+                + detail + ")";
+        }
+        return detail;
     }
 
     private void sendJson(HttpExchange exchange, int status, JsonObject body) throws IOException {

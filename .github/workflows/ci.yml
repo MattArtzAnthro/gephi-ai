@@ -28,7 +28,8 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - name: Run tests
+      - name: Run tests and the coverage floor
+        # JaCoCo's check runs in the test phase and fails below the floors set in pom.xml.
         working-directory: gephi-ai-plugin
         run: mvn -B test
 
@@ -59,17 +60,27 @@ jobs:
         # Once: mypy checks against 3.12 on every runner (see [tool.mypy] in pyproject.toml).
         if: matrix.python-version == '3.12'
         working-directory: mcp-server
-        run: mypy ./*.py
+        # The viewer package is named: imported only through the editable install, mypy treats
+        # it as a site package and silences its errors.
+        run: mypy ./*.py gephi_mcp_viewer
       - name: Test
+        if: matrix.python-version != '3.12'
         working-directory: mcp-server
         run: python -m pytest -q
+      - name: Test with the coverage floor
+        # Once: coverage is measured on 3.12 and fails below fail_under in pyproject.toml.
+        if: matrix.python-version == '3.12'
+        working-directory: mcp-server
+        run: python -m pytest -q --cov --cov-report=term
 
   scripts:
     name: Scripts and workflows (shellcheck, actionlint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck scripts/*.sh
+      - run: shellcheck scripts/*.sh plugins/claude-code/scripts/*.sh
+      - name: Gephi check hook blocks when Gephi is down and allows when it is up
+        run: bash plugins/claude-code/scripts/test-check-gephi.sh
       - run: pip install actionlint-py && actionlint
 
   desktop-bundle:

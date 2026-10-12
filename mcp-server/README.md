@@ -48,9 +48,10 @@ Graph-changing tools run one at a time within one server process, so parallel to
 ## Development
 
 ```bash
-pip install -e . pytest pytest-asyncio ruff
+pip install -e ".[dev]"
 ruff check .
-pytest -q
+mypy ./*.py gephi_mcp_viewer
+python -m pytest -q --cov   # fails below the coverage floor in pyproject.toml
 ```
 
 ## License
