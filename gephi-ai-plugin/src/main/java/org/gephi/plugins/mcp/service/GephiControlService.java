@@ -227,7 +227,8 @@ public class GephiControlService {
             while (!wl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 if (System.nanoTime() > deadline) {
                     throw new RuntimeException(
-                        "Graph is busy (another task, such as a running statistic, holds the lock); please retry");
+                        "Graph is busy (another task, such as a running statistic, holds the lock); please retry"
+                            + " (" + describeLock(g) + ")");
                 }
                 Thread.sleep(5);
             }
@@ -276,13 +277,28 @@ public class GephiControlService {
                 if (System.nanoTime() > deadline) {
                     throw new RuntimeException(
                         "Graph is busy (lock unavailable) — if this persists, Gephi is wedged; fully quit and "
-                            + "reopen it");
+                            + "reopen it (" + describeLock(g) + ")");
                 }
                 Thread.sleep(5);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while acquiring the read lock");
+        }
+    }
+
+    /**
+     * The graph lock's live state for a "busy" error: outstanding read holds, whether a writer
+     * holds it, and how many threads wait. Read holds with no writer while Gephi is idle mean a
+     * leaked hold; a writer or a single long reader means a statistic or import is running.
+     */
+    static String describeLock(Graph g) {
+        try {
+            org.gephi.graph.api.GraphLock lock = g.getLock();
+            return lock.getReadLockCount() + " read holds, write lock "
+                + (lock.isWriteLocked() ? "held" : "free") + ", " + lock.getQueueLength() + " threads waiting";
+        } catch (Throwable t) {
+            return "lock state unavailable";
         }
     }
 

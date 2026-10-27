@@ -236,6 +236,7 @@ class LockContentionTest {
             String message = String.valueOf(failure.get().getMessage());
             assertTrue(message.contains("Graph is busy"), message);
             assertFalse(message.contains("renderer"), "the busy message blames the renderer: " + message);
+            assertTrue(message.contains("1 read holds"), "the busy message hides the read hold: " + message);
         } finally {
             releaseReader.countDown();
             longReader.join(5_000);
@@ -333,5 +334,45 @@ class LockContentionTest {
         } finally {
             GephiControlService.unlockWrite(g);
         }
+    }
+
+    /**
+     * A read that times out must say what holds the lock, so a leaked hold can be told from a
+     * long statistic without a thread dump.
+     */
+    @Test
+    void lockReadBusyMessageReportsTheLeakedHold() throws Exception {
+        Graph g = newGraph();
+
+        CountDownLatch writerHolds = new CountDownLatch(1);
+        CountDownLatch releaseWriter = new CountDownLatch(1);
+        Thread writer = new Thread(() -> {
+            g.writeLock();
+            try {
+                writerHolds.countDown();
+                releaseWriter.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                g.writeUnlock();
+            }
+        }, "holding-writer");
+        writer.setDaemon(true);
+        writer.start();
+        assertTrue(writerHolds.await(5, TimeUnit.SECONDS), "writer thread failed to start");
+
+        try {
+            RuntimeException e = assertThrows(RuntimeException.class,
+                () -> GephiControlService.lockRead(g, 500_000_000L));
+            String message = String.valueOf(e.getMessage());
+            assertTrue(message.contains("Graph is busy"), message);
+            assertTrue(message.contains("write lock held"), message);
+            assertTrue(message.contains("0 read holds"), message);
+            assertEquals(0, g.getLock().getReadHoldCount(), "the failed read left a hold behind");
+        } finally {
+            releaseWriter.countDown();
+            writer.join(5_000);
+        }
+        assertFalse(writer.isAlive(), "writer thread leaked");
     }
 }
