@@ -213,7 +213,7 @@ public class GephiControlService {
      * turn that into a "graph busy" error the caller can report. GraphLock offers timed
      * acquisition for reads only, so the underlying WriteLock is reached by reflection;
      * if it cannot be, this falls back to the blocking lock. Once held, any Gephi-internal
-     * writeLock() on this same thread (setVisibleView, etc.) re-enters for free, which is why
+     * writeLock() on this same thread (a filter export, etc.) re-enters for free, which is why
      * callers wrap those calls too.
      */
     static void lockWrite(Graph g) {
@@ -4780,16 +4780,9 @@ public class GephiControlService {
             if (ws == null) {
                 return error("No project open");
             }
-            GraphModel gm = currentGraphModel();
-            Graph g = gm.getGraph();
-            // setVisibleView() takes Gephi's own blocking write lock; hold our deadlock-safe
-            // lock first so that call re-enters instead of queuing behind the renderer.
-            lockWrite(g);
-            try {
-                gm.setVisibleView(null);
-            } finally {
-                unlockWrite(g);
-            }
+            // Restoring the main view takes no graph lock (gephi/graphstore#357), so this needs
+            // none either and does not wait for a running statistic.
+            currentGraphModel().setVisibleView(null);
             return success("Filters reset - full graph view restored");
         } catch (Exception e) {
             return failure("Failed: ", e);
