@@ -955,7 +955,6 @@ public class GephiControlService {
                 return error("No project open");
             }
             GraphModel gm = getGraphController().getGraphModel(ws);
-            Graph g = visible ? gm.getGraphVisible() : gm.getGraph();
             java.util.function.Predicate<Node> keep = null;
             if (value != null || contains != null || min != null || max != null) {
                 if (column == null) {
@@ -975,8 +974,10 @@ public class GephiControlService {
                 }
             }
             java.util.Set<String> wanted = wantedColumns(columns);
-            lockRead(g);
+            Graph full = gm.getGraph();
+            lockRead(full);
             try {
+                Graph g = visible ? gm.getGraphVisible() : full;
                 JsonArray arr = new JsonArray();
                 int count = 0;
                 int skip = 0;
@@ -1063,7 +1064,7 @@ public class GephiControlService {
                 r.add("nodes", arr);
                 return r;
             } finally {
-                g.readUnlock();
+                full.readUnlock();
             }
         } catch (Exception e) {
             return failure("Failed: ", e);
@@ -1529,9 +1530,10 @@ public class GephiControlService {
                 return error("No project open");
             }
             GraphModel gm = getGraphController().getGraphModel(ws);
-            Graph g = visible ? gm.getGraphVisible() : gm.getGraph();
-            lockRead(g);
+            Graph full = gm.getGraph();
+            lockRead(full);
             try {
+                Graph g = visible ? gm.getGraphVisible() : full;
                 JsonArray arr = new JsonArray();
                 int count = 0;
                 int skip = 0;
@@ -1589,7 +1591,7 @@ public class GephiControlService {
                 r.add("edges", arr);
                 return r;
             } finally {
-                g.readUnlock();
+                full.readUnlock();
             }
         } catch (Exception e) {
             return failure("Failed: ", e);
@@ -1618,11 +1620,11 @@ public class GephiControlService {
         r.addProperty("filter_active", filterActive);
         if (filterActive) {
             Graph full = gm.getGraph();
-            Graph vis = gm.getGraphVisible();
+            int[] visible = visibleCounts(gm);
             r.addProperty("full_node_count", full.getNodeCount());
             r.addProperty("full_edge_count", full.getEdgeCount());
-            r.addProperty("visible_node_count", vis.getNodeCount());
-            r.addProperty("visible_edge_count", vis.getEdgeCount());
+            r.addProperty("visible_node_count", visible[0]);
+            r.addProperty("visible_edge_count", visible[1]);
         }
     }
 
@@ -1640,9 +1642,10 @@ public class GephiControlService {
                 return error("No project open");
             }
             GraphModel gm = getGraphController().getGraphModel(ws);
-            Graph g = visible ? gm.getGraphVisible() : gm.getGraph();
-            lockRead(g);
+            Graph full = gm.getGraph();
+            lockRead(full);
             try {
+                Graph g = visible ? gm.getGraphVisible() : full;
                 int nc = g.getNodeCount();
                 int ec = g.getEdgeCount();
                 double density = nc > 1 ? (2.0 * ec) / (nc * (nc - 1)) : 0;
@@ -1657,7 +1660,7 @@ public class GephiControlService {
                 addViewInfo(r, gm, visible);
                 return r;
             } finally {
-                g.readUnlock();
+                full.readUnlock();
             }
         } catch (Exception e) {
             return failure("Failed: ", e);
@@ -2116,9 +2119,10 @@ public class GephiControlService {
 
     /** How many visible nodes (or edges) have a value in {@code col} that {@code counts}. */
     static int countVisible(GraphModel gm, boolean edges, java.util.function.Predicate<Object> counts, Column col) {
-        Graph visible = gm.getGraphVisible();
-        lockRead(visible);
+        Graph full = gm.getGraph();
+        lockRead(full);
         try {
+            Graph visible = gm.getGraphVisible();
             int n = 0;
             for (org.gephi.graph.api.Element e : edges ? visible.getEdges().toArray() : visible.getNodes().toArray()) {
                 if (counts.test(e.getAttribute(col))) {
@@ -2127,7 +2131,7 @@ public class GephiControlService {
             }
             return n;
         } finally {
-            visible.readUnlock();
+            full.readUnlock();
         }
     }
 
@@ -4100,6 +4104,17 @@ public class GephiControlService {
         return last;
     }
 
+    /** landscapeFor over the visible graph, fetched under the read lock (see visibleCounts). */
+    static boolean landscapeFor(GraphModel gm) {
+        Graph full = gm.getGraph();
+        lockRead(full);
+        try {
+            return landscapeFor(gm.getGraphVisible());
+        } finally {
+            full.readUnlock();
+        }
+    }
+
     /**
      * True when the visible drawing is wider than it is tall, so it prints landscape. PDFs are
      * always US Letter; only the orientation follows the layout.
@@ -4143,7 +4158,7 @@ public class GephiControlService {
             if (!(exporter instanceof PDFExporter)) {
                 return error("Unexpected PDF exporter implementation: " + exporter.getClass().getName());
             }
-            boolean landscape = landscapeFor(currentGraphModel().getGraphVisible());
+            boolean landscape = landscapeFor(currentGraphModel());
             PDFExporter pdf = (PDFExporter) exporter;
             pdf.setPageSize(PDRectangle.LETTER);
             pdf.setLandscape(landscape);
@@ -5489,8 +5504,9 @@ public class GephiControlService {
             }
         }
 
-        int nodesBefore = gm.getGraphVisible().getNodeCount();
-        int edgesBefore = gm.getGraphVisible().getEdgeCount();
+        int[] before = visibleCounts(gm);
+        int nodesBefore = before[0];
+        int edgesBefore = before[1];
 
         // Validate the action BEFORE touching the filter model. Adding the query first
         // meant an unknown action returned an error having already changed the visible
@@ -5542,8 +5558,9 @@ public class GephiControlService {
                 // had removed half the graph. Wait briefly for the view to settle, and say
                 // so rather than publishing a number that has not stopped moving.
                 boolean settled = awaitVisibleViewSettled(gm, nodesBefore);
-                r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
-                r.addProperty("edges_after", gm.getGraphVisible().getEdgeCount());
+                int[] after = visibleCounts(gm);
+                r.addProperty("nodes_after", after[0]);
+                r.addProperty("edges_after", after[1]);
                 if (!settled) {
                     r.addProperty("counts_settled", false);
                 }
@@ -5581,6 +5598,24 @@ public class GephiControlService {
     }
 
     /**
+     * Node and edge counts of the visible graph, read under the timed read lock taken before the
+     * visible graph is fetched. Gephi 0.11.3's getGraphVisible() takes the blocking read lock
+     * itself, so unguarded it parks behind a queued writer for as long as the reader ahead of
+     * that writer runs; and holding the lock keeps a filter from destroying the view between the
+     * fetch and the counts, as graphstore's getGraphVisible() contract asks.
+     */
+    static int[] visibleCounts(GraphModel gm) {
+        Graph full = gm.getGraph();
+        lockRead(full);
+        try {
+            Graph vis = gm.getGraphVisible();
+            return new int[] {vis.getNodeCount(), vis.getEdgeCount()};
+        } finally {
+            full.readUnlock();
+        }
+    }
+
+    /**
      * Waits briefly for the visible view to stop changing after a filter is applied.
      * Returns true once two consecutive reads agree (and, when the filter actually
      * removed something, once the count has moved off its pre-filter value); false if
@@ -5593,7 +5628,7 @@ public class GephiControlService {
         int last = -1;
         boolean moved = false;
         while (System.currentTimeMillis() < deadline) {
-            int now = gm.getGraphVisible().getNodeCount();
+            int now = visibleCounts(gm)[0];
             if (now != before) {
                 moved = true;
             }
@@ -5610,7 +5645,7 @@ public class GephiControlService {
         }
         // A filter that legitimately keeps every node never moves off `before`; treat a
         // stable reading as settled rather than reporting it as provisional forever.
-        return gm.getGraphVisible().getNodeCount() == last;
+        return visibleCounts(gm)[0] == last;
     }
 
     // ─── Combined filters ────────────────────────────────────────────
@@ -5785,11 +5820,12 @@ public class GephiControlService {
             }
             if (act.equals("select")) {
                 r = success("Filters applied to the visible graph");
-                final boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
+                final boolean settled = awaitVisibleViewSettled(gm, visibleCounts(gm)[0]);
+                int[] after = visibleCounts(gm);
                 r.addProperty("nodes_before", nodesBefore);
                 r.addProperty("edges_before", edgesBefore);
-                r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
-                r.addProperty("edges_after", gm.getGraphVisible().getEdgeCount());
+                r.addProperty("nodes_after", after[0]);
+                r.addProperty("edges_after", after[1]);
                 if (!settled) {
                     r.addProperty("counts_settled", false);
                 }
