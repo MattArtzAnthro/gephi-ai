@@ -50,6 +50,20 @@
         </repository>
     </repositories>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- TEMPORARY, this branch only: graphstore 0.8.11 carries GraphLock's public read API
+                 (gephi/graphstore#294). Gephi 0.11.3 bundles 0.8.8, so the plugin cannot ship on
+                 this pin. Remove it and set gephi.version to the first Gephi release that bundles
+                 graphstore 0.8.11 or later (expected 0.11.4). -->
+            <dependency>
+                <groupId>org.gephi</groupId>
+                <artifactId>graphstore</artifactId>
+                <version>0.8.11</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <!-- Gephi APIs (compile-time) -->
         <dependency>

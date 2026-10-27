@@ -17,6 +17,8 @@
 package org.gephi.plugins.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -193,6 +195,14 @@ class SourceRulesTest {
             }
         }
         assertEquals(List.of(), missing, "Every Java file opens with the Apache 2.0 header the other files carry");
+    }
+
+    @Test
+    void onlyTheWriteLockIsReachedByReflection() {
+        String svc = sources.get("GephiControlService.java");
+        assertFalse(svc.contains("getDeclaredField(\"readLock\")"), "read lock must use GraphLock.tryReadLock");
+        assertFalse(svc.contains("getDeclaredField(\"readWriteLock\")"), "lock stats must use the GraphLock API");
+        assertTrue(svc.contains("getDeclaredField(\"writeLock\")"), "lockWrite still needs its timed write handle");
     }
 
     @Test

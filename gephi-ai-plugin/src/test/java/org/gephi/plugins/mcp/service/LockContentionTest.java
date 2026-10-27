@@ -20,13 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.gephi.graph.api.Graph;
 import org.gephi.graph.api.GraphModel;
 import org.junit.jupiter.api.Test;
@@ -61,20 +61,18 @@ class LockContentionTest {
     @Test
     void lockWriteWaitsOutAContendingReaderAndActuallyAcquires() throws Exception {
         Graph g = newGraph();
-        ReentrantReadWriteLock.ReadLock rl = GephiControlService.readLockHandle(g);
-        assertNotNull(rl, "read lock handle must be reachable (lockWrite depends on it)");
 
         CountDownLatch readerHolds = new CountDownLatch(1);
         CountDownLatch releaseReader = new CountDownLatch(1);
         Thread reader = new Thread(() -> {
-            rl.lock();
+            g.readLock();
             try {
                 readerHolds.countDown();
                 releaseReader.await(30, TimeUnit.SECONDS);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             } finally {
-                rl.unlock();
+                g.readUnlock();
             }
         }, "contending-reader");
         reader.setDaemon(true);
@@ -125,20 +123,18 @@ class LockContentionTest {
     @Test
     void lockReadWaitsOutAHeldWriterAndActuallyAcquires() throws Exception {
         Graph g = newGraph();
-        ReentrantReadWriteLock.WriteLock wl = GephiControlService.writeLockHandle(g);
-        assertNotNull(wl, "write lock handle must be reachable (lockRead's counterpart)");
 
         CountDownLatch writerHolds = new CountDownLatch(1);
         CountDownLatch releaseWriter = new CountDownLatch(1);
         Thread writer = new Thread(() -> {
-            wl.lock();
+            g.writeLock();
             try {
                 writerHolds.countDown();
                 releaseWriter.await(30, TimeUnit.SECONDS);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             } finally {
-                wl.unlock();
+                g.writeUnlock();
             }
         }, "holding-writer");
         writer.setDaemon(true);
@@ -184,20 +180,18 @@ class LockContentionTest {
     @Test
     void lockWriteGivesUpBehindALongReaderWithoutBlockingOtherReaders() throws Exception {
         Graph g = newGraph();
-        ReentrantReadWriteLock.ReadLock rl = GephiControlService.readLockHandle(g);
-        assertNotNull(rl, "read lock handle must be reachable (lockWrite depends on it)");
 
         CountDownLatch readerHolds = new CountDownLatch(1);
         CountDownLatch releaseReader = new CountDownLatch(1);
         Thread longReader = new Thread(() -> {
-            rl.lock();
+            g.readLock();
             try {
                 readerHolds.countDown();
                 releaseReader.await(60, TimeUnit.SECONDS);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             } finally {
-                rl.unlock();
+                g.readUnlock();
             }
         }, "long-reader");
         longReader.setDaemon(true);
@@ -227,8 +221,8 @@ class LockContentionTest {
                 Thread.sleep(500);
                 CountDownLatch got = new CountDownLatch(1);
                 Thread probe = new Thread(() -> {
-                    rl.lock();
-                    rl.unlock();
+                    g.readLock();
+                    g.readUnlock();
                     got.countDown();
                 }, "probe-reader");
                 probe.setDaemon(true);
@@ -246,6 +240,98 @@ class LockContentionTest {
             releaseReader.countDown();
             longReader.join(5_000);
             writer.join(5_000);
+        }
+    }
+
+    /** A request thread whose interrupt flag is already set must fail cleanly and hold nothing. */
+    @Test
+    void lockReadOnAnInterruptedThreadThrowsAndHoldsNothing() {
+        Graph g = newGraph();
+        Thread.currentThread().interrupt();
+        try {
+            assertThrows(RuntimeException.class, () -> GephiControlService.lockRead(g));
+        } finally {
+            assertTrue(Thread.interrupted(), "lockRead swallowed the interrupt");
+        }
+        assertEquals(0, g.getLock().getReadHoldCount(), "lockRead left a read hold behind");
+    }
+
+    /**
+     * A thread that already reads re-enters at once even when another thread's writer is queued:
+     * the writer waits on this thread's first hold, so refusing the second would only turn a
+     * nested read into a "busy" error.
+     */
+    @Test
+    void lockReadReentersUnderAQueuedWriter() throws Exception {
+        Graph g = newGraph();
+
+        CountDownLatch readerHolds = new CountDownLatch(1);
+        CountDownLatch reenter = new CountDownLatch(1);
+        CountDownLatch reentered = new CountDownLatch(1);
+        AtomicInteger holdCount = new AtomicInteger(-1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread reader = new Thread(() -> {
+            g.readLock();
+            try {
+                readerHolds.countDown();
+                reenter.await(30, TimeUnit.SECONDS);
+                GephiControlService.lockRead(g);
+                try {
+                    holdCount.set(g.getLock().getReadHoldCount());
+                } finally {
+                    g.readUnlock();
+                }
+            } catch (Throwable t) {
+                failure.set(t);
+            } finally {
+                g.readUnlock();
+                reentered.countDown();
+            }
+        }, "reentering-reader");
+        reader.setDaemon(true);
+        reader.start();
+        assertTrue(readerHolds.await(5, TimeUnit.SECONDS), "reader thread failed to start");
+
+        Thread writer = new Thread(() -> {
+            g.writeLock();
+            g.writeUnlock();
+        }, "queued-writer");
+        writer.setDaemon(true);
+        writer.start();
+        try {
+            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (g.getLock().getQueueLength() != 1) {
+                assertTrue(System.nanoTime() < until, "the writer never queued");
+                Thread.sleep(5);
+            }
+
+            reenter.countDown();
+            assertTrue(reentered.await(1, TimeUnit.SECONDS), "a nested read waited behind the queued writer");
+            assertNull(failure.get(), () -> "lockRead threw: " + failure.get());
+            assertEquals(2, holdCount.get(), "lockRead returned without a second read hold");
+        } finally {
+            reenter.countDown();
+            reader.join(5_000);
+            writer.join(5_000);
+        }
+        assertFalse(reader.isAlive(), "reader thread leaked");
+        assertFalse(writer.isAlive(), "writer thread leaked");
+    }
+
+    /** Gephi-internal code reads inside the plugin's own write hold; that read must not wait. */
+    @Test
+    void lockReadInsideLockWriteAcquiresAtOnce() {
+        Graph g = newGraph();
+        GephiControlService.lockWrite(g);
+        try {
+            GephiControlService.lockRead(g);
+            try {
+                assertEquals(1, g.getLock().getReadHoldCount());
+            } finally {
+                g.readUnlock();
+            }
+        } finally {
+            GephiControlService.unlockWrite(g);
         }
     }
 }

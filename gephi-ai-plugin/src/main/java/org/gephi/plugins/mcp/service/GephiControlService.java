@@ -210,8 +210,8 @@ public class GephiControlService {
      * finished, in this plugin or in Gephi, releases its hold only on exhaustion), a blocking
      * writeLock() waits forever and every reader queued behind it waits too, with no holder
      * left for a thread dump to show. Short timed tryLock() attempts, retried for up to ~15s,
-     * turn that into a "graph busy" error the caller can report. graphstore's GraphLock has
-     * no timed acquisition, so the underlying ReentrantReadWriteLock is reached by reflection;
+     * turn that into a "graph busy" error the caller can report. GraphLock offers timed
+     * acquisition for reads only, so the underlying WriteLock is reached by reflection;
      * if it cannot be, this falls back to the blocking lock. Once held, any Gephi-internal
      * writeLock() on this same thread (setVisibleView, etc.) re-enters for free, which is why
      * callers wrap those calls too.
@@ -247,8 +247,6 @@ public class GephiControlService {
         g.writeUnlock();
     }
 
-    private static volatile java.lang.reflect.Field READ_LOCK_FIELD;
-
     /*
      * ITERATION RULE (wedge prevention): never iterate a live NodeIterable /
      * EdgeIterable directly — always iterate .toArray(). A live iterator
@@ -267,14 +265,14 @@ public class GephiControlService {
      * tryLock turns that into an immediate, actionable error instead.
      */
     static void lockRead(Graph g) {
-        java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
-        if (rl == null) {
-            g.readLock();
-            return;
-        }
-        long deadline = System.nanoTime() + 10_000_000_000L;
+        lockRead(g, 10_000_000_000L);
+    }
+
+    /** lockRead with its deadline given in nanoseconds. */
+    static void lockRead(Graph g, long timeoutNanos) {
+        long deadline = System.nanoTime() + timeoutNanos;
         try {
-            while (!rl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            while (!g.getLock().tryReadLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 if (System.nanoTime() > deadline) {
                     throw new RuntimeException(
                         "Graph is busy (lock unavailable) — if this persists, Gephi is wedged; fully quit and "
@@ -285,27 +283,6 @@ public class GephiControlService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while acquiring the read lock");
-        }
-    }
-
-    /** The underlying ReentrantReadWriteLock.ReadLock behind Graph.getLock(), or null if unreachable. */
-    static java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock readLockHandle(Graph g) {
-        try {
-            org.gephi.graph.api.GraphLock lock = g.getLock();
-            if (lock == null) {
-                return null;
-            }
-            java.lang.reflect.Field f = READ_LOCK_FIELD;
-            if (f == null || !f.getDeclaringClass().isInstance(lock)) {
-                f = lock.getClass().getDeclaredField("readLock");
-                f.setAccessible(true);
-                READ_LOCK_FIELD = f;
-            }
-            Object v = f.get(lock);
-            return (v instanceof java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock)
-                ? (java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock) v : null;
-        } catch (Throwable t) {
-            return null;
         }
     }
 
@@ -4825,22 +4802,21 @@ public class GephiControlService {
                 return "none";
             }
             Graph g = gm.getGraph();
-            java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock rl = readLockHandle(g);
-            if (rl == null) {
-                return "unknown";
-            }
-            if (rl.tryLock(150, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                rl.unlock();
+            if (g.getLock().tryReadLock(150, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                g.readUnlock();
                 return "ok";
             }
             return "busy";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "unknown";
         } catch (Throwable t) {
             return "unknown";
         }
     }
 
     /**
-     * Live counters from the underlying ReentrantReadWriteLock: active read holds,
+     * Live counters from the graph lock: active read holds,
      * write-locked flag, and queued threads. Diagnostic companion to graphLockProbe;
      * a nonzero reader count while Gephi is idle means a leaked read hold (the
      * precursor of a permanent wedge). All values -1 when unreachable.
@@ -4859,16 +4835,9 @@ public class GephiControlService {
             if (lock == null) {
                 return o;
             }
-            java.lang.reflect.Field f = lock.getClass().getDeclaredField("readWriteLock");
-            f.setAccessible(true);
-            Object v = f.get(lock);
-            if (v instanceof java.util.concurrent.locks.ReentrantReadWriteLock) {
-                java.util.concurrent.locks.ReentrantReadWriteLock rwl =
-                    (java.util.concurrent.locks.ReentrantReadWriteLock) v;
-                o.addProperty("readers", rwl.getReadLockCount());
-                o.addProperty("write_locked", rwl.isWriteLocked());
-                o.addProperty("queued", rwl.getQueueLength());
-            }
+            o.addProperty("readers", lock.getReadLockCount());
+            o.addProperty("write_locked", lock.isWriteLocked());
+            o.addProperty("queued", lock.getQueueLength());
         } catch (Throwable t) {
             // leave the -1 defaults
         }
