@@ -25,13 +25,13 @@ import org.gephi.utils.progress.ProgressTicket;
 import org.junit.jupiter.api.Test;
 
 /**
- * Gephi's modularity can loop forever (gephi#1630). A statistic run with a deadline is cancelled
- * when the deadline passes, and the caller is told it was stopped so a stale column is never read
- * back as a result.
+ * A long statistic holds the graph lock while it runs. A statistic run with a deadline is cancelled
+ * when the deadline passes, so it releases the lock, and the caller is told it was stopped so a
+ * stale column is never read back as a result.
  */
 class StatisticDeadlineTest {
 
-    /** Spins until cancelled, the way a non-converging modularity run does. */
+    /** Spins until cancelled, the way a statistic on a very large graph keeps running. */
     static class Spinner implements LongTask, Runnable {
         final AtomicBoolean cancelled = new AtomicBoolean();
 

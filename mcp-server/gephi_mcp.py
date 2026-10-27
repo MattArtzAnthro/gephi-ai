@@ -72,11 +72,10 @@ CLEANUP_TIMEOUT = REQUEST_TIMEOUT
 # seconds, so a copy that appears late is removed instead of left behind.
 DUPLICATE_GRACE = float(os.environ.get("GEPHI_DUPLICATE_GRACE", "30"))
 DUPLICATE_POLL_INTERVAL = 1.0
-# Gephi's modularity occasionally never converges (gephi#1630) and spins until Gephi restarts.
-# Each run is sent with this deadline, after which the plugin stops it, and a stopped run is
-# repeated up to MODULARITY_ATTEMPTS times in all. Plugins before 1.3.2 ignore the deadline.
+# Modularity holds the graph's read lock while it runs, so on a very large graph one run can keep
+# every write waiting. Each run is sent with this deadline, after which the plugin stops it and the
+# lock is released. Plugins before 1.3.2 ignore the deadline.
 MODULARITY_DEADLINE = float(os.environ.get("GEPHI_MODULARITY_DEADLINE", "45"))
-MODULARITY_ATTEMPTS = 2
 # Repeated runs on one graph (gephi_community_stability) tighten the deadline to 20 times the
 # slowest run that finished, but never below this.
 MODULARITY_MIN_DEADLINE = 5.0
@@ -1760,30 +1759,21 @@ async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
 
 async def _run_modularity(resolution: float | None = None,
                           deadline: float = MODULARITY_DEADLINE) -> dict[str, Any]:
-    """Run Gephi's modularity with a deadline, repeating a run Gephi had to stop.
+    """Run Gephi's modularity with a deadline.
 
     A stopped run writes nothing, so the partition column still holds the previous run; a caller
-    must never read it back. The result carries `reruns_after_nonconvergence` when a run was
-    repeated, and a failure that says how many attempts were made when none finished.
+    must never read it back. A stopped run comes back as a failure that says so.
     """
     body: dict[str, Any] = {"timeout_ms": int(deadline * 1000)}
     if resolution is not None:
         body["resolution"] = resolution
-    stopped = 0
-    mod: Any = None
-    for _ in range(MODULARITY_ATTEMPTS):
-        mod = await gephi.request("POST", "/statistics/modularity", json_data=body,
-                                  timeout=deadline + REQUEST_TIMEOUT)
-        if not (isinstance(mod, dict) and mod.get("stopped")):
-            if stopped and isinstance(mod, dict) and mod.get("success"):
-                mod["reruns_after_nonconvergence"] = stopped
-            return mod
-        stopped += 1
+    mod = await gephi.request("POST", "/statistics/modularity", json_data=body,
+                              timeout=deadline + REQUEST_TIMEOUT)
+    if not (isinstance(mod, dict) and mod.get("stopped")):
+        return mod
     mod = dict(mod)
-    mod["error"] = (f"Gephi's modularity did not finish in {MODULARITY_ATTEMPTS} attempts of "
-                    f"{deadline:.0f} s each and was stopped each time. On most graphs "
-                    "this is Gephi failing to converge (gephi#1630); try again, or a slightly "
-                    "different resolution. Very large graphs can need a longer deadline "
+    mod["error"] = (f"Gephi's modularity did not finish within {deadline:.0f} s and was stopped; "
+                    "its column was not updated. Very large graphs can need a longer deadline "
                     "(GEPHI_MODULARITY_DEADLINE).")
     return mod
 
@@ -1861,17 +1851,14 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
     from gephi_mcp_viewer import parse_gexf
 
     partitions: list[dict[str, Any]] = []
-    reruns = 0
     deadline, slowest = MODULARITY_DEADLINE, 0.0
     for _ in range(runs):
         started = time.monotonic()
         mod = await _run_modularity(resolution, deadline)
         if not (isinstance(mod, dict) and mod.get("success")):
             return fmt(mod)
-        reruns += mod.get("reruns_after_nonconvergence", 0)
-        if not mod.get("reruns_after_nonconvergence"):
-            slowest = max(slowest, time.monotonic() - started)
-            deadline = min(MODULARITY_DEADLINE, max(MODULARITY_MIN_DEADLINE, 20 * slowest))
+        slowest = max(slowest, time.monotonic() - started)
+        deadline = min(MODULARITY_DEADLINE, max(MODULARITY_MIN_DEADLINE, 20 * slowest))
         exported = await _export_gexf_inline()
         if not (isinstance(exported, dict) and exported.get("success")):
             return fmt(exported)
@@ -1892,8 +1879,6 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
 
     result: dict[str, Any] = {"success": True, "resolution": resolution}
     result.update(consensus(partitions))
-    if reruns:
-        result["reruns_after_nonconvergence"] = reruns
 
     groups = result.get("consensus_groups") or []
     cores = result.pop("stable_core_groups", None) or []

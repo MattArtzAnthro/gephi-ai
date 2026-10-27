@@ -196,37 +196,40 @@ async def test_every_detection_run_carries_a_deadline_for_gephi(rec):
     assert sent and all(j.get("timeout_ms", 0) > 0 for j in sent)
 
 
-async def test_a_run_gephi_stopped_is_repeated_and_the_stale_column_is_never_read(rec):
-    """A stopped run leaves the previous partition in the column (gephi#1630). Reading it back
-    would count one partition twice and overstate stability, so the run is repeated instead."""
-    rec.responses = [plan([STABLE])[0], plan([STABLE])[1], STOPPED] + plan([{"a": 1, "b": 2, "c": 2, "d": 2}])
-
-    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
-
-    assert out["success"] is True
-    assert out["runs"] == 2
-    assert out["distinct_partitions"] == 2
-    assert out["reruns_after_nonconvergence"] == 1
-    assert rec.endpoints().count("/statistics/modularity") == 3
-
-
-async def test_a_run_that_never_converges_stops_the_analysis(rec):
-    rec.responses = [STOPPED] * gephi_mcp.MODULARITY_ATTEMPTS
+async def test_a_stopped_run_fails_the_analysis_without_reading_the_stale_column(rec):
+    """A stopped run leaves the previous partition in the column. Reading it back would count
+    one partition twice and overstate stability, so the analysis fails instead."""
+    rec.responses = [plan([STABLE])[0], plan([STABLE])[1], STOPPED]
 
     out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
 
     assert out["success"] is False
     assert out["stopped"] is True
-    assert str(gephi_mcp.MODULARITY_ATTEMPTS) in out["error"]
+    endpoints = rec.endpoints()
+    assert endpoints.count("/statistics/modularity") == 2
+    last_run = len(endpoints) - 1 - endpoints[::-1].index("/statistics/modularity")
+    assert all(e == "/statistics/modularity" for e in endpoints[last_run:])
 
 
-async def test_compute_modularity_repeats_a_stopped_run_and_says_so(rec):
-    rec.responses = [STOPPED, {"success": True, "modularity": 0.41, "communities": 5}]
+async def test_a_run_that_never_converges_stops_the_analysis(rec):
+    rec.responses = [STOPPED]
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
+
+    assert out["success"] is False
+    assert out["stopped"] is True
+    assert "GEPHI_MODULARITY_DEADLINE" in out["error"]
+    assert "1630" not in out["error"]
+
+
+async def test_compute_modularity_reports_a_stopped_run(rec):
+    rec.responses = [STOPPED]
 
     out = json.loads(await gephi_mcp.gephi_compute_modularity())
 
-    assert out["modularity"] == 0.41
-    assert out["reruns_after_nonconvergence"] == 1
+    assert out["success"] is False
+    assert rec.endpoints().count("/statistics/modularity") == 1
+    assert "reruns_after_nonconvergence" not in out
 
 
 async def test_stable_cores_are_written_to_their_own_column_with_minus_one_for_none(rec):
@@ -285,8 +288,8 @@ async def test_a_small_graph_still_lists_every_node(rec):
 
 
 async def test_after_one_run_finishes_the_rest_get_a_deadline_scaled_to_it(rec):
-    """Healthy runs take a fraction of a second; a non-converging one otherwise costs the full
-    deadline. Once a run has finished, later runs are stopped much sooner."""
+    """Healthy runs take a fraction of a second, so once one has finished, later runs on the same
+    graph are stopped much sooner than the full deadline."""
     rec.responses = plan([STABLE] * 3)
 
     await gephi_mcp.gephi_community_stability(runs=3)
