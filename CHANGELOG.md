@@ -6,10 +6,60 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## Unreleased
 
+### Added
+- **A role option for the similarity layout.** `basis="role"` places nodes by twelve role
+  features (degree, neighbours' degree, clustering, triangles, two-hop reach, and the
+  neighbour average of each), so a hub can sit next to a hub it shares no neighbours with.
+  On a test graph of hub-and-leaf communities it puts the hubs together, where the spectral
+  basis keeps each hub among its own leaves. Similar-role nodes can still be directly
+  connected (hubs that link to hubs), so its reading note says "similar role", never
+  "unconnected". It counts ties and ignores edge weights. Spectral stays the default.
+
 ### Fixed
 - **`gephi_set_preview_settings` sets text settings that plugin renderers register**, such as
   Shape by Partition's shape column and legend title. String-typed properties were listed by
   `gephi_get_preview_settings` but reported as unapplied when set.
+- **Saving into a new folder works.** Every tool that writes a file (the exports, the legend,
+  the figure, the session receipt, project save) failed with "No such file or directory" when
+  the folder did not exist yet. The server now creates it first, for absolute paths; a relative
+  path resolves against Gephi's working directory, so it is passed through untouched. The
+  plugin creates the folder too, so a relative path or an older server also works.
+- **The similarity layout no longer claims to show roles.** It embeds nodes with
+  normalized-Laplacian eigenmaps, which by construction place closely linked nodes together,
+  so nearby nodes are often directly connected. Its description, its `reading_note`, and the
+  skill now say "structurally close, often connected, not a role map", and point role
+  questions to `basis="role"`.
+- **The similarity layout no longer depends on the order the nodes arrive in.** On a graph in
+  several pieces, two orders of the same nodes gave unrelated layouts: each piece adds a zero
+  eigenvalue, and the solver returned those in an arbitrary mix. Each piece is now laid out on
+  its own and the pieces packed in rows, largest first, with eigenvector signs fixed so a
+  reordered graph is not mirrored. A piece with symmetries (a ring, a star) can still come out
+  mirrored or turned, as any spectral layout allows. Pieces under five nodes (isolated nodes,
+  pairs) are gathered into one compact block rather than strung out in a row.
+- **`projection: "auto"` says when it fell back to spectral.** Without umap-learn and
+  scikit-learn, `auto` always meant spectral; the result now carries a `projection_note` with
+  the command that enables UMAP and t-SNE.
+- **The session receipt no longer loses earlier work.** Any workspace call (switch, new,
+  rename, import, even a project save) wiped the record, so a session spread over several
+  workspaces ended with an empty receipt. When the graph on screen changes, the record so far
+  is now kept under `earlier`, labelled with what ended it (an import, another workspace, a
+  time slice), and a new record starts; the 20 most recent are kept. Renaming a workspace and
+  saving the project no longer end the record.
+- **Comparisons are in the receipt.** `gephi_compare_partitions` and
+  `gephi_community_stability` were never recorded; the receipt's new `analyses` list carries
+  each run with its headline numbers.
+- **`visual_qa` no longer calls a category palette a gradient.** After
+  `gephi_color_by_partition` gave more than twelve groups their own colours, it warned that
+  the colours "look like a continuous gradient". Colours that follow the column they were set
+  from (or the `partition_column` being checked) are now treated as categories; past eight
+  groups it says to label them instead.
+- **`visual_qa` judges a grouping on ties it can judge.** Ties to nodes with no value in the
+  column counted as ties between groups, so a grouping that held among the labelled nodes
+  could read as "does not match". Only ties whose two ends both carry a value count now, and
+  `edges_left_out` says how many were set aside.
+- **`gephi_reset_appearance` keeps node sizes.** It set every node to size 10, so a colour
+  reset undid a size ranking. Sizes now stay unless `size` is given (plugin and server), and
+  the legend drops the mappings a reset undid.
 
 ## MCP server 1.21.2 / Java plugin 1.5.2 / workflow packages 1.20.2
 
