@@ -188,12 +188,19 @@ _REPLACES_GRAPH = (
 )
 
 
+#: Calls under those prefixes that leave the graph on screen as it was.
+_KEEPS_GRAPH = ("/workspace/rename", "/project/save")
+
+
 def replaces_graph(method: str, endpoint: str) -> bool:
     """Whether this call swaps in a different graph, making a styling record obsolete."""
     if str(method or "").upper() == "GET":
         return False
     path = str(endpoint or "")
+    if path.startswith(_KEEPS_GRAPH):
+        return False
     return any(path.startswith(prefix) for prefix in _REPLACES_GRAPH)
+
 
 
 #: Predicates whose truth depends on the graph rather than on the call's arguments.

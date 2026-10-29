@@ -422,6 +422,27 @@ async def _needs_plugin(minimum: tuple[int, ...], feature: str) -> dict[str, Any
 JSON_UTF8 = {"Content-Type": "application/json; charset=utf-8"}
 
 
+#: How a methods record names the call that ended it, by endpoint prefix.
+_GRAPH_CHANGES = (
+    ("/import/", "a file was imported"),
+    ("/workspace/switch", "another workspace was opened"),
+    ("/workspace/new", "a new workspace was created"),
+    ("/workspace/duplicate", "a workspace was duplicated"),
+    ("/workspace/delete", "a workspace was deleted"),
+    ("/project/", "a project was opened or created"),
+    ("/graph/clear", "the graph was cleared"),
+    ("/time/slice", "a time slice was taken"),
+)
+
+
+#: Why a record ends when a snapshot or what-if cannot confirm it returned to the original.
+_OFF_ORIGINAL = "the original workspace could not be confirmed as the one on screen"
+
+
+def _graph_change(endpoint: str) -> str:
+    return next((text for prefix, text in _GRAPH_CHANGES if endpoint.startswith(prefix)), endpoint)
+
+
 class GephiClient:
     def __init__(self, base_url: str = GEPHI_API_URL):
         self.base_url = base_url.rstrip("/")
@@ -433,12 +454,14 @@ class GephiClient:
                       timeout: float | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         # Cached graph facts describe a particular graph. Any call that could change which graph
-        # we are looking at, or its shape, retires them before it runs. The methods record is
-        # reset only for a real change of graph, not for this task's workspace bookkeeping.
+        # we are looking at, or its shape, retires them before it runs. The methods record starts
+        # anew (keeping the old one as an earlier section) only for a real change of graph, not
+        # for this task's workspace bookkeeping. It happens before the call, so a call that is
+        # cancelled or times out after Gephi acted still leaves no stale record.
         if mutates_graph(method, endpoint):
             invalidate_graph_facts()
             if replaces_graph(method, endpoint) and not _WORKSPACE_BOOKKEEPING.get():
-                LEDGER.reset()
+                LEDGER.start_new_graph(_graph_change(endpoint))
         try:
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
                 # Name the charset: Gephi's HTTP server decodes a body as US-ASCII when none is
@@ -591,7 +614,7 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
         found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"),
                                         late=_timed_out(dup))
         if not found["on_original"]:
-            LEDGER.reset()
+            LEDGER.start_new_graph(_OFF_ORIGINAL)
         raise
 
 
@@ -821,7 +844,7 @@ async def _abandon_snapshot_copy(reason: str, before_ids: set[Any], cur: dict[st
     else:
         found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"))
     if not found["on_original"]:
-        LEDGER.reset()
+        LEDGER.start_new_graph(_OFF_ORIGINAL)
     return {"ok": False, "reason": _with_note(reason, found["note"])}
 
 
@@ -1963,6 +1986,9 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
         result.pop("node_stability", None)
         result["consensus_group_sizes"] = [len(g) for g in result.pop("consensus_groups", [])[:10]]
 
+    LEDGER.record("community_stability", runs=runs, resolution=resolution,
+                  mean_stability=result.get("mean_stability"),
+                  consensus_column=result.get("consensus_column"))
     return await fmt_stat("modularity", result, resolution=resolution)
 
 
@@ -2801,6 +2827,11 @@ async def gephi_session_receipt(file: str | None = None) -> str:
     record: the visual mappings in force, the statistics run and the parameters they ran under,
     the layout and its settings, and the plugin and server versions.
 
+    `analyses` lists each partition comparison and community-stability run with its headline
+    numbers. `earlier` keeps the records of graphs that were on screen before in this session
+    (each with `ended_by`: an import, another workspace, a time slice), so that work is not
+    lost; they do not describe the graph on screen now.
+
     The record covers what went through these tools. Work done by hand in the Gephi window is not
     visible here, and the receipt says so rather than letting silence read as completeness.
     """
@@ -3541,6 +3572,10 @@ async def gephi_compare_partitions(column: str, against: str) -> str:
                                      column_value(n.get("attributes"), against)) for n in nodes)
     except ValueError as exc:
         return fmt({"success": False, "error": str(exc)})
+    LEDGER.record("compare_partitions", column=column, against=against,
+                  compared=result["compared"], left_out=result["left_out"],
+                  adjusted_rand=result["adjusted_rand"],
+                  normalized_mutual_information=result["normalized_mutual_information"])
     return fmt({"success": True, "column": column, "against": against, **result})
 
 
@@ -3883,7 +3918,7 @@ async def gephi_whatif(edits: list[dict[str, Any]], include_slow: bool = False) 
             # If the person is left on the edited scratch copy, or it cannot be confirmed that
             # they are not, the record would describe a graph they are not looking at.
             if not on_original:
-                LEDGER.reset()
+                LEDGER.start_new_graph(_OFF_ORIGINAL)
 
     outcome["cleanup"] = cleanup
     return fmt(outcome)

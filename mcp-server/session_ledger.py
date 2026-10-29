@@ -11,6 +11,11 @@ A methods paragraph has to say which layout ran with which settings and which st
 which columns. Gephi does not retain that either, so six months later a figure cannot be explained
 or reproduced.
 
+When the graph on screen changes (an import, a workspace switch, a time slice), the record so far
+is kept as an earlier section, labelled with what ended it, and a new record starts. A record is
+never re-attached to a graph: Gephi cannot say reliably which graph is which across workspaces and
+restarts, and a methods note that credits one graph's settings to another is worse than none.
+
 The ledger sees only what came through these tools. Styling applied by hand in the Gephi window is
 invisible to it, and the receipt says so rather than letting silence read as completeness.
 """
@@ -29,6 +34,12 @@ _LEGEND_CHANNELS: dict[str, str] = {
     "edge_thickness_by_weight": "edge width",
 }
 
+#: Analyses whose results a methods note reports, each run kept (two comparisons are two findings).
+_ANALYSES = ("compare_partitions", "community_stability")
+
+#: Earlier sections kept, so a long session does not grow without bound.
+EARLIER_KEPT = 20
+
 SCOPE_NOTE = (
     "This record covers the operations applied through gephi-ai. Anything styled by hand in the "
     "Gephi window is not visible to it and is not described here."
@@ -40,17 +51,31 @@ class Ledger:
 
     def __init__(self) -> None:
         self.entries: list[dict[str, Any]] = []
+        #: Records of graphs no longer on screen, oldest first, each with what ended it.
+        self.earlier: list[dict[str, Any]] = []
 
     def reset(self) -> None:
         """Forget everything. The ledger describes one graph; a different graph is a new record."""
         self.entries = []
+
+    def start_new_graph(self, ended_by: str) -> None:
+        """The graph on screen changed: keep the record so far as an earlier section, then start
+        a new one. Never raises: this sits on the path of every graph-replacing call."""
+        try:
+            if self.entries:
+                self.earlier.append({"ended_by": ended_by, **self._summary(self.entries)})
+                self.earlier = self.earlier[-EARLIER_KEPT:]
+        except Exception:
+            pass
+        self.reset()
 
     def record(self, operation: str, **detail: Any) -> None:
         """Note an operation. Never raises: this sits on the path of ordinary styling calls."""
         try:
             if operation in _LEGEND_CHANNELS and not detail.get("column"):
                 return  # A mapping with no column names nothing and would explain nothing.
-            if operation in _LEGEND_CHANNELS or operation in ("run_layout", "statistic"):
+            if (operation in _LEGEND_CHANNELS or operation in _ANALYSES
+                    or operation in ("run_layout", "statistic")):
                 self.entries.append({"operation": operation, **detail})
         except Exception:
             pass
@@ -76,10 +101,10 @@ class Ledger:
                 return entry.get("column") if entry["operation"] == "color_by_partition" else None
         return None
 
-    def legend_items(self) -> list[dict[str, Any]]:
+    def legend_items(self, entries: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         """The visual mappings currently in force, one per channel, in the order first set."""
         by_channel: dict[str, dict[str, Any]] = {}
-        for entry in self.entries:
+        for entry in self.entries if entries is None else entries:
             channel = _LEGEND_CHANNELS.get(entry["operation"])
             if not channel:
                 continue
@@ -96,10 +121,17 @@ class Ledger:
         return list(by_channel.values())
 
     def receipt(self) -> dict[str, Any]:
-        """Everything needed to say how a figure was made, in the shape of a methods note."""
+        """Everything needed to say how a figure was made, in the shape of a methods note.
+
+        `earlier` holds the records of graphs that were on screen before, so work done on them
+        in this session is not lost; they do not describe the graph on screen now.
+        """
+        return {**self._summary(self.entries), "earlier": list(self.earlier), "scope": SCOPE_NOTE}
+
+    def _summary(self, entries: list[dict[str, Any]]) -> dict[str, Any]:
         statistics: dict[str, dict[str, Any]] = {}
         layout: dict[str, Any] | None = None
-        for entry in self.entries:
+        for entry in entries:
             if entry["operation"] == "statistic":
                 # The columns on the graph hold the last run, so that is the run to report.
                 statistics[entry["metric"]] = {"metric": entry["metric"],
@@ -107,8 +139,8 @@ class Ledger:
             elif entry["operation"] == "run_layout":
                 layout = {k: v for k, v in entry.items() if k != "operation"}
         return {
-            "legend": self.legend_items(),
+            "legend": self.legend_items(entries),
             "statistics": list(statistics.values()),
             "layout": layout,
-            "scope": SCOPE_NOTE,
+            "analyses": [e for e in entries if e["operation"] in _ANALYSES],
         }

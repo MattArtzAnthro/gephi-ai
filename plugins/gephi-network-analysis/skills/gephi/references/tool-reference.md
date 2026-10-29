@@ -694,8 +694,8 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_session_receipt
 - **Method**: reports the mappings in force, the statistics run and their parameters, the layout and its settings, and the plugin and server versions.
 - **Params**: `{file?: str}`: writes JSON when given a path.
-- **Returns**: `{success, legend, statistics, layout, scope, versions: {server, plugin}, file?}`.
-- **Notes**: for a methods section. Gephi does not record which layout ran with which settings, so without this a figure cannot be explained or reproduced later. `scope` states the limit: work done by hand in the Gephi window is not visible here.
+- **Returns**: `{success, legend, statistics, layout, analyses, earlier, scope, versions: {server, plugin}, file?}`. `analyses` lists each `gephi_compare_partitions` and `gephi_community_stability` run with its headline numbers.
+- **Notes**: for a methods section. Gephi does not record which layout ran with which settings, so without this a figure cannot be explained or reproduced later. `scope` states the limit: work done by hand in the Gephi window is not visible here. When the graph on screen changes (an import, another workspace, a time slice), the record so far moves to `earlier` with `ended_by` saying why, and a new record starts; `earlier` never describes the graph on screen now. Renaming a workspace and saving the project keep the record.
 
 ## Import
 
