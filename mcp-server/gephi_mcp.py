@@ -1570,22 +1570,33 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result["message"] = "Layout still running after 5 minutes"
     return fmt(result)
 
+_SIMILARITY_NOTE = ("proximity = structurally close (spectral embedding); nearby nodes are often "
+                    "directly connected. This is not a role map.")
+
+
 @_tool(name="gephi_similarity_layout")
 async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
                                   finish_noverlap: bool = True) -> str:
-    """Position nodes by structural similarity instead of springs — a layout no
-    Gephi plugin offers.
+    """Position nodes by a spectral embedding of the graph instead of springs — a
+    layout no Gephi plugin offers.
 
-    Nodes end up near each other when they play a similar ROLE in the network,
-    even if they are not directly connected. Use when someone asks "who is
-    similar / who plays the same role / are there groups beyond the obvious
-    clusters". Complements (does not replace) ForceAtlas 2: run both and compare.
+    Nodes are placed by the low-frequency eigenvectors of the normalized graph
+    Laplacian, so nodes that are closely linked, directly or through shared
+    neighbours, end up near each other. It is a second view of structural
+    closeness, deterministic and free of force-layout tuning; it is NOT a role
+    map: nodes close on it are often directly connected, much as on a force
+    layout. Complements (does not replace) ForceAtlas 2: run both and compare.
+    A graph in several pieces is laid out one piece at a time and the pieces
+    packed in rows, largest first, with pieces under five nodes gathered into one
+    block; distances between pieces mean nothing. On sparse, tree-like networks
+    a few loosely attached chains can stretch across the map and squeeze
+    everything else into a corner; say so, and read the result alongside
+    ForceAtlas 2 (or with projection="umap" when installed).
 
-    IMPORTANT when presenting the result: proximity here means similar role,
-    NOT "connected" — say so plainly, because readers of force layouts assume
-    the opposite. Nodes a community metric groups together but this layout
-    separates (or vice versa) are the interesting finding: they are boundary
-    or bridge actors. For cluster captions on this layout prefer the
+    IMPORTANT when presenting the default result: do not tell the person that
+    nearby nodes "play the same role". Say that proximity means structurally
+    close, which often means connected. Nodes this layout and ForceAtlas 2 place
+    differently are worth a look. For cluster captions on this layout prefer the
     interactive graph view (centroid captions); hub-anchored labels
     (gephi_label_clusters) assume force-layout geometry.
 
@@ -1620,9 +1631,14 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
                 break
             await asyncio.sleep(0.5)
     await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
-    return fmt(_carry_filter_warning(exported, {"success": True, "layout": "similarity", "projection_used": method,
-                "nodes_positioned": len(positions),
-                "reading_note": "proximity = similar structural role, not direct connection"}))
+    result = {"success": True, "layout": "similarity", "projection_used": method,
+              "nodes_positioned": len(positions), "reading_note": _SIMILARITY_NOTE}
+    if projection == "auto" and method == "spectral":
+        result["projection_note"] = (
+            f"'auto' used {method} because umap-learn and scikit-learn are not installed where the "
+            "server runs. To enable UMAP and t-SNE, add them to that environment, e.g. "
+            "`uvx --with umap-learn --with scikit-learn gephi-ai`.")
+    return fmt(_carry_filter_warning(exported, result))
 
 @_tool(name="gephi_community_layout")
 async def gephi_community_layout(partition_column: str = "Modularity Class",

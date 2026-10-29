@@ -1,9 +1,13 @@
-"""Similarity (embedding-based) layout: positions from structural role, not springs.
+"""Similarity (embedding-based) layout: positions from a spectral embedding, not springs.
 
 Nodes are embedded with spectral eigenmaps of the normalized graph Laplacian,
-then projected to 2D. Proximity in the result means "similar position in the
-network's structure", which is different from (and complementary to) the
-proximity-means-connected reading of force-directed layouts.
+then projected to 2D. Laplacian eigenmaps place closely linked nodes together,
+so proximity means "structurally close", which overlaps heavily with the
+proximity-means-connected reading of force-directed layouts. It is not a role
+embedding: nodes with the same role in distant parts of the graph are not
+brought together. A graph in several pieces is laid out one piece at a time and
+the pieces packed in rows, largest first, so the result does not depend on the
+order the nodes arrive in (beyond the mirror images a symmetric piece allows).
 
 Dependency policy: the base path needs only numpy + scipy. If scikit-learn or
 umap-learn happen to be installed they are used opportunistically for nicer
@@ -57,12 +61,74 @@ def _spectral_embedding(A, dims: int) -> np.ndarray:
         except Exception:
             w, v = spl.eigsh(L.asfptype(), k=k, which="SM")
     order = np.argsort(w)
-    v = v[:, order]
-    return v[:, 1 : dims + 1]
+    v = v[:, order][:, 1 : dims + 1]
+    # an eigenvector's sign is arbitrary; fix it so a reordered graph is not mirrored
+    return v * np.where((v**3).sum(axis=0) < 0, -1.0, 1.0)
+
+
+def _pieces(ids: list[str], A) -> list[np.ndarray]:
+    """Connected pieces as index arrays, largest first, ties broken by smallest node id."""
+    from scipy.sparse.csgraph import connected_components
+
+    count, label = connected_components(A, directed=False)
+    pieces = [np.flatnonzero(label == c) for c in range(count)]
+    return sorted(pieces, key=lambda p: (-len(p), min(ids[i] for i in p)))
+
+
+def _small_piece_block(cells: list[tuple[np.ndarray, np.ndarray]]) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Pieces under 5 nodes gathered into one square grid, so many isolates form a block, not a row."""
+    if not cells:
+        return []
+    size = max(float(np.ptp(c, axis=0).max()) for _, c in cells) + 1.0
+    columns = int(np.ceil(np.sqrt(len(cells))))
+    placed = [local + np.array([(j % columns) * size, -(j // columns) * size])
+              for j, (_, local) in enumerate(cells)]
+    return [(np.concatenate([p for p, _ in cells]), np.vstack(placed))]
+
+
+def _spectral_layout(ids: list[str], A, dims: int, projection: str) -> tuple[np.ndarray, str]:
+    """Spectral positions, one piece at a time, packed in rows.
+
+    Each extra piece adds a zero eigenvalue, and a solver returns those in an arbitrary mix,
+    so embedding a graph in pieces whole gives a layout that depends on node order. Pieces
+    under 5 nodes sit on a small circle in id order, gathered into one block; each piece's area
+    follows its node count.
+    """
+    xy = np.zeros((len(ids), 2))
+    method = "spectral"
+    cells = []
+    for j, p in enumerate(_pieces(ids, A)):
+        if len(p) >= 5:
+            emb = _spectral_embedding(A[p][:, p], max(2, min(dims, len(p) - 2)))
+            local, used = _project(emb, projection)
+            if j == 0:
+                method = used
+        else:
+            angle = np.zeros(len(p))
+            angle[sorted(range(len(p)), key=lambda i: ids[p[i]])] = 2 * np.pi * np.arange(len(p)) / len(p)
+            local = np.column_stack([np.cos(angle), np.sin(angle)]) if len(p) > 1 else np.zeros((1, 2))
+        local = local - local.mean(axis=0)
+        spread = float(local.std(axis=0).max())
+        cells.append((p, local * (np.sqrt(len(p)) / spread) if spread > 0 else local))
+    cells = [c for c in cells if len(c[0]) >= 5] + _small_piece_block([c for c in cells if len(c[0]) < 5])
+    # shelf packing: left to right, a new row when the next piece would overflow
+    gap = 2.0
+    boxes = [(c.min(axis=0), c.max(axis=0)) for _, c in cells]
+    area = sum(float(np.prod(hi - lo + gap)) for lo, hi in boxes)
+    row_width = max(max(float(hi[0] - lo[0]) for lo, hi in boxes), 1.3 * np.sqrt(area))
+    x = y = row_height = 0.0
+    for (p, local), (lo, hi) in zip(cells, boxes):
+        w, h = float(hi[0] - lo[0]), float(hi[1] - lo[1])
+        if x > 0 and x + w > row_width:
+            x, y, row_height = 0.0, y - row_height - gap, 0.0
+        xy[p] = local + np.array([x - lo[0], y - hi[1]])
+        x += w + gap
+        row_height = max(row_height, h)
+    return xy, method
 
 
 def _project(emb: np.ndarray, projection: str) -> tuple[np.ndarray, str]:
-    """2D projection ladder: umap -> tsne -> spectral (first two dims, PCA-rotated)."""
+    """2D projection ladder: umap -> tsne -> spectral base."""
     n = emb.shape[0]
     if projection in ("auto", "umap"):
         try:
@@ -107,9 +173,7 @@ def compute_similarity_positions(
         raise ValueError("similarity layout needs at least 5 nodes")
     if A.nnz == 0:
         raise ValueError("similarity layout needs edges (the graph has none)")
-    dims = max(2, min(dims, n - 2))
-    emb = _spectral_embedding(A, dims)
-    xy, method = _project(emb, projection)
+    xy, method = _spectral_layout(ids, A, dims, projection)
     xy = xy - xy.mean(axis=0)
     spread = float(max(xy.std(axis=0).max(), 1e-9))
     xy = xy * (extent / (spread * 4.0))

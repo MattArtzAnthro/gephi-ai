@@ -19,7 +19,7 @@ not be criticized for crossing edges.
 |---|---|---|
 | "Show me the groups/communities" | ForceAtlas 2 in two passes (LinLog off, then on) | The default for almost everything; see the two passes below |
 | Groups in a TREE-LIKE network (replies, retweets, seeded citations) | Community layout (`gephi_community_layout`) | Force layouts cannot separate star-shaped communities: run modularity first, then this; see the tree-like section below |
-| "Who plays similar roles?" (even if not directly connected) | Similarity layout (`gephi_similarity_layout`) | Embedding-based; proximity = similar structural role, NOT connection; always say so when presenting. Compare against FA2; disagreements mark bridge/boundary actors |
+| A second, deterministic view of structural closeness | Similarity layout (`gephi_similarity_layout`) | Spectral embedding; proximity = structurally close, often directly connected. Not a role map. Compare against FA2; nodes the two place differently are worth a look |
 | A huge network (50k+ nodes) | OpenOrd first, then a short ForceAtlas 2 pass | OpenOrd is built for scale; FA2 refines the detail |
 | A quick, decent picture of a medium network | Yifan Hu | Fast spring layout, less community emphasis than FA2 |
 | A small network with classic, even spacing | Fruchterman Reingold | Best under ~1k nodes; the "textbook" look |

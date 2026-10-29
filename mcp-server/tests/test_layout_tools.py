@@ -129,6 +129,38 @@ async def test_similarity_layout_asked_for_a_missing_projection_names_the_fallba
     assert "/graph/nodes/positions" not in fake.endpoints()
 
 
+async def test_similarity_layout_auto_says_when_it_fell_back_to_spectral(monkeypatch):
+    # "auto" promises the best available projection; without umap-learn and scikit-learn
+    # that is spectral, and the result must say so and how to get the others.
+    monkeypatch.setitem(sys.modules, "umap", None)
+    monkeypatch.setitem(sys.modules, "sklearn.manifold", None)
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    out = json.loads(await gephi_mcp.gephi_similarity_layout(projection="auto", finish_noverlap=False))
+
+    assert out["projection_used"] == "spectral"
+    assert "umap-learn" in out["projection_note"] and "scikit-learn" in out["projection_note"]
+
+
+async def test_similarity_layout_asked_for_spectral_carries_no_fallback_note(monkeypatch):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    out = json.loads(await gephi_mcp.gephi_similarity_layout(projection="spectral", finish_noverlap=False))
+
+    assert "projection_note" not in out
+
+
+async def test_similarity_layout_reading_note_does_not_promise_roles(monkeypatch):
+    # Laplacian eigenmaps place closely linked nodes together, so map neighbours are often
+    # directly connected: proximity is closeness, not role.
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    out = json.loads(await gephi_mcp.gephi_similarity_layout(projection="spectral", finish_noverlap=False))
+
+    assert "directly connected" in out["reading_note"]
+    assert "not a role" in out["reading_note"]
+
+
 async def test_similarity_layout_on_a_graph_without_edges_is_refused(monkeypatch):
     fake = FakeGephi(two_stars_gexf(with_edges=False))
     monkeypatch.setattr(gephi_mcp.gephi, "request", fake)
@@ -228,3 +260,86 @@ def test_a_large_graph_takes_the_sparse_eigensolver_path():
     assert method == "spectral"
     assert len(positions) == n
     assert all(np.isfinite([p["x"], p["y"]]).all() for p in positions)
+
+
+# ─── Node order, pieces, isolates ───────────────────────────────
+
+def pieces_graph():
+    """Three irregular pieces (40, 25, 12 nodes), a 3-node path and an isolated node.
+
+    Random chords keep eigenvalues distinct, so any dependence on node order comes from the
+    layout code, not from symmetry in the graph.
+    """
+    rng = np.random.default_rng(3)
+    nodes, edges = [], []
+    for p, size in enumerate((40, 25, 12)):
+        names = [f"p{p}n{i}" for i in range(size)]
+        nodes += names
+        edges += [(names[i], names[i + 1]) for i in range(size - 1)]
+        for _ in range(size):
+            a, b = rng.choice(size, 2, replace=False)
+            edges.append((names[a], names[b]))
+    nodes += ["t0", "t1", "t2", "alone"]
+    edges += [("t0", "t1"), ("t1", "t2")]
+    return {"nodes": [{"key": n} for n in nodes],
+            "edges": [{"source": s, "target": t} for s, t in edges]}
+
+
+def _distances(positions, order):
+    xy = {p["id"]: (p["x"], p["y"]) for p in positions}
+    pts = np.array([xy[k] for k in order])
+    return np.linalg.norm(pts[:, None] - pts[None], axis=2)[np.triu_indices(len(order), 1)]
+
+
+def test_the_layout_does_not_depend_on_node_order():
+    # Gephi exports nodes in whatever order it holds them. On a graph in several pieces the
+    # spectral basis used to return unrelated layouts for two orders of the same graph (on this
+    # graph, a distance correlation of 0.24), because each piece adds a zero eigenvalue and the
+    # extra ones came back in an arbitrary mix.
+    graph = pieces_graph()
+    shuffled = dict(graph, nodes=[graph["nodes"][i]
+                                  for i in np.random.default_rng(5).permutation(len(graph["nodes"]))])
+    order = [n["key"] for n in graph["nodes"]]
+
+    a, _ = compute_similarity_positions(graph, projection="spectral")
+    b, _ = compute_similarity_positions(shuffled, projection="spectral")
+
+    assert np.corrcoef(_distances(a, order), _distances(b, order))[0, 1] > 0.999
+
+
+def test_spectral_basis_lays_out_each_piece_in_its_own_area():
+    graph = pieces_graph()
+
+    positions, _ = compute_similarity_positions(graph, projection="spectral")
+
+    xy = {p["id"]: (p["x"], p["y"]) for p in positions}
+    boxes = []
+    for prefix in ("p0", "p1", "p2", "t"):
+        pts = np.array([v for k, v in xy.items() if k.startswith(prefix)])
+        boxes.append((pts.min(axis=0), pts.max(axis=0)))
+        assert np.ptp(pts, axis=0).max() > 0, f"piece {prefix} collapsed to a point"
+    for i, (lo1, hi1) in enumerate(boxes):
+        for lo2, hi2 in boxes[i + 1:]:
+            assert (hi1 < lo2).any() or (hi2 < lo1).any(), "two pieces overlap"
+    assert all(np.isfinite(v).all() for v in xy.values())
+
+
+def test_small_pieces_sit_together_in_a_compact_block():
+    # Found on a 1,490-node network with 266 isolated nodes: the isolates were laid end to end
+    # in a row several times wider than the main piece.
+    rng = np.random.default_rng(4)
+    names = [f"m{i}" for i in range(60)]
+    edges = [(names[i], names[i + 1]) for i in range(59)]
+    edges += [(names[a], names[b]) for a, b in rng.choice(60, (30, 2)) if a != b]
+    alone = [f"a{i}" for i in range(250)]
+    graph = {"nodes": [{"key": n} for n in names + alone],
+             "edges": [{"source": s, "target": t} for s, t in edges]}
+
+    positions, _ = compute_similarity_positions(graph, projection="spectral")
+
+    xy = {p["id"]: np.array([p["x"], p["y"]]) for p in positions}
+    small = np.array([xy[k] for k in alone])
+    main = np.array([xy[k] for k in names])
+    w, h = np.ptp(small, axis=0)
+    assert max(w, h) <= 2 * min(w, h), "the small pieces should form a block, not a row"
+    assert max(w, h) <= np.ptp(main, axis=0).max(), "the block should not outsize the main piece"

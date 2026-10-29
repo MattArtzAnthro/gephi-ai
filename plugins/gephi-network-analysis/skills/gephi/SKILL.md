@@ -73,7 +73,7 @@ Three numbers set layout parameters before any render:
 
 Then let their goal and the profile guide every later choice:
 
-- Their goal picks the metric: brokers or gatekeepers, betweenness; reach or influence, degree or PageRank; "who plays similar roles", `gephi_similarity_layout`; importance by association, eigenvector (with the caveat above).
+- Their goal picks the metric: brokers or gatekeepers, betweenness; reach or influence, degree or PageRank; "who plays similar roles", degree, betweenness, and clustering compared side by side (`gephi_similarity_layout` shows structural closeness, not roles); importance by association, eigenvector (with the caveat above).
 - Size and density pick the layout (the purpose table in references/layout-guide.md).
 - If they expect an attribute to organise the network, test it (within-group share against a baseline) before colouring by it. When it fails, say so plainly and offer detected communities: the gap between expectation and structure is usually the finding. Once communities are detected, `gephi_compare_partitions` against their grouping shows which detected group matches which known one, and how closely; check stability before reading it.
 - Ask before removing isolates or fragments: one person's noise is another person's result.

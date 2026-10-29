@@ -352,7 +352,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_similarity_layout
 - **Method**: computed server-side (Python), positions pushed via POST `/graph/nodes/positions`
 - **Params**: `{projection?: "auto"|"umap"|"tsne"|"spectral", dimensions?: int (8), finish_noverlap?: bool (true)}`
-- **Notes**: Positions nodes by structural role (embedding), not springs. Proximity = similar role, NOT connection; state this when presenting.
+- **Notes**: Positions nodes by a spectral embedding (normalized-Laplacian eigenmaps), not springs. Proximity = structurally close, which often means directly connected; it is NOT a role map, so never present nearby nodes as playing the same role. A graph in several pieces is laid out piece by piece, packed in rows with pieces under five nodes in one block; distances between pieces mean nothing. On sparse, tree-like networks a few loosely attached chains can stretch across the spectral map and squeeze the rest; read it alongside ForceAtlas 2. With `auto`, a `projection_note` appears when the base projection was used because umap-learn and scikit-learn are missing.
 
 ### gephi_community_layout
 - **Method**: computed server-side (Python), positions pushed via POST `/graph/nodes/positions`
