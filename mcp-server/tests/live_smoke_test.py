@@ -28,7 +28,9 @@ first, mutations and destructive ops last) with per-tool timing.
 
 import asyncio
 import json
+import os
 import random
+import tempfile
 import time
 
 import httpx
@@ -549,9 +551,18 @@ async def main():
     check(ran.get("stopped") is True or ran.get("success") is True,
           "[stop] stop_statistic stops a running statistic (or it had already finished)",
           (stop.get("stopped"), ran.get("error")))
-    save = json.loads(await g.gephi_save_project("/tmp/no-such-folder/x.gephi"))
-    check(save.get("success") is False and "does not exist" in save.get("error", ""),
-          "[save] a missing folder is refused at once instead of hanging", save.get("error"))
+    folder = tempfile.mkdtemp()
+    target = os.path.join(folder, "new-folder", "x.gephi")
+    save = json.loads(await g.gephi_save_project(target))
+    check(save.get("success") is True and os.path.isfile(target),
+          "[save] a missing folder is created and the project written", save.get("error"))
+    blocker = os.path.join(folder, "a-file")
+    open(blocker, "w").close()
+    started = time.time()
+    save = json.loads(await g.gephi_save_project(os.path.join(blocker, "x.gephi")))
+    check(save.get("success") is False and time.time() - started < 30,
+          "[save] a folder that cannot be made is refused at once instead of hanging",
+          save.get("error"))
 
     # Names are not ASCII. The plugin must read a body as UTF-8 even when the Content-Type names
     # no charset (the raw post below sends none, as older servers and other clients do); the

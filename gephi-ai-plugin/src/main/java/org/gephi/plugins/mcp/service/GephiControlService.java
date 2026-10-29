@@ -525,12 +525,12 @@ public class GephiControlService {
             if (project == null) {
                 return error("No project open");
             }
-            File file = new File(filePath).getAbsoluteFile();
+            File file = outputFile(filePath);
             // Checked first: a save that fails inside Gephi reports it in a dialog, which leaves
             // this call waiting until someone closes it.
             File dir = file.getParentFile();
             if (dir == null || !dir.isDirectory()) {
-                return error("The folder " + dir + " does not exist");
+                return error("The folder " + dir + " does not exist and could not be created");
             }
             if (!dir.canWrite() || (file.exists() && !file.canWrite())) {
                 return error("Gephi cannot write to " + file.getPath());
@@ -3866,6 +3866,19 @@ public class GephiControlService {
 
     // ─── Export ───────────────────────────────────────────────────────
 
+    /**
+     * The file an export writes, with its folder created first, so saving into a new folder
+     * works. If the folder cannot be made, the write that follows fails and reports it.
+     */
+    static File outputFile(String filePath) {
+        File file = new File(filePath).getAbsoluteFile();
+        File dir = file.getParentFile();
+        if (dir != null && !dir.isDirectory() && !dir.mkdirs()) {
+            LOGGER.fine("Could not create " + dir);
+        }
+        return file;
+    }
+
     public JsonObject exportGexf(String filePath) {
         return exportGexf(filePath, true);
     }
@@ -3890,7 +3903,7 @@ public class GephiControlService {
                 ((GraphExporter) exporter).setExportVisible(visible);
                 ((GraphExporter) exporter).setWorkspace(ws);
             }
-            ec.exportFile(new File(filePath), exporter);
+            ec.exportFile(outputFile(filePath), exporter);
             JsonObject r = success("Exported to " + filePath);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
@@ -3964,7 +3977,7 @@ public class GephiControlService {
                 ((GraphExporter) exporter).setWorkspace(ws);
             }
 
-            ec.exportFile(new File(filePath), exporter);
+            ec.exportFile(outputFile(filePath), exporter);
 
             // Post-process: composite onto the preview model's background color.
             // Gephi's PNG exporter renders a transparent background; this fills it.
@@ -4161,7 +4174,7 @@ public class GephiControlService {
             if (exporter instanceof GraphExporter) {
                 exporter.setWorkspace(ws);
             }
-            ec.exportFile(new File(filePath), exporter);
+            ec.exportFile(outputFile(filePath), exporter);
             JsonObject r = success("Exported to " + filePath);
             r.addProperty("page", landscape ? "US Letter, landscape (11 x 8.5 in)"
                 : "US Letter, portrait (8.5 x 11 in)");
@@ -4189,7 +4202,7 @@ public class GephiControlService {
             if (exporter instanceof GraphExporter) {
                 exporter.setWorkspace(ws);
             }
-            ec.exportFile(new File(filePath), exporter);
+            ec.exportFile(outputFile(filePath), exporter);
             return success("Exported to " + filePath);
         } catch (Exception e) {
             return failure("Export failed: ", e);
@@ -4218,7 +4231,7 @@ public class GephiControlService {
                 ((GraphExporter) exporter).setExportVisible(visible);
                 exporter.setWorkspace(ws);
             }
-            ec.exportFile(new File(filePath), exporter);
+            ec.exportFile(outputFile(filePath), exporter);
             JsonObject r = success("Exported to " + filePath);
             addViewInfo(r, currentGraphModel(), visible);
             return r;
@@ -4244,7 +4257,7 @@ public class GephiControlService {
             GraphModel gm = currentGraphModel();
             String csvText = buildCsv(gm, separator, target);
             try (java.io.Writer fw = new java.io.OutputStreamWriter(
-                     new java.io.FileOutputStream(filePath), java.nio.charset.StandardCharsets.UTF_8)) {
+                     new java.io.FileOutputStream(outputFile(filePath)), java.nio.charset.StandardCharsets.UTF_8)) {
                 fw.write(csvText);
             }
             JsonObject r = success("Exported to " + filePath);
@@ -6572,7 +6585,7 @@ public class GephiControlService {
                 ((GraphExporter) exporter).setExportVisible(visible);
                 ((GraphExporter) exporter).setWorkspace(ws);
             }
-            ec.exportFile(new File(filePath), exporter);
+            ec.exportFile(outputFile(filePath), exporter);
             JsonObject r = success("Exported to " + filePath);
             r.addProperty("format", format);
             addViewInfo(r, currentGraphModel(), visible);
