@@ -262,6 +262,105 @@ def test_a_large_graph_takes_the_sparse_eigensolver_path():
     assert all(np.isfinite([p["x"], p["y"]]).all() for p in positions)
 
 
+# ─── Role basis ─────────────────────────────────────────────────
+
+def planted_roles(communities=4, leaves=15):
+    """Each community: a hub with its own leaves, plus two bridges tied to the next community.
+
+    Hubs of different communities share no neighbours, so only a role layout should put them
+    together; a closeness layout keeps each hub among its own leaves.
+    """
+    nodes, edges, role = [], [], {}
+    for c in range(communities):
+        hub = f"c{c}h"
+        nodes.append(hub)
+        role[hub] = "hub"
+        for i in range(leaves):
+            leaf = f"c{c}l{i}"
+            nodes.append(leaf)
+            role[leaf] = "leaf"
+            edges.append((hub, leaf))
+            if i:
+                edges.append((leaf, f"c{c}l{i - 1}"))
+        for b in range(2):
+            bridge = f"c{c}b{b}"
+            nodes.append(bridge)
+            role[bridge] = "bridge"
+            edges += [(hub, bridge), (bridge, f"c{c}l{b}")]
+    for c in range(communities):
+        for b in range(2):
+            edges.append((f"c{c}b{b}", f"c{(c + 1) % communities}b{1 - b}"))
+    graph = {"nodes": [{"key": n} for n in nodes],
+             "edges": [{"source": s, "target": t} for s, t in edges]}
+    return graph, role
+
+
+def _hub_distances(positions, role):
+    xy = {p["id"]: np.array([p["x"], p["y"]]) for p in positions}
+    hubs = [n for n, r in role.items() if r == "hub"]
+    between = np.mean([np.linalg.norm(xy[a] - xy[b]) for a in hubs for b in hubs if a < b])
+    own = np.mean([np.linalg.norm(xy[h] - xy[n]) for h in hubs for n in role
+                   if role[n] == "leaf" and n.startswith(h[:-1])])
+    return between, own
+
+
+def test_role_basis_puts_hubs_of_different_communities_together():
+    graph, role = planted_roles()
+
+    positions, method = compute_similarity_positions(graph, basis="role", projection="pca")
+
+    between, own = _hub_distances(positions, role)
+    assert method == "pca"
+    assert between < own, "hubs should sit nearer each other than their own leaves"
+
+
+def test_spectral_basis_keeps_each_hub_among_its_own_leaves():
+    graph, role = planted_roles()
+
+    positions, _ = compute_similarity_positions(graph, basis="spectral", projection="spectral")
+
+    between, own = _hub_distances(positions, role)
+    assert own < between
+
+
+def test_an_unknown_basis_is_refused():
+    graph, _ = planted_roles()
+
+    with pytest.raises(ValueError, match="basis"):
+        compute_similarity_positions(graph, basis="community")
+
+
+async def test_similarity_layout_reports_its_basis(monkeypatch):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    out = json.loads(await gephi_mcp.gephi_similarity_layout(basis="role", projection="pca",
+                                                             finish_noverlap=False))
+
+    assert out["basis"] == "role"
+    assert out["projection_used"] == "pca"
+
+
+async def test_role_basis_reading_note_claims_roles_but_not_disconnection(monkeypatch):
+    # Similar-role nodes can still be directly connected (hubs that link to hubs), so the note
+    # must not say "not connected".
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    out = json.loads(await gephi_mcp.gephi_similarity_layout(basis="role", projection="pca",
+                                                             finish_noverlap=False))
+
+    assert "similar structural role" in out["reading_note"]
+    assert "also be directly connected" in out["reading_note"]
+
+
+async def test_an_unknown_basis_is_refused_by_the_tool(monkeypatch):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    out = json.loads(await gephi_mcp.gephi_similarity_layout(basis="community"))
+
+    assert out["success"] is False
+    assert "basis" in out["error"]
+
+
 # ─── Node order, pieces, isolates ───────────────────────────────
 
 def pieces_graph():
@@ -291,7 +390,8 @@ def _distances(positions, order):
     return np.linalg.norm(pts[:, None] - pts[None], axis=2)[np.triu_indices(len(order), 1)]
 
 
-def test_the_layout_does_not_depend_on_node_order():
+@pytest.mark.parametrize("basis,projection", [("spectral", "spectral"), ("role", "pca")])
+def test_the_layout_does_not_depend_on_node_order(basis, projection):
     # Gephi exports nodes in whatever order it holds them. On a graph in several pieces the
     # spectral basis used to return unrelated layouts for two orders of the same graph (on this
     # graph, a distance correlation of 0.24), because each piece adds a zero eigenvalue and the
@@ -301,8 +401,8 @@ def test_the_layout_does_not_depend_on_node_order():
                                   for i in np.random.default_rng(5).permutation(len(graph["nodes"]))])
     order = [n["key"] for n in graph["nodes"]]
 
-    a, _ = compute_similarity_positions(graph, projection="spectral")
-    b, _ = compute_similarity_positions(shuffled, projection="spectral")
+    a, _ = compute_similarity_positions(graph, basis=basis, projection=projection)
+    b, _ = compute_similarity_positions(shuffled, basis=basis, projection=projection)
 
     assert np.corrcoef(_distances(a, order), _distances(b, order))[0, 1] > 0.999
 
@@ -322,6 +422,55 @@ def test_spectral_basis_lays_out_each_piece_in_its_own_area():
         for lo2, hi2 in boxes[i + 1:]:
             assert (hi1 < lo2).any() or (hi2 < lo1).any(), "two pieces overlap"
     assert all(np.isfinite(v).all() for v in xy.values())
+
+
+def test_role_features_match_hand_computed_values():
+    # Triangle a-b-c, then a tail c-d-e.
+    from gephi_mcp_viewer.similarity import _adjacency, _role_feature_table
+
+    graph = {"nodes": [{"key": k} for k in "abcde"],
+             "edges": [{"source": s, "target": t} for s, t in
+                       (("a", "b"), ("b", "c"), ("a", "c"), ("c", "d"), ("d", "e"))]}
+    _, adjacency = _adjacency(graph)
+    f = _role_feature_table(adjacency)
+    log = np.log1p
+
+    np.testing.assert_allclose(f[:, 0], log([2, 2, 3, 2, 1]))                         # degree
+    np.testing.assert_allclose(f[:, 1], [(log(2) + log(3)) / 2, (log(2) + log(3)) / 2,
+                                         log(2), (log(3) + log(1)) / 2,
+                                         log(2)])                                       # nbr mean
+    np.testing.assert_allclose(f[:, 2], log([3, 3, 2, 3, 2]))                         # nbr max
+    np.testing.assert_allclose(f[:, 3], [1, 1, 1 / 3, 0, 0])                          # clustering
+    np.testing.assert_allclose(f[:, 4], log([1, 1, 1, 0, 0]))                         # triangles
+    np.testing.assert_allclose(f[:, 5], log([3, 3, 4, 4, 2]))                         # two-hop
+    np.testing.assert_allclose(f[4, 6:], f[3, :6])                    # e's only neighbour is d
+
+
+def test_role_basis_handles_isolated_nodes_and_pieces(recwarn):
+    graph = pieces_graph()
+
+    positions, _ = compute_similarity_positions(graph, basis="role", projection="pca")
+
+    assert len(positions) == len(graph["nodes"])
+    assert all(np.isfinite([p["x"], p["y"]]).all() for p in positions)
+    assert not [w for w in recwarn if issubclass(w.category, RuntimeWarning)]
+
+
+def test_role_basis_ignores_edge_weights():
+    # Documented: the role features count ties, they do not weigh them.
+    graph = pieces_graph()
+    weighted = dict(graph, edges=[dict(e, weight=1 + 9 * (i % 2))
+                                  for i, e in enumerate(graph["edges"])])
+
+    a, _ = compute_similarity_positions(graph, basis="role", projection="pca")
+    b, _ = compute_similarity_positions(weighted, basis="role", projection="pca")
+
+    assert a == b
+
+
+async def test_role_basis_description_says_it_ignores_weights():
+    tools = {t.name: t for t in await gephi_mcp.mcp.list_tools()}
+    assert "ignores edge weights" in tools["gephi_similarity_layout"].description
 
 
 def test_small_pieces_sit_together_in_a_compact_block():

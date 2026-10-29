@@ -1570,13 +1570,17 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result["message"] = "Layout still running after 5 minutes"
     return fmt(result)
 
-_SIMILARITY_NOTE = ("proximity = structurally close (spectral embedding); nearby nodes are often "
-                    "directly connected. This is not a role map.")
+_SIMILARITY_NOTES = {
+    "spectral": ("proximity = structurally close (spectral embedding); nearby nodes are often "
+                 "directly connected. This is not a role map."),
+    "role": ("proximity = similar structural role (degree, neighbours' degree, clustering, two-hop "
+             "reach); nodes with similar roles may also be directly connected, especially hubs."),
+}
 
 
 @_tool(name="gephi_similarity_layout")
 async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
-                                  finish_noverlap: bool = True) -> str:
+                                  finish_noverlap: bool = True, basis: str = "spectral") -> str:
     """Position nodes by a spectral embedding of the graph instead of springs — a
     layout no Gephi plugin offers.
 
@@ -1600,8 +1604,17 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
     interactive graph view (centroid captions); hub-anchored labels
     (gephi_label_clusters) assume force-layout geometry.
 
-    projection: "auto" (best available), "umap", "tsne", or "spectral"
-    (the always-available base). dimensions: embedding depth (default 8).
+    basis="role" (opt-in) answers "who plays similar roles" instead: nodes are
+    placed by twelve role features (degree, neighbours' degree, clustering,
+    triangles, two-hop reach, and the neighbour average of each), so a hub can sit
+    next to another hub it shares no neighbours with. Similar-role nodes can also
+    be directly connected (in networks where hubs link to hubs, often), so present
+    it as "similar role", never as "unconnected". It ignores edge weights (it counts
+    ties); the spectral basis uses them.
+
+    basis: "spectral" (default) or "role". projection: "auto" (best available),
+    "umap", "tsne", or the base projection ("spectral" or "pca"; either name gives
+    the basis's own, which always works). dimensions: spectral embedding depth (default 8).
     finish_noverlap: run a Noverlap pass afterward so nodes stay readable.
     Needs numpy+scipy; "umap"/"tsne" use umap-learn/scikit-learn when installed.
     """
@@ -1615,7 +1628,7 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
     try:
         graph = parse_gexf(exported["content"])
         positions, method = compute_similarity_positions(
-            graph, dims=dimensions, projection=projection)
+            graph, dims=dimensions, projection=projection, basis=basis)
     except ImportError as e:
         return fmt({"success": False, "error": f"projection '{projection}' needs an optional package ({e.name}); use projection='spectral' which always works, or install the package"})
     except ValueError as e:
@@ -1631,9 +1644,10 @@ async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
                 break
             await asyncio.sleep(0.5)
     await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
-    result = {"success": True, "layout": "similarity", "projection_used": method,
-              "nodes_positioned": len(positions), "reading_note": _SIMILARITY_NOTE}
-    if projection == "auto" and method == "spectral":
+    result = {"success": True, "layout": "similarity", "basis": basis, "projection_used": method,
+              "nodes_positioned": len(positions),
+              "reading_note": _SIMILARITY_NOTES[basis]}
+    if projection == "auto" and method in ("spectral", "pca"):
         result["projection_note"] = (
             f"'auto' used {method} because umap-learn and scikit-learn are not installed where the "
             "server runs. To enable UMAP and t-SNE, add them to that environment, e.g. "

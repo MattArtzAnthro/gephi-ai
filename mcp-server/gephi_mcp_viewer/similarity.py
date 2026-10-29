@@ -9,6 +9,9 @@ brought together. A graph in several pieces is laid out one piece at a time and
 the pieces packed in rows, largest first, so the result does not depend on the
 order the nodes arrive in (beyond the mirror images a symmetric piece allows).
 
+The role basis instead places nodes by role features on the unweighted graph
+(edge weights are ignored), across pieces.
+
 Dependency policy: the base path needs only numpy + scipy. If scikit-learn or
 umap-learn happen to be installed they are used opportunistically for nicer
 projections; they are never required.
@@ -100,7 +103,7 @@ def _spectral_layout(ids: list[str], A, dims: int, projection: str) -> tuple[np.
     for j, p in enumerate(_pieces(ids, A)):
         if len(p) >= 5:
             emb = _spectral_embedding(A[p][:, p], max(2, min(dims, len(p) - 2)))
-            local, used = _project(emb, projection)
+            local, used = _project(emb, projection, "spectral")
             if j == 0:
                 method = used
         else:
@@ -127,8 +130,58 @@ def _spectral_layout(ids: list[str], A, dims: int, projection: str) -> tuple[np.
     return xy, method
 
 
-def _project(emb: np.ndarray, projection: str) -> tuple[np.ndarray, str]:
-    """2D projection ladder: umap -> tsne -> spectral base."""
+def _role_feature_table(A) -> np.ndarray:
+    """Twelve raw role features per node, on the unweighted graph (edge weights are ignored).
+
+    Six local ones (log degree, mean and max neighbour log degree, clustering, log triangles,
+    log two-hop neighbourhood size) and the neighbour mean of each (one ReFeX-style recursion).
+    Nodes in the same position in distant parts of the graph get the same features, which is
+    what lets a hub sit next to another hub it shares no neighbours with.
+    """
+    import scipy.sparse as sp
+
+    B = (A > 0).astype(float).tocsr()
+    deg = np.asarray(B.sum(axis=1)).ravel()
+    safe = np.maximum(deg, 1.0)
+    logdeg = np.log1p(deg)
+    nbr_mean = (B @ logdeg) / safe
+    nbr_max = np.zeros(len(deg))
+    for i in range(B.shape[0]):
+        row = B.indices[B.indptr[i]:B.indptr[i + 1]]
+        if len(row):
+            nbr_max[i] = logdeg[row].max()
+    B2 = B @ B
+    tri = np.asarray(B2.multiply(B).sum(axis=1)).ravel() / 2.0
+    pairs = deg * (deg - 1) / 2.0
+    clustering = np.divide(tri, pairs, out=np.zeros_like(tri), where=pairs > 0)
+    reach = (B2 + B).tocsr()
+    reach.setdiag(0)
+    reach.eliminate_zeros()
+    two_hop = np.diff(reach.indptr).astype(float)
+    local = np.column_stack([logdeg, nbr_mean, nbr_max, clustering, np.log1p(tri), np.log1p(two_hop)])
+    recursive = sp.diags(1.0 / safe) @ (B @ local)
+    return np.hstack([local, recursive])
+
+
+def _role_features(A) -> np.ndarray:
+    """The role feature table, each column z-scored (constant columns become zero)."""
+    F = _role_feature_table(A)
+    sd = F.std(axis=0)
+    return np.divide(F - F.mean(axis=0), sd, out=np.zeros_like(F), where=sd > 0)
+
+
+def _pca2(emb: np.ndarray) -> np.ndarray:
+    centred = emb - emb.mean(axis=0)
+    _, _, vt = np.linalg.svd(centred, full_matrices=False)
+    return np.asarray(centred @ vt[:2].T, dtype=float)
+
+
+def _project(emb: np.ndarray, projection: str, base: str = "spectral") -> tuple[np.ndarray, str]:
+    """2D projection ladder: umap -> tsne -> base.
+
+    base "spectral": the first two embedding dims (the classic spectral layout).
+    base "pca": the first two principal components (for feature embeddings).
+    """
     n = emb.shape[0]
     if projection in ("auto", "umap"):
         try:
@@ -152,6 +205,8 @@ def _project(emb: np.ndarray, projection: str) -> tuple[np.ndarray, str]:
         except ImportError:
             if projection == "tsne":
                 raise
+    if base == "pca":
+        return _pca2(emb), "pca"
     # base path: the two lowest-frequency non-trivial eigenvectors ARE the
     # classic spectral layout (they preserve coarse geometry; PCA over the
     # equal-variance eigenvector set would scramble frequencies instead)
@@ -159,21 +214,32 @@ def _project(emb: np.ndarray, projection: str) -> tuple[np.ndarray, str]:
     return xy - xy.mean(axis=0), "spectral"
 
 
+BASES = ("role", "spectral")
+
+
 def compute_similarity_positions(
-    graph: dict, dims: int = 8, projection: str = "auto", extent: float = 900.0
+    graph: dict, dims: int = 8, projection: str = "auto", extent: float = 900.0,
+    basis: str = "spectral",
 ) -> tuple[list[dict], str]:
     """Positions for every node, by structural similarity.
 
-    graph: the dict produced by parse_gexf. Returns ([{id, x, y}, ...], method),
-    where method names the projection actually used.
+    graph: the dict produced by parse_gexf. basis: "role" (role features) or "spectral"
+    (Laplacian eigenmaps). projection: "auto", "umap", "tsne", or the base projection,
+    named "spectral" or "pca" (either name gives the basis's own base). Returns
+    ([{id, x, y}, ...], method), where method names the projection actually used.
     """
+    if basis not in BASES:
+        raise ValueError(f"basis must be one of {', '.join(BASES)}, not {basis!r}")
     ids, A = _adjacency(graph)
     n = len(ids)
     if n < 5:
         raise ValueError("similarity layout needs at least 5 nodes")
     if A.nnz == 0:
         raise ValueError("similarity layout needs edges (the graph has none)")
-    xy, method = _spectral_layout(ids, A, dims, projection)
+    if basis == "role":
+        xy, method = _project(_role_features(A), projection, "pca")
+    else:
+        xy, method = _spectral_layout(ids, A, dims, projection)
     xy = xy - xy.mean(axis=0)
     spread = float(max(xy.std(axis=0).max(), 1e-9))
     xy = xy * (extent / (spread * 4.0))
