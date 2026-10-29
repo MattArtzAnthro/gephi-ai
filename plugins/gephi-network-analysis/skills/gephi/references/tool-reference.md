@@ -15,7 +15,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_visual_qa
 - **Method**: GEXF export (internal temp file), analyzed server-side
 - **Params**: `{partition_column?: str}`
-- **Returns**: `{nodes, edges, sizes, colors, extent (with suggested_export), partition?, warnings[]}`. With `partition_column`, `partition` holds `within_fraction` (share of ties inside a group), `random_baseline` (the share expected by chance), `ratio_vs_random`, `verdict`, and `separation` (how mixed the groups are in the current layout; 1.0 fully mixed). It counts ties, not weight, and reads only the visible graph when a filter is on.
+- **Returns**: `{nodes, edges, sizes, colors, extent (with suggested_export), partition?, warnings[]}`. With `partition_column`, `partition` holds `within_fraction` (share of ties inside a group), `random_baseline` (the share expected by chance), `ratio_vs_random`, `verdict` (`strong`, `weak`, `none`, or `undetermined` when no tie joins two nodes with a value), `separation` (how mixed the groups are in the current layout; 1.0 fully mixed), and `edges_left_out` (ties to nodes without a value, which count neither way). It counts ties, not weight, and reads only the visible graph when a filter is on.
 - **Usage**: Visual-design diagnostics. Call BEFORE styling with `partition_column`
   to verify a claimed grouping is topologically real (verdict "none" means coloring
   by it would mislead; compute modularity instead), and AFTER styling/layout to

@@ -678,3 +678,103 @@ def test_app_html_declares_its_host_contract():
     # The page must be self-contained: vendored libraries inlined, no placeholders left.
     assert "__SIGMA_JS__" not in html and "__GRAPHOLOGY_JS__" not in html
     assert "gephi_focus_view" in html and "gephi_view_graph" in html
+
+
+# ─── Colours that follow a grouping; groups with unlabelled nodes ───
+
+def _grouped_graph(groups=20, per=3, labelled=True, extra_unlabelled=0):
+    """`groups` groups of `per` nodes, each group its own colour and wired as a triangle."""
+    nodes, edges = [], []
+    for g in range(groups):
+        colour = f"#{(g * 37) % 200 + 20:02x}{(g * 91) % 200 + 20:02x}60"
+        for i in range(per):
+            nodes.append({"key": f"g{g}n{i}", "label": "", "x": float(g * 10 + i), "y": float(g),
+                          "size": 12.0, "color": colour,
+                          "attributes": {"community": g} if labelled else {}})
+        edges += [{"source": f"g{g}n{i}", "target": f"g{g}n{(i + 1) % per}"} for i in range(per)]
+    for u in range(extra_unlabelled):
+        nodes.append({"key": f"u{u}", "label": "", "x": 0.0, "y": float(u), "size": 12.0,
+                      "color": "#333333", "attributes": {}})
+        edges.append({"source": f"u{u}", "target": f"g{u % groups}n0"})
+    return {"nodes": nodes, "edges": edges, "directed": False,
+            "node_count_total": len(nodes), "edge_count_total": len(edges), "truncated": False}
+
+
+def test_colours_that_follow_a_grouping_are_not_called_a_gradient():
+    # Found live: right after gephi_color_by_partition gave each of many groups its own
+    # categorical colour, visual_qa said the colours "look like a continuous gradient".
+    from gephi_mcp_viewer import analyze_graph
+
+    d = analyze_graph(_grouped_graph(), categorical_column="community")
+
+    warns = " ".join(d["warnings"])
+    assert "gradient" not in warns
+    assert "20 groups" in warns and "label the groups" in warns
+
+
+def test_the_grouping_being_checked_counts_as_the_colour_source():
+    from gephi_mcp_viewer import analyze_graph
+
+    d = analyze_graph(_grouped_graph(), partition_column="community")
+
+    assert "gradient" not in " ".join(d["warnings"])
+
+
+def test_many_colours_with_no_grouping_behind_them_still_warn_of_a_gradient():
+    from gephi_mcp_viewer import analyze_graph
+
+    d = analyze_graph(_grouped_graph(labelled=False), categorical_column="community")
+
+    assert "gradient" in " ".join(d["warnings"])
+
+
+def test_ties_to_unlabelled_nodes_do_not_count_against_a_grouping():
+    # Found live: ties to unlabelled nodes were counted as ties between groups, so a
+    # grouping that holds among the labelled nodes read as "does not match".
+    from gephi_mcp_viewer import analyze_graph
+
+    d = analyze_graph(_grouped_graph(groups=4, extra_unlabelled=40), partition_column="community")
+
+    part = d["partition"]
+    assert part["within_fraction"] == 1.0
+    assert part["edges_left_out"] == 40
+    assert part["verdict"] == "strong"
+
+
+async def test_visual_qa_passes_on_the_column_colours_were_set_from(gexf_file, monkeypatch):
+    seen = {}
+
+    async def fake_request(method, endpoint, params=None, json_data=None):
+        import shutil
+        shutil.copy(gexf_file, json_data["file"])
+        return {"success": True}
+
+    def fake_analyze(graph, partition_column=None, categorical_column=None):
+        seen["categorical_column"] = categorical_column
+        return {"warnings": []}
+
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
+    monkeypatch.setattr(gephi_mcp.gephi_mcp_viewer, "analyze_graph", fake_analyze)
+    gephi_mcp.LEDGER.reset()
+    gephi_mcp.LEDGER.record("color_by_partition", column="team")
+
+    await gephi_mcp.gephi_visual_qa()
+
+    assert seen["categorical_column"] == "team"
+
+
+def test_a_grouping_no_tie_can_judge_is_undetermined_not_a_mismatch():
+    from gephi_mcp_viewer import analyze_graph
+
+    # A path a-b-c-d where only a and c carry a value: no tie joins two of them.
+    graph = {"nodes": [{"key": k, "label": "", "x": float(i), "y": 0.0, "size": 12.0,
+                        "color": "#333333", "attributes": attrs}
+                       for i, (k, attrs) in enumerate([("a", {"community": 1}), ("b", {}),
+                                                       ("c", {"community": 2}), ("d", {})])],
+             "edges": [{"source": s, "target": t} for s, t in (("a", "b"), ("b", "c"), ("c", "d"))],
+             "directed": False, "node_count_total": 4, "edge_count_total": 3, "truncated": False}
+
+    d = analyze_graph(graph, partition_column="community")
+
+    assert d["partition"]["verdict"] == "undetermined"
+    assert not any("does not match" in w for w in d["warnings"])

@@ -2724,7 +2724,9 @@ async def gephi_export_figure(
     # gephi_visual_qa runs and hand back what they say.
     if graph:
         try:
-            diagnosis = gephi_mcp_viewer.analyze_graph(graph, partition_column=partition_column)
+            diagnosis = gephi_mcp_viewer.analyze_graph(
+                graph, partition_column=partition_column,
+                categorical_column=LEDGER.colour_partition())
             for problem in diagnosis.get("warnings") or []:
                 warnings.append(f"map: {problem}")
         except Exception as exc:  # diagnostics must never block the figure
@@ -3077,7 +3079,8 @@ async def gephi_visual_qa(partition_column: str | None = None) -> str:
     finally:
         with contextlib.suppress(OSError):
             os.unlink(path)
-    return fmt(gephi_mcp_viewer.analyze_graph(graph, partition_column=partition_column))
+    return fmt(gephi_mcp_viewer.analyze_graph(graph, partition_column=partition_column,
+                                              categorical_column=LEDGER.colour_partition()))
 
 
 @_tool(name="gephi_label_clusters")

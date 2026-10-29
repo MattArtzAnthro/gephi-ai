@@ -69,6 +69,13 @@ class Ledger:
         """A reset undid the mapping on this channel, so the legend must stop describing it."""
         self.entries = [e for e in self.entries if _LEGEND_CHANNELS.get(e["operation"]) != channel]
 
+    def colour_partition(self) -> str | None:
+        """The column node colours were last set from, if that was a partition (categories)."""
+        for entry in reversed(self.entries):
+            if entry["operation"] in ("color_by_partition", "color_by_ranking"):
+                return entry.get("column") if entry["operation"] == "color_by_partition" else None
+        return None
+
     def legend_items(self) -> list[dict[str, Any]]:
         """The visual mappings currently in force, one per channel, in the order first set."""
         by_channel: dict[str, dict[str, Any]] = {}

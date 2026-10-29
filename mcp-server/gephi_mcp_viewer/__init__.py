@@ -189,14 +189,42 @@ def _luminance(color: str) -> float:
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 
 
-def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
+def _groups_coloured_by(graph: dict, column) -> int | None:
+    """How many groups of `column` the node colours follow, or None if they do not follow it.
+
+    They follow it when each value has a single colour of its own; nodes without a value may
+    share one more colour (Gephi's default for unassigned nodes).
+    """
+    if column is None:
+        return None
+    key = resolve_column_key(graph, column)
+    by_value: dict = {}
+    for n in graph["nodes"]:
+        value = n["attributes"].get(key)
+        if value is not None:
+            by_value.setdefault(value, set()).add(n["color"])
+    if len(by_value) < 2 or any(len(c) > 1 for c in by_value.values()):
+        return None
+    colours = {next(iter(c)) for c in by_value.values()}
+    if len(colours) < len(by_value):
+        return None
+    if len({n["color"] for n in graph["nodes"]} - colours) > 1:
+        return None
+    return len(by_value)
+
+
+def analyze_graph(graph: dict, partition_column: str | None = None,
+                  categorical_column: str | None = None) -> dict:
     """Visual-design diagnostics over a parsed graph (see parse_gexf).
 
     Checks the things that make renders unreadable: invisible node sizes,
     near-white colors on white exports, gradient-instead-of-categorical color
     use, layout extent vs export aspect — and, when partition_column is given,
     whether that grouping is topologically real (within-group edge share vs
-    the random baseline) or would mislead if used for coloring.
+    the random baseline, over edges whose two ends both carry a value) or would
+    mislead if used for coloring. categorical_column names the column colours
+    were set from, when known; colours that follow it, or partition_column, are
+    categories, never a gradient.
     """
     nodes, edges = graph["nodes"], graph["edges"]
     warnings = []
@@ -219,7 +247,14 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
         warnings.append(
             f"{len(near_white)} node color(s) are near-white and will be invisible "
             "on white exports — use the validated palette (see gephi_color_by_partition)")
-    if len(colors) > 12:
+    groups = next((g for g in (_groups_coloured_by(graph, c)
+                               for c in (categorical_column, partition_column)) if g), None)
+    if groups and groups > 8:
+        warnings.append(
+            f"{groups} groups each have their own colour; past eight, colours cannot be told "
+            "apart, so label the groups (gephi_label_clusters) or merge the smallest ones, and "
+            "say in the caption that colour alone does not separate them")
+    elif not groups and len(colors) > 12:
         warnings.append(
             f"{len(colors)} distinct node colors — this looks like a continuous "
             "gradient; if color should show categories, use a categorical palette "
@@ -310,12 +345,19 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
             shares[g] = shares.get(g, 0) + 1
         n_total = len(counted) or 1
         baseline = sum((c / n_total) ** 2 for c in shares.values())
-        within = sum(1 for e in edges
-                     if group.get(e["source"]) is not None
-                     and group.get(e["source"]) == group.get(e["target"]))
-        fraction = within / len(edges) if edges else 0.0
+        # Only ties between two nodes that both carry a value can show whether the grouping
+        # holds; a tie to an unlabelled node is neither within nor between groups.
+        judged = [e for e in edges
+                  if group.get(e["source"]) is not None and group.get(e["target"]) is not None]
+        within = sum(1 for e in judged if group[e["source"]] == group[e["target"]])
+        fraction = within / len(judged) if judged else 0.0
         ratio = fraction / baseline if baseline else 0.0
-        if fraction >= 0.6 or ratio >= 3:
+        if not judged:
+            verdict = "undetermined"
+            warnings.append(
+                f"no tie joins two nodes that both have a value in '{partition_column}', so "
+                "whether it matches the topology cannot be judged")
+        elif fraction >= 0.6 or ratio >= 3:
             verdict = "strong"
         elif ratio >= 1.5:
             verdict = "weak"
@@ -342,6 +384,7 @@ def analyze_graph(graph: dict, partition_column: str | None = None) -> dict:
             "within_fraction": round(fraction, 3),
             "random_baseline": round(baseline, 3),
             "ratio_vs_random": round(ratio, 2), "verdict": verdict,
+            "edges_left_out": len(edges) - len(judged),
             "separation": separation,
         }
 
