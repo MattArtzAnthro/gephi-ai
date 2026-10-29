@@ -490,6 +490,22 @@ def fmt(data: dict[str, Any]) -> str:
     return json.dumps(data, indent=2)
 
 
+def _make_output_folder(file: str) -> str | None:
+    """Create the folder an output file goes into; return an error message, or None.
+
+    Only for absolute paths: a relative one resolves against Gephi's working directory, not
+    this server's, so creating it here could put the folder somewhere else entirely.
+    """
+    path = Path(file)
+    if not path.is_absolute():
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return f"Could not create the folder for {file}: {exc}"
+    return None
+
+
 def _body(**kwargs: Any) -> dict[str, Any]:
     """Build a request body, dropping any keys whose value is None so the Gephi
     plugin's own defaults apply for omitted optional parameters."""
@@ -914,6 +930,8 @@ async def gephi_open_project(file: str) -> str:
 @_tool(name="gephi_save_project")
 async def gephi_save_project(file: str) -> str:
     """Save the current Gephi project. `file` is the absolute destination path."""
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/project/save", json_data={"file": file}))
 
 @_tool(name="gephi_get_project_info")
@@ -2555,6 +2573,8 @@ async def gephi_export_legend(file: str) -> str:
     document = legend_document(resolved)
     if document is None:  # cannot happen: resolved holds every item, and items is not empty
         return fmt({"success": False, "error": "Nothing to put in a legend."})
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     try:
         Path(file).write_text(document, encoding="utf-8")
     except OSError as exc:
@@ -2604,6 +2624,8 @@ async def gephi_export_figure(
     import figure as _figure
     from gephi_mcp_viewer import parse_gexf
 
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     base = Path(file)
     if base.suffix.lower() in (".pdf", ".png"):
         base = base.with_suffix("")
@@ -2779,6 +2801,8 @@ async def gephi_session_receipt(file: str | None = None) -> str:
         "plugin": health.get("version") if isinstance(health, dict) else None,
     }
     if file:
+        if (problem := _make_output_folder(file)):
+            return fmt({"success": False, "error": problem})
         try:
             Path(file).write_text(json.dumps(receipt, indent=2), encoding="utf-8")
             receipt["file"] = file
@@ -2796,6 +2820,8 @@ async def gephi_export_gexf(file: str | None = None) -> str:
     With a file path, writes to disk. Without one, returns the GEXF document
     inline in the response's "content" field (plugin 1.2.1+) — no file round-trip.
     """
+    if file and (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     payload = {"file": file} if file else {"inline": True}
     return fmt(await gephi.request("POST", "/export/gexf", json_data=payload))
 
@@ -2812,6 +2838,8 @@ async def gephi_export(file: str, format: str) -> str:
     Pajek (`pajek`), or giving a collaborator a spreadsheet. Errors listing the
     known formats if the name isn't recognized.
     """
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/format",
                                    json_data={"file": file, "format": format}))
 
@@ -2827,6 +2855,8 @@ async def gephi_export_png(file: str, width: int = 1920, height: int = 1080) -> 
     "arrow.size": 0}, light neutral edges so the groups read first. Then export, look
     at the image, and fix what is unreadable before declaring done.
     """
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/png",
                                    json_data={"file": file, "width": width, "height": height}))
 
@@ -2857,6 +2887,8 @@ async def gephi_export_screenshot(file: str, scale: int = 2, transparent_backgro
     Desktop only; the Overview window must be visible (not minimized) since this
     reads the actual rendered pixels.
     """
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/screenshot",
                                    json_data={"file": file, "scale": scale,
                                               "transparent_background": transparent_background}))
@@ -2865,21 +2897,29 @@ async def gephi_export_screenshot(file: str, scale: int = 2, transparent_backgro
 async def gephi_export_pdf(file: str) -> str:
     """Export the graph visualization as a PDF on a US Letter page: landscape (11 x 8.5 in) when
     the layout is wider than it is tall, portrait (8.5 x 11 in) otherwise."""
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/pdf", json_data={"file": file}))
 
 @_tool(name="gephi_export_svg")
 async def gephi_export_svg(file: str) -> str:
     """Export the graph visualization as SVG (scalable vector graphics)."""
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/svg", json_data={"file": file}))
 
 @_tool(name="gephi_export_graphml")
 async def gephi_export_graphml(file: str) -> str:
     """Export the graph to GraphML (widely supported XML format)."""
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/graphml", json_data={"file": file}))
 
 @_tool(name="gephi_export_csv")
 async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes") -> str:
     """Export the graph to CSV. target: "nodes" | "edges" | "both"."""
+    if (problem := _make_output_folder(file)):
+        return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/csv",
                                    json_data={"file": file, "separator": separator, "target": target}))
 
