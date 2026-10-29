@@ -65,6 +65,10 @@ class Ledger:
                 entry["stopped_before_finishing"] = True
                 return
 
+    def forget_channel(self, channel: str) -> None:
+        """A reset undid the mapping on this channel, so the legend must stop describing it."""
+        self.entries = [e for e in self.entries if _LEGEND_CHANNELS.get(e["operation"]) != channel]
+
     def legend_items(self) -> list[dict[str, Any]]:
         """The visual mappings currently in force, one per channel, in the order first set."""
         by_channel: dict[str, dict[str, Any]] = {}

@@ -1304,10 +1304,21 @@ async def gephi_batch_set_node_colors(nodes: list[dict[str, Any]]) -> str:
     return fmt(await gephi.request("POST", "/appearance/nodes/color", json_data={"nodes": nodes}))
 
 @_tool(name="gephi_reset_appearance")
-async def gephi_reset_appearance(r: int = 153, g: int = 153, b: int = 153, size: float = 10) -> str:
-    """Reset all nodes to a default color and size (defaults to grey / size 10)."""
-    return fmt(await gephi.request("POST", "/appearance/reset",
-                                   json_data={"r": r, "g": g, "b": b, "size": size}))
+async def gephi_reset_appearance(r: int = 153, g: int = 153, b: int = 153,
+                                 size: float | None = None) -> str:
+    """Reset every node to one colour (grey by default). Sizes are kept unless `size` is given,
+    so resetting colour does not undo a size ranking; pass size (e.g. 10) to reset sizes too.
+    Keeping sizes needs a Gephi AI plugin newer than 1.5.2; older ones set every size to 10."""
+    body: dict[str, Any] = {"r": r, "g": g, "b": b}
+    if size is not None:
+        body["size"] = size
+    resp = await gephi.request("POST", "/appearance/reset", json_data=body)
+    if isinstance(resp, dict) and resp.get("success"):
+        LEDGER.forget_channel("node colour")
+        # A plugin that keeps sizes says so; an older one set every size to 10 regardless.
+        if size is not None or "sizes kept" not in str(resp.get("message", "")):
+            LEDGER.forget_channel("node size")
+    return fmt(resp)
 
 
 # ─── Appearance: Color/Size by Attribute ─────────────────────

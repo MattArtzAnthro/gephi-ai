@@ -615,7 +615,9 @@ public class GephiAPIServer implements HttpHandler {
             int r = body != null && body.has("r") ? body.get("r").getAsInt() : 153;
             int g = body != null && body.has("g") ? body.get("g").getAsInt() : 153;
             int b = body != null && body.has("b") ? body.get("b").getAsInt() : 153;
-            float size = body != null && body.has("size") ? body.get("size").getAsFloat() : 10f;
+            // No size given: sizes stay as they are, so a colour reset keeps a size ranking.
+            Float size = body != null && body.has("size") && !body.get("size").isJsonNull()
+                ? body.get("size").getAsFloat() : null;
             return service.resetAppearance(r, g, b, size);
         }
 

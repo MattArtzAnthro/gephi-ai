@@ -287,7 +287,8 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_reset_appearance
 - **Method**: POST `/appearance/reset`
-- **Params**: `{r?: int (153), g?: int (153), b?: int (153), size?: float (10)}`
+- **Params**: `{r?: int (153), g?: int (153), b?: int (153), size?: float}`
+- **Notes**: Resets colour only; sizes are kept unless `size` is given, so a size ranking survives (plugin newer than 1.5.2; older plugins set every size to 10). The legend stops listing the mappings the reset undid.
 
 ## Appearance: By Attribute
 

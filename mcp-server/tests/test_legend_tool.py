@@ -227,3 +227,35 @@ async def test_the_receipt_can_be_written_to_a_file(rec, tmp_path):
     await gephi_mcp.gephi_session_receipt(file=str(path))
 
     assert json.loads(path.read_text())["layout"]["algorithm"] == "ForceAtlas2"
+
+
+async def test_a_colour_reset_keeps_sizes_unless_a_size_is_asked_for(rec):
+    # Found live: gephi_reset_appearance always set every node to size 10, so a colour reset
+    # silently undid a degree sizing and the next export lost it.
+    await gephi_mcp.gephi_reset_appearance()
+    await gephi_mcp.gephi_reset_appearance(size=7)
+
+    assert "size" not in rec.calls[0]["json"]
+    assert rec.calls[1]["json"]["size"] == 7
+
+
+async def test_a_reset_drops_the_mappings_it_undid_from_the_legend(rec):
+    await gephi_mcp.gephi_color_by_partition(column="Modularity Class")
+    await gephi_mcp.gephi_size_by_ranking(column="Degree", min_size=8, max_size=44)
+
+    rec.responses.append({"success": True, "message": "Colour reset for all nodes; sizes kept"})
+    await gephi_mcp.gephi_reset_appearance()
+    assert [i["channel"] for i in gephi_mcp.LEDGER.legend_items()] == ["node size"]
+    await gephi_mcp.gephi_reset_appearance(size=10)
+    assert gephi_mcp.LEDGER.legend_items() == []
+
+
+async def test_a_reset_on_an_older_plugin_drops_the_size_mapping_too(rec):
+    # Plugins up to 1.5.2 set every size to 10 even when no size is sent, so the legend must not
+    # go on saying that size encodes a column.
+    await gephi_mcp.gephi_size_by_ranking(column="Degree", min_size=8, max_size=44)
+
+    rec.responses.append({"success": True, "message": "Appearance reset for all nodes"})
+    await gephi_mcp.gephi_reset_appearance()
+
+    assert gephi_mcp.LEDGER.legend_items() == []

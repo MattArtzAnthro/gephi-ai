@@ -2048,7 +2048,8 @@ public class GephiControlService {
         }
     }
 
-    public JsonObject resetAppearance(int r, int g, int b, float size) {
+    /** Every node to one colour, and to one size when {@code size} is not null. */
+    public JsonObject resetAppearance(int r, int g, int b, Float size) {
         Workspace ws = currentWorkspace();
         if (ws == null) {
             return error("No project open");
@@ -2060,9 +2061,12 @@ public class GephiControlService {
             // before exhaustion leaks its read hold permanently (see ITERATION RULE above).
             for (Node n : graph.getNodes().toArray()) {
                 n.setColor(defaultColor);
-                n.setSize(size);
+                if (size != null) {
+                    n.setSize(size);
+                }
             }
-            return success("Appearance reset for all nodes");
+            return success(size != null ? "Colour and size reset for all nodes"
+                : "Colour reset for all nodes; sizes kept");
         } catch (Exception e) {
             return failure("Failed: ", e);
         }
