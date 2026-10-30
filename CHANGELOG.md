@@ -19,6 +19,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **`gephi_set_preview_settings` sets text settings that plugin renderers register**, such as
   Shape by Partition's shape column and legend title. String-typed properties were listed by
   `gephi_get_preview_settings` but reported as unapplied when set.
+- **Community stability no longer compares each run with itself.** A node's stability is the
+  chance that a node grouped with it in one run is grouped with it in a different run, but the
+  sum counted every run against itself too, which always agrees, so scores were overstated by
+  up to 1/runs (on 20 runs, up to five points). Two runs whose groups share nothing now score 0,
+  not 0.5. Pairs seen together in fewer than two runs no longer count towards stability.
 - **Saving into a new folder works.** Every tool that writes a file (the exports, the legend,
   the figure, the session receipt, project save) failed with "No such file or directory" when
   the folder did not exist yet. The server now creates it first, for absolute paths; a relative

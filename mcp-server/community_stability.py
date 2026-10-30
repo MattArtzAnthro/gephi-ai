@@ -11,10 +11,17 @@ these groups real, or are they an artefact of one run?
 
 The measure used here is co-assignment. Across N runs, every pair of nodes has a rate at which the
 two landed in the same community. A node's stability is the chance that a node grouped with it in
-one run is grouped with it in another: sum(p^2) / sum(p) over the nodes it was ever grouped with.
-1.0 means its community-mates never change; 0.5 means half of them change from run to run. Nodes it
-is never grouped with do not count. On a large graph almost every other node is such a stranger,
-and scoring those pairs as "decisive" made every node look stable.
+one run is grouped with it in a different run. For each node j, with m runs containing both and t
+of them grouping them, that is t(t-1) / (m(m-1)) of the ordered pairs of distinct runs, weighed
+against t/m, the share of runs grouping them at all. 1.0 means its community-mates never change;
+0.5 means half of them change from run to run. Nodes it is never grouped with do not count. On a
+large graph almost every other node is such a stranger, and scoring those pairs as "decisive" made
+every node look stable.
+
+Only distinct runs are compared. The plain co-assignment form, sum(p^2) / sum(p), also compares
+each run with itself, which always agrees, so it overstates stability by up to 1/runs: with two
+runs whose groups share nothing it reported 0.5 instead of 0. A pair seen together in fewer than
+two runs offers no pair of runs to compare and does not count towards stability.
 
 Two partitions are derived. Stable cores keep the pairs grouped together in at least 90% of runs:
 the groups that genuinely hold. The consensus keeps the pairs that agreed more often than not,
@@ -131,8 +138,13 @@ def consensus(runs: list[Partition]) -> dict[str, Any]:
         own = np.arange(rows.start, rows.stop)
         shared[np.arange(len(own)), own] = 0  # a node is not paired with itself
         rate = np.divide(together, shared, out=np.zeros(shared.shape), where=shared > 0)
-        mass = rate.sum(axis=1)
-        mass_sq = (rate * rate).sum(axis=1)
+        # Stability compares distinct runs only, so it needs a pair seen in at least two runs.
+        comparable = shared > 1
+        mass = np.where(comparable, rate, 0.0).sum(axis=1)
+        pairs_of_runs = shared.astype(np.float64) * (shared - 1)
+        repeated = together.astype(np.float64) * (together - 1)
+        mass_sq = np.divide(repeated, pairs_of_runs, out=np.zeros(shared.shape),
+                            where=comparable).sum(axis=1)
         pooled += float(mass.sum())
         pooled_sq += float(mass_sq.sum())
         for i, node_index in enumerate(own):
@@ -155,7 +167,7 @@ def consensus(runs: list[Partition]) -> dict[str, Any]:
         "distinct_partitions": distinct,
         "node_stability": stability,
         # Pooled over every pair: the chance that two nodes grouped together in one run are
-        # grouped together in another.
+        # grouped together in a different run.
         "mean_stability": round(pooled_sq / pooled, 4) if pooled else 1.0,
         "unstable_nodes": [{"node": n, "stability": s} for n, s in ranked[:10]],
         "consensus_groups": groups,

@@ -48,8 +48,8 @@ def test_relabelled_runs_are_the_same_partition():
 def test_a_node_that_bounces_between_communities_is_the_least_stable():
     """'x' lands with {a,b} half the time and with {c,d} the other half.
 
-    Its co-assignment with every other node is exactly 0.5, the least decisive value possible,
-    so its stability is 0.5 while the four settled nodes score higher.
+    Whenever it is grouped with 'a', only one of the three other runs groups them again, so its
+    stability is 1/3 while the four settled nodes score higher.
     """
     runs = [
         {"a": 1, "b": 1, "x": 1, "c": 2, "d": 2},
@@ -60,18 +60,19 @@ def test_a_node_that_bounces_between_communities_is_the_least_stable():
 
     result = consensus(runs)
 
-    assert result["node_stability"]["x"] == pytest.approx(0.5)
+    assert result["node_stability"]["x"] == pytest.approx(1 / 3, abs=1e-4)
     assert result["unstable_nodes"][0]["node"] == "x"
     for settled in ("a", "b", "c", "d"):
         assert result["node_stability"][settled] > result["node_stability"]["x"]
 
 
 def test_the_settled_nodes_keep_their_exact_hand_computed_stability():
-    """For 'a': with b always (1.0), with x half the time (0.5), never with c or d.
+    """For 'a': with b in both runs, with x in one of the two, never with c or d.
 
-    Stability is the chance that a node grouped with 'a' in one run is grouped with it in another:
-    sum(p^2) / sum(p) over the nodes it was ever grouped with -> (1 + 0.25) / (1 + 0.5) = 0.8333.
-    Nodes it is never grouped with do not count; they would make every node look decisive.
+    Stability is the chance that a node grouped with 'a' in one run is grouped with it in a
+    different run: b always is (weight 1), x never is (weight 0.5) -> 1 / 1.5 = 0.6667. Comparing
+    each run with itself as well gave 0.8333. Nodes it is never grouped with do not count; they
+    would make every node look decisive.
     """
     runs = [
         {"a": 1, "b": 1, "x": 1, "c": 2, "d": 2},
@@ -80,19 +81,20 @@ def test_the_settled_nodes_keep_their_exact_hand_computed_stability():
 
     result = consensus(runs)
 
-    assert result["node_stability"]["a"] == pytest.approx(1.25 / 1.5, abs=1e-4)
+    assert result["node_stability"]["a"] == pytest.approx(1 / 1.5, abs=1e-4)
 
 
 def test_strangers_do_not_make_a_node_look_stable():
-    """Every node's partner changes between the two runs. On a large graph almost every other node
-    is a stranger it is never grouped with; counting those as 'decisive' reported 0.97 here."""
+    """Every node's partner changes between the two runs, so no grouping is ever repeated. On a
+    large graph almost every other node is a stranger it is never grouped with; counting those as
+    'decisive' reported 0.97 here, and comparing each run with itself reported 0.5."""
     n = 200
     run1 = {i: i // 2 for i in range(n)}              # (0,1) (2,3) ...
     run2 = {i: (i + 1) // 2 for i in range(n)}        # (0) (1,2) (3,4) ...
 
     result = consensus([run1, run2])
 
-    assert result["mean_stability"] == pytest.approx(0.5, abs=0.01)
+    assert result["mean_stability"] == pytest.approx(0.0, abs=0.01)
 
 
 def test_groups_that_hold_in_nearly_every_run_are_reported_as_stable_cores():
@@ -191,15 +193,22 @@ def _reference(runs):
     """The pair-by-pair definition, written out directly. Slow, and only for small inputs."""
     from itertools import combinations
     nodes = sorted({n for r in runs for n in r})
-    rates = {}
+    rates, comparable = {}, {}
     for a, b in combinations(nodes, 2):
         shared = [r for r in runs if a in r and b in r]
         if shared:
             rates[(a, b)] = sum(r[a] == r[b] for r in shared) / len(shared)
+        if len(shared) > 1:
+            # Every ordered pair of distinct shared runs (r, s): grouped in r, and again in s?
+            ordered = [(r, s) for i, r in enumerate(shared) for j, s in enumerate(shared) if i != j]
+            grouped = sum(r[a] == r[b] for r in shared) / len(shared)
+            again = sum(r[a] == r[b] and s[a] == s[b] for r, s in ordered) / len(ordered)
+            comparable[(a, b)] = (again, grouped)
     stability = {}
     for n in nodes:
-        ps = [p for (a, b), p in rates.items() if n in (a, b)]
-        stability[n] = round(sum(p * p for p in ps) / sum(ps), 4) if sum(ps) else 1.0
+        terms = [v for pair, v in comparable.items() if n in pair]
+        weight = sum(g for _, g in terms)
+        stability[n] = round(sum(a for a, _ in terms) / weight, 4) if weight else 1.0
     return stability, {pair for pair, p in rates.items() if p > 0.5}
 
 
