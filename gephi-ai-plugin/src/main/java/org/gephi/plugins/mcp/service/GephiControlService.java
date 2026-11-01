@@ -3765,6 +3765,12 @@ public class GephiControlService {
         if (!(val instanceof String)) {
             return false;
         }
+        if (type == String.class) {
+            // Plugin renderers register text settings (a column name, a legend title); the
+            // value is kept as written, since column ids and titles are case-sensitive.
+            prop.setValue(val);
+            return true;
+        }
         String s = val.toString().trim().toLowerCase();
         if (type == DependantColor.class) {
             if ("parent".equals(s)) {

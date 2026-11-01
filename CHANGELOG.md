@@ -4,6 +4,13 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Fixed
+- **`gephi_set_preview_settings` sets text settings that plugin renderers register**, such as
+  Shape by Partition's shape column and legend title. String-typed properties were listed by
+  `gephi_get_preview_settings` but reported as unapplied when set.
+
 ## MCP server 1.21.2 / Java plugin 1.5.2 / workflow packages 1.20.2
 
 ### Fixed

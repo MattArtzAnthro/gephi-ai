@@ -39,6 +39,9 @@ import org.gephi.graph.api.Graph;
 import org.gephi.graph.api.GraphController;
 import org.gephi.graph.api.GraphModel;
 import org.gephi.graph.api.Node;
+import org.gephi.preview.api.PreviewController;
+import org.gephi.preview.api.PreviewProperties;
+import org.gephi.preview.api.PreviewProperty;
 import org.gephi.project.api.ProjectController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -495,6 +498,25 @@ class WorkspaceToolsTest {
         Graph g = gm.getGraph();
         Edge ab = GephiControlService.findEdge(g, node("a"), node("b"));
         assertEquals(new Color(0, 114, 178), withoutAlpha(ab.getColor()));
+    }
+
+    @Test
+    void textSettingFromAPluginRendererIsSet() {
+        // Third-party renderers (Shape by Partition's column and legend title, for example)
+        // register String-typed properties; Gephi core registers none.
+        PreviewProperties props = Lookup.getDefault().lookup(PreviewController.class)
+            .getModel().getProperties();
+        props.addProperty(PreviewProperty.createProperty(this, "test.text", String.class,
+            "Text", "A text setting", PreviewProperty.CATEGORY_NODES).setValue(""));
+        Map<String, Object> settings = new HashMap<>();
+        settings.put("test.text", " Field of Study ");
+        JsonObject r = ok(service.setPreviewSettings(settings));
+        assertEquals(1, r.get("properties_set").getAsInt(), r.toString());
+        assertEquals(" Field of Study ", props.getStringValue("test.text"));
+
+        settings.put("test.text", 12.0);
+        assertEquals(0, ok(service.setPreviewSettings(settings)).get("properties_set").getAsInt());
+        assertEquals(" Field of Study ", props.getStringValue("test.text"));
     }
 
     // ─── Export ──────────────────────────────────────────────────────
