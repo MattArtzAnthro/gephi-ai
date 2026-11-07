@@ -904,7 +904,10 @@ async def gephi_health_check() -> str:
     full restart (known macOS renderer issue). graph_lock_stats gives the live
     lock counters: a nonzero "readers" while Gephi is idle means a leaked read
     hold (writes will fail until restart); "queued" > 0 for long means a writer
-    is starving.
+    is starving. From plugin 1.6.0, renderer.state reads Gephi's drawing:
+    "ok"; "stalled" (frames still drawn but the graph is no longer updated,
+    usually something holding the graph lock: the screen shows a frozen picture);
+    "not_started" (the graph view has not been opened yet, so screenshots wait).
 
     Also reports `server_version` (the MCP server) alongside `version` (the Gephi
     plugin), plus a freshness signal checked once per session: `update` when the

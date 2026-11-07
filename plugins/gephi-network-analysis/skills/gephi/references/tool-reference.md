@@ -9,7 +9,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_health_check
 - **Method**: GET `/health`
 - **Params**: None
-- **Returns**: `{success, service, version, gephi_version, status, graph_lock, graph_lock_stats, server_version}`, plus `update` (with `how_to_update`) when a newer release exists or `up_to_date: true`. `gephi_version` comes from plugin 1.5.0 on. When the newest plugin needs a newer Gephi than the one running, `how_to_update` says to update Gephi first.
+- **Returns**: `{success, service, version, gephi_version, status, graph_lock, graph_lock_stats, renderer, server_version}`, plus `update` (with `how_to_update`) when a newer release exists or `up_to_date: true`. `gephi_version` comes from plugin 1.5.0 on; `renderer` (`{state, frames, world_updates}`, state `ok`, `stalled`, `not_drawing` or `not_started`) from 1.6.0. When the newest plugin needs a newer Gephi than the one running, `how_to_update` says to update Gephi first.
 - **Usage**: Call first to verify Gephi is running
 
 ### gephi_visual_qa

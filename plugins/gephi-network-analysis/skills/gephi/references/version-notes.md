@@ -62,3 +62,6 @@ item applies.
 - **1.6.0 and later:** requires Gephi 0.11.4. A "Graph is busy" message ends with the lock's
   state, for example "(1 read holds, write lock free, 1 threads waiting)": read holds while
   nothing runs mean a leaked hold, and a held write lock means a long operation.
+  `gephi_health_check` adds `renderer.state` (Gephi 0.11.4's frame and world-update counters):
+  `stalled` means the picture on screen is frozen while frames are still drawn. Screenshots wait
+  up to 10 seconds for the graph view to start drawing instead of failing just after Gephi opens.

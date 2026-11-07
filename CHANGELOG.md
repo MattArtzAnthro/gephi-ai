@@ -22,6 +22,12 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   connected (hubs that link to hubs), so its reading note says "similar role", never
   "unconnected". It counts ties and ignores edge weights. Spectral stays the default.
 
+### Added
+- **`gephi_health_check` reports whether Gephi is still drawing the graph.** `renderer.state` reads
+  Gephi 0.11.4's frame and world-update counters: `stalled` means frames are still drawn but the
+  graph is no longer updated, the freeze where the screen looks fine while Gephi is hung, which
+  the graph-lock probe alone does not show. `not_started` means the graph view has not opened.
+
 ### Changed
 - **The Gephi plugin (1.6.0) needs Gephi 0.11.4 or newer.** Gephi 0.11.4 fixes modularity runs
   that never finished and corrects how modularity weighs communities, so communities and
@@ -29,6 +35,9 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   installers, the README and the skill's version notes name the new minimum.
 
 ### Fixed
+- **`gephi_export_screenshot` waits for the graph view to start drawing.** Right after Gephi
+  opened, it failed with Gephi's "No rendering engine available"; it now waits up to 10 seconds
+  and otherwise says to show the Overview tab.
 - **A statistic Gephi's Statistics panel never reports on no longer holds the request for an
   hour.** On Gephi 0.11.4 with the Statistics window in use, a run occasionally ended without
   the panel calling back; the request waited the full hour and every later run of that

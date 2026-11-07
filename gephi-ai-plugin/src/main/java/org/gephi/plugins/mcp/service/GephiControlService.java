@@ -4235,6 +4235,18 @@ public class GephiControlService {
         if (sc == null) {
             return error("Screenshot controller not available");
         }
+        // Until the graph canvas exists and draws, Gephi's screenshot fails with "No rendering
+        // engine available" (seen on the first call after Gephi starts). Wait for it briefly.
+        try {
+            if (!awaitRendererReady(() -> vizEngine().map(e -> java.util.OptionalLong.of(e.getFrameCount()))
+                .orElse(java.util.OptionalLong.empty()), RENDERER_READY_BUDGET_MS)) {
+                return error("Gephi's graph view is not drawing yet, so there is nothing to capture: show the"
+                    + " Overview tab, wait for the graph to appear, and try again");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return error("Interrupted while waiting for Gephi's graph view");
+        }
 
         // This takeScreenshot writes straight to the file, whatever the toolbar's screenshot
         // settings, never opens a dialog, and completes once the PNG is written. It is called
@@ -5004,6 +5016,85 @@ public class GephiControlService {
     /** Layouts run in Gephi's own LayoutController, which outlives the server, so stopping it leaves them alone. */
     public void shutdown() {
     }
+
+    /** The running render engine, empty until the graph canvas has been created. */
+    private static java.util.Optional<? extends org.gephi.viz.engine.VizEngine<?, ?>> vizEngine() {
+        org.gephi.visualization.api.VisualizationController vc =
+            Lookup.getDefault().lookup(org.gephi.visualization.api.VisualizationController.class);
+        return vc instanceof org.gephi.visualization.VizController
+            ? ((org.gephi.visualization.VizController) vc).getEngine() : java.util.Optional.empty();
+    }
+
+    /**
+     * Reads the renderer's two counters (Gephi 0.11.4). The engine commits world updates many
+     * times a second even when nothing changes, so frames that advance while world updates do
+     * not mean the world updaters are blocked, usually on the graph lock: the screen keeps
+     * showing the last picture while Gephi is hung. "not_drawing" means no frames at all.
+     */
+    static String rendererState(long framesAdvanced, long worldUpdatesAdvanced) {
+        if (framesAdvanced <= 0) {
+            return "not_drawing";
+        }
+        return worldUpdatesAdvanced > 0 ? "ok" : "stalled";
+    }
+
+    /**
+     * Waits until the renderer exists and has drawn a frame, for at most {@code budgetMs}.
+     * {@code frames} gives the frame count, or empty while there is no engine.
+     */
+    static boolean awaitRendererReady(java.util.function.Supplier<java.util.OptionalLong> frames, long budgetMs)
+        throws InterruptedException {
+        final long deadline = System.nanoTime() + budgetMs * 1_000_000L;
+        long first = -1;
+        while (true) {
+            java.util.OptionalLong now = frames.get();
+            if (now.isPresent()) {
+                if (first < 0) {
+                    first = now.getAsLong();
+                } else if (now.getAsLong() > first) {
+                    return true;
+                }
+            }
+            if (System.nanoTime() > deadline) {
+                return false;
+            }
+            Thread.sleep(25);
+        }
+    }
+
+    /**
+     * The renderer's counters, sampled twice, and the state they show: "not_started" until the
+     * graph canvas exists, then "ok", "stalled" or "not_drawing" (see {@link #rendererState}).
+     */
+    public JsonObject rendererStats() {
+        JsonObject o = new JsonObject();
+        try {
+            java.util.Optional<? extends org.gephi.viz.engine.VizEngine<?, ?>> engine = vizEngine();
+            if (engine.isEmpty()) {
+                o.addProperty("state", "not_started");
+                return o;
+            }
+            final long f1 = engine.get().getFrameCount();
+            final long w1 = engine.get().getWorldUpdateCount();
+            Thread.sleep(RENDERER_SAMPLE_MS);
+            long f2 = engine.get().getFrameCount();
+            long w2 = engine.get().getWorldUpdateCount();
+            o.addProperty("state", rendererState(f2 - f1, w2 - w1));
+            o.addProperty("frames", f2);
+            o.addProperty("world_updates", w2);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            o.addProperty("state", "unknown");
+        } catch (Throwable t) {
+            o.addProperty("state", "unknown");
+        }
+        return o;
+    }
+
+    /** How long /health watches the renderer's counters. */
+    static final long RENDERER_SAMPLE_MS = 250;
+    /** How long a screenshot waits for the graph view to start drawing. */
+    static final long RENDERER_READY_BUDGET_MS = 10_000;
 
     /**
      * Cheap wedge detector for /health: try the graph read lock briefly.

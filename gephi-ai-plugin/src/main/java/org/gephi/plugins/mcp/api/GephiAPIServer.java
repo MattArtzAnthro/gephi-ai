@@ -261,6 +261,7 @@ public class GephiAPIServer implements HttpHandler {
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
             result.add("graph_lock_stats", service.graphLockStats());
+            result.add("renderer", service.rendererStats());
             // No side effects here: /health is a pure liveness probe that clients may
             // poll at any frequency. The node click listener is installed once at
             // plugin startup by Installer, as soon as the visualization controller is
