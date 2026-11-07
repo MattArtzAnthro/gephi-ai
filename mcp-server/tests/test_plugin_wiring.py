@@ -100,3 +100,17 @@ def test_the_hook_command_survives_a_plugin_path_with_spaces():
 def test_the_plugin_shows_as_gephi_ai():
     manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert manifest["displayName"] == "Gephi AI"
+
+
+def test_every_frontmatter_is_valid_yaml_with_a_text_description():
+    # Claude Code tolerates an unquoted ": " in a description, but strict YAML reads it as a nested
+    # mapping, so other hosts and validators reject the file.
+    import yaml
+
+    files = sorted([*PLUGIN.glob("commands/*.md"), *PLUGIN.glob("agents/*.md"),
+                    *PLUGIN.glob("skills/*/SKILL.md")])
+    assert files
+    for path in files:
+        meta = yaml.safe_load(_frontmatter(path))
+        assert isinstance(meta, dict), path.name
+        assert isinstance(meta.get("description"), str) and meta["description"].strip(), path.name

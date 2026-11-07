@@ -14,7 +14,7 @@ metadata:
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.20.2 — if commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.20.2. If commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 120 MCP tools from the `gephi-ai` server (tool names start with `gephi_`; fully-qualified names may include a server namespace) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
