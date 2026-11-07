@@ -89,7 +89,15 @@ Before a pull request, run what CI runs:
   JaCoCo coverage floor;
 - `ruff check .`, `mypy ./*.py gephi_mcp_viewer` and `python -m pytest -q --cov` (coverage floor in
   `pyproject.toml`) in `mcp-server/`;
-- `shellcheck scripts/*.sh plugins/claude-code/scripts/*.sh` and
+- `shellcheck install.sh scripts/*.sh plugins/claude-code/scripts/*.sh` and
   `bash plugins/claude-code/scripts/test-check-gephi.sh`.
+
+The one-command installers (`install.sh` for macOS and Linux, `install.ps1` for
+Windows) have their own workflow, `.github/workflows/installers.yml`, which runs
+them end to end against a real Gephi on all three platforms. To try a change
+locally without touching your own setup, point `HOME` at an empty folder:
+`HOME=/tmp/sandbox bash install.sh --yes --clients claude,codex,gemini,desktop`. The
+Desktop step only edits the settings file under `HOME`. Close a running Gephi first, or
+add `--skip-gephi-plugin`: the installer closes the Gephi it finds whatever `HOME` says.
 
 A `fix` commit carries a test that fails without it. Plugin changes also get the live smoke test in a separate Gephi; its docstring gives the command.

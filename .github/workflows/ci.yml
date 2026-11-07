@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: shellcheck scripts/*.sh plugins/claude-code/scripts/*.sh
+      - run: shellcheck install.sh scripts/*.sh plugins/claude-code/scripts/*.sh
       - name: Gephi check hook blocks when Gephi is down and allows when it is up
         run: bash plugins/claude-code/scripts/test-check-gephi.sh
       - run: pip install actionlint-py && actionlint

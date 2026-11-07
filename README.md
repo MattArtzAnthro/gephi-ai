@@ -32,6 +32,39 @@ Built for researchers working across network science and AI.
 
 ## Install
 
+### One command
+
+On macOS or Linux, in a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MattArtzAnthro/gephi-ai/main/install.sh | bash
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/MattArtzAnthro/gephi-ai/main/install.ps1 | iex
+```
+
+The installer sets up each AI assistant on your computer (Claude Code, Codex, Gemini CLI, Claude Desktop) and installs [uv](https://docs.astral.sh/uv/) if needed. If your Gephi does not already include the plugin, it adds it, removing the old Gephi AI (MCP) plugin if it finds one; on a Mac with Homebrew it can install Gephi itself. Claude Desktop is set up through its settings file, so there is nothing to click; restart Claude Desktop afterwards. The Gephi plugin download is checked against the checksum GitHub publishes for it; if GitHub's API is unavailable (its hourly limit on a shared network), the installer says it could not check. It shows its plan and asks before changing anything, closes Gephi only with your permission and reopens it (on Linux it asks you to close Gephi yourself), and is safe to run again; running it again is also how you update. When it finishes, open Gephi and ask your assistant to check the connection.
+
+Options go after `bash -s --` (for example `curl ... | bash -s -- --dry-run`):
+
+| Option | What it does |
+|:-------|:-------------|
+| `--dry-run` | Shows what would change and changes nothing |
+| `--yes` | Accepts every default without asking |
+| `--clients claude,gemini` | Sets up only the assistants you name (`claude`, `codex`, `gemini`, `desktop`) |
+| `--skip-gephi-plugin` | Connects the assistants and leaves Gephi alone |
+| `--version 1.21.2` | Installs a specific release |
+| `--open-gephi` | Opens Gephi at the end and checks that the plugin answers |
+| `--no-launch` | Does not reopen Gephi if the installer had to close it |
+| `--uninstall` | Removes what the installer added (uv and Gephi stay; a Claude Desktop entry that runs your own command is left alone) |
+
+On Windows the same options are `-DryRun`, `-Yes`, `-Clients`, `-SkipGephiPlugin`, `-Version`, `-OpenGephi`, `-NoLaunch`, and `-Uninstall`, passed as `& ([scriptblock]::Create((irm <url>))) -DryRun`. To read the script before running it, download [`install.sh`](install.sh) or [`install.ps1`](install.ps1) and run the file.
+
+To install by hand instead, follow the three steps below.
+
 You need [Gephi Desktop](https://gephi.org) 0.11.3 or newer and an AI assistant. Most clients also need [uv](https://docs.astral.sh/uv/getting-started/installation/), which runs the server and manages Python for you; Claude Desktop brings its own.
 
 ### 1. Add the plugin to Gephi
@@ -122,6 +155,7 @@ With Gephi open, ask your assistant: **"Check if Gephi is running."** It should 
 
 The health check tells you once per session when something is out of date.
 
+- **Installed with the one-command installer:** run it again. It updates whatever is behind and leaves the rest alone.
 - **Claude Code:** `claude plugin update gephi-network-analysis@gephi-ai`, then start a new session.
 - **Claude Desktop bundle:** download the newest `.mcpb` from Releases and double-click it.
 - **Config file or `uvx` setups:** nothing to do; `uvx` fetches the latest release when the app restarts.

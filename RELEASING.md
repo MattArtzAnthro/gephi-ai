@@ -167,6 +167,15 @@ have yet, so it fails to install until PyPI catches up.
    told to update. Without the release they are pointed at a Releases page that
    does not have the file.
 
+   The one-command installers (`install.sh`, `install.ps1`) read this release
+   too: they take the asset whose name ends in `.nbm` and verify it against the
+   SHA-256 digest GitHub records for it, and when GitHub's API is rate-limited
+   they fall back to `latest.json` and build the URL as
+   `gephi-ai-<java-version>.nbm`. Keep that asset name. They skip the `.nbm`
+   entirely when the person's Gephi already bundles the plugin. Claude Desktop
+   gets a `claude_desktop_config.json` entry pinned to the release, not the
+   `.mcpb`. Nothing in the installers needs a version bump.
+
 10. **Update the local install** so your own machine is not running the old build:
 
    ```bash

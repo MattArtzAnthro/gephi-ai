@@ -1,0 +1,111 @@
+name: Installers
+
+# The one-command installers (install.sh, install.ps1) run end to end against a
+# real Gephi on each platform: install the plugin, then (with --open-gephi)
+# open Gephi and require the plugin to answer; re-run (must change nothing)
+# and uninstall. The runners
+# have no AI assistant installed, so the assistant steps are covered by the
+# sandboxed local runs described in the pull request, not here.
+
+on:
+  push:
+    paths: [install.sh, install.ps1, latest.json, .github/workflows/installers.yml]
+  pull_request:
+    paths: [install.sh, install.ps1, latest.json, .github/workflows/installers.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+  GITHUB_TOKEN: ${{ github.token }}
+  GEPHI_VERSION: 0.11.3
+
+jobs:
+  lint:
+    name: Lint (shellcheck, PSScriptAnalyzer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck install.sh
+      - name: PSScriptAnalyzer, errors only
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $found = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
+          $found | Format-Table -AutoSize
+          if ($found) { exit 1 }
+
+  linux:
+    name: Linux (official tarball, virtual display)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Gephi from the official tarball
+        run: |
+          curl -fsSL -o /tmp/gephi.tgz "https://github.com/gephi/gephi/releases/download/v$GEPHI_VERSION/gephi-$GEPHI_VERSION-linux-x64.tar.gz"
+          tar -xzf /tmp/gephi.tgz -C "$HOME"
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb
+      - name: Install; Gephi must answer with the plugin
+        run: xvfb-run -a bash install.sh --yes --open-gephi | tee install.log
+      - run: grep -q "Gephi answers on 127.0.0.1:8080" install.log
+      - name: Re-run changes nothing
+        run: xvfb-run -a bash install.sh --yes | tee rerun.log && grep -q "already current" rerun.log
+      - name: Uninstall removes the plugin
+        run: |
+          bash install.sh --uninstall --yes
+          test ! -e "$HOME/.gephi/0.11/modules/org-gephi-plugins-gephi-ai.jar"
+
+  macos:
+    name: macOS (installer brings Gephi with Homebrew)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      # No Gephi preinstalled: the installer's own Homebrew path installs it.
+      - name: Install Gephi and the plugin
+        run: bash install.sh --yes | tee install.log
+      # A person clicks Open in macOS's first-open prompt; a runner cannot.
+      - run: xattr -dr com.apple.quarantine /Applications/Gephi.app || true
+      - name: Re-run changes nothing; Gephi must answer with the plugin
+        run: bash install.sh --yes --open-gephi | tee rerun.log
+      - run: grep -q "already current" rerun.log && grep -q "Gephi answers on 127.0.0.1:8080" rerun.log
+      - name: Uninstall removes the plugin
+        run: |
+          bash install.sh --uninstall --yes
+          test ! -e "$HOME/Library/Application Support/gephi/0.11/modules/org-gephi-plugins-gephi-ai.jar"
+
+  windows:
+    name: Windows (${{ matrix.shell }}, official installer)
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]  # Windows PowerShell 5.1 and PowerShell 7
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Gephi silently (Inno Setup)
+        run: |
+          $exe = "$env:RUNNER_TEMP\gephi-setup.exe"
+          Invoke-WebRequest -UseBasicParsing -OutFile $exe "https://github.com/gephi/gephi/releases/download/v$env:GEPHI_VERSION/gephi-$env:GEPHI_VERSION-windows-x64.exe"
+          Start-Process $exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait
+      # Run the way the README says to, through a script block, so the test
+      # covers the irm | iex path (no file, no exit).
+      - name: Install; Gephi must answer with the plugin
+        run: |
+          $out = & ([scriptblock]::Create((Get-Content install.ps1 -Raw))) -Yes -OpenGephi *>&1 | Out-String
+          $out
+          if ($out -notmatch "Gephi answers on 127.0.0.1:8080" -or $out -match "\[fail\]") { exit 1 }
+      - name: Re-run changes nothing
+        run: |
+          Get-Process gephi64 -ErrorAction SilentlyContinue | Stop-Process -Force
+          $out = & ([scriptblock]::Create((Get-Content install.ps1 -Raw))) -Yes -NoLaunch *>&1 | Out-String
+          $out
+          if ($out -notmatch "already current") { exit 1 }
+      - name: Uninstall removes the plugin
+        run: |
+          & ([scriptblock]::Create((Get-Content install.ps1 -Raw))) -Uninstall -Yes
+          if (Test-Path "$env:APPDATA\gephi\0.11\modules\org-gephi-plugins-gephi-ai.jar") { exit 1 }

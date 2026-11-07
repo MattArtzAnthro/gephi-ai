@@ -7,6 +7,13 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 ## Unreleased
 
 ### Added
+- **One-command installers.** `install.sh` (macOS, Linux) and `install.ps1` (Windows) set up
+  Claude Code, Codex, Gemini CLI and Claude Desktop, install uv when it is missing, add the Gephi
+  plugin when Gephi does not already have it (checked against GitHub's published checksum), and
+  remove the old Gephi AI (MCP) plugin after backing it up. They show their plan first, take
+  `--dry-run` and `--uninstall`, and running one again updates what is behind. A Claude Desktop
+  settings file that is a symlink is written through, and an entry that runs your own command is
+  never replaced or removed. See the README's Install section.
 - **A role option for the similarity layout.** `basis="role"` places nodes by twelve role
   features (degree, neighbours' degree, clustering, triangles, two-hop reach, and the
   neighbour average of each), so a hub can sit next to a hub it shares no neighbours with.
