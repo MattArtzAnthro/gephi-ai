@@ -58,3 +58,6 @@ item applies.
 - **1.5.2 and later:** a second request for a statistic that is already running is refused with
   "already running" instead of starting a duplicate run. Failed requests log their stack trace in
   Gephi's own log, which is worth attaching to a bug report.
+- **1.6.0 and later:** requires Gephi 0.11.4. A "Graph is busy" message ends with the lock's
+  state, for example "(1 read holds, write lock free, 1 threads waiting)": read holds while
+  nothing runs mean a leaked hold, and a held write lock means a long operation.

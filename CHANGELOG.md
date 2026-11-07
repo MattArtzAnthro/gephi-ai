@@ -29,6 +29,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   installers, the README and the skill's version notes name the new minimum.
 
 ### Fixed
+- **"Graph is busy" says what holds the graph.** The message now ends with the lock's state
+  (read holds, whether the write lock is held, threads waiting), so a leaked read hold, which
+  needs Gephi restarted, can be told from a long statistic, which only needs waiting for. A
+  write that timed out also stops wrapping its message in "Could not acquire write lock:
+  java.lang.RuntimeException:".
 - **`gephi_set_preview_settings` sets text settings that plugin renderers register**, such as
   Shape by Partition's shape column and legend title. String-typed properties were listed by
   `gephi_get_preview_settings` but reported as unapplied when set.

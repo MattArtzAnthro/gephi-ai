@@ -228,13 +228,16 @@ public class GephiControlService {
             while (!wl.tryLock(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 if (System.nanoTime() > deadline) {
                     throw new RuntimeException(
-                        "Graph is busy (another task, such as a running statistic, holds the lock); please retry");
+                        "Graph is busy (another task, such as a running statistic, holds the lock); please retry ("
+                            + describeLock(g) + ")");
                 }
                 Thread.sleep(5);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while acquiring the write lock");
+        } catch (RuntimeException e) {
+            throw e;  // the busy message above, which the caller shows as it is
         } catch (Throwable t) {
             // Any other failure here (e.g. a classloading Error, which is not an Exception
             // and would otherwise skip every catch(Exception) up the call chain and kill the
@@ -278,13 +281,27 @@ public class GephiControlService {
                 if (System.nanoTime() > deadline) {
                     throw new RuntimeException(
                         "Graph is busy (lock unavailable): if this persists, Gephi is wedged; fully quit and "
-                            + "reopen it");
+                            + "reopen it (" + describeLock(g) + ")");
                 }
                 Thread.sleep(5);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while acquiring the read lock");
+        }
+    }
+
+    /**
+     * The graph lock's live state for a "busy" message, so a leaked read hold (read holds while
+     * nothing runs) can be told from a long statistic. Never throws.
+     */
+    static String describeLock(Graph g) {
+        try {
+            org.gephi.graph.api.GraphLock lock = g.getLock();
+            return lock.getReadLockCount() + " read holds, write lock "
+                + (lock.isWriteLocked() ? "held" : "free") + ", " + lock.getQueueLength() + " threads waiting";
+        } catch (Throwable t) {
+            return "lock state unavailable";
         }
     }
 

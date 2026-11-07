@@ -235,6 +235,8 @@ class LockContentionTest {
             String message = String.valueOf(failure.get().getMessage());
             assertTrue(message.contains("Graph is busy"), message);
             assertFalse(message.contains("renderer"), "the busy message blames the renderer: " + message);
+            assertTrue(message.contains("1 read holds"), "the busy message must report the read hold: " + message);
+            assertTrue(message.startsWith("Graph is busy"), "the busy message is wrapped: " + message);
         } finally {
             releaseReader.countDown();
             longReader.join(5_000);
@@ -323,6 +325,42 @@ class LockContentionTest {
             }
         } finally {
             GephiControlService.unlockWrite(g);
+        }
+    }
+
+    /**
+     * A read that times out says what holds the lock, so a person can tell a writer (a long
+     * operation) from a leaked read hold.
+     */
+    @Test
+    void lockReadBusyMessageReportsTheLockState() throws Exception {
+        Graph g = newGraph();
+        CountDownLatch writerHolds = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread writer = new Thread(() -> {
+            g.writeLock();
+            try {
+                writerHolds.countDown();
+                release.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                g.writeUnlock();
+            }
+        }, "holding-writer");
+        writer.setDaemon(true);
+        writer.start();
+        assertTrue(writerHolds.await(5, TimeUnit.SECONDS), "writer thread failed to start");
+        try {
+            RuntimeException e = org.junit.jupiter.api.Assertions.assertThrows(
+                RuntimeException.class, () -> GephiControlService.lockRead(g, 500_000_000L));
+            String message = e.getMessage();
+            assertTrue(message.contains("Graph is busy"), message);
+            assertTrue(message.contains("write lock held"), message);
+            assertTrue(message.contains("0 read holds"), message);
+        } finally {
+            release.countDown();
+            writer.join(5_000);
         }
     }
 }
