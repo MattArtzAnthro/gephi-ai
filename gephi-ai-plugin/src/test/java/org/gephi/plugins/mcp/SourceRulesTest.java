@@ -53,7 +53,8 @@ class SourceRulesTest {
         "Installer#restored",
         "Installer#stopNow",
         "GephiAPIServer#startServer",
-        "GephiControlService#DEADLINES");
+        "GephiControlService#DEADLINES",
+        "GephiControlService#runOnStatisticThread");
 
     private static final Pattern LOCK_CALL =
         Pattern.compile("^\\s*(?:(lockRead|lockWrite)\\(\\w+\\)|\\w+\\.(readLock|writeLock)\\(\\));");
@@ -270,7 +271,8 @@ class SourceRulesTest {
         int at = member.indexOf("new Thread(");
         while (at >= 0) {
             String call = parenthesised(member, at + "new Thread".length());
-            if (!call.matches("(?s).*,\\s*\"[^\"]+\"\\s*\\)")) {
+            // The name is the last argument, or the one before a stack size.
+            if (!call.matches("(?s).*,\\s*\"[^\"]+\"\\s*(,\\s*[\\w.]+\\s*)?\\)")) {
                 return false;
             }
             at = member.indexOf("new Thread(", at + 1);
@@ -355,5 +357,13 @@ class SourceRulesTest {
             "the lock counters must use the GraphLock API");
         org.junit.jupiter.api.Assertions.assertTrue(svc.contains("getDeclaredField(\"writeLock\")"),
             "lockWrite still needs its timed write handle");
+    }
+
+    @Test
+    void threadNameMayBeFollowedByAStackSize() {
+        org.junit.jupiter.api.Assertions.assertTrue(namedThread("new Thread(r, \"Worker\")"));
+        org.junit.jupiter.api.Assertions.assertTrue(namedThread("new Thread(null, r, \"Worker\", STACK_BYTES)"));
+        org.junit.jupiter.api.Assertions.assertFalse(namedThread("new Thread(r)"));
+        org.junit.jupiter.api.Assertions.assertFalse(namedThread("new Thread(null, r, STACK_BYTES)"));
     }
 }

@@ -29,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import javax.swing.event.ChangeListener;
 import org.gephi.desktop.statistics.api.StatisticsControllerUI;
@@ -178,6 +179,45 @@ class PanelExecutionTest {
         SlowStat stat = new SlowStat(10);
 
         assertFalse(GephiControlService.executeStatistic(stat, null, 0, null, DIRECT));
+        assertTrue(stat.ran.get());
+    }
+
+    /** Recurses once per node of a long path, as Gephi's connected-components search does. */
+    static class DeepStat extends SlowStat {
+        DeepStat() {
+            super(0);
+        }
+
+        @Override public void execute(GraphModel gm) {
+            ran.set(true);
+            depth(200_000);
+        }
+
+        private static int depth(int n) {
+            return n == 0 ? 0 : 1 + depth(n - 1);
+        }
+    }
+
+    /**
+     * Gephi 0.11.4 runs statistics on a worker with a 128 MB stack, so a deep recursion does not
+     * overflow (gephi#3327). A statistic the plugin runs itself gets the same stack, whatever
+     * thread the request arrived on.
+     */
+    @Test
+    void statisticRunDirectlyHasRoomForDeepRecursion() throws Exception {
+        DeepStat stat = new DeepStat();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread small = new Thread(null, () -> {
+            try {
+                GephiControlService.executeStatistic(stat, null, 0, null, DIRECT);
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        }, "small-stack-request", 512 * 1024);
+        small.start();
+        small.join(60_000);
+
+        assertNull(failure.get(), () -> "the statistic failed: " + failure.get());
         assertTrue(stat.ran.get());
     }
 

@@ -35,6 +35,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   installers, the README and the skill's version notes name the new minimum.
 
 ### Fixed
+- **A statistic the plugin runs itself no longer overflows on a deep graph.** When Gephi's
+  Statistics panel is not available, the plugin ran the statistic on its request thread, whose
+  small stack a deep recursion (connected components along a long directed path) could exhaust.
+  It now runs on a worker with the 128 MB stack Gephi 0.11.4 gives its own statistics.
 - **`gephi_export_screenshot` waits for the graph view to start drawing.** Right after Gephi
   opened, it failed with Gephi's "No rendering engine available"; it now waits up to 10 seconds
   and otherwise says to show the Overview tab.
