@@ -163,4 +163,42 @@ class DataToolsTest {
         assertFalse(r.get("success").getAsBoolean());
         assertTrue(r.get("error").getAsString().contains("No Such Filter"));
     }
+
+    /** A visible filter reports the counts Gephi applied, not the ones before it finished. */
+    @Test
+    void visibleFilterReportsTheCountsItApplied() {
+        JsonObject r = service.applyFilter("Degree Range", Map.of("range", List.of(3, 100)), "select", null);
+
+        assertTrue(r.get("success").getAsBoolean(), r.toString());
+        assertEquals(3, r.get("nodes_after").getAsInt(), r.toString());
+        assertFalse(r.has("counts_settled"), r.toString());
+        assertEquals(3, gm.getGraphVisible().getNodeCount());
+    }
+
+    /**
+     * Gephi 0.11.4 says when a filter's result is applied. A filter that keeps every node used
+     * to wait out the whole settling budget, because its count never moved.
+     */
+    @Test
+    void filterThatKeepsEveryNodeAnswersAtOnce() {
+        long started = System.nanoTime();
+        JsonObject r = service.applyFilter("Degree Range", Map.of("range", List.of(0, 100)), "select", null);
+        long ms = (System.nanoTime() - started) / 1_000_000;
+
+        assertTrue(r.get("success").getAsBoolean(), r.toString());
+        assertEquals(5, r.get("nodes_after").getAsInt(), r.toString());
+        assertTrue(ms < 1000, "a filter that removes nothing took " + ms + " ms");
+    }
+
+    @Test
+    void combinedFiltersOnTheVisibleGraphAnswerAtOnce() {
+        Map<String, Object> degree3 = Map.of("name", "Degree Range", "params", Map.of("range", List.of(3, 100)));
+        long started = System.nanoTime();
+        JsonObject r = service.applyFilters(List.of(degree3), "all", "select", null, false);
+        long ms = (System.nanoTime() - started) / 1_000_000;
+
+        assertTrue(r.get("success").getAsBoolean(), r.toString());
+        assertEquals(3, r.get("nodes_after").getAsInt(), r.toString());
+        assertTrue(ms < 1000, "combined filters took " + ms + " ms");
+    }
 }

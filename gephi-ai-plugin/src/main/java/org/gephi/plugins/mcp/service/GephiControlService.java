@@ -5544,12 +5544,10 @@ public class GephiControlService {
                 r = success("Filter applied to the visible graph");
                 r.addProperty("nodes_before", nodesBefore);
                 r.addProperty("edges_before", edgesBefore);
-                // filterVisible ends in setVisibleView, which does not finish swapping the
-                // view before it returns. Reading the counts straight away reported the
-                // pre-filter numbers, telling the caller the filter removed nothing when it
-                // had removed half the graph. Wait briefly for the view to settle, and say
-                // so rather than publishing a number that has not stopped moving.
-                boolean settled = awaitVisibleViewSettled(gm, nodesBefore);
+                // filterVisible computes its result in the background and returns before the
+                // view is swapped, so reading the counts at once reported the pre-filter
+                // numbers. Gephi's filter model says when the result has been applied.
+                boolean settled = awaitFilterApplied(fc.getModel());
                 r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());
                 r.addProperty("edges_after", gm.getGraphVisible().getEdgeCount());
                 if (!settled) {
@@ -5589,36 +5587,27 @@ public class GephiControlService {
     }
 
     /**
-     * Waits briefly for the visible view to stop changing after a filter is applied.
-     * Returns true once two consecutive reads agree (and, when the filter actually
-     * removed something, once the count has moved off its pre-filter value); false if
-     * it was still moving when the budget ran out, so the caller can say the number is
-     * provisional instead of presenting a moving value as final.
+     * Waits until Gephi has applied the current filter's result. Since Gephi 0.11.4 the filter
+     * model reports a result being computed or applied as running. Returns false if it was still
+     * running when the budget ran out, so the caller can say the counts are provisional.
      */
-    private static boolean awaitVisibleViewSettled(GraphModel gm, int before) {
-        final long budgetMs = 1500;
-        final long deadline = System.currentTimeMillis() + budgetMs;
-        int last = -1;
-        boolean moved = false;
-        while (System.currentTimeMillis() < deadline) {
-            int now = gm.getGraphVisible().getNodeCount();
-            if (now != before) {
-                moved = true;
+    static boolean awaitFilterApplied(org.gephi.filters.api.FilterModel model) {
+        if (model == null) {
+            return true;
+        }
+        final long deadline = System.nanoTime() + 30_000_000_000L;
+        while (model.isRunning()) {
+            if (System.nanoTime() > deadline) {
+                return false;
             }
-            if (now == last && (moved || now != before)) {
-                return true;
-            }
-            last = now;
             try {
-                Thread.sleep(25);
+                Thread.sleep(10);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
             }
         }
-        // A filter that legitimately keeps every node never moves off `before`; treat a
-        // stable reading as settled rather than reporting it as provisional forever.
-        return gm.getGraphVisible().getNodeCount() == last;
+        return true;
     }
 
     // ─── Combined filters ────────────────────────────────────────────
@@ -5793,7 +5782,7 @@ public class GephiControlService {
             }
             if (act.equals("select")) {
                 r = success("Filters applied to the visible graph");
-                final boolean settled = awaitVisibleViewSettled(gm, gm.getGraphVisible().getNodeCount());
+                final boolean settled = awaitFilterApplied(fc.getModel());
                 r.addProperty("nodes_before", nodesBefore);
                 r.addProperty("edges_before", edgesBefore);
                 r.addProperty("nodes_after", gm.getGraphVisible().getNodeCount());

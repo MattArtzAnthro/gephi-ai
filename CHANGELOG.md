@@ -29,6 +29,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   installers, the README and the skill's version notes name the new minimum.
 
 ### Fixed
+- **Filters on the visible graph answer as soon as Gephi has applied them.** The plugin used
+  to guess, waiting until the visible count stopped changing, so a filter that removed nothing
+  waited out the whole 1.5-second budget, and a slow one could report counts that were still
+  moving. It now waits for Gephi 0.11.4 to say the filter's result is applied.
 - **On Gephi 0.11.4 a stopped modularity run is reported, not repeated.** The repeat existed
   for Gephi's modularity runs that never finished (gephi#1630), which 0.11.4 fixes, so there a
   stop means the 45-second deadline was too short for the graph and the error says how to
