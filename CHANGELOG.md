@@ -22,6 +22,12 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   connected (hubs that link to hubs), so its reading note says "similar role", never
   "unconnected". It counts ties and ignores edge weights. Spectral stays the default.
 
+### Changed
+- **The Gephi plugin (1.6.0) needs Gephi 0.11.4 or newer.** Gephi 0.11.4 fixes modularity runs
+  that never finished and corrects how modularity weighs communities, so communities and
+  modularity values can differ from 0.11.3; rerun before comparing with a saved partition. The
+  installers, the README and the skill's version notes name the new minimum.
+
 ### Fixed
 - **`gephi_set_preview_settings` sets text settings that plugin renderers register**, such as
   Shape by Partition's shape column and legend title. String-typed properties were listed by

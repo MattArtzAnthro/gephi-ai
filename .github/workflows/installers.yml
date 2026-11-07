@@ -20,7 +20,7 @@ permissions:
 env:
   # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
   GITHUB_TOKEN: ${{ github.token }}
-  GEPHI_VERSION: 0.11.3
+  GEPHI_VERSION: 0.11.4
 
 jobs:
   lint:

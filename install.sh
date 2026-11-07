@@ -177,7 +177,7 @@ read_release() {
       die "Could not read the release from GitHub. Try again in a few minutes."
     fi
     NBM_URL="https://github.com/$REPO/releases/download/v$SERVER_VER/gephi-ai-$NBM_VER.nbm"
-    NEEDS_GEPHI=${NEEDS_GEPHI:-0.11.3}
+    NEEDS_GEPHI=${NEEDS_GEPHI:-0.11.4}
     warn "GitHub's API was unavailable (often its hourly limit on a shared network); using the release's version file"
     ok "Gephi AI $SERVER_VER (Gephi plugin $NBM_VER, needs Gephi $NEEDS_GEPHI or newer)"
     return 0
@@ -195,7 +195,7 @@ read_release() {
 
   NEEDS_GEPHI=$(fetch "https://raw.githubusercontent.com/$REPO/v$SERVER_VER/latest.json" 2>/dev/null |
     sed -n 's/.*"nbm_needs_gephi": *"\([^"]*\)".*/\1/p' | head -1) || true
-  NEEDS_GEPHI=${NEEDS_GEPHI:-0.11.3}
+  NEEDS_GEPHI=${NEEDS_GEPHI:-0.11.4}
 
   ok "Gephi AI $SERVER_VER (Gephi plugin $NBM_VER, needs Gephi $NEEDS_GEPHI or newer)"
 }

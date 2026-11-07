@@ -65,11 +65,11 @@ On Windows the same options are `-DryRun`, `-Yes`, `-Clients`, `-SkipGephiPlugin
 
 To install by hand instead, follow the three steps below.
 
-You need [Gephi Desktop](https://gephi.org) 0.11.3 or newer and an AI assistant. Most clients also need [uv](https://docs.astral.sh/uv/getting-started/installation/), which runs the server and manages Python for you; Claude Desktop brings its own.
+You need [Gephi Desktop](https://gephi.org) 0.11.4 or newer and an AI assistant. Most clients also need [uv](https://docs.astral.sh/uv/getting-started/installation/), which runs the server and manages Python for you; Claude Desktop brings its own.
 
 ### 1. Add the plugin to Gephi
 
-1. Download `gephi-ai-1.5.2.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases).
+1. Download `gephi-ai-1.6.0.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases).
 2. In Gephi, open **Tools > Plugins > Downloaded > Add Plugins**, select the file, and click **Install**.
 3. Restart Gephi. **Tools > Gephi AI Server** shows that the plugin is running.
 
@@ -219,7 +219,7 @@ AI assistant  →  MCP server (Python)  →  HTTP on 127.0.0.1:8080  →  Gephi 
 
 ## Development
 
-The Gephi plugin needs JDK 17 or newer (Gephi 0.11.3's libraries are Java 17) and Maven:
+The Gephi plugin needs JDK 17 or newer (Gephi 0.11.4's libraries are Java 17) and Maven:
 
 ```bash
 cd gephi-ai-plugin

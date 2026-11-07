@@ -7,8 +7,8 @@ item applies.
 
 ## Gephi Desktop
 
-- **0.11.3 or later** is required by plugin 1.5.0 and later; earlier plugins run on **0.11.1
-  or later**. 0.11.1 adds the `harmonicclosnesscentrality` column (from
+- **0.11.4 or later** is required by plugin 1.6.0 and later; plugin 1.5.x needs **0.11.3 or
+  later**, and earlier plugins run on **0.11.1 or later**. 0.11.1 adds the `harmonicclosnesscentrality` column (from
   `gephi_compute_betweenness`) and the label preview settings `node.label.avoidOverlap` and
   `node.label.overlapGridSize`.
 - **0.11.2 and earlier, on macOS:** opening the Overview tab can freeze Gephi (force-quit to
@@ -16,6 +16,9 @@ item applies.
   canvas is created. Gephi 0.11.3 fixes it: suggest updating. On an older version, quit those
   tools for the Gephi session. `graph_lock` reports ok during the freeze, because it happens
   outside the graph.
+- **0.11.4** fixes modularity runs that never finished (gephi#1630) and corrects how modularity
+  weighs communities at the first level and with self-loops. Communities and modularity values
+  can differ from 0.11.3, so rerun before comparing with a partition saved under 0.11.3.
 - **0.11.3** fixes one cause of ForceAtlas 2 coordinates becoming `Infinity` or `NaN` (nodes
   with zero net movement, gephi#3235). Other causes remain; the `layout_exploded` check still
   applies.

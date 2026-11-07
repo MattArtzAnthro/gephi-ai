@@ -151,7 +151,7 @@ public static class GephiAICrc32 {
                 throw "Could not reach GitHub. Check your internet connection and try again."
             }
             $r = @{ Server = $m.server; Nbm = $m.nbm; NbmSha = ""
-                    NeedsGephi = $(if ($m.nbm_needs_gephi) { $m.nbm_needs_gephi } else { "0.11.3" }) }
+                    NeedsGephi = $(if ($m.nbm_needs_gephi) { $m.nbm_needs_gephi } else { "0.11.4" }) }
             $r.NbmUrl = "https://github.com/$Repo/releases/download/v$($r.Server)/gephi-ai-$($r.Nbm).nbm"
             Warn "GitHub's API was unavailable (often its hourly limit on a shared network); using the release's version file"
             Ok "Gephi AI $($r.Server) (Gephi plugin $($r.Nbm), needs Gephi $($r.NeedsGephi) or newer)"
@@ -162,7 +162,7 @@ public static class GephiAICrc32 {
             $sha = if ($a.digest) { ($a.digest -replace "^sha256:", "") } else { "" }
             if ($a.name -like "*.nbm") { $r.NbmUrl = $a.browser_download_url; $r.NbmSha = $sha; $r.Nbm = ($a.name -replace "^gephi-ai-", "" -replace "\.nbm$", "") }
         }
-        $r.NeedsGephi = "0.11.3"
+        $r.NeedsGephi = "0.11.4"
         try {
             $latest = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/$Repo/v$($r.Server)/latest.json"
             if ($latest.nbm_needs_gephi) { $r.NeedsGephi = $latest.nbm_needs_gephi }

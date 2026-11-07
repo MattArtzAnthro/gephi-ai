@@ -6,7 +6,7 @@
 
     <groupId>org.gephi.plugins</groupId>
     <artifactId>gephi-ai</artifactId>
-    <version>1.5.2</version>
+    <version>1.6.0</version>
     <packaging>nbm</packaging>
 
     <name>Gephi AI</name>
@@ -32,7 +32,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
-        <gephi.version>0.11.3</gephi.version>
+        <gephi.version>0.11.4</gephi.version>
         <netbeans.version>RELEASE290</netbeans.version>
         <!-- Coverage floors for the jacoco check below; they only ever move up. -->
         <coverage.line.minimum>0.58</coverage.line.minimum>
