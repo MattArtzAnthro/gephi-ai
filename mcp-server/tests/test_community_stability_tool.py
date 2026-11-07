@@ -43,9 +43,12 @@ class Recorder:
     def __init__(self):
         self.calls = []
         self.responses = []
+        self.health = None  # answers GET /health when set, outside the response queue
 
     async def __call__(self, method, endpoint, params=None, json_data=None, timeout=None):
         self.calls.append({"method": method, "endpoint": endpoint, "json": json_data})
+        if self.health is not None and endpoint == "/health":
+            return self.health
         if self.responses:
             return self.responses.pop(0)
         return {"success": True}
@@ -206,7 +209,8 @@ HEALTH_NO_VERSION = {"status": "ok"}
 async def test_on_gephi_0113_a_stopped_run_is_repeated_and_the_stale_column_is_never_read(rec):
     """A stopped run leaves the previous partition in the column (gephi#1630). Reading it back
     would count one partition twice and overstate stability, so the run is repeated instead."""
-    rec.responses = ([plan([STABLE])[0], plan([STABLE])[1], STOPPED, HEALTH_0113]
+    rec.health = HEALTH_0113
+    rec.responses = ([plan([STABLE])[0], plan([STABLE])[1], STOPPED]
                      + plan([{"a": 1, "b": 2, "c": 2, "d": 2}]))
 
     out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
@@ -219,17 +223,20 @@ async def test_on_gephi_0113_a_stopped_run_is_repeated_and_the_stale_column_is_n
 
 
 async def test_on_gephi_0113_a_run_that_never_converges_stops_the_analysis(rec):
-    rec.responses = [STOPPED, HEALTH_0113, STOPPED]
+    rec.health = HEALTH_0113
+    rec.responses = [STOPPED, STOPPED]
 
     out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
 
     assert out["success"] is False
     assert out["stopped"] is True
+    assert str(gephi_mcp.MODULARITY_ATTEMPTS) in out["error"], "the error should say how many attempts ran"
     assert "0.11.4" in out["error"], "the error should say that Gephi 0.11.4 fixes this"
 
 
 async def test_on_gephi_0113_compute_modularity_repeats_a_stopped_run_and_says_so(rec):
-    rec.responses = [STOPPED, HEALTH_0113, {"success": True, "modularity": 0.41, "communities": 5}]
+    rec.health = HEALTH_0113
+    rec.responses = [STOPPED, {"success": True, "modularity": 0.41, "communities": 5}]
 
     out = json.loads(await gephi_mcp.gephi_compute_modularity())
 
@@ -238,7 +245,8 @@ async def test_on_gephi_0113_compute_modularity_repeats_a_stopped_run_and_says_s
 
 
 async def test_a_plugin_that_does_not_report_gephi_version_still_gets_the_rerun(rec):
-    rec.responses = [STOPPED, HEALTH_NO_VERSION, {"success": True, "modularity": 0.41}]
+    rec.health = HEALTH_NO_VERSION
+    rec.responses = [STOPPED, {"success": True, "modularity": 0.41}]
 
     out = json.loads(await gephi_mcp.gephi_compute_modularity())
 
@@ -248,7 +256,8 @@ async def test_a_plugin_that_does_not_report_gephi_version_still_gets_the_rerun(
 async def test_on_gephi_0114_a_stopped_run_is_reported_not_repeated(rec):
     """Gephi 0.11.4 fixes the run that never finished, so a stop means the deadline was too
     short for the graph. Repeating it would only wait out the deadline a second time."""
-    rec.responses = [STOPPED, HEALTH_0114]
+    rec.health = HEALTH_0114
+    rec.responses = [STOPPED]
 
     out = json.loads(await gephi_mcp.gephi_compute_modularity())
 
@@ -261,7 +270,9 @@ async def test_on_gephi_0114_a_stopped_run_is_reported_not_repeated(rec):
 
 
 async def test_on_gephi_0114_a_stopped_run_ends_the_stability_analysis_unread(rec):
-    rec.responses = [plan([STABLE])[0], plan([STABLE])[1], STOPPED, HEALTH_0114]
+    rec.health = HEALTH_0114
+    # What a repeated run would read, so code that repeats it fails on the result, not on the queue.
+    rec.responses = [plan([STABLE])[0], plan([STABLE])[1], STOPPED] + plan([STABLE])
 
     out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
 
