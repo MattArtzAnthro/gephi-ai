@@ -341,4 +341,19 @@ class SourceRulesTest {
         }
         return text.length() - 1;
     }
+
+    /**
+     * Gephi 0.11.4 gives GraphLock a timed read and its live counters, so only the write lock,
+     * which has no timed acquisition in the public API, may still be reached by reflection.
+     */
+    @Test
+    void onlyTheWriteLockIsReachedByReflection() {
+        String svc = sources.get("GephiControlService.java");
+        org.junit.jupiter.api.Assertions.assertFalse(svc.contains("getDeclaredField(\"readLock\")"),
+            "the read lock must use GraphLock.tryReadLock");
+        org.junit.jupiter.api.Assertions.assertFalse(svc.contains("getDeclaredField(\"readWriteLock\")"),
+            "the lock counters must use the GraphLock API");
+        org.junit.jupiter.api.Assertions.assertTrue(svc.contains("getDeclaredField(\"writeLock\")"),
+            "lockWrite still needs its timed write handle");
+    }
 }
