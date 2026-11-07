@@ -5037,13 +5037,35 @@ public class GephiControlService {
             }
             GraphModel gm = currentGraphModel();
             Graph g = gm.getGraph();
-            // setVisibleView() takes Gephi's own blocking write lock; hold our deadlock-safe
-            // lock first so that call re-enters instead of queuing behind the renderer.
+            FilterController fc = Lookup.getDefault().lookup(FilterController.class);
+            org.gephi.filters.api.FilterModel fm = fc == null ? null : fc.getModel();
+            // Turn the filter off through Gephi's filter controller, as the Filters panel's own
+            // Filter button does, so the panel stops showing it as active and a refresh cannot
+            // bring it back. Clearing takes Gephi's blocking write lock; holding the plugin's
+            // deadlock-safe lock first lets those calls re-enter instead of queuing.
             lockWrite(g);
             try {
-                gm.setVisibleView(null);
+                if (fm != null && fm.isFiltering()) {
+                    fc.filterVisible(null);
+                }
+                if (fm != null && fm.isSelecting()) {
+                    fc.selectVisible(null);
+                }
+                if (fm == null) {
+                    gm.setVisibleView(null);
+                }
             } finally {
                 unlockWrite(g);
+            }
+            awaitFilterApplied(fm);
+            if (!gm.getVisibleView().isMainView()) {
+                // A view set some other way than through the Filters panel.
+                lockWrite(g);
+                try {
+                    gm.setVisibleView(null);
+                } finally {
+                    unlockWrite(g);
+                }
             }
             return success("Filters reset - full graph view restored");
         } catch (Exception e) {

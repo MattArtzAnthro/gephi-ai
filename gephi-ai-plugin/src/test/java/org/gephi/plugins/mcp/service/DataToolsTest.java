@@ -230,4 +230,47 @@ class DataToolsTest {
     void noFilterModelMeansNothingToWaitFor() {
         assertTrue(GephiControlService.awaitFilterApplied(null, 100));
     }
+
+    /**
+     * Resetting filters must leave Gephi's Filters panel showing no active filter, as its own
+     * Filter button does when turned off, or the panel keeps claiming a filter the graph no
+     * longer shows and a later refresh can bring it back.
+     */
+    @Test
+    void resettingFiltersAlsoTurnsOffTheFiltersPanel() {
+        service.applyFilter("Degree Range", Map.of("range", List.of(3, 100)), "select", null);
+        org.gephi.filters.api.FilterModel fm =
+            Lookup.getDefault().lookup(org.gephi.filters.api.FilterController.class).getModel();
+        assertTrue(fm.isFiltering(), "precondition: the filter is active in the panel");
+
+        service.resetFilters();
+        GephiControlService.awaitFilterApplied(fm);
+
+        assertEquals(5, gm.getGraphVisible().getNodeCount(), "the full graph is visible");
+        assertFalse(fm.isFiltering(), "the Filters panel still shows a filter as active");
+    }
+
+    @Test
+    void resettingFiltersAlsoTurnsOffASelectionFilter() {
+        org.gephi.filters.api.FilterController fc =
+            Lookup.getDefault().lookup(org.gephi.filters.api.FilterController.class);
+        org.gephi.filters.spi.FilterBuilder degree = null;
+        for (org.gephi.filters.spi.FilterBuilder b
+            : Lookup.getDefault().lookupAll(org.gephi.filters.spi.FilterBuilder.class)) {
+            if ("Degree Range".equals(b.getName())) {
+                degree = b;
+            }
+        }
+        assertTrue(degree != null, "Gephi's Degree Range filter is available");
+        org.gephi.project.api.Workspace ws = Lookup.getDefault().lookup(ProjectController.class).getCurrentWorkspace();
+        org.gephi.filters.api.Query query = fc.createQuery(degree.getFilter(ws));
+        fc.add(query);
+        fc.selectVisible(query);
+        GephiControlService.awaitFilterApplied(fc.getModel());
+        assertTrue(fc.getModel().isSelecting(), "precondition: the selection filter is active");
+
+        service.resetFilters();
+
+        assertFalse(fc.getModel().isSelecting(), "the Filters panel still shows a selection filter");
+    }
 }

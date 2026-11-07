@@ -35,6 +35,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   installers, the README and the skill's version notes name the new minimum.
 
 ### Fixed
+- **Resetting filters also turns them off in Gephi's Filters panel.** `gephi_reset_filters`
+  restored the full graph but left the panel showing the filter (or selection) as active, so the
+  panel and the graph disagreed and a refresh could bring the filter back. It now clears them
+  through Gephi's filter controller, as the panel's own Filter button does.
 - **A statistic the plugin runs itself no longer overflows on a deep graph.** When Gephi's
   Statistics panel is not available, the plugin ran the statistic on its request thread, whose
   small stack a deep recursion (connected components along a long directed path) could exhaust.
