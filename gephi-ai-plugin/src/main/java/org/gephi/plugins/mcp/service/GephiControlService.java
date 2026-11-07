@@ -4614,119 +4614,131 @@ public class GephiControlService {
                     return error("Import failed - unsupported format or empty file");
                 }
 
-                boolean append = "append".equalsIgnoreCase(mode);
-                if (mode != null && !append && !"new_workspace".equalsIgnoreCase(mode)
-                    && !"new".equalsIgnoreCase(mode)) {
-                    return error("Unknown import mode '" + mode + "': use \"new_workspace\" (the default)"
-                        + " or \"append\"");
-                }
-                ProjectController pc = getProjectController();
-                if (pc.getCurrentProject() == null) {
-                    onProjectThread(() -> {
-                        pc.newProject();
-                        return null;
-                    });
-                }
-                Workspace previous = currentWorkspace();
-                boolean previousEmpty = false;
-                if (previous != null) {
-                    Graph pg = getGraphController().getGraphModel(previous).getGraph();
-                    previousEmpty = pg.getNodeCount() == 0 && pg.getEdgeCount() == 0;
-                }
-                if (append && previous == null) {
-                    return error("No workspace to append to");
-                }
-
-                Processor processor = findProcessor(append ? "AppendProcessor" : "DefaultProcessor");
-                if (processor == null) {
-                    processor = Lookup.getDefault().lookup(Processor.class);
-                }
-                if (processor == null) {
-                    return error("No processor found");
-                }
-
-                // Gephi's import containers auto-scale by default: before processing, its
-                // DefaultScaler recenters every node on the centroid, rescales sizes into
-                // 4 to 100, and scales positions by the same ratio (clamped to +/-5000).
-                // That would rewrite the viz:position and viz:size values the file carries,
-                // so an export followed by an import would not round-trip. With auto-scale
-                // off, files without positions still get spread out at random when the
-                // container closes, and their sizes are kept as written.
-                c.getLoader().setAutoScale(false);
-
-                JsonArray issues = new JsonArray();
-                addIssues(issues, c.getReport(), 20);
-                Workspace importedWs;
-                try {
-                    // A null workspace lets the processor create one whose settings match the file.
-                    importedWs = ic.process(c, processor, append ? previous : null);
-                } catch (Exception e) {
-                    JsonObject err = error("Import failed: " + e.getMessage() + (append
-                        ? ". The file's time format or id type differs from this workspace's; import it"
-                        + " without mode \"append\" to open it in its own workspace." : ""));
-                    addIssues(issues, processor.getReport(), 20);
-                    if (issues.size() > 0) {
-                        err.add("import_issues", issues);
-                    }
-                    return err;
-                }
-                addIssues(issues, processor.getReport(), 20);
-                Workspace ws = importedWs != null ? importedWs : previous;
-                // Named after the file, as Gephi names a workspace opened from File > Open.
-                final boolean tidy = !append && previousEmpty && previous != null && previous != ws;
-                if (!append && ws != null && ws != previous) {
-                    onProjectThread(() -> {
-                        pc.renameWorkspace(ws, file.getName());
-                        if (tidy) {
-                            // The import already made its workspace current; switching to it
-                            // again would close and reopen it for nothing.
-                            if (pc.getCurrentWorkspace() != ws) {
-                                pc.openWorkspace(ws);
-                            }
-                            pc.deleteWorkspace(previous);
-                        }
-                        return null;
-                    });
-                }
-
-                // Optional, and off by default. Capping rewrites viz:size values the file
-                // actually carries, so importing and re-exporting would silently change the
-                // user's data. It stays available because oversized nodes from GEXF can hide
-                // the whole graph, but only when the caller asks for it.
-                int capped = 0;
-                if (maxNodeSize != null && maxNodeSize > 0) {
-                    Graph importedGraph = getGraphController().getGraphModel(ws).getGraph();
-                    lockWrite(importedGraph);
-                    try {
-                        for (Node n : importedGraph.getNodes().toArray()) {
-                            if (n.size() > maxNodeSize) {
-                                n.setSize(maxNodeSize.floatValue());
-                                capped++;
-                            }
-                        }
-                    } finally {
-                        unlockWrite(importedGraph);
-                    }
-                }
-
-                Workspace effectiveWs = importedWs != null ? importedWs : ws;
-                final Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
-                JsonObject r = success("Imported from " + file.getName());
-                r.addProperty("import_mode", append ? "append" : "new_workspace");
-                if (issues.size() > 0) {
-                    r.add("import_issues", issues);
-                }
-                if (capped > 0) {
-                    r.addProperty("nodes_size_capped", capped);
-                    r.addProperty("max_node_size", maxNodeSize);
-                }
-                r.addProperty("node_count", g.getNodeCount());
-                r.addProperty("edge_count", g.getEdgeCount());
-                return r;
+                return loadContainer(c, file.getName(), "Imported from " + file.getName(), maxNodeSize, mode);
             } catch (Exception e) {
                 return failure("Import failed: ", e);
             }
         }
+    }
+
+    /**
+     * Loads a filled import container the way {@link #importFile} loads a file: into a new
+     * workspace named {@code name} by default (an empty workspace that was open is removed), or
+     * appended to the current one with {@code mode} "append". Reports Gephi's import issues and
+     * the resulting counts. Used for files and for generated graphs.
+     */
+    private JsonObject loadContainer(Container c, String name, String message, Float maxNodeSize, String mode)
+        throws Exception {
+        ImportController ic = Lookup.getDefault().lookup(ImportController.class);
+        boolean append = "append".equalsIgnoreCase(mode);
+        if (mode != null && !append && !"new_workspace".equalsIgnoreCase(mode)
+            && !"new".equalsIgnoreCase(mode)) {
+            return error("Unknown import mode '" + mode + "': use \"new_workspace\" (the default)"
+                + " or \"append\"");
+        }
+        ProjectController pc = getProjectController();
+        if (pc.getCurrentProject() == null) {
+            onProjectThread(() -> {
+                pc.newProject();
+                return null;
+            });
+        }
+        Workspace previous = currentWorkspace();
+        boolean previousEmpty = false;
+        if (previous != null) {
+            Graph pg = getGraphController().getGraphModel(previous).getGraph();
+            previousEmpty = pg.getNodeCount() == 0 && pg.getEdgeCount() == 0;
+        }
+        if (append && previous == null) {
+            return error("No workspace to append to");
+        }
+
+        Processor processor = findProcessor(append ? "AppendProcessor" : "DefaultProcessor");
+        if (processor == null) {
+            processor = Lookup.getDefault().lookup(Processor.class);
+        }
+        if (processor == null) {
+            return error("No processor found");
+        }
+
+        // Gephi's import containers auto-scale by default: before processing, its
+        // DefaultScaler recenters every node on the centroid, rescales sizes into
+        // 4 to 100, and scales positions by the same ratio (clamped to +/-5000).
+        // That would rewrite the viz:position and viz:size values the file carries,
+        // so an export followed by an import would not round-trip. With auto-scale
+        // off, files without positions still get spread out at random when the
+        // container closes, and their sizes are kept as written.
+        c.getLoader().setAutoScale(false);
+
+        JsonArray issues = new JsonArray();
+        addIssues(issues, c.getReport(), 20);
+        Workspace importedWs;
+        try {
+            // A null workspace lets the processor create one whose settings match the file.
+            importedWs = ic.process(c, processor, append ? previous : null);
+        } catch (Exception e) {
+            JsonObject err = error("Import failed: " + e.getMessage() + (append
+                ? ". The file's time format or id type differs from this workspace's; import it"
+                + " without mode \"append\" to open it in its own workspace." : ""));
+            addIssues(issues, processor.getReport(), 20);
+            if (issues.size() > 0) {
+                err.add("import_issues", issues);
+            }
+            return err;
+        }
+        addIssues(issues, processor.getReport(), 20);
+        Workspace ws = importedWs != null ? importedWs : previous;
+        // Named after the file, as Gephi names a workspace opened from File > Open.
+        final boolean tidy = !append && previousEmpty && previous != null && previous != ws;
+        if (!append && ws != null && ws != previous) {
+            onProjectThread(() -> {
+                pc.renameWorkspace(ws, name);
+                if (tidy) {
+                    // The import already made its workspace current; switching to it
+                    // again would close and reopen it for nothing.
+                    if (pc.getCurrentWorkspace() != ws) {
+                        pc.openWorkspace(ws);
+                    }
+                    pc.deleteWorkspace(previous);
+                }
+                return null;
+            });
+        }
+
+        // Optional, and off by default. Capping rewrites viz:size values the file
+        // actually carries, so importing and re-exporting would silently change the
+        // user's data. It stays available because oversized nodes from GEXF can hide
+        // the whole graph, but only when the caller asks for it.
+        int capped = 0;
+        if (maxNodeSize != null && maxNodeSize > 0) {
+            Graph importedGraph = getGraphController().getGraphModel(ws).getGraph();
+            lockWrite(importedGraph);
+            try {
+                for (Node n : importedGraph.getNodes().toArray()) {
+                    if (n.size() > maxNodeSize) {
+                        n.setSize(maxNodeSize.floatValue());
+                        capped++;
+                    }
+                }
+            } finally {
+                unlockWrite(importedGraph);
+            }
+        }
+
+        Workspace effectiveWs = importedWs != null ? importedWs : ws;
+        final Graph g = getGraphController().getGraphModel(effectiveWs).getGraph();
+        JsonObject r = success(message);
+        r.addProperty("import_mode", append ? "append" : "new_workspace");
+        if (issues.size() > 0) {
+            r.add("import_issues", issues);
+        }
+        if (capped > 0) {
+            r.addProperty("nodes_size_capped", capped);
+            r.addProperty("max_node_size", maxNodeSize);
+        }
+        r.addProperty("node_count", g.getNodeCount());
+        r.addProperty("edge_count", g.getEdgeCount());
+        return r;
     }
 
     /** Collect up to {@code limit} import issues (level and message) from a report. */
