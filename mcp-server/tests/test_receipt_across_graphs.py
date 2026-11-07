@@ -10,7 +10,7 @@ import pytest
 from test_ledger_survives_snapshot import install_fake_gephi
 
 import gephi_mcp
-from session_ledger import EARLIER_KEPT, Ledger
+from session_ledger import Ledger
 
 
 @pytest.fixture(autouse=True)
@@ -96,6 +96,10 @@ async def test_an_empty_record_leaves_no_earlier_section(monkeypatch):
 
 
 def test_only_the_most_recent_earlier_sections_are_kept():
+    # Imported here so the file still loads on code without the limit, where the other tests
+    # must fail by assertion.
+    from session_ledger import EARLIER_KEPT
+
     ledger = Ledger()
     for i in range(EARLIER_KEPT + 5):
         ledger.record("run_layout", algorithm=f"run {i}")
