@@ -173,7 +173,9 @@ read_release() {
     SERVER_VER=$(printf '%s\n' "$marker" | sed -n 's/.*"server": *"\([^"]*\)".*/\1/p' | head -1)
     NBM_VER=$(printf '%s\n' "$marker" | sed -n 's/.*"nbm": *"\([^"]*\)".*/\1/p' | head -1)
     NEEDS_GEPHI=$(printf '%s\n' "$marker" | sed -n 's/.*"nbm_needs_gephi": *"\([^"]*\)".*/\1/p' | head -1)
-    [ -n "$SERVER_VER" ] && [ -n "$NBM_VER" ] || die "Could not read the release from GitHub. Try again in a few minutes."
+    if [ -z "$SERVER_VER" ] || [ -z "$NBM_VER" ]; then
+      die "Could not read the release from GitHub. Try again in a few minutes."
+    fi
     NBM_URL="https://github.com/$REPO/releases/download/v$SERVER_VER/gephi-ai-$NBM_VER.nbm"
     NEEDS_GEPHI=${NEEDS_GEPHI:-0.11.3}
     warn "GitHub's API was unavailable (often its hourly limit on a shared network); using the release's version file"
