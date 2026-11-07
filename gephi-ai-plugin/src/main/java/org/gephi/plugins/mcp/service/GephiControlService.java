@@ -5885,9 +5885,8 @@ public class GephiControlService {
                 }
                 break;
             case "new_workspace":
-                // Materializes the filtered subgraph into a fresh workspace — the
-                // memory-safe way to filter repeatedly (hidden GraphView elements
-                // otherwise stay resident).
+                // Materializes the filtered subgraph into a fresh workspace, so later
+                // work runs on the subgraph alone and the original stays as it was.
                 lockWrite(lockGraph);
                 try {
                     fc.exportToNewWorkspace(query);

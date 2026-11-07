@@ -34,11 +34,12 @@ Gephi filter with `gephi_list_filters` (discover) and `gephi_apply_filter`
   again). Use it for exploratory "show me" filtering and for reading counts
   (the reply reports nodes and edges before and after).
 - **`new_workspace`** copies the filtered subgraph into a fresh workspace.
-  **Prefer this whenever you will filter repeatedly on a large graph.** A
-  visible-only filter leaves the hidden elements in memory, so a chain of
-  filters can grow memory without limit; exporting to a new workspace and
-  continuing there keeps only what survived. Say that you are doing this and
-  why.
+  **Prefer this when the subgraph becomes what you study** (several statistics,
+  layouts or exports on it, especially on a large graph): later steps then work
+  on the smaller graph, and the original workspace stays as it was. Say that you
+  are doing this and why. Repeated `select` filters do not pile up in memory on
+  Gephi 0.11.4, since each replaces the last one's view; on older Gephi they
+  could, so there prefer this when filtering many times in a row.
 - **`column`** writes filter membership into a true/false column (name it with
   `column`) instead of hiding anything. Use it to *mark* matches for colouring
   or sizing afterwards while the whole graph stays visible.
