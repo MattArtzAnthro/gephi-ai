@@ -72,11 +72,14 @@ CLEANUP_TIMEOUT = REQUEST_TIMEOUT
 # seconds, so a copy that appears late is removed instead of left behind.
 DUPLICATE_GRACE = float(os.environ.get("GEPHI_DUPLICATE_GRACE", "30"))
 DUPLICATE_POLL_INTERVAL = 1.0
-# Gephi's modularity occasionally never converges (gephi#1630) and spins until Gephi restarts.
-# Each run is sent with this deadline, after which the plugin stops it, and a stopped run is
-# repeated up to MODULARITY_ATTEMPTS times in all. Plugins before 1.3.2 ignore the deadline.
+# Each modularity run is sent with this deadline, after which the plugin stops it, so a run that
+# outlasts it cannot hold the graph lock indefinitely. Plugins before 1.3.2 ignore the deadline.
 MODULARITY_DEADLINE = float(os.environ.get("GEPHI_MODULARITY_DEADLINE", "45"))
+# Before Gephi 0.11.4, modularity occasionally never converged (gephi#1630), so on those versions
+# a stopped run is repeated, up to MODULARITY_ATTEMPTS runs in all. From 0.11.4 a stop means the
+# deadline was too short for the graph, and repeating it would only wait it out again.
 MODULARITY_ATTEMPTS = 2
+MODULARITY_FIXED_IN = "0.11.4"
 # Repeated runs on one graph (gephi_community_stability) tighten the deadline to 20 times the
 # slowest run that finished, but never below this.
 MODULARITY_MIN_DEADLINE = 5.0
@@ -1840,33 +1843,51 @@ async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
 
 # ─── Statistics ──────────────────────────────────────────────
 
+async def _modularity_can_loop() -> bool:
+    """Whether the connected Gephi predates the gephi#1630 fix. A plugin before 1.5.0 does not
+    report Gephi's version; it also runs only on Gephi before 0.11.4, so that counts as yes."""
+    health = await gephi.request("GET", "/health")
+    version = health.get("gephi_version") if isinstance(health, dict) else None
+    return not version or _is_behind(version, MODULARITY_FIXED_IN)
+
+
 async def _run_modularity(resolution: float | None = None,
                           deadline: float = MODULARITY_DEADLINE) -> dict[str, Any]:
-    """Run Gephi's modularity with a deadline, repeating a run Gephi had to stop.
+    """Run Gephi's modularity with a deadline.
 
     A stopped run writes nothing, so the partition column still holds the previous run; a caller
-    must never read it back. The result carries `reruns_after_nonconvergence` when a run was
-    repeated, and a failure that says how many attempts were made when none finished.
+    must never read it back. On Gephi before 0.11.4 a stopped run is repeated, and the result
+    carries `reruns_after_nonconvergence`; from 0.11.4 the stop is reported.
     """
     body: dict[str, Any] = {"timeout_ms": int(deadline * 1000)}
     if resolution is not None:
         body["resolution"] = resolution
-    stopped = 0
-    mod: Any = None
-    for _ in range(MODULARITY_ATTEMPTS):
+    mod = await gephi.request("POST", "/statistics/modularity", json_data=body,
+                              timeout=deadline + REQUEST_TIMEOUT)
+    if not (isinstance(mod, dict) and mod.get("stopped")):
+        return mod
+    if not await _modularity_can_loop():
+        mod = dict(mod)
+        mod["error"] = (f"Gephi's modularity did not finish within {deadline:.0f} s and was "
+                        "stopped; its column was not updated. Very large graphs can need a "
+                        "longer deadline (GEPHI_MODULARITY_DEADLINE, in seconds).")
+        return mod
+    stopped = 1
+    for _ in range(MODULARITY_ATTEMPTS - 1):
         mod = await gephi.request("POST", "/statistics/modularity", json_data=body,
                                   timeout=deadline + REQUEST_TIMEOUT)
         if not (isinstance(mod, dict) and mod.get("stopped")):
-            if stopped and isinstance(mod, dict) and mod.get("success"):
+            if isinstance(mod, dict) and mod.get("success"):
                 mod["reruns_after_nonconvergence"] = stopped
             return mod
         stopped += 1
     mod = dict(mod)
     mod["error"] = (f"Gephi's modularity did not finish in {MODULARITY_ATTEMPTS} attempts of "
-                    f"{deadline:.0f} s each and was stopped each time. On most graphs "
-                    "this is Gephi failing to converge (gephi#1630); try again, or a slightly "
-                    "different resolution. Very large graphs can need a longer deadline "
-                    "(GEPHI_MODULARITY_DEADLINE).")
+                    f"{deadline:.0f} s each and was stopped each time. On Gephi before "
+                    f"{MODULARITY_FIXED_IN} this is usually Gephi failing to converge (gephi#1630), "
+                    f"which Gephi {MODULARITY_FIXED_IN} fixes: suggest updating Gephi. Otherwise try "
+                    "again, or a slightly different resolution; very large graphs can need a "
+                    "longer deadline (GEPHI_MODULARITY_DEADLINE).")
     return mod
 
 

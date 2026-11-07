@@ -2839,8 +2839,8 @@ public class GephiControlService {
     /**
      * Run {@code work}, cancelling {@code task} if it is still running after {@code timeoutMs}.
      * Returns true when the deadline stopped it. A timeout of 0 or less runs without a deadline.
-     * Gephi's modularity can loop forever (gephi#1630); its loop checks the cancel flag, so this
-     * ends the run and releases the graph lock it holds.
+     * A statistic that outlasts its deadline is cancelled (statistic loops check the cancel flag),
+     * so it releases the graph lock it holds instead of keeping every write waiting.
      */
     static boolean runWithDeadline(Runnable work, org.gephi.utils.longtask.spi.LongTask task,
         long timeoutMs) {
@@ -3151,10 +3151,7 @@ public class GephiControlService {
             if (stopped) {
                 // A cancelled run writes nothing, so the column still holds the previous run.
                 JsonObject r = error(matchedBuilder.getName() + " did not finish within "
-                    + (timeoutMs / 1000) + " s and was stopped; its column was not updated."
-                    + ("Modularity".equals(builderName)
-                    ? " Gephi's modularity occasionally never converges (gephi#1630);"
-                    + " running it again usually finishes normally." : ""));
+                    + (timeoutMs / 1000) + " s and was stopped; its column was not updated.");
                 r.addProperty("stopped", true);
                 return r;
             }

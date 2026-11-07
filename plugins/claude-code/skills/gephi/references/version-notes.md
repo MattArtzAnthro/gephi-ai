@@ -37,8 +37,9 @@ item applies.
 - **Before 1.3.0:** a background colour set once for PNG export applied to every later export
   in every workspace. From 1.3.0, `gephi_export_png` reads `background.color` from the
   workspace's preview settings at export time.
-- **1.3.2 and later:** a modularity run that never converges (gephi#1630) is stopped after 45
-  seconds and repeated once; `reruns_after_nonconvergence` says so.
+- **1.3.2 and later:** a modularity run is stopped after 45 seconds. On Gephi before 0.11.4, where
+  a run can never converge (gephi#1630), it is repeated once and `reruns_after_nonconvergence`
+  says so; from Gephi 0.11.4 a stopped run is reported instead.
 - **1.3.3 and later:** a layout setting whose name matches no property is listed in
   `unapplied_params` with a warning, instead of being dropped silently.
 - **1.4.0 and later:** statistics run through Gephi's Statistics panel (with its report and a

@@ -29,6 +29,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   installers, the README and the skill's version notes name the new minimum.
 
 ### Fixed
+- **On Gephi 0.11.4 a stopped modularity run is reported, not repeated.** The repeat existed
+  for Gephi's modularity runs that never finished (gephi#1630), which 0.11.4 fixes, so there a
+  stop means the 45-second deadline was too short for the graph and the error says how to
+  lengthen it (`GEPHI_MODULARITY_DEADLINE`). On older Gephi a stopped run is still repeated
+  once, and when it stops again the error says that Gephi 0.11.4 fixes it.
 - **"Graph is busy" says what holds the graph.** The message now ends with the lock's state
   (read holds, whether the write lock is held, threads waiting), so a leaked read hold, which
   needs Gephi restarted, can be told from a long statistic, which only needs waiting for. A
