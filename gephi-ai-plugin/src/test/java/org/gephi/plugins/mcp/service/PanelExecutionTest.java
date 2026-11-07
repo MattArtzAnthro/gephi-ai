@@ -189,6 +189,154 @@ class PanelExecutionTest {
         }
     }
 
+    /** Returns without running anything, as Gephi's panel does before its model is bound. */
+    static class DecliningStatsUI extends FakeStatsUI {
+        @Override public void execute(Statistics s, LongTaskListener listener) {
+        }
+    }
+
+    /** Runs the statistic and reports back before execute() returns. */
+    static class ImmediateStatsUI extends FakeStatsUI {
+        @Override public void execute(Statistics s, LongTaskListener listener) {
+            s.execute(null);
+            listener.taskFinished(s instanceof LongTask ? (LongTask) s : null);
+        }
+    }
+
+    /** Counts its runs. */
+    static class CountingStat extends SlowStat {
+        final java.util.concurrent.atomic.AtomicInteger runs = new java.util.concurrent.atomic.AtomicInteger();
+
+        CountingStat() {
+            super(0);
+        }
+
+        @Override public void execute(GraphModel gm) {
+            runs.incrementAndGet();
+            super.execute(gm);
+        }
+    }
+
+    /**
+     * The panel can decline a run without reporting back (its model not yet bound to the
+     * workspace, after a workspace change). Waiting for its callback then held the request for
+     * the full one-hour cap and blocked every later run of that statistic.
+     */
+    @Test
+    void statisticThePanelDidNotTakeRunsDirectly() {
+        CountingStat stat = new CountingStat();
+
+        boolean stopped = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+            java.time.Duration.ofSeconds(5),
+            () -> GephiControlService.executeStatistic(stat, null, 0, new DecliningStatsUI(), DIRECT, s -> false));
+
+        assertFalse(stopped);
+        assertEquals(1, stat.runs.get(), "the statistic must run once, directly");
+    }
+
+    /** A run that finished before the check is not run a second time. */
+    @Test
+    void statisticThatFinishedBeforeTheCheckIsNotRunAgain() throws Exception {
+        CountingStat stat = new CountingStat();
+
+        GephiControlService.executeStatistic(stat, null, 0, new ImmediateStatsUI(), DIRECT, s -> false);
+
+        assertEquals(1, stat.runs.get());
+    }
+
+    /**
+     * Marks the statistic running, runs it and clears the mark, but the callback never arrives:
+     * the panel's own completion code can fail on Gephi's worker thread, and Gephi then reports
+     * the failure to its error handler instead of to this listener.
+     */
+    static class LostCallbackStatsUI extends FakeStatsUI {
+        final AtomicBoolean marked = new AtomicBoolean();
+
+        @Override public void execute(Statistics s, LongTaskListener listener) {
+            marked.set(true);
+            new Thread(() -> {
+                s.execute(null);
+                marked.set(false);
+            }).start();
+        }
+    }
+
+    @Test
+    void runThatEndsWithoutReportingBackIsNotWaitedOnForAnHour() {
+        CountingStat stat = new CountingStat();
+        LostCallbackStatsUI ui = new LostCallbackStatsUI();
+
+        boolean stopped = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+            java.time.Duration.ofSeconds(10),
+            () -> GephiControlService.executeStatistic(stat, null, 0, ui, DIRECT, s -> ui.marked.get()));
+
+        assertFalse(stopped);
+        assertEquals(1, stat.runs.get(), "it ran once and must not be run again");
+    }
+
+    /** Stands in for a workspace's Statistics model, reporting one statistic as running. */
+    static class FakeModelUI implements StatisticsModelUI {
+        Statistics running;
+
+        @Override public String getResult(StatisticsUI ui) {
+            return null;
+        }
+
+        @Override public boolean isStatisticsUIVisible(StatisticsUI ui) {
+            return true;
+        }
+
+        @Override public boolean isRunning(StatisticsUI ui) {
+            return running != null && ui.getStatisticsClass().equals(running.getClass());
+        }
+
+        @Override public Statistics getRunning(StatisticsUI ui) {
+            return isRunning(ui) ? running : null;
+        }
+
+        @Override public String getReport(Class<? extends Statistics> c) {
+            return null;
+        }
+
+        @Override public void addChangeListener(ChangeListener l) {
+        }
+
+        @Override public void removeChangeListener(ChangeListener l) {
+        }
+    }
+
+    @Test
+    void panelTookTheStatisticOnlyWhenItsModelRunsThatInstance() {
+        CountingStat stat = new CountingStat();
+        StatisticsUI ui = statisticsUiFor(CountingStat.class);
+        FakeModelUI model = new FakeModelUI();
+
+        assertFalse(GephiControlService.panelIsRunning(model, stat, List.of(ui)), "nothing running");
+        model.running = new CountingStat();
+        assertFalse(GephiControlService.panelIsRunning(model, stat, List.of(ui)), "another instance");
+        model.running = stat;
+        assertTrue(GephiControlService.panelIsRunning(model, stat, List.of(ui)));
+        assertFalse(GephiControlService.panelIsRunning(null, stat, List.of(ui)), "no model");
+        assertTrue(GephiControlService.panelIsRunning(new FakeModelUI(), stat, List.of()),
+            "with no panel entry for the statistic there is nothing to check, so the panel is trusted");
+    }
+
+    private static StatisticsUI statisticsUiFor(Class<? extends Statistics> c) {
+        return (StatisticsUI) java.lang.reflect.Proxy.newProxyInstance(StatisticsUI.class.getClassLoader(),
+            new Class<?>[] {StatisticsUI.class}, (proxy, method, args) -> {
+                switch (method.getName()) {
+                    case "getStatisticsClass":
+                        return c;
+                    case "equals":
+                        return proxy == args[0];
+                    case "hashCode":
+                        return System.identityHashCode(proxy);
+                    default:
+                        return null;
+                }
+            });
+    }
+
     @Test
     void stopWithNothingRunningSaysSo() {
         com.google.gson.JsonObject r = GephiControlService.getInstance().stopStatistics();

@@ -2898,6 +2898,38 @@ public class GephiControlService {
 
     /** A statistic with no deadline is waited for this long before it is reported as still running. */
     static final long STATISTIC_WAIT_CAP_MS = 60L * 60 * 1000;
+
+    /**
+     * Waits for the panel's callback, for at most {@code waitMs}. Returns false only when that
+     * time ran out. The panel clears a statistic's running mark just before it calls back; a mark
+     * that is gone with no callback after {@link #PANEL_FINISH_GRACE_MS} means the run ended
+     * without reporting (Gephi sends a failure in the panel's own completion code to its error
+     * handler, not to this listener), so the wait ends there instead of at the one-hour cap.
+     */
+    static boolean awaitPanelRun(java.util.concurrent.CountDownLatch done, long waitMs, Statistics stat,
+        java.util.function.Predicate<Statistics> panelTookIt) throws InterruptedException {
+        final long deadline = System.nanoTime() + waitMs * 1_000_000L;
+        while (true) {
+            long leftMs = (deadline - System.nanoTime()) / 1_000_000L;
+            if (leftMs <= 0) {
+                return false;
+            }
+            if (done.await(Math.min(leftMs, 1000), java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                return true;
+            }
+            if (!panelTookIt.test(stat)
+                && !done.await(PANEL_FINISH_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                LOGGER.warning("Gephi's Statistics panel finished " + stat.getClass().getSimpleName()
+                    + " without reporting back; using the result it left");
+                return true;
+            }
+        }
+    }
+
+    /** How long a run whose running mark has gone may still report back. */
+    static final long PANEL_FINISH_GRACE_MS = 2000;
+    /** How long a run the panel shows no sign of having taken may still report back. */
+    static final long PANEL_CALLBACK_GRACE_MS = 250;
     /** After a deadline cancels a statistic, how long to wait for it to actually stop. */
     static final long STATISTIC_STOP_GRACE_MS = 30_000;
 
@@ -2967,6 +2999,52 @@ public class GephiControlService {
     }
 
     /**
+     * Whether the workspace's Statistics model shows this very statistic as running. Gephi's panel
+     * marks a statistic running before it hands it to the controller, and returns without running
+     * it, or ever reporting back, while its model is not yet bound to the current workspace (the
+     * Statistics window binds it later, on the interface thread, after a workspace change). With
+     * no panel entry for the statistic there is nothing to check, so the panel is trusted.
+     */
+    static boolean panelIsRunning(org.gephi.desktop.statistics.api.StatisticsModelUI model, Statistics stat,
+        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis) {
+        if (model == null) {
+            return false;
+        }
+        boolean checked = false;
+        for (org.gephi.statistics.spi.StatisticsUI ui : uis) {
+            if (ui.getStatisticsClass() != null && ui.getStatisticsClass().equals(stat.getClass())) {
+                checked = true;
+                if (model.getRunning(ui) == stat) {
+                    return true;
+                }
+            }
+        }
+        return !checked;
+    }
+
+    /**
+     * Whether any workspace's Statistics model shows this statistic as running. The panel marks
+     * it in the model it is bound to, which after a workspace change can still be the previous
+     * workspace's; that run is real, so it must not be started a second time.
+     */
+    private static boolean panelTookStatistic(Statistics stat) {
+        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis =
+            Lookup.getDefault().lookupAll(StatisticsUI.class);
+        ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
+        Project project = pc == null ? null : pc.getCurrentProject();
+        if (project == null) {
+            return panelIsRunning(null, stat, uis);
+        }
+        for (Workspace w : project.getWorkspaces()) {
+            if (panelIsRunning(w.getLookup().lookup(org.gephi.desktop.statistics.api.StatisticsModelUI.class), stat,
+                uis)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Run a statistic through Gephi's Statistics panel when the desktop interface is present, so
      * the panel shows it running, its result and its report, as if the user had clicked Run.
      * Without the panel (headless, tests) the statistic runs directly. Returns true when the
@@ -2975,6 +3053,13 @@ public class GephiControlService {
     static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
         org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
         java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
+        return executeStatistic(stat, gm, timeoutMs, panel, onEdt, s -> true);
+    }
+
+    static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
+        org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
+        java.util.function.Consumer<Runnable> onEdt,
+        java.util.function.Predicate<Statistics> panelTookIt) throws InterruptedException {
         if (panel == null) {
             if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
                 return runWithDeadline(() -> stat.execute(gm),
@@ -3001,9 +3086,17 @@ public class GephiControlService {
                 }
             };
         onEdt.accept(() -> panel.execute(stat, listener));
+        // A run the panel declined never reports back. A run that finished at once has reported
+        // already, or does within a moment (Gephi clears the running mark just before it calls back).
+        if (done.getCount() > 0 && !panelTookIt.test(stat)
+            && !done.await(PANEL_CALLBACK_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            LOGGER.info("Gephi's Statistics panel did not take " + stat.getClass().getSimpleName()
+                + "; running it directly");
+            return executeStatistic(stat, gm, timeoutMs, null, onEdt);
+        }
         boolean stopped = false;
         long wait = timeoutMs > 0 ? timeoutMs : STATISTIC_WAIT_CAP_MS;
-        if (!done.await(wait, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+        if (!awaitPanelRun(done, wait, stat, panelTookIt)) {
             if (timeoutMs <= 0 || !(stat instanceof org.gephi.utils.longtask.spi.LongTask)) {
                 throw new IllegalStateException("The statistic is still running in Gephi after "
                     + (wait / 60000) + " minutes; stop it from Gephi's Statistics panel.");
@@ -3137,7 +3230,8 @@ public class GephiControlService {
                 stopped = executeStatistic(stat, gm, timeoutMs,
                     statisticsPanelFor(ws,
                         Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class)),
-                    this::onEdt);
+                    this::onEdt,
+                    s -> panelTookStatistic(s));
             } finally {
                 RUNNING_STATISTICS.remove(stat);
                 stoppedOnRequest = STOP_REQUESTED.remove(stat);
