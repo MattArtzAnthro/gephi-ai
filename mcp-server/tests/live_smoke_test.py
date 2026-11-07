@@ -581,6 +581,10 @@ async def main():
     check(colored.get("success") is True and ids == ["Tomás", "Zoë Wójcik"],
           "[unicode] accented ids survive a request with and without a declared charset",
           (colored.get("error"), ids))
+    gen = json.loads(await g.gephi_generate_graph("preferential_attachment", 300, edges_per_node=2, seed=11))
+    check(gen.get("success") is True and gen.get("node_count") == 300
+          and gen.get("edge_count") == 2 + (300 - 2 - 1) * 2 and gen.get("seed") == 11,
+          "[generate] a preferential-attachment graph has the model's node and edge counts", gen)
     await g.gephi_switch_workspace(0)
     first = json.loads(await g.gephi_query_nodes(limit=1)).get("nodes", [{}])[0].get("id")
     what = json.loads(await g.gephi_whatif([{"op": "remove_node", "id": first}], include_slow=True))
