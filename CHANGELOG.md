@@ -32,9 +32,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **A statistic Gephi's Statistics panel never reports on no longer holds the request for an
   hour.** On Gephi 0.11.4 with the Statistics window in use, a run occasionally ended without
   the panel calling back; the request waited the full hour and every later run of that
-  statistic was refused as "already running". The plugin now watches the panel's running mark:
-  a run the panel did not take is run directly, and a run whose mark has gone without a
-  callback is treated as finished within seconds.
+  statistic was refused as "already running". The plugin now follows the panel's own running
+  mark through its change events: a run the panel never took is run directly, and a run that
+  ended without a callback is reported within seconds as unconfirmed ("run it again"), never as
+  a success and never run a second time.
 - **Filters on the visible graph answer as soon as Gephi has applied them.** The plugin used
   to guess, waiting until the visible count stopped changing, so a filter that removed nothing
   waited out the whole 1.5-second budget, and a slow one could report counts that were still

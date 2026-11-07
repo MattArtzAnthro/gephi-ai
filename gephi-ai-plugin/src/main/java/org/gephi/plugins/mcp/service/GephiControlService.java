@@ -2899,37 +2899,36 @@ public class GephiControlService {
     /** A statistic with no deadline is waited for this long before it is reported as still running. */
     static final long STATISTIC_WAIT_CAP_MS = 60L * 60 * 1000;
 
+    /** How a wait for the panel's callback ended. */
+    enum PanelWait { FINISHED, TIMED_OUT, LOST }
+
     /**
-     * Waits for the panel's callback, for at most {@code waitMs}. Returns false only when that
-     * time ran out. The panel clears a statistic's running mark just before it calls back; a mark
-     * that is gone with no callback after {@link #PANEL_FINISH_GRACE_MS} means the run ended
-     * without reporting (Gephi sends a failure in the panel's own completion code to its error
-     * handler, not to this listener), so the wait ends there instead of at the one-hour cap.
+     * Waits for the panel's callback, for at most {@code waitMs}. The panel clears a statistic's
+     * running mark just before it calls back; a mark that is gone with no callback after
+     * {@link #PANEL_FINISH_GRACE_MS} means the run ended without reporting (Gephi sends a failure
+     * in the panel's own completion code to its error handler, not to this listener), so the wait
+     * ends there instead of at the one-hour cap.
      */
-    static boolean awaitPanelRun(java.util.concurrent.CountDownLatch done, long waitMs, Statistics stat,
-        java.util.function.Predicate<Statistics> panelTookIt) throws InterruptedException {
+    static PanelWait awaitPanelRun(java.util.concurrent.CountDownLatch done, long waitMs, PanelRunMark mark)
+        throws InterruptedException {
         final long deadline = System.nanoTime() + waitMs * 1_000_000L;
         while (true) {
             long leftMs = (deadline - System.nanoTime()) / 1_000_000L;
             if (leftMs <= 0) {
-                return false;
+                return PanelWait.TIMED_OUT;
             }
             if (done.await(Math.min(leftMs, 1000), java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                return true;
+                return PanelWait.FINISHED;
             }
-            if (!panelTookIt.test(stat)
+            if (!mark.isMarked()
                 && !done.await(PANEL_FINISH_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                LOGGER.warning("Gephi's Statistics panel finished " + stat.getClass().getSimpleName()
-                    + " without reporting back; using the result it left");
-                return true;
+                return PanelWait.LOST;
             }
         }
     }
 
     /** How long a run whose running mark has gone may still report back. */
     static final long PANEL_FINISH_GRACE_MS = 2000;
-    /** How long a run the panel shows no sign of having taken may still report back. */
-    static final long PANEL_CALLBACK_GRACE_MS = 250;
     /** After a deadline cancels a statistic, how long to wait for it to actually stop. */
     static final long STATISTIC_STOP_GRACE_MS = 30_000;
 
@@ -2999,11 +2998,44 @@ public class GephiControlService {
     }
 
     /**
-     * Whether the workspace's Statistics model shows this very statistic as running. Gephi's panel
-     * marks a statistic running before it hands it to the controller, and returns without running
-     * it, or ever reporting back, while its model is not yet bound to the current workspace (the
-     * Statistics window binds it later, on the interface thread, after a workspace change). With
-     * no panel entry for the statistic there is nothing to check, so the panel is trusted.
+     * What the plugin can see of Gephi's running mark for one statistic. Gephi's Statistics panel
+     * marks a statistic running inside {@code execute()}, before it hands it to the controller, and
+     * clears the mark when the run ends, before it calls back.
+     */
+    interface PanelRunMark extends AutoCloseable {
+
+        /** For callers that cannot observe the panel: always marked, so the panel is trusted. */
+        PanelRunMark TRUSTED = new PanelRunMark() {
+            @Override
+            public boolean isMarked() {
+                return true;
+            }
+
+            @Override
+            public boolean wasEverMarked() {
+                return true;
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+
+        /** Whether the statistic is marked running now. */
+        boolean isMarked();
+
+        /** Whether it has been marked at any point since watching began. */
+        boolean wasEverMarked();
+
+        @Override
+        void close();
+    }
+
+    /**
+     * Whether this Statistics model shows this statistic as running. Its public interface shows
+     * one running instance per statistic class; another instance of the same class (a run the
+     * person started from the panel) is ambiguous, and the panel is trusted rather than risk a
+     * second run. So is a model with no panel entry for the statistic.
      */
     static boolean panelIsRunning(org.gephi.desktop.statistics.api.StatisticsModelUI model, Statistics stat,
         java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis) {
@@ -3014,7 +3046,7 @@ public class GephiControlService {
         for (org.gephi.statistics.spi.StatisticsUI ui : uis) {
             if (ui.getStatisticsClass() != null && ui.getStatisticsClass().equals(stat.getClass())) {
                 checked = true;
-                if (model.getRunning(ui) == stat) {
+                if (model.getRunning(ui) != null) {
                     return true;
                 }
             }
@@ -3023,25 +3055,63 @@ public class GephiControlService {
     }
 
     /**
-     * Whether any workspace's Statistics model shows this statistic as running. The panel marks
-     * it in the model it is bound to, which after a workspace change can still be the previous
-     * workspace's; that run is real, so it must not be started a second time.
+     * Watches every workspace's Statistics model for this statistic's running mark. The panel
+     * marks the model it is bound to, which after a workspace change can be another workspace's,
+     * so all of them are watched; their change events catch a mark set and cleared between checks.
      */
-    private static boolean panelTookStatistic(Statistics stat) {
-        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis =
-            Lookup.getDefault().lookupAll(StatisticsUI.class);
+    static PanelRunMark watchPanel(Statistics stat,
+        java.util.Collection<org.gephi.desktop.statistics.api.StatisticsModelUI> models,
+        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis) {
+        final java.util.concurrent.atomic.AtomicBoolean ever = new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.function.BooleanSupplier marked = () -> {
+            for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
+                if (panelIsRunning(m, stat, uis)) {
+                    ever.set(true);
+                    return true;
+                }
+            }
+            return false;
+        };
+        final javax.swing.event.ChangeListener onChange = e -> marked.getAsBoolean();
+        for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
+            m.addChangeListener(onChange);
+        }
+        return new PanelRunMark() {
+            @Override
+            public boolean isMarked() {
+                return marked.getAsBoolean();
+            }
+
+            @Override
+            public boolean wasEverMarked() {
+                marked.getAsBoolean();
+                return ever.get();
+            }
+
+            @Override
+            public void close() {
+                for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
+                    m.removeChangeListener(onChange);
+                }
+            }
+        };
+    }
+
+    /** {@link #watchPanel} over the current project's workspaces. */
+    private static PanelRunMark watchPanel(Statistics stat) {
+        java.util.List<org.gephi.desktop.statistics.api.StatisticsModelUI> models = new java.util.ArrayList<>();
         ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
         Project project = pc == null ? null : pc.getCurrentProject();
-        if (project == null) {
-            return panelIsRunning(null, stat, uis);
-        }
-        for (Workspace w : project.getWorkspaces()) {
-            if (panelIsRunning(w.getLookup().lookup(org.gephi.desktop.statistics.api.StatisticsModelUI.class), stat,
-                uis)) {
-                return true;
+        if (project != null) {
+            for (Workspace w : project.getWorkspaces()) {
+                org.gephi.desktop.statistics.api.StatisticsModelUI m =
+                    w.getLookup().lookup(org.gephi.desktop.statistics.api.StatisticsModelUI.class);
+                if (m != null) {
+                    models.add(m);
+                }
             }
         }
-        return false;
+        return watchPanel(stat, models, Lookup.getDefault().lookupAll(StatisticsUI.class));
     }
 
     /**
@@ -3053,13 +3123,13 @@ public class GephiControlService {
     static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
         org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
         java.util.function.Consumer<Runnable> onEdt) throws InterruptedException {
-        return executeStatistic(stat, gm, timeoutMs, panel, onEdt, s -> true);
+        return executeStatistic(stat, gm, timeoutMs, panel, onEdt, s -> PanelRunMark.TRUSTED);
     }
 
     static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
         org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
         java.util.function.Consumer<Runnable> onEdt,
-        java.util.function.Predicate<Statistics> panelTookIt) throws InterruptedException {
+        java.util.function.Function<Statistics, PanelRunMark> watch) throws InterruptedException {
         if (panel == null) {
             if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
                 return runWithDeadline(() -> stat.execute(gm),
@@ -3085,18 +3155,31 @@ public class GephiControlService {
                     done.countDown();
                 }
             };
-        onEdt.accept(() -> panel.execute(stat, listener));
-        // A run the panel declined never reports back. A run that finished at once has reported
-        // already, or does within a moment (Gephi clears the running mark just before it calls back).
-        if (done.getCount() > 0 && !panelTookIt.test(stat)
-            && !done.await(PANEL_CALLBACK_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-            LOGGER.info("Gephi's Statistics panel did not take " + stat.getClass().getSimpleName()
-                + "; running it directly");
-            return executeStatistic(stat, gm, timeoutMs, null, onEdt);
+        try (PanelRunMark mark = watch.apply(stat)) {
+            onEdt.accept(() -> panel.execute(stat, listener));
+            // The panel marks a statistic inside execute() before handing it over, so one never
+            // marked was declined (its model not yet bound after a workspace change) and will
+            // never run or report back. It is run directly instead.
+            if (done.getCount() > 0 && !mark.wasEverMarked()) {
+                LOGGER.info("Gephi's Statistics panel did not take " + stat.getClass().getSimpleName()
+                    + "; running it directly");
+                return executeStatistic(stat, gm, timeoutMs, null, onEdt, watch);
+            }
+            return awaitPanelResult(stat, timeoutMs, done, failure, mark);
         }
+    }
+
+    private static boolean awaitPanelResult(Statistics stat, long timeoutMs,
+        java.util.concurrent.CountDownLatch done, java.util.concurrent.atomic.AtomicReference<Throwable> failure,
+        PanelRunMark mark) throws InterruptedException {
         boolean stopped = false;
         long wait = timeoutMs > 0 ? timeoutMs : STATISTIC_WAIT_CAP_MS;
-        if (!awaitPanelRun(done, wait, stat, panelTookIt)) {
+        PanelWait outcome = awaitPanelRun(done, wait, mark);
+        if (outcome == PanelWait.LOST) {
+            throw new IllegalStateException(stat.getClass().getSimpleName() + " ended in Gephi's Statistics"
+                + " panel without reporting back, so its result cannot be confirmed; run it again.");
+        }
+        if (outcome == PanelWait.TIMED_OUT) {
             if (timeoutMs <= 0 || !(stat instanceof org.gephi.utils.longtask.spi.LongTask)) {
                 throw new IllegalStateException("The statistic is still running in Gephi after "
                     + (wait / 60000) + " minutes; stop it from Gephi's Statistics panel.");
@@ -3231,7 +3314,7 @@ public class GephiControlService {
                     statisticsPanelFor(ws,
                         Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class)),
                     this::onEdt,
-                    s -> panelTookStatistic(s));
+                    GephiControlService::watchPanel);
             } finally {
                 RUNNING_STATISTICS.remove(stat);
                 stoppedOnRequest = STOP_REQUESTED.remove(stat);
@@ -5680,16 +5763,23 @@ public class GephiControlService {
         return r;
     }
 
+    /** How long a filter's result may take to be applied before its counts are called provisional. */
+    static final long FILTER_APPLY_BUDGET_MS = 30_000;
+
     /**
      * Waits until Gephi has applied the current filter's result. Since Gephi 0.11.4 the filter
      * model reports a result being computed or applied as running. Returns false if it was still
      * running when the budget ran out, so the caller can say the counts are provisional.
      */
     static boolean awaitFilterApplied(org.gephi.filters.api.FilterModel model) {
+        return awaitFilterApplied(model, FILTER_APPLY_BUDGET_MS);
+    }
+
+    static boolean awaitFilterApplied(org.gephi.filters.api.FilterModel model, long budgetMs) {
         if (model == null) {
             return true;
         }
-        final long deadline = System.nanoTime() + 30_000_000_000L;
+        final long deadline = System.nanoTime() + budgetMs * 1_000_000L;
         while (model.isRunning()) {
             if (System.nanoTime() > deadline) {
                 return false;

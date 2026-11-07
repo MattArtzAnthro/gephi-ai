@@ -253,6 +253,16 @@ async def test_a_plugin_that_does_not_report_gephi_version_still_gets_the_rerun(
     assert out["reruns_after_nonconvergence"] == 1
 
 
+async def test_when_health_fails_after_a_stop_the_run_is_repeated_as_on_older_gephi(rec):
+    """Without a version to go on, the safe assumption is a Gephi that can loop: one more run."""
+    rec.health = {"success": False, "error": "Gephi did not answer"}
+    rec.responses = [STOPPED, {"success": True, "modularity": 0.41}]
+
+    out = json.loads(await gephi_mcp.gephi_compute_modularity())
+
+    assert out["reruns_after_nonconvergence"] == 1
+
+
 async def test_on_gephi_0114_a_stopped_run_is_reported_not_repeated(rec):
     """Gephi 0.11.4 fixes the run that never finished, so a stop means the deadline was too
     short for the graph. Repeating it would only wait out the deadline a second time."""

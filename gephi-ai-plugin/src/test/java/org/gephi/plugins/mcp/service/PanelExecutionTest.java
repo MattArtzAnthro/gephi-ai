@@ -58,6 +58,28 @@ class PanelExecutionTest {
 
     private static final Consumer<Runnable> DIRECT = Runnable::run;
 
+    /** A mark read from a fake panel's flags. */
+    static GephiControlService.PanelRunMark mark(java.util.function.BooleanSupplier now,
+        java.util.function.BooleanSupplier ever) {
+        return new GephiControlService.PanelRunMark() {
+            @Override public boolean isMarked() {
+                return now.getAsBoolean();
+            }
+
+            @Override public boolean wasEverMarked() {
+                return ever.getAsBoolean();
+            }
+
+            @Override public void close() {
+            }
+        };
+    }
+
+    /** A panel that never marks the statistic, as Gephi's does when it declines a run. */
+    static GephiControlService.PanelRunMark neverMarked() {
+        return mark(() -> false, () -> false);
+    }
+
     /** A statistic that runs until cancelled, or for a fixed time. */
     static class SlowStat implements Statistics, LongTask {
         final long millis;
@@ -228,7 +250,8 @@ class PanelExecutionTest {
 
         boolean stopped = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
             java.time.Duration.ofSeconds(5),
-            () -> GephiControlService.executeStatistic(stat, null, 0, new DecliningStatsUI(), DIRECT, s -> false));
+            () -> GephiControlService.executeStatistic(stat, null, 0, new DecliningStatsUI(), DIRECT,
+                s -> neverMarked()));
 
         assertFalse(stopped);
         assertEquals(1, stat.runs.get(), "the statistic must run once, directly");
@@ -239,39 +262,84 @@ class PanelExecutionTest {
     void statisticThatFinishedBeforeTheCheckIsNotRunAgain() throws Exception {
         CountingStat stat = new CountingStat();
 
-        GephiControlService.executeStatistic(stat, null, 0, new ImmediateStatsUI(), DIRECT, s -> false);
+        GephiControlService.executeStatistic(stat, null, 0, new ImmediateStatsUI(), DIRECT,
+            s -> neverMarked());
 
         assertEquals(1, stat.runs.get());
     }
 
     /**
-     * Marks the statistic running, runs it and clears the mark, but the callback never arrives:
-     * the panel's own completion code can fail on Gephi's worker thread, and Gephi then reports
-     * the failure to its error handler instead of to this listener.
+     * Gephi 0.11.4's real order: mark the statistic running inside execute(), run it on a worker
+     * thread, clear the mark, do the panel's own result work, then call back. A callback that
+     * never comes stands for that result work failing on the worker thread.
      */
-    static class LostCallbackStatsUI extends FakeStatsUI {
+    static class RealOrderStatsUI extends FakeStatsUI {
         final AtomicBoolean marked = new AtomicBoolean();
+        final AtomicBoolean everMarked = new AtomicBoolean();
+        final long callbackDelayMs;
+        final boolean callsBack;
+        /** Return from execute() only once the worker has cleared the mark: a fast statistic. */
+        boolean finishBeforeReturning;
+
+        RealOrderStatsUI(long callbackDelayMs, boolean callsBack) {
+            this.callbackDelayMs = callbackDelayMs;
+            this.callsBack = callsBack;
+        }
 
         @Override public void execute(Statistics s, LongTaskListener listener) {
             marked.set(true);
+            everMarked.set(true);
+            java.util.concurrent.CountDownLatch cleared = new java.util.concurrent.CountDownLatch(1);
             new Thread(() -> {
                 s.execute(null);
                 marked.set(false);
+                cleared.countDown();
+                try {
+                    Thread.sleep(callbackDelayMs);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                if (callsBack) {
+                    listener.taskFinished(s instanceof LongTask ? (LongTask) s : null);
+                }
             }).start();
+            if (finishBeforeReturning) {
+                try {
+                    cleared.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
     }
 
+    /** A fast statistic whose callback comes 400 ms after its mark clears is run once. */
     @Test
-    void runThatEndsWithoutReportingBackIsNotWaitedOnForAnHour() {
+    void slowCallbackAfterTheMarkClearsDoesNotRunTheStatisticTwice() throws Exception {
         CountingStat stat = new CountingStat();
-        LostCallbackStatsUI ui = new LostCallbackStatsUI();
+        RealOrderStatsUI ui = new RealOrderStatsUI(400, true);
+        ui.finishBeforeReturning = true;
 
-        boolean stopped = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
-            java.time.Duration.ofSeconds(10),
-            () -> GephiControlService.executeStatistic(stat, null, 0, ui, DIRECT, s -> ui.marked.get()));
+        GephiControlService.executeStatistic(stat, null, 0, ui, DIRECT,
+            s -> mark(ui.marked::get, ui.everMarked::get));
 
-        assertFalse(stopped);
-        assertEquals(1, stat.runs.get(), "it ran once and must not be run again");
+        Thread.sleep(500);
+        assertEquals(1, stat.runs.get(), "the statistic ran twice");
+    }
+
+    /** A run that ends with no callback is reported as unconfirmed, never as a success. */
+    @Test
+    void runThatEndsWithoutReportingBackIsReportedUnconfirmed() {
+        CountingStat stat = new CountingStat();
+        RealOrderStatsUI ui = new RealOrderStatsUI(0, false);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () ->
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(10),
+                () -> GephiControlService.executeStatistic(stat, null, 0, ui, DIRECT,
+                    s -> mark(ui.marked::get, ui.everMarked::get))));
+
+        assertTrue(e.getMessage().contains("without reporting back"), e.getMessage());
+        assertEquals(1, stat.runs.get());
     }
 
     /** Stands in for a workspace's Statistics model, reporting one statistic as running. */
@@ -313,7 +381,8 @@ class PanelExecutionTest {
 
         assertFalse(GephiControlService.panelIsRunning(model, stat, List.of(ui)), "nothing running");
         model.running = new CountingStat();
-        assertFalse(GephiControlService.panelIsRunning(model, stat, List.of(ui)), "another instance");
+        assertTrue(GephiControlService.panelIsRunning(model, stat, List.of(ui)),
+            "another instance of the class is ambiguous, so the panel is trusted rather than risk a second run");
         model.running = stat;
         assertTrue(GephiControlService.panelIsRunning(model, stat, List.of(ui)));
         assertFalse(GephiControlService.panelIsRunning(null, stat, List.of(ui)), "no model");

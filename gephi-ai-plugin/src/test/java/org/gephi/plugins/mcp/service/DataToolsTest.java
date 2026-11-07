@@ -181,6 +181,9 @@ class DataToolsTest {
      */
     @Test
     void filterThatKeepsEveryNodeAnswersAtOnce() {
+        // Warm up first, so the timing below measures the wait and not class loading.
+        service.applyFilter("Degree Range", Map.of("range", List.of(0, 100)), "select", null);
+        service.resetFilters();
         long started = System.nanoTime();
         JsonObject r = service.applyFilter("Degree Range", Map.of("range", List.of(0, 100)), "select", null);
         long ms = (System.nanoTime() - started) / 1_000_000;
@@ -193,6 +196,8 @@ class DataToolsTest {
     @Test
     void combinedFiltersOnTheVisibleGraphAnswerAtOnce() {
         Map<String, Object> degree3 = Map.of("name", "Degree Range", "params", Map.of("range", List.of(3, 100)));
+        service.applyFilters(List.of(degree3), "all", "select", null, false);
+        service.resetFilters();
         long started = System.nanoTime();
         JsonObject r = service.applyFilters(List.of(degree3), "all", "select", null, false);
         long ms = (System.nanoTime() - started) / 1_000_000;
@@ -200,5 +205,29 @@ class DataToolsTest {
         assertTrue(r.get("success").getAsBoolean(), r.toString());
         assertEquals(3, r.get("nodes_after").getAsInt(), r.toString());
         assertTrue(ms < 1000, "combined filters took " + ms + " ms");
+    }
+
+    /** A filter model that reports running for a set number of checks. */
+    private static org.gephi.filters.api.FilterModel runningFor(int checks) {
+        java.util.concurrent.atomic.AtomicInteger left = new java.util.concurrent.atomic.AtomicInteger(checks);
+        return (org.gephi.filters.api.FilterModel) java.lang.reflect.Proxy.newProxyInstance(
+            org.gephi.filters.api.FilterModel.class.getClassLoader(),
+            new Class<?>[] {org.gephi.filters.api.FilterModel.class},
+            (proxy, method, args) -> "isRunning".equals(method.getName()) ? left.getAndDecrement() > 0 : null);
+    }
+
+    @Test
+    void filterWaitEndsWhenGephiSaysTheResultIsApplied() {
+        assertTrue(GephiControlService.awaitFilterApplied(runningFor(3), 5_000));
+    }
+
+    @Test
+    void filterStillRunningAtTheBudgetIsReportedAsNotSettled() {
+        assertFalse(GephiControlService.awaitFilterApplied(runningFor(Integer.MAX_VALUE), 100));
+    }
+
+    @Test
+    void noFilterModelMeansNothingToWaitFor() {
+        assertTrue(GephiControlService.awaitFilterApplied(null, 100));
     }
 }
