@@ -226,6 +226,7 @@ class ApiRoutingTest {
         "POST | /import/graphml | {} | 'file'",
         "POST | /import/csv | {} | 'file'",
         "POST | /import/file | {} | 'file'",
+        "POST | /graph/generate | {\"model\": \"random\"} | 'nodes'",
     })
     void requiredValuesAreNamedWhenMissing(String method, String path, String body, String expected)
         throws Exception {

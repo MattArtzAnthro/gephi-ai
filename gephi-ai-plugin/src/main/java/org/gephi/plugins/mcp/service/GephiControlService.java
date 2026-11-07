@@ -4621,6 +4621,96 @@ public class GephiControlService {
         }
     }
 
+    /** Largest graph the preferential-attachment generator is asked for. */
+    static final int GENERATE_MAX_NODES = 100_000;
+    /** The random generator tests every pair of nodes, so it is held to fewer. */
+    static final int GENERATE_MAX_RANDOM_NODES = 20_000;
+    /** Largest expected edge count a random graph may have. */
+    static final long GENERATE_MAX_EXPECTED_EDGES = 2_000_000L;
+
+    /**
+     * Makes a graph with one of Gephi's generators and loads it into a new workspace, as Gephi's
+     * File > Generate does. "preferential_attachment" (Barabasi-Albert, Gephi 0.11.4) starts from a
+     * star of {@code edgesPerNode + 1} nodes and attaches each later node to that many existing
+     * nodes chosen in proportion to their degree; a seed is chosen and reported when none is
+     * given, so the graph can be made again. "random" (Erdos-Renyi) links each pair of nodes with
+     * {@code probability}; Gephi's random generator takes no seed, so it cannot be reproduced.
+     */
+    public JsonObject generateGraph(String model, int nodes, Integer edgesPerNode, Double probability, Long seed) {
+        String m = model == null ? "" : model.trim().toLowerCase(java.util.Locale.ROOT);
+        final org.gephi.io.generator.spi.Generator generator;
+        final String name;
+        JsonObject settings = new JsonObject();
+        switch (m) {
+            case "preferential_attachment":
+            case "barabasi_albert": {
+                int k = edgesPerNode == null ? 2 : edgesPerNode;
+                if (nodes < 2 || nodes > GENERATE_MAX_NODES) {
+                    return error("nodes must be between 2 and " + GENERATE_MAX_NODES);
+                }
+                if (k < 1 || k >= nodes) {
+                    return error("edges_per_node must be at least 1 and less than nodes (" + nodes + ")");
+                }
+                long s = seed != null ? seed : new java.util.Random().nextLong();
+                org.gephi.io.generator.plugin.ScaleFreeGraph g = new org.gephi.io.generator.plugin.ScaleFreeGraph();
+                g.setNumberOfNodes(nodes);
+                g.setEdgesPerNode(k);
+                g.setSeed(s);
+                generator = g;
+                name = "Preferential attachment (" + nodes + " nodes, " + k + " per node, seed " + s + ")";
+                settings.addProperty("model", "preferential_attachment");
+                settings.addProperty("edges_per_node", k);
+                settings.addProperty("seed", s);
+                settings.addProperty("reproducible", true);
+                break;
+            }
+            case "random":
+            case "erdos_renyi": {
+                double p = probability == null ? 0.05 : probability;
+                if (nodes < 2 || nodes > GENERATE_MAX_RANDOM_NODES) {
+                    return error("nodes must be between 2 and " + GENERATE_MAX_RANDOM_NODES
+                        + " for the random model, which tests every pair of nodes");
+                }
+                if (!(p > 0 && p <= 1)) {
+                    return error("wiring_probability must be greater than 0 and at most 1");
+                }
+                double expected = p * nodes * (nodes - 1.0) / 2;
+                if (expected > GENERATE_MAX_EXPECTED_EDGES) {
+                    return error("A random graph of " + nodes + " nodes with wiring_probability " + p
+                        + " expects about " + Math.round(expected) + " edges, more than "
+                        + GENERATE_MAX_EXPECTED_EDGES + "; lower nodes or wiring_probability");
+                }
+                org.gephi.io.generator.plugin.RandomGraph g = new org.gephi.io.generator.plugin.RandomGraph();
+                g.setNumberOfNodes(nodes);
+                g.setWiringProbability(p);
+                generator = g;
+                name = "Random graph (" + nodes + " nodes, p " + p + ")";
+                settings.addProperty("model", "random");
+                settings.addProperty("wiring_probability", p);
+                settings.addProperty("reproducible", false);
+                settings.addProperty("note", "Gephi's random graph generator takes no seed, so this graph cannot"
+                    + " be made again; save or export it to keep it.");
+                break;
+            }
+            default:
+                return error("Unknown model '" + model + "': use \"preferential_attachment\" or \"random\"");
+        }
+        try {
+            Container c = Lookup.getDefault().lookup(Container.Factory.class).newContainer();
+            c.setSource(generator.getName());
+            c.setReport(new org.gephi.io.importer.api.Report());
+            generator.generate(c.getLoader());
+            JsonObject r = loadContainer(c, name, "Generated " + name, null, null);
+            if (r.get("success").getAsBoolean()) {
+                settings.entrySet().forEach(e -> r.add(e.getKey(), e.getValue()));
+                r.addProperty("workspace", name);
+            }
+            return r;
+        } catch (Exception e) {
+            return failure("Generating the graph failed: ", e);
+        }
+    }
+
     /**
      * Loads a filled import container the way {@link #importFile} loads a file: into a new
      * workspace named {@code name} by default (an empty workspace that was open is removed), or

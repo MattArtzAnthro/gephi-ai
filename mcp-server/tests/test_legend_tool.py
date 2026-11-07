@@ -102,6 +102,7 @@ async def test_a_failed_styling_call_is_not_recorded(rec):
     ("DELETE", "/workspace/delete"),
     ("POST", "/project/open"),
     ("POST", "/import/gexf"),
+    ("POST", "/graph/generate"),
 ])
 def test_these_calls_replace_the_graph_the_record_describes(method, endpoint):
     from stats_integrity import replaces_graph

@@ -622,7 +622,7 @@ wheels = [
 
 [[package]]
 name = "gephi-ai"
-version = "1.21.2"
+version = "1.22.0"
 source = { editable = "." }
 dependencies = [
     { name = "defusedxml" },

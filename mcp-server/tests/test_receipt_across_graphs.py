@@ -54,6 +54,16 @@ async def test_switching_back_does_not_reattach_an_old_record(monkeypatch):
     assert [e["layout"]["algorithm"] for e in _receipt()["earlier"]] == ["first", "second"]
 
 
+async def test_generating_a_graph_ends_the_record_of_the_graph_before(monkeypatch):
+    install_fake_gephi(monkeypatch)
+    _record_layout()
+
+    await gephi_mcp.gephi.request("POST", "/graph/generate", json_data={"model": "random", "nodes": 10})
+
+    assert _receipt()["layout"] is None
+    assert _receipt()["earlier"][0]["ended_by"] == "a graph was generated"
+
+
 async def test_a_time_slice_ends_the_record_of_the_full_network(monkeypatch):
     install_fake_gephi(monkeypatch)
     _record_layout()

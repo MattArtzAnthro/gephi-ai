@@ -158,6 +158,20 @@ async def test_import_file(rec):
     assert rec.last["json"] == {"file": "/tmp/graph.gexf"}
 
 
+async def test_generate_graph_sends_only_the_settings_given(rec):
+    await out_of(gephi_mcp.gephi_generate_graph, model="preferential_attachment", nodes=500,
+                 edges_per_node=3, seed=42)
+    assert rec.last["method"] == "POST"
+    assert rec.last["endpoint"] == "/graph/generate"
+    assert rec.last["json"] == {"model": "preferential_attachment", "nodes": 500,
+                                "edges_per_node": 3, "seed": 42}
+
+
+async def test_generate_random_graph_sends_its_probability(rec):
+    await out_of(gephi_mcp.gephi_generate_graph, model="random", nodes=200, wiring_probability=0.02)
+    assert rec.last["json"] == {"model": "random", "nodes": 200, "wiring_probability": 0.02}
+
+
 async def test_export_screenshot_sends_body(rec):
     await out_of(gephi_mcp.gephi_export_screenshot, file="/tmp/shot.png")
     assert rec.last["method"] == "POST"
@@ -177,10 +191,10 @@ async def test_export_screenshot_overrides(rec):
     }
 
 
-def test_all_120_tools_registered():
+def test_all_121_tools_registered():
     """Regression guard: every tool stays registered with its expected name."""
     names = {t.name for t in gephi_mcp.mcp._tool_manager.list_tools()}
-    assert len(names) == 120, f"expected 120 tools, found {len(names)}"
+    assert len(names) == 121, f"expected 121 tools, found {len(names)}"
     for expected in (
         "gephi_health_check", "gephi_get_node", "gephi_duplicate_workspace",
         "gephi_rename_workspace", "gephi_export_csv", "gephi_compute_modularity",

@@ -181,6 +181,7 @@ def mutates_graph(method: str, endpoint: str) -> bool:
 #: edit — adding a node leaves a colour mapping meaningful — but not a change of graph.
 _REPLACES_GRAPH = (
     "/graph/clear",
+    "/graph/generate",
     "/workspace/",
     "/project/",
     "/import/",

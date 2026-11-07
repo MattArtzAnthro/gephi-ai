@@ -7,6 +7,12 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 ## Unreleased
 
 ### Added
+- **`gephi_generate_graph` makes model graphs with Gephi's own generators.** Preferential
+  attachment (Barabasi-Albert, new in Gephi 0.11.4) or random (Erdos-Renyi), in a new workspace
+  named after the model, for teaching, for trying a layout or statistic on a graph of known
+  shape, and as a null model the size of a real network. Preferential attachment always reports
+  its seed, so it can be made again; Gephi's random generator takes no seed, and the reply says
+  so. Needs Gephi AI plugin 1.6.0.
 - **One-command installers.** `install.sh` (macOS, Linux) and `install.ps1` (Windows) set up
   Claude Code, Codex, Gemini CLI and Claude Desktop, install uv when it is missing, add the Gephi
   plugin when Gephi does not already have it (checked against GitHub's published checksum), and

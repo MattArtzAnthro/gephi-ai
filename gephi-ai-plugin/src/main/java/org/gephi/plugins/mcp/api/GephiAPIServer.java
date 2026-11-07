@@ -1072,6 +1072,18 @@ public class GephiAPIServer implements HttpHandler {
                 body.has("mode") ? body.get("mode").getAsString() : null);
         }
 
+        if ("/graph/generate".equals(uri) && "POST".equals(method)) {
+            if (body == null || !body.has("model") || !body.has("nodes")) {
+                return errorResult("Missing 'model' or 'nodes'");
+            }
+            Float k = floatOrNull(body, "edges_per_node");
+            Long seed = body.has("seed") && !body.get("seed").isJsonNull() ? body.get("seed").getAsLong() : null;
+            Double p = body.has("wiring_probability") && !body.get("wiring_probability").isJsonNull()
+                ? body.get("wiring_probability").getAsDouble() : null;
+            return service.generateGraph(body.get("model").getAsString(), body.get("nodes").getAsInt(),
+                k == null ? null : k.intValue(), p, seed);
+        }
+
         return errorResult("Unknown endpoint: " + method + " " + uri);
     }
 

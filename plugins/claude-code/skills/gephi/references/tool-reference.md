@@ -705,6 +705,12 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Returns**: `{success, node_count, edge_count, import_mode, import_issues?: [{level, message}]}`
 - **Notes**: Imports open in their own workspace, so no new project is needed. Auto-detects format by extension. Supports GEXF, GraphML, GML, CSV, DOT, Pajek. By default the file opens in its own workspace, as from Gephi's File > Open, so its time format and id type always fit; an empty workspace left open is removed, and one holding a graph is kept. `mode: "append"` adds the file to the current workspace, and fails when the two disagree on time format or id type; appending a node file attaches its columns to nodes whose ids already exist. An edge CSV with repeated source-target rows is merged on import (weights summed, one row's other values kept); load such rows with `gephi_add_edges` instead. Tell the user about `import_issues` that matter, such as nodes Gephi created because an edge names a node the file does not list.
 
+### gephi_generate_graph
+- **Method**: POST `/graph/generate`
+- **Params**: `{model: "preferential_attachment"|"random", nodes: int, edges_per_node?: int, wiring_probability?: float, seed?: int}`
+- **Returns**: `{success, node_count, edge_count, model, workspace, reproducible, edges_per_node?, seed?, wiring_probability?, note?}`
+- **Notes**: Gephi's own generators, in a new workspace named after the model. `preferential_attachment` (Barabasi-Albert, Gephi 0.11.4+, up to 100,000 nodes) grows from a star of `edges_per_node` + 1 nodes, each new node linking to `edges_per_node` (default 2) others in proportion to their degree; a seed is chosen and returned when none is given, so it can be made again. `random` (Erdos-Renyi, up to 20,000 nodes and about 2 million expected edges) links each pair with `wiring_probability` (default 0.05) and cannot be made again. Use it for teaching, for trying a layout or statistic on a known shape, or as a null model the size of a real network; never as data about the person's network. A model's heavy-tailed degrees say nothing about whether a real network is scale-free.
+
 ### gephi_import_gexf
 - **Method**: POST `/import/gexf`
 - **Params**: `{file: str, mode?: "new_workspace"|"append"}`, as `gephi_import_file`

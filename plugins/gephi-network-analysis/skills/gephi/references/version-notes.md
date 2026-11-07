@@ -65,3 +65,4 @@ item applies.
   `gephi_health_check` adds `renderer.state` (Gephi 0.11.4's frame and world-update counters):
   `stalled` means the picture on screen is frozen while frames are still drawn. Screenshots wait
   up to 10 seconds for the graph view to start drawing instead of failing just after Gephi opens.
+  `gephi_generate_graph` needs 1.6.0; on an older plugin it fails with "Unknown endpoint".

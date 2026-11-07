@@ -132,6 +132,17 @@
             <artifactId>visualization-api</artifactId>
             <version>${gephi.version}</version>
         </dependency>
+        <!-- Gephi's graph generators (random, and preferential attachment from 0.11.4). -->
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>io-generator-api</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.gephi</groupId>
+            <artifactId>io-generator-plugin</artifactId>
+            <version>${gephi.version}</version>
+        </dependency>
         <!-- The renderer's frame and world-update counters (Gephi 0.11.4), read for /health. -->
         <dependency>
             <groupId>org.gephi</groupId>

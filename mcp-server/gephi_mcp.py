@@ -434,6 +434,7 @@ _GRAPH_CHANGES = (
     ("/workspace/delete", "a workspace was deleted"),
     ("/project/", "a project was opened or created"),
     ("/graph/clear", "the graph was cleared"),
+    ("/graph/generate", "a graph was generated"),
     ("/time/slice", "a time slice was taken"),
 )
 
@@ -4194,6 +4195,43 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
     """
     return fmt(await gephi.request("POST", "/import/file",
                                    json_data=_import_body(file, mode, max_node_size)))
+
+
+@_tool(name="gephi_generate_graph")
+async def gephi_generate_graph(model: str, nodes: int, edges_per_node: int | None = None,
+                               wiring_probability: float | None = None,
+                               seed: int | None = None) -> str:
+    """Generate a synthetic graph with Gephi's own generators, in a new workspace.
+
+    For teaching, for trying a layout or statistic on a graph of known shape, and for
+    comparing a real network with a model of the same size (a null model). Never use it
+    as data about the person's network.
+
+    `model`:
+    - "preferential_attachment" (Barabasi-Albert, Gephi 0.11.4+): starts from a star of
+      `edges_per_node` + 1 nodes, then attaches each new node to `edges_per_node` (default 2)
+      existing nodes chosen in proportion to their degree, so a few hubs emerge. It has
+      exactly edges_per_node + (nodes - edges_per_node - 1) * edges_per_node edges. Its
+      heavy-tailed degrees come from the model; they say nothing about whether any real
+      network is scale-free, and a real network's degrees should never be described that way.
+      Up to 100,000 nodes. `seed` makes it reproducible; without one, a seed is chosen and
+      returned, so it can always be made again.
+    - "random" (Erdos-Renyi): links each pair of nodes with `wiring_probability`
+      (default 0.05). Up to 20,000 nodes and about 2 million expected edges. Gephi's random
+      generator takes no seed, so this graph cannot be made again (`reproducible: false`);
+      save or export it to keep it.
+
+    The workspace is named after the model and its settings; an empty workspace that was open
+    is removed. Returns node_count, edge_count, the settings used, and `reproducible`.
+    """
+    body: dict[str, Any] = {"model": model, "nodes": nodes}
+    if edges_per_node is not None:
+        body["edges_per_node"] = edges_per_node
+    if wiring_probability is not None:
+        body["wiring_probability"] = wiring_probability
+    if seed is not None:
+        body["seed"] = seed
+    return fmt(await gephi.request("POST", "/graph/generate", json_data=body))
 
 
 # ==================== Main Entry Point ====================
