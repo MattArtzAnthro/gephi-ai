@@ -29,12 +29,13 @@ import tempfile
 import time
 import weakref
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import anyio
 import httpx
 from mcp.server import CacheHint, MCPServer
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
+from pydantic import Field
 
 import gephi_mcp_viewer
 import text_network
@@ -4198,9 +4199,19 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
 
 
 @_tool(name="gephi_generate_graph")
-async def gephi_generate_graph(model: str, nodes: int, edges_per_node: int | None = None,
-                               wiring_probability: float | None = None,
-                               seed: int | None = None) -> str:
+async def gephi_generate_graph(
+    model: Annotated[Literal["preferential_attachment", "random"], Field(
+        description="preferential_attachment (Barabasi-Albert: hubs emerge) or random (Erdos-Renyi)")],
+    nodes: Annotated[int, Field(ge=2, le=100_000, description=(
+        "How many nodes. Up to 100,000; the random model allows up to 20,000."))],
+    edges_per_node: Annotated[int | None, Field(ge=1, description=(
+        "preferential_attachment only: links each new node makes (default 2); less than nodes."))] = None,
+    wiring_probability: Annotated[float | None, Field(gt=0, le=1, description=(
+        "random only: chance that any two nodes are linked (default 0.05)."))] = None,
+    seed: Annotated[int | None, Field(description=(
+        "preferential_attachment only: makes the graph reproducible; one is chosen and returned "
+        "when omitted."))] = None,
+) -> str:
     """Generate a synthetic graph with Gephi's own generators, in a new workspace.
 
     For teaching, for trying a layout or statistic on a graph of known shape, and for

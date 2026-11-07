@@ -167,6 +167,19 @@ async def test_generate_graph_sends_only_the_settings_given(rec):
                                 "edges_per_node": 3, "seed": 42}
 
 
+def test_generate_graph_schema_names_its_models_and_bounds():
+    """An agent reading only the schema learns the allowed models and limits, so a wrong value
+    is refused before Gephi is asked."""
+    tool = next(t for t in gephi_mcp.mcp._tool_manager.list_tools() if t.name == "gephi_generate_graph")
+    props = tool.parameters["properties"]
+
+    assert props["model"]["enum"] == ["preferential_attachment", "random"]
+    assert props["nodes"]["minimum"] == 2 and props["nodes"]["maximum"] == 100_000
+    probability = next(o for o in props["wiring_probability"]["anyOf"] if o.get("type") == "number")
+    assert probability["exclusiveMinimum"] == 0 and probability["maximum"] == 1
+    assert all(p.get("description") for p in props.values()), "every parameter is described"
+
+
 async def test_generate_random_graph_sends_its_probability(rec):
     await out_of(gephi_mcp.gephi_generate_graph, model="random", nodes=200, wiring_probability=0.02)
     assert rec.last["json"] == {"model": "random", "nodes": 200, "wiring_probability": 0.02}
