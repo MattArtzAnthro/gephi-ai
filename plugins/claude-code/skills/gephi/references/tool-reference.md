@@ -325,7 +325,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_run_layout
 - **Method**: POST `/layout/run`
 - **Params**: `{algorithm: str, iterations?: int (1000), properties?: {name: value}, sync?: bool (false)}`
-- **Returns**: any setting name that matches no property of the layout is listed in `unapplied_params` with a `warning`; it was not applied, so fix the name and rerun. A `sync` run ends with a positions check: if the layout exploded numerically (coordinates that are not finite or absurdly large, which ForceAtlas 2 can produce on weighted graphs with a strong hub), the reply carries `layout_exploded` with the affected nodes and the fix. When it is present, do not export or style; follow the fix first.
+- **Returns**: `applied` reads back the value each matched setting holds, under its property key, with `applied_note` saying so (plugin 1.6.0+); cite it to confirm what the run used. Any setting name that matches no property of the layout is listed in `unapplied_params` with a `warning`; it was not applied, so fix the name and rerun. A `sync` run ends with a positions check: if the layout exploded numerically (coordinates that are not finite or absurdly large, which ForceAtlas 2 can produce on weighted graphs with a strong hub), the reply carries `layout_exploded` with the affected nodes and the fix. When it is present, do not export or style; follow the fix first.
 - **Notes**: Without `sync`, returns at once with status "running" (poll `gephi_get_layout_status`); with `sync: true`, waits until the layout finishes. Use `sync: true` for passes run one after another, so the next pass does not start on a moving graph. Algorithm names: forceatlas2, yifanhu, openord, fruchterman, circular, random (plus any layout plugin installed in Gephi; `gephi_get_available_layouts` lists what is present). Check property spelling against `gephi_get_layout_properties`: OpenOrd takes display names (`"Edge Cut"`, `"Layout Size"`), ForceAtlas 2 and Yifan Hu take camelCase. See references/layout-guide.md.
 - **Developer note**: when calling the HTTP API directly, `/layout/run` takes tuning values under the key `properties`; values sent under `params` are ignored and the layout runs on its defaults.
 
@@ -334,7 +334,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_get_layout_status
 - **Method**: GET `/layout/status`
-- **Returns**: `{success, running, layout?}`
+- **Returns**: `{success, running, layout?, last_run?: {layout, iterations, applied, applied_note}}`; `last_run` (plugin 1.6.0+) is the last layout started and the settings it applied.
 
 ### gephi_get_available_layouts
 - **Method**: GET `/layout/available`
@@ -343,13 +343,14 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_get_layout_properties
 - **Method**: GET `/layout/properties`
 - **Params**: `{algorithm: str}`
-- **Returns**: `{success, algorithm, properties: [{name, display_name, type, value, description}]}`
+- **Returns**: `{success, algorithm, values_are, properties: [{key?, name, display_name, type, value, description}]}`; `key` (plugin 1.6.0+) is the short name to pass to `gephi_run_layout`, and `values_are` says the values are defaults.
 - **Notes**: `value` is the layout's default, not a setting made earlier: each call builds a fresh layout instance, so it never reflects a previous `gephi_run_layout`. The `description` field also states the default in prose.
 
 ### gephi_set_layout_properties
 - **Method**: POST `/layout/properties`
 - **Params**: `{algorithm: str, properties: {name: value}, iterations?: int (1000)}`
-- **Notes**: Sets properties then runs layout. Use for fine-tuning.
+- **Returns**: `{success, layout, configured, running: false, staged, unapplied_params?}`
+- **Notes**: Stages the settings without running anything; the next `gephi_run_layout` of the same algorithm applies them. `staged` echoes the values read back (plugin 1.6.0+). Prefer `gephi_run_layout` with `properties`, which sets and runs in one call.
 
 ### gephi_similarity_layout
 - **Method**: computed server-side (Python), positions pushed via POST `/graph/nodes/positions`

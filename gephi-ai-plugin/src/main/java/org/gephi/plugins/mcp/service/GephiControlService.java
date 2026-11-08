@@ -80,6 +80,8 @@ public class GephiControlService {
     // itself starting a layout.
     private volatile Map<String, Object> pendingLayoutProps = null;
     private volatile String pendingLayoutAlgo = null;
+    /** The last layout started: algorithm, iterations and the settings read back, for get_layout_status. */
+    private volatile JsonObject lastLayoutRun = null;
 
     // Human click journal: the person's node clicks in the Gephi window,
     // recorded by a passive viz-event listener so the model can resolve
@@ -2544,10 +2546,20 @@ public class GephiControlService {
             final int panelIters = iterations > 0 ? iterations : 1000;
             final java.util.List<String> unapplied =
                 startLayoutThroughController(lc, layout, properties, panelIters, this::onEdt);
+            JsonObject applied = appliedLayoutSettings(layout, properties);
+            JsonObject lastRun = new JsonObject();
+            lastRun.addProperty("layout", algo);
+            lastRun.addProperty("iterations", panelIters);
+            lastRun.add("applied", applied);
+            lastRun.addProperty("applied_note", APPLIED_NOTE);
+            lastLayoutRun = lastRun;
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
             r.addProperty("layout", algo);
             r.addProperty("status", "running");
+            r.addProperty("iterations", panelIters);
+            r.add("applied", applied.deepCopy());
+            r.addProperty("applied_note", APPLIED_NOTE);
             reportUnapplied(r, unapplied, algo);
             return r;
         } catch (Exception e) {
@@ -2572,6 +2584,10 @@ public class GephiControlService {
         r.addProperty("running", running);
         if (running && lc.getModel().getSelectedBuilder() != null) {
             r.addProperty("layout", lc.getModel().getSelectedBuilder().getName());
+        }
+        JsonObject lastRun = lastLayoutRun;
+        if (lastRun != null) {
+            r.add("last_run", lastRun.deepCopy());
         }
         return r;
     }
@@ -2606,6 +2622,10 @@ public class GephiControlService {
             if (props != null) {
                 for (LayoutProperty prop : props) {
                     JsonObject o = new JsonObject();
+                    String key = layoutPropertyKey(prop);
+                    if (!key.isEmpty()) {
+                        o.addProperty("key", key);
+                    }
                     o.addProperty("name", prop.getCanonicalName() != null ? prop.getCanonicalName()
                         : prop.getProperty().getDisplayName());
                     o.addProperty("display_name", prop.getProperty().getDisplayName());
@@ -2624,6 +2644,9 @@ public class GephiControlService {
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
             r.addProperty("algorithm", algo);
+            r.addProperty("values_are", "defaults of a fresh layout, never what a run or a staged setting"
+                + " used; read applied in the gephi_run_layout result or last_run in gephi_get_layout_status."
+                + " Pass the key to gephi_run_layout.");
             r.add("properties", arr);
             return r;
         } catch (Exception e) {
@@ -2648,22 +2671,10 @@ public class GephiControlService {
             return unapplied;
         }
         for (LayoutProperty prop : props) {
-            String canonicalName = prop.getCanonicalName() != null ? prop.getCanonicalName() : "";
-            String displayName = prop.getProperty().getDisplayName();
-            // Extract middle key from "AlgoName.propertyKey.name" pattern
-            String canonicalKey = "";
-            if (!canonicalName.isEmpty()) {
-                String[] parts = canonicalName.split("\\.");
-                if (parts.length >= 3) {
-                    canonicalKey = parts[parts.length - 2];
-                }
-            }
             Object val = null;
             for (Map.Entry<String, Object> e : properties.entrySet()) {
                 String k = e.getKey();
-                if ((!canonicalKey.isEmpty() && k.equalsIgnoreCase(canonicalKey))
-                    || k.equalsIgnoreCase(displayName)
-                    || (!canonicalName.isEmpty() && k.equalsIgnoreCase(canonicalName))) {
+                if (layoutPropertyMatches(prop, k)) {
                     matched.add(k);
                     if (val == null) {
                         val = e.getValue();
@@ -2688,6 +2699,72 @@ public class GephiControlService {
             }
         }
         return unapplied;
+    }
+
+    /**
+     * Said with every applied block. Agents took a bare applied block for the server repeating the
+     * request and spent many calls checking it another way, including against the defaults that
+     * gephi_get_layout_properties reports.
+     */
+    static final String APPLIED_NOTE = "These values were read back from the layout after the settings"
+        + " were set, so they are what this run uses. gephi_get_layout_properties shows defaults only and"
+        + " cannot confirm a setting.";
+
+    /** The middle part of an "AlgoName.propertyKey.name" canonical name, or "" when there is none. */
+    private static String layoutPropertyKey(LayoutProperty prop) {
+        String canonicalName = prop.getCanonicalName() != null ? prop.getCanonicalName() : "";
+        String[] parts = canonicalName.split("\\.");
+        return parts.length >= 3 ? parts[parts.length - 2] : "";
+    }
+
+    /** Whether a key from the caller names this property: its key, display name or canonical name, any case. */
+    private static boolean layoutPropertyMatches(LayoutProperty prop, String key) {
+        String canonicalName = prop.getCanonicalName() != null ? prop.getCanonicalName() : "";
+        String canonicalKey = layoutPropertyKey(prop);
+        return (!canonicalKey.isEmpty() && key.equalsIgnoreCase(canonicalKey))
+            || key.equalsIgnoreCase(prop.getProperty().getDisplayName())
+            || (!canonicalName.isEmpty() && key.equalsIgnoreCase(canonicalName));
+    }
+
+    /**
+     * The value each requested setting holds now, read back from the layout under the property
+     * key (its display name when it has none), so a caller can confirm what a run used instead of
+     * inferring it from the absence of unapplied_params. Keys that matched nothing are left out.
+     */
+    static JsonObject appliedLayoutSettings(Layout layout, Map<String, Object> properties) {
+        JsonObject applied = new JsonObject();
+        LayoutProperty[] props = layout.getProperties();
+        if (properties == null || props == null) {
+            return applied;
+        }
+        for (LayoutProperty prop : props) {
+            boolean asked = false;
+            for (String k : properties.keySet()) {
+                asked |= layoutPropertyMatches(prop, k);
+            }
+            if (!asked) {
+                continue;
+            }
+            String key = layoutPropertyKey(prop);
+            if (key.isEmpty()) {
+                key = prop.getProperty().getDisplayName();
+            }
+            Object value;
+            try {
+                value = prop.getProperty().getValue();
+            } catch (Exception e) {
+                LOGGER.log(Level.FINE, "Reading layout property " + key + " failed", e);
+                continue;
+            }
+            if (value instanceof Number) {
+                applied.addProperty(key, (Number) value);
+            } else if (value instanceof Boolean) {
+                applied.addProperty(key, (Boolean) value);
+            } else if (value != null) {
+                applied.addProperty(key, value.toString());
+            }
+        }
+        return applied;
     }
 
     /** Adds unapplied_params and a warning to a layout response when any key matched nothing. */
@@ -2731,6 +2808,7 @@ public class GephiControlService {
             r.addProperty("configured", true);
             r.addProperty("running", false);
             r.addProperty("note", "properties staged; the next run_layout of this algorithm applies them");
+            r.add("staged", appliedLayoutSettings(layout, properties));
             reportUnapplied(r, unapplied, algo);
             return r;
         } catch (Exception e) {

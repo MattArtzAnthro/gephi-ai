@@ -58,6 +58,14 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   removed anyway: about 300,000 characters for two 1,000-node graphs, too large for an agent to
   read. The lists now keep five examples each, with the totals in `added_count` and
   `removed_count`.
+- **A layout run reports the settings it used.** `gephi_run_layout` returns `applied`, each
+  matched setting read back from the layout (with `applied_note` saying so, since agents took a
+  bare value for an echo of the request), and `gephi_get_layout_status` keeps the last run
+  under `last_run`; `gephi_set_layout_properties` echoes what it staged. Before, the only
+  evidence a setting took was the absence of `unapplied_params`, and agents spent several calls
+  trying to confirm it. `gephi_get_layout_properties` now gives each property's short `key` (the
+  name `gephi_run_layout` takes) and says in its reply that its values are defaults. The tool
+  reference no longer says `gephi_set_layout_properties` runs the layout.
 - **Resetting filters also turns them off in Gephi's Filters panel.** `gephi_reset_filters`
   restored the full graph but left the panel showing the filter (or selection) as active, so the
   panel and the graph disagreed and a refresh could bring the filter back. It now clears them

@@ -1628,7 +1628,10 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     After the run, call gephi_visual_qa with partition_column: partition.separation
     (lower = clearer groups) lets you compare settings. Change one parameter per rerun.
     A setting whose name matches no property is not applied: the result then carries
-    unapplied_params and a warning (Gephi AI plugin 1.3.3+). Fix the name and rerun.
+    unapplied_params and a warning (Gephi AI plugin 1.3.3+). Fix the name and rerun. The
+    result's `applied` reads back the value each matched setting holds, under its property key
+    (plugin 1.6.0+): cite it to confirm what the run used. gephi_get_layout_properties shows
+    defaults, not what a run used.
 
     properties: optional {name: value} tuning map (gravity, scalingRatio, linLogMode,
     barnesHutOptimization, ...). sync=True waits until the layout finishes before
@@ -1846,7 +1849,8 @@ _layout_stops = 0
 @_tool(name="gephi_get_layout_status")
 async def gephi_get_layout_status() -> str:
     """Check whether a layout is still running, and which. Use it after starting a layout without
-    waiting for it (sync false) before reading positions or exporting a map.
+    waiting for it (sync false) before reading positions or exporting a map. `last_run` gives the
+    last layout started, its iterations and the settings it applied (plugin 1.6.0+).
     """
     return fmt(await gephi.request("GET", "/layout/status"))
 
@@ -1862,7 +1866,9 @@ async def gephi_get_available_layouts() -> str:
 async def gephi_get_layout_properties(algorithm: str) -> str:
     """Get a layout algorithm's tunable properties (gravity, scaling, speed, ...) with their names
     and default values, to pass to gephi_run_layout as properties. Read it before changing a
-    property; the names differ between algorithms.
+    property; the names differ between algorithms. The values are always the defaults, never what
+    a run or a staged setting used: to confirm those, read `applied` in the gephi_run_layout
+    result or `last_run` in gephi_get_layout_status.
     """
     return fmt(await gephi.request("GET", "/layout/properties", params={"algorithm": algorithm}))
 
@@ -1870,8 +1876,8 @@ async def gephi_get_layout_properties(algorithm: str) -> str:
 async def gephi_set_layout_properties(algorithm: str, properties: dict[str, Any],
                                       iterations: int = 1000) -> str:
     """Stage property values (gravity, scaling, speed, ...) for a layout WITHOUT running it: the
-    next gephi_run_layout of the same algorithm applies them. Prefer gephi_run_layout with
-    properties, which sets and runs in one call.
+    next gephi_run_layout of the same algorithm applies them. `staged` echoes the values read back.
+    Prefer gephi_run_layout with properties, which sets and runs in one call.
     """
     return fmt(await gephi.request("POST", "/layout/properties",
                                    json_data={"algorithm": algorithm, "properties": properties,
