@@ -59,6 +59,11 @@ jobs:
       - name: Lint
         working-directory: mcp-server
         run: ruff check . ../plugins/gephi-network-analysis/tests
+      - name: Security lint
+        # Once: the code is the same on every Python; skips are in [tool.bandit].
+        if: matrix.python-version == '3.12'
+        working-directory: mcp-server
+        run: bandit -q -c pyproject.toml -r .
       - name: Type check
         # Once: mypy checks against 3.12 on every runner (see [tool.mypy] in pyproject.toml).
         if: matrix.python-version == '3.12'

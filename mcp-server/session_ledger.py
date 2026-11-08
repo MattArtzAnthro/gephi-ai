@@ -22,6 +22,7 @@ invisible to it, and the receipt says so rather than letting silence read as com
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 #: Operations that encode a variable in a visual channel, and so belong in a legend.
@@ -39,6 +40,8 @@ _ANALYSES = ("compare_partitions", "community_stability")
 
 #: Earlier sections kept, so a long session does not grow without bound.
 EARLIER_KEPT = 20
+
+_log = logging.getLogger("gephi_mcp.ledger")
 
 SCOPE_NOTE = (
     "This record covers the operations applied through gephi-ai. Anything styled by hand in the "
@@ -66,7 +69,7 @@ class Ledger:
                 self.earlier.append({"ended_by": ended_by, **self._summary(self.entries)})
                 self.earlier = self.earlier[-EARLIER_KEPT:]
         except Exception:
-            pass
+            _log.warning("could not keep the record of the previous graph", exc_info=True)
         self.reset()
 
     def record(self, operation: str, **detail: Any) -> None:
@@ -78,7 +81,7 @@ class Ledger:
                     or operation in ("run_layout", "statistic")):
                 self.entries.append({"operation": operation, **detail})
         except Exception:
-            pass
+            _log.warning("could not record %s in the session receipt", operation, exc_info=True)
 
     def mark_layout_stopped(self) -> None:
         """The last layout was stopped before it finished, so the iteration count recorded for it

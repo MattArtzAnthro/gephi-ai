@@ -15,6 +15,7 @@ RUFF=ruff
 # Incremental, so a second run takes well under a second. The viewer is named for the reason
 # given in ci.yml.
 (cd mcp-server && .venv/bin/mypy ./*.py gephi_mcp_viewer)
+(cd mcp-server && .venv/bin/bandit -q -c pyproject.toml -r .)
 (cd mcp-server && PYTHONPATH=. .venv/bin/python -m pytest -q -p no:cacheprovider --cov)
 bash plugins/claude-code/scripts/test-check-gephi.sh >/dev/null
 # The Java build takes a minute, so it runs only when plugin sources are staged

@@ -87,8 +87,8 @@ commands, agents). `RELEASING.md` is the release procedure and
 Before a pull request, run what CI runs:
 - `mvn verify` in `gephi-ai-plugin/`, which runs Gephi core's checkstyle, `SourceRulesTest` and the
   JaCoCo coverage floor;
-- `ruff check .`, `mypy ./*.py gephi_mcp_viewer` and `python -m pytest -q --cov` (coverage floor in
-  `pyproject.toml`) in `mcp-server/`;
+- `ruff check .`, `mypy ./*.py gephi_mcp_viewer`, `bandit -q -c pyproject.toml -r .` and
+  `python -m pytest -q --cov` (coverage floor in `pyproject.toml`) in `mcp-server/`;
 - `shellcheck install.sh scripts/*.sh plugins/claude-code/scripts/*.sh` and
   `bash plugins/claude-code/scripts/test-check-gephi.sh`.
 

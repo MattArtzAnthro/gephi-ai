@@ -1845,7 +1845,7 @@ async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
                  "issues": c["issues"], "verification": c["verification"]["status"]}
                 for c in found]}
     except Exception:
-        pass
+        logger.warning("could not attach caveats to the %s result", metric, exc_info=True)
     return fmt(resp)
 
 
