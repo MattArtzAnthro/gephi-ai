@@ -61,7 +61,7 @@ build-backend = "hatchling.build"
 # shipped the overlay off disk, and being gitignored does not keep a file out of an
 # sdist. Every target inherits it here.
 [tool.hatch.build]
-exclude = ["caveats.local.json"]
+exclude = ["caveats.local.json", "mutants"]
 
 [tool.hatch.build.targets.wheel]
 # Name what ships rather than `packages = ["."]`, which wrote every member as "./x"
@@ -75,7 +75,7 @@ exclude = ["caveats.local.json"]
 dev-mode-dirs = ["."]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["caveats.local.json"]
+exclude = ["caveats.local.json", "mutants"]
 
 [tool.ruff]
 line-length = 100

@@ -44,6 +44,18 @@ if not any(n.endswith("caveats.json") and not n.endswith("caveats.local.json") f
     ok = False
 else:
     print("  caveats.json is present in the sdist")
+# Anything git ignores is local to one machine. hatchling reads ignore rules only from
+# mcp-server/, so a directory ignored anywhere else (mutmut's mutants/ once) packs into the
+# sdist untouched. Ask git itself, which knows every rule, about every member.
+import subprocess
+members = ["mcp-server/" + n.split("/", 1)[1] for n in names if "/" in n and not n.endswith("/")]
+ignored = subprocess.run(["git", "check-ignore", "--stdin"], input="\n".join(members),
+                         capture_output=True, text=True).stdout.split()
+if ignored:
+    print(f"  FAIL: the sdist carries {len(ignored)} file(s) git ignores, e.g. {ignored[0]}")
+    ok = False
+else:
+    print("  no gitignored files in the sdist")
 sys.exit(0 if ok else 1)
 PYSDIST
 

@@ -35,3 +35,6 @@ mcp-server/caveats.local.json
 
 # macOS folder metadata
 .DS_Store
+
+# mutmut working copy (mutation testing, see [tool.mutmut] in mcp-server/pyproject.toml)
+mutants/

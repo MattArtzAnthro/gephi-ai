@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.22.0 / Java plugin 1.6.0 / workflow packages 1.21.0
 
 ### Added
 - **`gephi_generate_graph` makes model graphs with Gephi's own generators.** Preferential
@@ -156,6 +156,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   suite had left open, such as a pair together in exactly 90% of runs counting as a stable core.
 - **Static checks.** SpotBugs runs at `mvn verify` and bandit in `scripts/check.sh` and CI; the
   Python coverage floor rises to 91%, as CI measures it on Linux.
+- **The sdist ships nothing git ignores.** mutmut's `mutants/` working copy was ignored only on
+  one machine, and hatchling reads ignore rules from `mcp-server/` alone, so a build packed 87
+  mutant files into the sdist. `mutants/` is now in `.gitignore` and the build excludes, and
+  `scripts/verify-artifact.sh` asks git about every sdist member and fails on any it ignores.
 
 ## MCP server 1.21.2 / Java plugin 1.5.2 / workflow packages 1.20.2
 
