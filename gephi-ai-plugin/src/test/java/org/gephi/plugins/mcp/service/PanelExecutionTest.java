@@ -854,12 +854,18 @@ class PanelExecutionTest {
         assertEquals(1, closed.get());
     }
 
-    /** Statistics run on a daemon worker, so one left running never keeps Gephi from quitting. */
+    /**
+     * Statistics run on a daemon worker, so one left running never keeps Gephi from quitting. The
+     * request comes from an ordinary thread here, since a new thread copies its creator's setting.
+     */
     @Test
-    void theStatisticWorkerIsADaemon() {
+    void theStatisticWorkerIsADaemon() throws Exception {
         AtomicBoolean daemon = new AtomicBoolean();
-
-        GephiControlService.runOnStatisticThread(() -> daemon.set(Thread.currentThread().isDaemon()), () -> { });
+        Thread request = new Thread(() -> GephiControlService.runOnStatisticThread(
+            () -> daemon.set(Thread.currentThread().isDaemon()), () -> { }), "request");
+        request.setDaemon(false);
+        request.start();
+        request.join(10_000);
 
         assertTrue(daemon.get());
     }

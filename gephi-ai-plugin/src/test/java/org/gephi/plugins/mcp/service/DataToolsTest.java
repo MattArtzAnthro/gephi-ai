@@ -338,6 +338,7 @@ class DataToolsTest {
 
         assertTrue(gm.getVisibleView().isMainView(), "the subgraph view is still visible");
         assertEquals(5, gm.getGraphVisible().getNodeCount());
+        assertFalse(gm.getGraph().getLock().isWriteLocked(), "the reset left the graph write-locked");
     }
 
     /** An export into folders that do not exist yet creates them. */
