@@ -79,6 +79,10 @@ Then let their goal and the profile guide every later choice:
 - Ask before removing isolates or fragments: one person's noise is another person's result.
 - Read a laid-out map with the guided process in references/reading-network-maps.md: layout, then clusters named with letters, then structural holes (the gaps are findings too), then attribute colours compared against the structure, then special nodes (bridges, hubs within a cluster, off-colour outliers), then earned names in their vocabulary, never "cluster 0/1/2". State the reading rules: axes mean nothing, only distances do, and a rerun keeps clusters but not positions.
 
+## Comparing with a model graph
+
+"Is this more clustered, or more hub-heavy, than chance?" needs a baseline. `gephi_generate_graph` makes one in its own workspace, the same size as the real network: `"random"` with `wiring_probability` set to the real graph's density (undirected), or `"preferential_attachment"` with `edges_per_node` near edges ÷ nodes for hubs that come from growth. Run the same statistic on both and report the difference, naming the model. A resemblance never shows how the real network formed: say "more clustered than a random graph of the same size", never "it grew by preferential attachment". `gephi_profile_graph`'s `clustering_vs_random` already gives the clustering comparison without a second graph.
+
 ## Styling
 
 - **Groups first, edges second** (Jacomy's contrast advice). On a light background use `{"edge.color": "#D0D0D0", "edge.opacity": 90, "edge.thickness": 1.0, "edge.curved": false}` so the groups read first and dark edge bundles are not mistaken for nodes. Set contrast with the tone and lower opacity only a little: low opacity piles up into uneven texture where edges bundle. Label settings change labels only; they never reset edge values. Colouring edges by their source (`"edge.color": "source"`) is a deliberate choice for showing where ties come from, not a default; say so in the caption. Curve edges only when the network is directed and direction matters.
@@ -136,6 +140,7 @@ When a person is watching the Gephi window while you work (teaching, demos, pair
 - Run layouts in chunks of 200 to 300 iterations, with narration between passes, instead of one long run.
 - Pause after each visible change and invite their observations.
 - Gephi's own panels show what you do: the Statistics panel shows each statistic running, its result, and its report; the Layout panel shows the algorithm and the exact settings; the Appearance panel shows the column and the colours or sizes applied. Point the viewer to them and invite them to rerun or adjust a step by hand. A statistic can be cancelled from the Statistics panel. Columns can be named by id or by the title shown in Gephi.
+- No data yet? `gephi_generate_graph` gives a graph of known shape to teach on (pass a `seed` so the demo can be repeated), and a random and a preferential-attachment graph side by side show what hubs look like. Say it is a model, not data.
 - Switch the viewer to the tab you are about to discuss with `gephi_switch_perspective` (Overview, Data Laboratory, Preview).
 - The companion `teach-with-gephi` skill codifies the full pattern.
 
