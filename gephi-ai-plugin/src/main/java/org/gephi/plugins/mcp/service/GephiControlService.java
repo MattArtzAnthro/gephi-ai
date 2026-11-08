@@ -5296,25 +5296,52 @@ public class GephiControlService {
      * graph canvas exists, then "ok", "stalled" or "not_drawing" (see {@link #rendererState}).
      */
     public JsonObject rendererStats() {
+        try {
+            return rendererStats(() -> vizEngine().map(e -> new long[] {e.getFrameCount(), e.getWorldUpdateCount()}),
+                RENDERER_SAMPLE_MS, RENDERER_STALL_CONFIRM_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            JsonObject o = new JsonObject();
+            o.addProperty("state", "unknown");
+            return o;
+        }
+    }
+
+    /**
+     * {@link #rendererStats()} over any source of {frames, world updates}, empty while there is
+     * no engine.
+     */
+    static JsonObject rendererStats(java.util.function.Supplier<java.util.Optional<long[]>> counters, long sampleMs,
+        long confirmMs) throws InterruptedException {
         JsonObject o = new JsonObject();
         try {
-            java.util.Optional<? extends org.gephi.viz.engine.VizEngine<?, ?>> engine = vizEngine();
-            if (engine.isEmpty()) {
+            java.util.Optional<long[]> first = counters.get();
+            if (first.isEmpty()) {
                 o.addProperty("state", "not_started");
                 return o;
             }
-            final long f1 = engine.get().getFrameCount();
-            final long w1 = engine.get().getWorldUpdateCount();
-            Thread.sleep(RENDERER_SAMPLE_MS);
-            long f2 = engine.get().getFrameCount();
-            long w2 = engine.get().getWorldUpdateCount();
-            o.addProperty("state", rendererState(f2 - f1, w2 - w1));
-            o.addProperty("frames", f2);
-            o.addProperty("world_updates", w2);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            o.addProperty("state", "unknown");
-        } catch (Throwable t) {
+            Thread.sleep(sampleMs);
+            long[] now = counters.get().orElse(first.get());
+            String state = rendererState(now[0] - first.get()[0], now[1] - first.get()[1]);
+            // A single slow world update (a very large graph, or a screenshot pausing updates)
+            // also leaves frames drawn without new world updates. Only updates that stay frozen
+            // for the confirmation time are a stall.
+            long watched = sampleMs;
+            while ("stalled".equals(state) && watched < confirmMs) {
+                Thread.sleep(sampleMs);
+                watched += sampleMs;
+                now = counters.get().orElse(now);
+                if (now[1] > first.get()[1]) {
+                    state = "ok";
+                }
+            }
+            o.addProperty("state", state);
+            if ("stalled".equals(state)) {
+                o.addProperty("stalled_for_ms", watched);
+            }
+            o.addProperty("frames", now[0]);
+            o.addProperty("world_updates", now[1]);
+        } catch (RuntimeException e) {
             o.addProperty("state", "unknown");
         }
         return o;
@@ -5322,6 +5349,8 @@ public class GephiControlService {
 
     /** How long /health watches the renderer's counters. */
     static final long RENDERER_SAMPLE_MS = 250;
+    /** How long world updates must stay frozen, with frames still drawn, before it is a stall. */
+    static final long RENDERER_STALL_CONFIRM_MS = 2000;
     /** How long a screenshot waits for the graph view to start drawing. */
     static final long RENDERER_READY_BUDGET_MS = 10_000;
 

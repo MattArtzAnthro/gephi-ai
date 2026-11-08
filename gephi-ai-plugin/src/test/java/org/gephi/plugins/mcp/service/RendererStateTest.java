@@ -68,4 +68,51 @@ class RendererStateTest {
     void notReadyWhileTheFrameCountStandsStill() throws Exception {
         assertFalse(GephiControlService.awaitRendererReady(() -> OptionalLong.of(42), 100));
     }
+
+    /** Counters that advance by fixed steps per read; world updates stop for the first reads. */
+    private static java.util.function.Supplier<java.util.Optional<long[]>> counters(int frozenReads,
+        boolean everResume) {
+        long[] state = {0, 0};
+        java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
+        return () -> {
+            int n = reads.getAndIncrement();
+            state[0] += 16;
+            if (n >= frozenReads && everResume) {
+                state[1] += 11;
+            }
+            return java.util.Optional.of(new long[] {state[0], state[1]});
+        };
+    }
+
+    @Test
+    void sampledHealthyRendererIsOk() throws Exception {
+        assertEquals("ok", GephiControlService.rendererStats(counters(0, true), 20, 200).get("state").getAsString());
+    }
+
+    /** One slow world update (a large graph, a screenshot pausing updates) is not a hang. */
+    @Test
+    void worldUpdatesThatResumeWithinTheConfirmationAreNotAStall() throws Exception {
+        assertEquals("ok", GephiControlService.rendererStats(counters(3, true), 20, 400).get("state").getAsString());
+    }
+
+    @Test
+    void worldUpdatesFrozenThroughTheConfirmationAreAStall() throws Exception {
+        com.google.gson.JsonObject r = GephiControlService.rendererStats(counters(0, false), 20, 200);
+
+        assertEquals("stalled", r.get("state").getAsString());
+        assertTrue(r.get("stalled_for_ms").getAsLong() >= 200, r.toString());
+    }
+
+    @Test
+    void noEngineIsNotStarted() throws Exception {
+        assertEquals("not_started",
+            GephiControlService.rendererStats(java.util.Optional::empty, 20, 200).get("state").getAsString());
+    }
+
+    @Test
+    void anUnreadableEngineIsUnknown() throws Exception {
+        assertEquals("unknown", GephiControlService.rendererStats(() -> {
+            throw new IllegalStateException("engine gone");
+        }, 20, 200).get("state").getAsString());
+    }
 }
