@@ -33,6 +33,8 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <gephi.version>0.11.4</gephi.version>
+        <!-- Deliberate SpotBugs findings; point it at an empty filter to see that the gate fails. -->
+        <spotbugs.exclude>spotbugs-exclude.xml</spotbugs.exclude>
         <netbeans.version>RELEASE290</netbeans.version>
         <!-- Coverage floors for the jacoco check below; they only ever move up. -->
         <coverage.line.minimum>0.58</coverage.line.minimum>
@@ -305,6 +307,27 @@
               the build when coverage drops below the floor. Both run in the test phase, so
               `mvn test` (what CI runs) enforces the floor.
             -->
+            <!-- Static analysis at verify (CI): every finding fails the build unless spotbugs-exclude.xml
+                 names it as deliberate. -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>4.9.3.0</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <threshold>Medium</threshold>
+                    <excludeFilterFile>${spotbugs.exclude}</excludeFilterFile>
+                    <failOnError>true</failOnError>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>

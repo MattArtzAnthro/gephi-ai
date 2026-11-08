@@ -301,4 +301,18 @@ class DataToolsTest {
             assertTrue(gm.getVisibleView().isMainView(), "round " + round + ": the graph is filtered after the reset");
         }
     }
+
+    /** A screenshot into a folder that cannot be made says so at once, before asking Gephi. */
+    @Test
+    void screenshotIntoAFolderThatCannotBeMadeIsRefusedAtOnce(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp)
+        throws Exception {
+        java.nio.file.Path blocker = java.nio.file.Files.createFile(tmp.resolve("not-a-folder"));
+        long started = System.nanoTime();
+
+        JsonObject r = service.exportScreenshot(blocker.resolve("shot.png").toString(), 1, false);
+
+        assertFalse(r.get("success").getAsBoolean(), r.toString());
+        assertTrue(r.get("error").getAsString().contains("folder"), r.toString());
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000, "it waited for Gephi first");
+    }
 }

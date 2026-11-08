@@ -2715,7 +2715,7 @@ public class GephiControlService {
             }
             layout.setGraphModel(currentGraphModel());
             final java.util.List<String> unapplied = applyLayoutProperties(layout, properties);
-            pendingLayoutProps = properties;
+            pendingLayoutProps = properties == null ? null : new java.util.LinkedHashMap<>(properties);
             pendingLayoutAlgo = algo;
             JsonObject r = new JsonObject();
             r.addProperty("success", true);
@@ -4324,10 +4324,10 @@ public class GephiControlService {
             return error("No project open");
         }
 
-        File targetFile = new File(filePath).getAbsoluteFile();
+        File targetFile = outputFile(filePath);
         File targetDir = targetFile.getParentFile();
-        if (targetDir != null) {
-            targetDir.mkdirs();
+        if (targetDir != null && !targetDir.isDirectory()) {
+            return error("Could not create the folder " + targetDir + " for the screenshot");
         }
 
         // ScreenshotController is not independently registered in Lookup — it is only
@@ -4724,7 +4724,7 @@ public class GephiControlService {
                         + " edges per node has " + edges + " edges, more than " + GENERATE_MAX_EXPECTED_EDGES
                         + "; lower nodes or edges_per_node");
                 }
-                long s = seed != null ? seed : new java.util.Random().nextLong();
+                long s = seed != null ? seed : java.util.concurrent.ThreadLocalRandom.current().nextLong();
                 org.gephi.io.generator.plugin.ScaleFreeGraph g = new org.gephi.io.generator.plugin.ScaleFreeGraph();
                 g.setNumberOfNodes(nodes);
                 g.setEdgesPerNode(k);

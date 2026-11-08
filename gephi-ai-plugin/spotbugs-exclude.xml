@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Findings that are deliberate. Each names the class, method and pattern, so anything new still fails. -->
+<FindBugsFilter>
+    <!-- The NetBeans module installer records the instance Gephi creates, so stop() can reach it. -->
+    <Match>
+        <Class name="org.gephi.plugins.mcp.Installer"/>
+        <Method name="restored"/>
+        <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/>
+    </Match>
+    <!-- The service is a deliberate singleton shared by the HTTP server and the menu actions. -->
+    <Match>
+        <Class name="org.gephi.plugins.mcp.service.GephiControlService"/>
+        <Method name="getInstance"/>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+    <!-- null means "not a true/false value", which the caller reports as an unapplied setting. -->
+    <Match>
+        <Class name="org.gephi.plugins.mcp.service.GephiControlService"/>
+        <Method name="previewBoolean"/>
+        <Bug pattern="NP_BOOLEAN_RETURN_NULL"/>
+    </Match>
+    <!-- A statistic without a report is normal; its absence is reported as report_available. -->
+    <Match>
+        <Class name="org.gephi.plugins.mcp.service.GephiControlService"/>
+        <Method name="runStatistic"/>
+        <Bug pattern="DE_MIGHT_IGNORE"/>
+    </Match>
+    <!-- Gephi's version comes from module metadata that varies by build; any failure means unknown. -->
+    <Match>
+        <Class name="org.gephi.plugins.mcp.api.GephiAPIServer"/>
+        <Method name="gephiVersion"/>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+    </Match>
+</FindBugsFilter>
