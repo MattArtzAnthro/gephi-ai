@@ -178,6 +178,8 @@ def test_generate_graph_schema_names_its_models_and_bounds():
     probability = next(o for o in props["wiring_probability"]["anyOf"] if o.get("type") == "number")
     assert probability["exclusiveMinimum"] == 0 and probability["maximum"] == 1
     assert all(p.get("description") for p in props.values()), "every parameter is described"
+    per_node = next(o for o in props["edges_per_node"]["anyOf"] if o.get("type") == "integer")
+    assert per_node["maximum"] == 1000, "edges_per_node is bounded, so no request can ask for billions of edges"
 
 
 async def test_generate_random_graph_sends_its_probability(rec):

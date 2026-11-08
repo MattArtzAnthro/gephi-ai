@@ -45,14 +45,25 @@ class GenerateGraphTest {
         pc.newProject();
     }
 
-    private static List<Integer> sortedDegrees() {
+    /**
+     * The graph's edges as sorted pairs of node positions (the order the generator added them), so
+     * two graphs compare edge for edge. Gephi numbers each generated graph's ids from a counter that
+     * keeps rising, so raw ids differ between two identical graphs.
+     */
+    private static List<String> edgeSet() {
         Graph g = Lookup.getDefault().lookup(GraphController.class).getGraphModel().getGraph();
-        List<Integer> d = new ArrayList<>();
+        java.util.Map<Node, Integer> position = new java.util.HashMap<>();
         for (Node n : g.getNodes().toArray()) {
-            d.add(g.getDegree(n));
+            position.put(n, position.size());
         }
-        Collections.sort(d);
-        return d;
+        List<String> edges = new ArrayList<>();
+        for (org.gephi.graph.api.Edge e : g.getEdges().toArray()) {
+            int a = position.get(e.getSource());
+            int b = position.get(e.getTarget());
+            edges.add(Math.min(a, b) + "-" + Math.max(a, b));
+        }
+        Collections.sort(edges);
+        return edges;
     }
 
     @Test
@@ -70,11 +81,11 @@ class GenerateGraphTest {
     @Test
     void theSameSeedGivesTheSameGraph() {
         service.generateGraph("preferential_attachment", 300, 3, null, 7L);
-        List<Integer> first = sortedDegrees();
+        List<String> first = edgeSet();
         service.generateGraph("preferential_attachment", 300, 3, null, 7L);
-        List<Integer> second = sortedDegrees();
+        List<String> second = edgeSet();
         service.generateGraph("preferential_attachment", 300, 3, null, 8L);
-        List<Integer> other = sortedDegrees();
+        List<String> other = edgeSet();
 
         assertEquals(first, second);
         assertNotEquals(first, other);
@@ -113,5 +124,31 @@ class GenerateGraphTest {
             .contains("nodes"));
         assertTrue(service.generateGraph("random", GephiControlService.GENERATE_MAX_RANDOM_NODES + 1, null, 0.01,
             null).get("error").getAsString().contains("nodes"));
+    }
+
+    /** One request must not be able to run Gephi out of memory. */
+    @Test
+    void preferentialAttachmentRefusesAnEdgeCountOverTheCap() {
+        JsonObject r = service.generateGraph("preferential_attachment", 100_000, 50_000, null, 1L);
+
+        assertFalse(r.get("success").getAsBoolean());
+        String error = r.get("error").getAsString();
+        String cap = String.valueOf(GephiControlService.GENERATE_MAX_EXPECTED_EDGES);
+        assertTrue(error.contains("edges") && error.contains(cap), error);
+    }
+
+    @Test
+    void preferentialAttachmentRefusesTooManyNodes() {
+        JsonObject r = service.generateGraph("preferential_attachment", GephiControlService.GENERATE_MAX_NODES + 1, 2,
+            null, 1L);
+
+        assertTrue(r.get("error").getAsString().contains("nodes"), r.toString());
+    }
+
+    @Test
+    void randomGraphRefusesAnExpectedEdgeCountOverTheCap() {
+        JsonObject r = service.generateGraph("random", 20_000, null, 0.5, null);
+
+        assertTrue(r.get("error").getAsString().contains("expects about"), r.toString());
     }
 }

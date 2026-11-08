@@ -4204,7 +4204,7 @@ async def gephi_generate_graph(
         description="preferential_attachment (Barabasi-Albert: hubs emerge) or random (Erdos-Renyi)")],
     nodes: Annotated[int, Field(ge=2, le=100_000, description=(
         "How many nodes. Up to 100,000; the random model allows up to 20,000."))],
-    edges_per_node: Annotated[int | None, Field(ge=1, description=(
+    edges_per_node: Annotated[int | None, Field(ge=1, le=1000, description=(
         "preferential_attachment only: links each new node makes (default 2); less than nodes."))] = None,
     wiring_probability: Annotated[float | None, Field(gt=0, le=1, description=(
         "random only: chance that any two nodes are linked (default 0.05)."))] = None,
@@ -4225,7 +4225,7 @@ async def gephi_generate_graph(
       exactly edges_per_node + (nodes - edges_per_node - 1) * edges_per_node edges. Its
       heavy-tailed degrees come from the model; they say nothing about whether any real
       network is scale-free, and a real network's degrees should never be described that way.
-      Up to 100,000 nodes. `seed` makes it reproducible; without one, a seed is chosen and
+      Up to 100,000 nodes and 2 million edges. `seed` makes it reproducible; without one, a seed is chosen and
       returned, so it can always be made again.
     - "random" (Erdos-Renyi): links each pair of nodes with `wiring_probability`
       (default 0.05). Up to 20,000 nodes and about 2 million expected edges. Gephi's random

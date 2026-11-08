@@ -4625,7 +4625,7 @@ public class GephiControlService {
     static final int GENERATE_MAX_NODES = 100_000;
     /** The random generator tests every pair of nodes, so it is held to fewer. */
     static final int GENERATE_MAX_RANDOM_NODES = 20_000;
-    /** Largest expected edge count a random graph may have. */
+    /** Largest edge count a generated graph may have (exact for preferential attachment, expected for random). */
     static final long GENERATE_MAX_EXPECTED_EDGES = 2_000_000L;
 
     /**
@@ -4650,6 +4650,12 @@ public class GephiControlService {
                 }
                 if (k < 1 || k >= nodes) {
                     return error("edges_per_node must be at least 1 and less than nodes (" + nodes + ")");
+                }
+                long edges = k + (long) (nodes - k - 1) * k;
+                if (edges > GENERATE_MAX_EXPECTED_EDGES) {
+                    return error("A preferential-attachment graph of " + nodes + " nodes with " + k
+                        + " edges per node has " + edges + " edges, more than " + GENERATE_MAX_EXPECTED_EDGES
+                        + "; lower nodes or edges_per_node");
                 }
                 long s = seed != null ? seed : new java.util.Random().nextLong();
                 org.gephi.io.generator.plugin.ScaleFreeGraph g = new org.gephi.io.generator.plugin.ScaleFreeGraph();
