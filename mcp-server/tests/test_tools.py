@@ -831,3 +831,14 @@ async def test_new_options_go_through_on_a_current_plugin(rec):
 async def test_plain_calls_do_not_ask_for_the_version(rec):
     await out_of(gephi_mcp.gephi_query_nodes, limit=5)
     assert [c["endpoint"] for c in rec.calls] == ["/graph/nodes"]
+
+
+def test_the_server_gives_hosts_its_working_rules():
+    """Hosts without the skill (Codex, Gemini, a bare uvx setup) learn the essentials from the
+    server itself: call the health check first, compute before claiming, test groups for
+    stability, never call a network scale-free, ship a caption with every map."""
+    text = gephi_mcp.mcp.instructions or ""
+
+    for must in ("gephi_health_check", "gephi_community_stability", "scale-free", "caption", "gephi_undo"):
+        assert must in text, f"the server instructions do not mention {must}"
+    assert len(text) < 2500, "instructions are read on every connection; keep them short"

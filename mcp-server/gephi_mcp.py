@@ -192,8 +192,30 @@ def _package_version() -> str:
         return "0.0.0"
 
 
+#: What any MCP host learns on connecting, for hosts without the plugin's skill (Codex, Gemini, a
+#: bare uvx setup). The skill and its references carry the full practice.
+_INSTRUCTIONS = """\
+Gephi AI controls a running Gephi Desktop. Working rules:
+1. Call gephi_health_check first. If it fails, ask the person to open Gephi with the Gephi AI
+   plugin installed, and stop. Its renderer.state "stalled" and graph_lock_stats explain a frozen
+   Gephi; one check is not proof of a hang.
+2. Read before restyling: gephi_profile_graph, then ask what the nodes and ties are.
+3. Compute before claiming: modularity_class, Degree and centrality columns exist only after
+   their statistic has run.
+4. Groups are not findings until tested: run gephi_community_stability before naming communities.
+5. Never call a network scale-free or say it follows a power law; describe its hubs instead.
+6. Back a claim with gephi_claim_record, which re-reads the cited values from the live graph.
+7. Every exported map ships with a caption: the data, the layout and its settings, what size and
+   colour encode, and what the map does not show.
+8. Destructive tools (clear, remove, merge, filter, extract) take an undo snapshot; gephi_undo
+   restores it. Say what a filter will remove before running it.
+9. gephi_generate_graph makes model graphs for teaching and comparison, never data about the
+   person's network.
+"""
+
 mcp = MCPServer(
     "gephi_mcp",
+    instructions=_INSTRUCTIONS,
     version=_package_version(),
     cache_hints={
         "tools/list": CacheHint(ttl_ms=3_600_000, scope="public"),
