@@ -15,6 +15,12 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   a run that had started with the right value. The selection and the settings now go to Gephi's
   event thread as two tasks, so the reset lands first. `applied` caught it every time.
 
+### Changed
+- **Comparing two workspaces that share no node ids also checks their labels.**
+  `gephi_compare_workspaces` adds `nodes.label_overlap` (count and examples) and says in its
+  warning whether the labels match, so the same nodes under different ids show up without reading
+  each workspace by hand. Its description now says it answers whether two workspaces share nodes.
+
 ## MCP server 1.22.0 / Java plugin 1.6.0 / workflow packages 1.21.0
 
 ### Added

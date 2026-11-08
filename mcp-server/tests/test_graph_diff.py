@@ -144,3 +144,32 @@ def test_graphs_that_share_no_ids_report_counts_and_examples_not_every_node():
     assert result["edges"]["added_count"] == 39
     assert len(result["edges"]["added"]) == len(result["edges"]["removed"]) == 5
     assert "examples" in result["warning"]
+
+
+def labelled(nodes, edges=()):
+    """nodes: {id: label}."""
+    return {"nodes": [{"key": k, "label": lab, "attributes": {}} for k, lab in nodes.items()],
+            "edges": [{"source": s, "target": t} for s, t in edges]}
+
+
+def test_graphs_sharing_no_ids_are_checked_by_label_and_say_when_labels_differ_too():
+    """Agents comparing two disjoint workspaces switched to each one and sampled labels by hand
+    (2 to 4 extra calls) to rule out the same nodes under different ids. The diff answers it."""
+    result = diff_graphs(labelled({"n0": "n0", "n1": "n1"}), labelled({"d0": "d0", "d1": "d1"}))
+
+    assert result["nodes"]["label_overlap"] == {"count": 0, "examples": []}
+    assert "labels" in result["warning"] and "either" in result["warning"]
+
+
+def test_graphs_sharing_no_ids_but_sharing_labels_point_at_the_label_as_the_key():
+    before = labelled({"1": "Ana", "2": "Ben", "3": "Cy"})
+    after = labelled({"p1": "Ana", "p2": "Ben", "p9": "Dee"})
+
+    result = diff_graphs(before, after)
+
+    assert result["nodes"]["label_overlap"] == {"count": 2, "examples": ["Ana", "Ben"]}
+    assert "2 labels" in result["warning"]
+
+
+def test_graphs_that_share_ids_get_no_label_check():
+    assert "label_overlap" not in diff_graphs(BEFORE, AFTER)["nodes"]

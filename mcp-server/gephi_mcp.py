@@ -3786,7 +3786,8 @@ async def gephi_compare_partitions(column: str, against: str) -> str:
 @_tool(name="gephi_compare_workspaces")
 async def gephi_compare_workspaces(before: int, after: int, compare: str | None = None,
                                    directed: bool = False) -> str:
-    """Compare the same network at two points in time, held in two workspaces.
+    """Compare the same network at two points in time, held in two workspaces. Also the one call
+    for whether two workspaces share any nodes: `nodes.shared` counts them.
 
     Reports which nodes and edges arrived, which left, and — when `compare` names a numeric column
     such as Degree — which of the nodes present in both grew and which shrank. Answering this today
@@ -3796,7 +3797,9 @@ async def gephi_compare_workspaces(before: int, after: int, compare: str | None 
     same id means the same thing in both. When they share no nodes at all the result says so
     rather than reporting total turnover, because a mismatched identifier looks identical to a
     network that replaced every member and is very much more common: the added and removed lists
-    then keep five examples each, with the totals in added_count and removed_count.
+    then keep five examples each, with the totals in added_count and removed_count, and
+    `nodes.label_overlap` says whether the labels match instead (count and examples), so there is
+    no need to read each workspace's labels by hand (server 1.22.1+).
 
     `before` and `after` are zero-based workspace indexes, the `index` field of
     gephi_list_workspaces (not its `id`).

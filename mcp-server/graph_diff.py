@@ -22,6 +22,11 @@ def _nodes(graph: Graph) -> dict[str, dict[str, Any]]:
     return {n["key"]: (n.get("attributes") or {}) for n in (graph or {}).get("nodes", [])}
 
 
+def _labels(graph: Graph) -> set[str]:
+    """Node labels, falling back to the id as Gephi shows a node without one."""
+    return {str(n.get("label") or n["key"]) for n in (graph or {}).get("nodes", [])}
+
+
 def _edges(graph: Graph, directed: bool) -> set[tuple[str, str]]:
     out = set()
     for edge in (graph or {}).get("edges", []):
@@ -84,11 +89,21 @@ def diff_graphs(before: Graph, after: Graph, *, compare: str | None = None,
             for side in ("added", "removed"):
                 section[side + "_count"] = len(section[side])
                 section[side] = section[side][:DISJOINT_EXAMPLES]
+        # The next question is whether the same nodes sit under different ids. Labels are the
+        # usual second key; checking them here saves reading each workspace by hand.
+        common = sorted(_labels(before) & _labels(after))
+        result["nodes"]["label_overlap"] = {"count": len(common),
+                                            "examples": common[:DISJOINT_EXAMPLES]}
+        if common:
+            labels_say = (f"{len(common)} labels do appear on both sides, so the same nodes may "
+                          "sit under different ids: the label is a candidate key.")
+        else:
+            labels_say = "Their labels do not match either, so no shared key was found."
         result["warning"] = (
             "The two graphs have no nodes in common, so every node reads as added or removed. "
             "That is far more often a mismatched identifier than real turnover: check that both "
-            "sides use the same node ids before treating this as a finding. The lists show the "
-            f"first {DISJOINT_EXAMPLES} examples; the counts give the totals.")
+            f"sides use the same node ids before treating this as a finding. {labels_say} The "
+            f"lists show the first {DISJOINT_EXAMPLES} examples; the counts give the totals.")
 
     if compare:
         grew, shrank, unchanged, comparable = [], [], [], 0
