@@ -11,7 +11,7 @@ nodes it could match rather than silently treating an unmatched node as new.
 
 import pytest
 
-from graph_diff import diff_graphs
+from graph_diff import LIST_CAP, diff_graphs
 
 
 def graph(nodes, edges=()):
@@ -157,7 +157,8 @@ def test_graphs_sharing_no_ids_are_checked_by_label_and_say_when_labels_differ_t
     (2 to 4 extra calls) to rule out the same nodes under different ids. The diff answers it."""
     result = diff_graphs(labelled({"n0": "n0", "n1": "n1"}), labelled({"d0": "d0", "d1": "d1"}))
 
-    assert result["nodes"]["label_overlap"] == {"count": 0, "examples": []}
+    assert result["nodes"]["label_overlap"] == {"count": 0, "unique_on_both_sides": 0,
+                                                "examples": []}
     assert "labels" in result["warning"] and "either" in result["warning"]
 
 
@@ -167,9 +168,84 @@ def test_graphs_sharing_no_ids_but_sharing_labels_point_at_the_label_as_the_key(
 
     result = diff_graphs(before, after)
 
-    assert result["nodes"]["label_overlap"] == {"count": 2, "examples": ["Ana", "Ben"]}
+    assert result["nodes"]["label_overlap"] == {"count": 2, "unique_on_both_sides": 2,
+                                                "examples": ["Ana", "Ben"]}
     assert "2 labels" in result["warning"]
+    assert "candidate key" in result["warning"]
 
 
 def test_graphs_that_share_ids_get_no_label_check():
     assert "label_overlap" not in diff_graphs(BEFORE, AFTER)["nodes"]
+
+
+def test_a_label_shared_by_several_nodes_is_not_called_a_candidate_key():
+    """Three nodes named "Smith" on each side are one overlapping label, not three matches, and
+    the label cannot say which Smith is which. Only labels held by exactly one node on each side
+    can serve as a key."""
+    before = labelled({"1": "Smith", "2": "Smith", "3": "Smith", "4": "Ana"})
+    after = labelled({"p1": "Smith", "p2": "Smith", "p3": "Smith", "p4": "Ana"})
+
+    overlap = diff_graphs(before, after)["nodes"]["label_overlap"]
+
+    assert overlap["count"] == 2
+    assert overlap["unique_on_both_sides"] == 1
+
+
+def test_labels_that_overlap_but_are_never_unique_are_not_offered_as_a_key():
+    before = labelled({"1": "Smith", "2": "Smith"})
+    after = labelled({"p1": "Smith", "p2": "Smith"})
+
+    result = diff_graphs(before, after)
+
+    assert result["nodes"]["label_overlap"]["unique_on_both_sides"] == 0
+    assert "candidate key" not in result["warning"]
+    assert "none is unique" in result["warning"]
+
+
+def test_a_label_unique_on_one_side_only_is_not_unique_on_both():
+    before = labelled({"1": "Ana", "2": "Ben"})
+    after = labelled({"p1": "Ana", "p2": "Ana", "p3": "Ben"})
+
+    overlap = diff_graphs(before, after)["nodes"]["label_overlap"]
+
+    assert (overlap["count"], overlap["unique_on_both_sides"]) == (2, 1)
+
+
+def test_one_shared_id_does_not_bring_back_the_full_lists():
+    """The counts-and-examples reply used to apply only when the graphs shared no id at all, so
+    a single coincidental shared id sent every other node and edge back in full."""
+    big = LIST_CAP + 50
+    before = graph({"x": {}, **{f"n{i}": {} for i in range(big)}},
+                   [(f"n{i}", f"n{i + 1}") for i in range(big - 1)])
+    after = graph({"x": {}, **{f"d{i}": {} for i in range(big - 10)}},
+                  [(f"d{i}", f"d{i + 1}") for i in range(big - 11)])
+
+    result = diff_graphs(before, after)
+
+    assert result["nodes"]["shared"] == 1
+    assert result["nodes"]["removed_count"] == big
+    assert result["nodes"]["added_count"] == big - 10
+    assert len(result["nodes"]["removed"]) == len(result["nodes"]["added"]) == LIST_CAP
+    assert result["edges"]["removed_count"] == big - 1
+    assert len(result["edges"]["added"]) == len(result["edges"]["removed"]) == LIST_CAP
+    assert "total" in result["note"]
+
+
+def test_short_lists_stay_in_full_whatever_the_overlap():
+    result = diff_graphs(BEFORE, AFTER)
+
+    assert result["nodes"]["added"] == ["d"]
+    assert "added_count" not in result["nodes"]
+    assert "note" not in result
+
+
+def test_an_ordinary_change_lists_every_added_node():
+    """Overlapping graphs are the normal before/after case: a dozen added nodes must all be
+    listed, since the agent has no other way to get them. Only very long lists are cut."""
+    before = graph({f"n{i}": {} for i in range(30)}, [])
+    after = graph({**{f"n{i}": {} for i in range(30)}, **{f"new{i}": {} for i in range(12)}}, [])
+
+    result = diff_graphs(before, after)
+
+    assert len(result["nodes"]["added"]) == 12
+    assert "added_count" not in result["nodes"]

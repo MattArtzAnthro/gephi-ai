@@ -4,6 +4,33 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Fixed
+- **Comparing workspaces no longer ends the methods record.** `gephi_compare_workspaces` switches
+  to each workspace to read it and switches back, but the receipt treated the switch as a new
+  graph and filed the layout record as an earlier section. The switches no longer count.
+- **Switching to the workspace already on screen, or deleting one that is not on screen, keeps
+  the methods record.** The server reads which workspace is on screen first. If it cannot read
+  the list, it ends the record as before.
+- **The server instructions no longer promise an undo snapshot that is not taken.**
+  `gephi_remove_node`, `gephi_remove_edge`, and `gephi_apply_filter` or `gephi_apply_filters`
+  with `action="column"` take none, and the instructions, the skills, and the README now say so
+  and tell the agent to call `gephi_snapshot` first. A test reads the sentence against the tools.
+- **`gephi_apply_filters` no longer offers the action `visible`.** The plugin refuses it with
+  "Unknown action: visible". `gephi_apply_filter` still takes it.
+- **`gephi_compare_workspaces` shortens long added and removed lists whatever the overlap.** One
+  shared node id used to bring back every other id in full. When the graphs overlap, a list
+  longer than 200 now shows its first 200 entries and its `_count`; shorter lists stay whole.
+- **`gephi_compare_workspaces` no longer calls a label a candidate key unless one node on each
+  side carries it.** `nodes.label_overlap` adds `unique_on_both_sides`, and the warning says when
+  overlapping labels cannot tell nodes apart.
+- **A layout request that fails because Gephi's UI thread is unresponsive now says the layout may
+  still start.** The result carries `guidance`: call `gephi_get_layout_status` before retrying,
+  and do not retry while it reports running.
+- **A failed undo snapshot is logged.** The warning, with its traceback, goes to the server log
+  instead of being dropped.
+
 ## MCP server 1.24.0 / workflow packages 1.23.0
 
 ### Added

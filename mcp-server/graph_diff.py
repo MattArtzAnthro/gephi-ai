@@ -13,6 +13,7 @@ case is reported as a caveat instead of presented as a finding.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 Graph = dict[str, Any]
@@ -22,9 +23,10 @@ def _nodes(graph: Graph) -> dict[str, dict[str, Any]]:
     return {n["key"]: (n.get("attributes") or {}) for n in (graph or {}).get("nodes", [])}
 
 
-def _labels(graph: Graph) -> set[str]:
-    """Node labels, falling back to the id as Gephi shows a node without one."""
-    return {str(n.get("label") or n["key"]) for n in (graph or {}).get("nodes", [])}
+def _labels(graph: Graph) -> Counter[str]:
+    """How many nodes carry each label, falling back to the id as Gephi shows a node without
+    one."""
+    return Counter(str(n.get("label") or n["key"]) for n in (graph or {}).get("nodes", []))
 
 
 def _edges(graph: Graph, directed: bool) -> set[tuple[str, str]]:
@@ -47,8 +49,12 @@ def _number(attributes: dict[str, Any], column: str) -> float | None:
     return None
 
 
-# How many ids each list keeps when the two graphs share no node at all.
+# How many entries a long list keeps; the total goes in a *_count beside it. The two graphs
+# sharing no node at all always get the counts.
 DISJOINT_EXAMPLES = 5
+# Graphs that overlap are the normal before/after case, so their lists stay whole up to this
+# many entries; only a longer list is cut to this many plus its *_count.
+LIST_CAP = 200
 
 
 def diff_graphs(before: Graph, after: Graph, *, compare: str | None = None,
@@ -82,21 +88,38 @@ def diff_graphs(before: Graph, after: Graph, *, compare: str | None = None,
         "directed": directed,
     }
 
-    if a and b and not shared:
-        # Listing every node and edge here is the total turnover the warning says not to read,
-        # and on two large graphs it ran to hundreds of thousands of characters.
-        for section in (result["nodes"], result["edges"]):
-            for side in ("added", "removed"):
+    disjoint = bool(a and b and not shared)
+    # A list longer than its cap becomes its first entries plus a count whatever the overlap: a
+    # single shared id used to bring back every other node and edge in full, thousands of ids.
+    shortened = False
+    for section in (result["nodes"], result["edges"]):
+        for side in ("added", "removed"):
+            keep = DISJOINT_EXAMPLES if disjoint else LIST_CAP
+            if disjoint or len(section[side]) > keep:
+                shortened = shortened or len(section[side]) > keep
                 section[side + "_count"] = len(section[side])
-                section[side] = section[side][:DISJOINT_EXAMPLES]
+                section[side] = section[side][:keep]
+    if shortened:
+        result["note"] = ("Long lists show their first entries only; the *_count beside each "
+                          "gives the total.")
+
+    if disjoint:
         # The next question is whether the same nodes sit under different ids. Labels are the
-        # usual second key; checking them here saves reading each workspace by hand.
-        common = sorted(_labels(before) & _labels(after))
+        # usual second key, but only a label held by exactly one node on each side can say which
+        # node is which; a name shared by several nodes cannot.
+        left, right = _labels(before), _labels(after)
+        common = sorted(set(left) & set(right))
+        unique = [label for label in common if left[label] == 1 and right[label] == 1]
         result["nodes"]["label_overlap"] = {"count": len(common),
+                                            "unique_on_both_sides": len(unique),
                                             "examples": common[:DISJOINT_EXAMPLES]}
-        if common:
-            labels_say = (f"{len(common)} labels do appear on both sides, so the same nodes may "
-                          "sit under different ids: the label is a candidate key.")
+        if unique:
+            labels_say = (f"{len(common)} labels do appear on both sides and {len(unique)} are "
+                          "unique on both, so the same nodes may sit under different ids: "
+                          "those labels are a candidate key.")
+        elif common:
+            labels_say = (f"{len(common)} labels appear on both sides but none is unique on "
+                          "both, so a label cannot say which node is which.")
         else:
             labels_say = "Their labels do not match either, so no shared key was found."
         result["warning"] = (

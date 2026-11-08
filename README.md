@@ -18,7 +18,7 @@ Built for researchers working across network science and AI.
 <summary>Full feature list</summary>
 
 - 121 tools covering the whole workflow: build, analyze, style, lay out, filter, and export
-- One-level undo: destructive operations snapshot the workspace first, so `gephi_undo` brings the graph back
+- One-level undo: bulk removals, merges, extracts, and pruning filters snapshot the workspace first, so `gephi_undo` brings the graph back (single node or edge removals and column-writing filters do not; `gephi_snapshot` first)
 - Measured layout quality: the graph profile flags heavy-tailed weights and hub-and-spoke wiring before a layout runs, visual QA scores how well communities separate, and numerically exploded layouts are caught instead of exported
 - Interactive network view inside the chat (pan, zoom, hover, and click a node to ask about it)
 - Slash commands for common jobs: `/analyze-network`, `/community-detection`, `/centrality`, `/visualize`, `/export-map`, `/import-and-explore`, `/explore`, `/verify-claim`, `/text-network`, `/teach`, and `/counterfactual`

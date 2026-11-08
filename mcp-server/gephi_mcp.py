@@ -205,6 +205,9 @@ def _package_version() -> str:
 _Table = Literal["node", "edge"]
 _ColumnType = Literal["string", "integer", "double", "float", "boolean", "long"]
 _FilterAction = Literal["select", "visible", "new_workspace", "column"]
+# /filter/combine accepts fewer actions than /filter/apply: it answers "visible" with
+# "Unknown action: visible".
+_CombineFilterAction = Literal["select", "new_workspace", "column"]
 _ImportMode = Literal["new_workspace", "append"]
 
 #: What any MCP host learns on connecting, for hosts without the plugin's skill (Codex, Gemini, a
@@ -222,8 +225,12 @@ Gephi AI controls a running Gephi Desktop. Working rules:
 6. Back a claim with gephi_claim_record, which re-reads the cited values from the live graph.
 7. Every exported map ships with a caption: the data, the layout and its settings, what size and
    colour encode, and what the map does not show.
-8. Destructive tools (clear, remove, merge, filter, extract) take an undo snapshot; gephi_undo
-   restores it. Say what a filter will remove before running it.
+8. Tools that clear, bulk-remove, merge, extract, or prune the graph (for example
+   gephi_clear_graph, gephi_bulk_remove_nodes, gephi_merge_nodes, gephi_remove_isolates,
+   gephi_filter_by_degree) take an undo snapshot; gephi_undo restores it. These do not:
+   gephi_remove_node, gephi_remove_edge, and gephi_apply_filter or gephi_apply_filters with
+   action="column", which writes a column. Call gephi_snapshot first if you may need to undo
+   one of them. Say what a filter will remove before running it.
 9. gephi_generate_graph makes model graphs for teaching and comparison, never data about the
    person's network.
 """
@@ -939,6 +946,8 @@ async def _auto_snapshot(op: str) -> bool:
         result = await _snapshot_current(op, enforce_cap=True)
         return bool(result.get("ok"))
     except Exception:
+        logger.warning("the undo snapshot before %s failed; the result reports no undo", op,
+                       exc_info=True)
         return False
 
 
@@ -1071,11 +1080,26 @@ async def gephi_list_workspaces() -> str:
     """
     return fmt(await gephi.request("GET", "/workspace/list"))
 
+async def _current_workspace_index() -> int | None:
+    """Zero-based index of the workspace on screen, read from Gephi's own list, or None when the
+    list cannot be read. A caller that gets None must assume the graph on screen may change."""
+    listed = await gephi.request("GET", "/workspace/list")
+    if not (isinstance(listed, dict) and listed.get("success")):
+        return None
+    return next((i for i, w in enumerate(listed.get("workspaces", []))
+                 if isinstance(w, dict) and w.get("current")), None)
+
+
 @_tool(name="gephi_switch_workspace")
 async def gephi_switch_workspace(index: int) -> str:
     """Switch the view to the workspace at a zero-based index (see gephi_list_workspaces). Every
     later tool acts on that workspace's graph.
     """
+    on_screen = await _current_workspace_index()
+    if on_screen == index:
+        # Already the workspace on screen: nothing changes, so the methods record stays.
+        with _workspace_bookkeeping():
+            return fmt(await gephi.request("POST", "/workspace/switch", json_data={"index": index}))
     return fmt(await gephi.request("POST", "/workspace/switch", json_data={"index": index}))
 
 @_tool(name="gephi_delete_workspace")
@@ -1084,6 +1108,12 @@ async def gephi_delete_workspace(index: int) -> str:
     cannot be undone; gephi_undo does not restore a deleted workspace. Say which graph it holds
     before deleting one the person did not create in this session.
     """
+    on_screen = await _current_workspace_index()
+    if on_screen is not None and on_screen != index:
+        # The graph on screen stays as it is, so the methods record stays too.
+        with _workspace_bookkeeping():
+            return fmt(await gephi.request("DELETE", "/workspace/delete",
+                                           params={"index": str(index)}))
     return fmt(await gephi.request("DELETE", "/workspace/delete", params={"index": str(index)}))
 
 @_tool(name="gephi_duplicate_workspace")
@@ -1718,6 +1748,13 @@ async def _check_layout_positions() -> dict | None:
     }
 
 
+#: What the plugin says when Gephi's UI thread stays busy past its 15 s wait.
+_UI_THREAD_BUSY = "UI thread is unresponsive"
+_UI_THREAD_GUIDANCE = (
+    "The layout may still start once Gephi's UI thread frees, even though this call failed. "
+    "Call gephi_get_layout_status before retrying, and do not retry while it reports running.")
+
+
 @_tool(name="gephi_run_layout")
 async def gephi_run_layout(algorithm: str, iterations: int = 1000,
                            properties: dict[str, Any] | None = None, sync: bool = False) -> str:
@@ -1752,6 +1789,10 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     returning; otherwise it returns immediately with status "running" (poll
     gephi_get_layout_status for completion).
 
+    If the error says Gephi's UI thread is unresponsive, the queued layout may still start once
+    the thread frees: the result's `guidance` says to call gephi_get_layout_status before any
+    retry and not to retry while it reports running.
+
     Sync runs end with a finite-positions check: if the layout exploded
     numerically (non-finite or absurd coordinates — FA2 can do this silently,
     especially on weighted graphs with a strong hub), the result carries a
@@ -1764,6 +1805,8 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     if isinstance(result, dict) and result.get("success"):
         LEDGER.record("run_layout", algorithm=algorithm, iterations=iterations,
                       **({"properties": properties} if properties else {}))
+    elif isinstance(result, dict) and _UI_THREAD_BUSY in str(result.get("error", "")):
+        result["guidance"] = _UI_THREAD_GUIDANCE
     if not sync or not result.get("success"):
         return fmt(result)
     # /layout/status says only whether a layout is running, not why it ended, so a stop sent
@@ -2792,7 +2835,9 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
       there avoids that.
     - "column": write filter membership into a boolean column named `column`
       (required for this action) instead of hiding anything — useful for
-      marking "matches" to color or size by afterward.
+      marking "matches" to color or size by afterward. This writes a column and is not
+      covered by the automatic undo snapshot: take gephi_snapshot first if the person may
+      want it undone.
 
     This compiles a plain-language filtering intent ("nodes with degree ≥ 5 in
     the giant component", "only where type = X") into the right Gephi filter:
@@ -2816,7 +2861,7 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
 
 @_tool(name="gephi_apply_filters")
 async def gephi_apply_filters(filters: list[dict[str, Any]], combine: Literal["all", "any"] = "all",
-                              action: _FilterAction = "select", column: str | None = None,
+                              action: _CombineFilterAction = "select", column: str | None = None,
                               dry_run: bool = False) -> str:
     """Apply several filters together, e.g. "degree at least 3 AND in community 2" or
     "Country is Peru OR Country is Chile".
@@ -2825,7 +2870,9 @@ async def gephi_apply_filters(filters: list[dict[str, Any]], combine: Literal["a
     plus "exclude": true to keep the opposite of what that filter keeps (NOT).
     `combine`: "all" keeps what every filter keeps (AND), "any" what at least one keeps (OR).
     `action` is as for gephi_apply_filter: "select" (hide the rest, reversible with
-    gephi_reset_filters), "new_workspace", or "column" (write membership into `column`).
+    gephi_reset_filters), "new_workspace", or "column" (write membership into `column`; the
+    automatic undo snapshot does not cover it, so take gephi_snapshot first if the person may
+    want it undone).
     `dry_run`=True only counts what would stay and what would go; run it first and tell
     the user before hiding a large part of the network. The combined query appears in
     Gephi's Filters panel, so the user can adjust it there.
@@ -3996,7 +4043,11 @@ async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
         # different numbers, and using the id lands on the wrong workspace or on none at all.
         original = next((i for i, w in enumerate(listed.get("workspaces", []))
                          if w.get("current")), None)
-        switched = await gephi.request("POST", "/workspace/switch", json_data={"index": workspace})
+        # The switches are bookkeeping: the graph on screen is the same once this returns, so
+        # they must not end the methods record.
+        with _workspace_bookkeeping():
+            switched = await gephi.request("POST", "/workspace/switch",
+                                           json_data={"index": workspace})
         if not (isinstance(switched, dict) and switched.get("success")):
             return None
     try:
@@ -4007,7 +4058,8 @@ async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
         return parse_gexf(exported["content"], max_nodes=10**9)
     finally:
         if workspace is not None and original is not None:
-            await gephi.request("POST", "/workspace/switch", json_data={"index": original})
+            with _workspace_bookkeeping():
+                await gephi.request("POST", "/workspace/switch", json_data={"index": original})
 
 
 @_tool(name="gephi_compare_partitions")
@@ -4068,8 +4120,10 @@ async def gephi_compare_workspaces(before: int, after: int, compare: str | None 
     rather than reporting total turnover, because a mismatched identifier looks identical to a
     network that replaced every member and is very much more common: the added and removed lists
     then keep five examples each, with the totals in added_count and removed_count, and
-    `nodes.label_overlap` says whether the labels match instead (count and examples), so there is
-    no need to read each workspace's labels by hand (server 1.22.1+).
+    `nodes.label_overlap` says whether the labels match instead (count, how many are unique on
+    both sides, and examples), so there is no need to read each workspace's labels by hand.
+    A label counts as a candidate key only when exactly one node on each side carries it. When the
+    graphs overlap, a list longer than 200 is cut to its first 200 entries with its *_count.
 
     `before` and `after` are zero-based workspace indexes, the `index` field of
     gephi_list_workspaces (not its `id`).

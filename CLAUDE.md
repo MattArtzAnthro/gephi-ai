@@ -58,9 +58,13 @@ subagents that only Claude Code can run.
   nodes and values from the live graph and returns the record.
 - Every final export ships with its caption: data, layout and key settings,
   what size and color encode, and what the map does and does not license.
-- Destructive tools (clear, remove, merge, filter, extract) take an undo
-  snapshot; `gephi_undo` restores it. Say what a filter will remove before
-  running it.
+- Tools that clear, bulk-remove, merge, extract, or prune the graph (for example
+  `gephi_clear_graph`, `gephi_bulk_remove_nodes`, `gephi_merge_nodes`,
+  `gephi_remove_isolates`, `gephi_filter_by_degree`) take an undo snapshot;
+  `gephi_undo` restores it. These do not: `gephi_remove_node`,
+  `gephi_remove_edge`, and `gephi_apply_filter` or `gephi_apply_filters` with
+  `action="column"`, which writes a column. Call `gephi_snapshot` first if you
+  may need to undo one of them. Say what a filter will remove before running it.
 
 Full guidance lives in `SKILL.md` and its references; prefer them over
 improvising.
