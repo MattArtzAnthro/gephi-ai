@@ -2843,9 +2843,10 @@ public class GephiControlService {
      * Runs {@code work} on a worker with Gephi's statistic stack size and waits for it, so a
      * statistic that recurses once per node of a long path (connected components on a deep
      * directed graph) does not overflow the request thread's small stack. Whatever it throws is
-     * thrown here.
+     * thrown here. If the request is interrupted, {@code cancel} stops the statistic, so it does
+     * not go on writing columns after its request has given up.
      */
-    static void runOnStatisticThread(Runnable work) {
+    static void runOnStatisticThread(Runnable work, Runnable cancel) {
         java.util.concurrent.atomic.AtomicReference<Throwable> thrown =
             new java.util.concurrent.atomic.AtomicReference<>();
         Thread worker = new Thread(null, () -> {
@@ -2860,9 +2861,15 @@ public class GephiControlService {
         try {
             worker.join();
         } catch (InterruptedException e) {
+            cancel.run();
             worker.interrupt();
+            try {
+                worker.join(STATISTIC_STOP_GRACE_MS);
+            } catch (InterruptedException again) {
+                // Already interrupted; the flag is restored below.
+            }
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while a statistic was running");
+            throw new RuntimeException("Interrupted while a statistic was running; it was stopped");
         }
         Throwable t = thrown.get();
         if (t instanceof RuntimeException) {
@@ -3196,10 +3203,11 @@ public class GephiControlService {
         java.util.function.Function<Statistics, PanelRunMark> watch) throws InterruptedException {
         if (panel == null) {
             if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
-                return runWithDeadline(() -> runOnStatisticThread(() -> stat.execute(gm)),
-                    (org.gephi.utils.longtask.spi.LongTask) stat, timeoutMs);
+                org.gephi.utils.longtask.spi.LongTask task = (org.gephi.utils.longtask.spi.LongTask) stat;
+                return runWithDeadline(() -> runOnStatisticThread(() -> stat.execute(gm), task::cancel),
+                    task, timeoutMs);
             }
-            runOnStatisticThread(() -> stat.execute(gm));
+            runOnStatisticThread(() -> stat.execute(gm), () -> { });
             return false;
         }
         java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);

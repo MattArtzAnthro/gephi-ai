@@ -217,8 +217,37 @@ class PanelExecutionTest {
         small.start();
         small.join(60_000);
 
+        assertFalse(small.isAlive(), "the statistic was still running after a minute");
         assertNull(failure.get(), () -> "the statistic failed: " + failure.get());
         assertTrue(stat.ran.get());
+    }
+
+    /**
+     * A request that is interrupted (its client went away) gives up its claim on the statistic, so
+     * the statistic must stop too, or a retry runs alongside a run nobody is waiting for.
+     */
+    @Test
+    void interruptedRequestStopsTheStatisticItStarted() throws Exception {
+        SlowStat stat = new SlowStat(60_000);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread request = new Thread(() -> {
+            try {
+                GephiControlService.executeStatistic(stat, null, 0, null, DIRECT);
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        }, "request");
+        request.start();
+        long until = System.nanoTime() + 5_000_000_000L;
+        while (!stat.ran.get() && System.nanoTime() < until) {
+            Thread.onSpinWait();
+        }
+
+        request.interrupt();
+        request.join(10_000);
+
+        assertFalse(request.isAlive(), "the request did not end");
+        assertTrue(stat.cancelled.get(), "the statistic kept running after its request was interrupted");
     }
 
     @Test
