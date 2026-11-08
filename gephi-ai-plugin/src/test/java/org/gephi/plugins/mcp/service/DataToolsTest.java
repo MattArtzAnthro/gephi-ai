@@ -315,4 +315,37 @@ class DataToolsTest {
         assertTrue(r.get("error").getAsString().contains("folder"), r.toString());
         assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000, "it waited for Gephi first");
     }
+
+    @Test
+    void resetReportsSuccess() {
+        service.applyFilter("Degree Range", Map.of("range", List.of(3, 100)), "select", null);
+
+        JsonObject r = service.resetFilters();
+
+        assertTrue(r.get("success").getAsBoolean(), r.toString());
+    }
+
+    /** A view set some other way than through the Filters panel is cleared too. */
+    @Test
+    void resetClearsAViewSetOutsideTheFiltersPanel() {
+        org.gephi.graph.api.GraphView view = gm.createView();
+        Graph sub = gm.getGraph(view);
+        sub.addNode(gm.getGraph().getNode("a"));
+        gm.setVisibleView(view);
+        assertFalse(gm.getVisibleView().isMainView(), "precondition: a subgraph is visible");
+
+        assertTrue(service.resetFilters().get("success").getAsBoolean());
+
+        assertTrue(gm.getVisibleView().isMainView(), "the subgraph view is still visible");
+        assertEquals(5, gm.getGraphVisible().getNodeCount());
+    }
+
+    /** An export into folders that do not exist yet creates them. */
+    @Test
+    void outputFileCreatesMissingFolders(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp) {
+        java.io.File f = GephiControlService.outputFile(tmp.resolve("new/deeper/map.gexf").toString());
+
+        assertTrue(f.getParentFile().isDirectory(), "the folders were not created");
+        assertEquals(tmp.resolve("new/deeper/map.gexf").toFile().getAbsoluteFile(), f);
+    }
 }

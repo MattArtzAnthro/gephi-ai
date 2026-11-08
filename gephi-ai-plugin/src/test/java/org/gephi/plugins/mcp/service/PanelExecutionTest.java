@@ -812,4 +812,159 @@ class PanelExecutionTest {
         @Override public void removeChangeListener(ChangeListener l) {
         }
     }
+
+    @Test
+    void statisticRunDirectlyPastItsDeadlineIsReportedStopped() throws Exception {
+        SlowStat stat = new SlowStat(60_000);
+
+        assertTrue(GephiControlService.executeStatistic(stat, null, 200, null, DIRECT));
+        assertTrue(stat.cancelled.get());
+    }
+
+    /** A run the panel declined is run directly, and its deadline still applies and is reported. */
+    @Test
+    void declinedRunPastItsDeadlineIsReportedStopped() throws Exception {
+        SlowStat stat = new SlowStat(60_000);
+
+        assertTrue(GephiControlService.executeStatistic(stat, null, 200, new DecliningStatsUI(), DIRECT,
+            s -> neverMarked()));
+        assertTrue(stat.cancelled.get());
+    }
+
+    /** The watch on the panel is released after every run, so its record of the run does not linger. */
+    @Test
+    void thePanelWatchIsClosedAfterTheRun() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger closed = new java.util.concurrent.atomic.AtomicInteger();
+        GephiControlService.PanelRunMark watch = new GephiControlService.PanelRunMark() {
+            @Override public boolean isMarked() {
+                return true;
+            }
+
+            @Override public boolean wasEverMarked() {
+                return true;
+            }
+
+            @Override public void close() {
+                closed.incrementAndGet();
+            }
+        };
+
+        GephiControlService.executeStatistic(new SlowStat(10), null, 0, new FakeStatsUI(), DIRECT, s -> watch);
+
+        assertEquals(1, closed.get());
+    }
+
+    /** Statistics run on a daemon worker, so one left running never keeps Gephi from quitting. */
+    @Test
+    void theStatisticWorkerIsADaemon() {
+        AtomicBoolean daemon = new AtomicBoolean();
+
+        GephiControlService.runOnStatisticThread(() -> daemon.set(Thread.currentThread().isDaemon()), () -> { });
+
+        assertTrue(daemon.get());
+    }
+
+    /**
+     * A statistic that ignores cancel() but answers an interrupt is interrupted too, and is given time
+     * to stop before the request returns; the request keeps its interrupted status.
+     */
+    @Test
+    void interruptedRequestInterruptsTheWorkerAndWaitsForIt() throws Exception {
+        AtomicBoolean started = new AtomicBoolean();
+        AtomicBoolean workerInterrupted = new AtomicBoolean();
+        AtomicBoolean workerDone = new AtomicBoolean();
+        AtomicBoolean doneWhenReturned = new AtomicBoolean();
+        AtomicBoolean requestStillInterrupted = new AtomicBoolean();
+        Thread request = new Thread(() -> {
+            try {
+                GephiControlService.runOnStatisticThread(() -> {
+                    started.set(true);
+                    try {
+                        Thread.sleep(60_000);
+                    } catch (InterruptedException e) {
+                        workerInterrupted.set(true);
+                        long until = System.nanoTime() + 200_000_000L;
+                        while (System.nanoTime() < until) {
+                            Thread.onSpinWait();
+                        }
+                        workerDone.set(true);
+                    }
+                }, () -> { });
+            } catch (RuntimeException expected) {
+                doneWhenReturned.set(workerDone.get());
+                requestStillInterrupted.set(Thread.currentThread().isInterrupted());
+            }
+        }, "request");
+        request.start();
+        long until = System.nanoTime() + 5_000_000_000L;
+        while (!started.get() && System.nanoTime() < until) {
+            Thread.onSpinWait();
+        }
+
+        request.interrupt();
+        request.join(10_000);
+
+        assertTrue(workerInterrupted.get(), "the worker was not interrupted");
+        assertTrue(doneWhenReturned.get(), "the request returned before the worker stopped");
+        assertTrue(requestStillInterrupted.get(), "the request lost its interrupted status");
+    }
+
+    /** One listener is added the first time a model is watched. */
+    @Test
+    void theFirstWatchOfAModelAddsItsListener() {
+        CountingModelUI model = new CountingModelUI();
+
+        GephiControlService.watchPanel(new CountingStat(), List.of(model), List.of()).close();
+
+        assertEquals(1, model.added.get());
+    }
+
+    /** A model that keeps the listener it is given, and can fire it. */
+    static class ListeningModelUI extends FakeModelUI {
+        final List<ChangeListener> listeners = new ArrayList<>();
+
+        @Override public void addChangeListener(ChangeListener l) {
+            listeners.add(l);
+        }
+
+        void fire() {
+            for (ChangeListener l : listeners) {
+                l.stateChanged(new javax.swing.event.ChangeEvent(this));
+            }
+        }
+    }
+
+    @Test
+    void statisticThePanelShowsRunningIsMarked() {
+        CountingStat stat = new CountingStat();
+        FakeModelUI model = new FakeModelUI();
+        model.running = stat;
+
+        GephiControlService.PanelRunMark mark =
+            GephiControlService.watchPanel(stat, List.of(model), List.of(statisticsUiFor(CountingStat.class)));
+        try {
+            assertTrue(mark.isMarked());
+        } finally {
+            mark.close();
+        }
+    }
+
+    /** A mark the panel sets and clears between two checks is still seen, through its change event. */
+    @Test
+    void markSetAndClearedBetweenChecksIsStillSeen() {
+        CountingStat stat = new CountingStat();
+        ListeningModelUI model = new ListeningModelUI();
+        GephiControlService.PanelRunMark mark =
+            GephiControlService.watchPanel(stat, List.of(model), List.of(statisticsUiFor(CountingStat.class)));
+        try {
+            model.running = stat;
+            model.fire();
+            model.running = null;
+
+            assertFalse(mark.isMarked());
+            assertTrue(mark.wasEverMarked(), "the change event was not recorded");
+        } finally {
+            mark.close();
+        }
+    }
 }

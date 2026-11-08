@@ -4696,6 +4696,47 @@ public class GephiControlService {
     static final long GENERATE_MAX_EXPECTED_EDGES = 2_000_000L;
 
     /**
+     * Why a preferential-attachment graph of {@code nodes} nodes with {@code k} edges per node is
+     * refused, or null when it may be made. Its edge count is exact: a star of {@code k} edges, then
+     * {@code k} edges for each later node.
+     */
+    static String preferentialAttachmentRefusal(int nodes, int k) {
+        if (nodes < 2 || nodes > GENERATE_MAX_NODES) {
+            return "nodes must be between 2 and " + GENERATE_MAX_NODES;
+        }
+        if (k < 1 || k >= nodes) {
+            return "edges_per_node must be at least 1 and less than nodes (" + nodes + ")";
+        }
+        long edges = k + (long) (nodes - k - 1) * k;
+        if (edges > GENERATE_MAX_EXPECTED_EDGES) {
+            return "A preferential-attachment graph of " + nodes + " nodes with " + k + " edges per node has "
+                + edges + " edges, more than " + GENERATE_MAX_EXPECTED_EDGES + "; lower nodes or edges_per_node";
+        }
+        return null;
+    }
+
+    /**
+     * Why a random graph of {@code nodes} nodes with wiring probability {@code p} is refused, or
+     * null when it may be made. Its edge count is the expected one, {@code p} times the pairs.
+     */
+    static String randomGraphRefusal(int nodes, double p) {
+        if (nodes < 2 || nodes > GENERATE_MAX_RANDOM_NODES) {
+            return "nodes must be between 2 and " + GENERATE_MAX_RANDOM_NODES
+                + " for the random model, which tests every pair of nodes";
+        }
+        if (!(p > 0 && p <= 1)) {
+            return "wiring_probability must be greater than 0 and at most 1";
+        }
+        double expected = p * nodes * (nodes - 1.0) / 2;
+        if (expected > GENERATE_MAX_EXPECTED_EDGES) {
+            return "A random graph of " + nodes + " nodes with wiring_probability " + p + " expects about "
+                + Math.round(expected) + " edges, more than " + GENERATE_MAX_EXPECTED_EDGES
+                + "; lower nodes or wiring_probability";
+        }
+        return null;
+    }
+
+    /**
      * Makes a graph with one of Gephi's generators and loads it into a new workspace, as Gephi's
      * File > Generate does. "preferential_attachment" (Barabasi-Albert, Gephi 0.11.4) starts from a
      * star of {@code edgesPerNode + 1} nodes and attaches each later node to that many existing
@@ -4712,17 +4753,9 @@ public class GephiControlService {
             case "preferential_attachment":
             case "barabasi_albert": {
                 int k = edgesPerNode == null ? 2 : edgesPerNode;
-                if (nodes < 2 || nodes > GENERATE_MAX_NODES) {
-                    return error("nodes must be between 2 and " + GENERATE_MAX_NODES);
-                }
-                if (k < 1 || k >= nodes) {
-                    return error("edges_per_node must be at least 1 and less than nodes (" + nodes + ")");
-                }
-                long edges = k + (long) (nodes - k - 1) * k;
-                if (edges > GENERATE_MAX_EXPECTED_EDGES) {
-                    return error("A preferential-attachment graph of " + nodes + " nodes with " + k
-                        + " edges per node has " + edges + " edges, more than " + GENERATE_MAX_EXPECTED_EDGES
-                        + "; lower nodes or edges_per_node");
+                String refusal = preferentialAttachmentRefusal(nodes, k);
+                if (refusal != null) {
+                    return error(refusal);
                 }
                 long s = seed != null ? seed : java.util.concurrent.ThreadLocalRandom.current().nextLong();
                 org.gephi.io.generator.plugin.ScaleFreeGraph g = new org.gephi.io.generator.plugin.ScaleFreeGraph();
@@ -4740,18 +4773,9 @@ public class GephiControlService {
             case "random":
             case "erdos_renyi": {
                 double p = probability == null ? 0.05 : probability;
-                if (nodes < 2 || nodes > GENERATE_MAX_RANDOM_NODES) {
-                    return error("nodes must be between 2 and " + GENERATE_MAX_RANDOM_NODES
-                        + " for the random model, which tests every pair of nodes");
-                }
-                if (!(p > 0 && p <= 1)) {
-                    return error("wiring_probability must be greater than 0 and at most 1");
-                }
-                double expected = p * nodes * (nodes - 1.0) / 2;
-                if (expected > GENERATE_MAX_EXPECTED_EDGES) {
-                    return error("A random graph of " + nodes + " nodes with wiring_probability " + p
-                        + " expects about " + Math.round(expected) + " edges, more than "
-                        + GENERATE_MAX_EXPECTED_EDGES + "; lower nodes or wiring_probability");
+                String refusal = randomGraphRefusal(nodes, p);
+                if (refusal != null) {
+                    return error(refusal);
                 }
                 org.gephi.io.generator.plugin.RandomGraph g = new org.gephi.io.generator.plugin.RandomGraph();
                 g.setNumberOfNodes(nodes);

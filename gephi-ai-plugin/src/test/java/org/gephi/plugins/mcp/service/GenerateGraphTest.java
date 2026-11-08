@@ -19,6 +19,7 @@ package org.gephi.plugins.mcp.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
@@ -176,5 +177,67 @@ class GenerateGraphTest {
         service.generateGraph("preferential_attachment", 50, 1, null, 1L);
 
         assertEquals(before, workspaceCount(), "the empty default workspace was left behind");
+    }
+
+    @Test
+    void preferentialAttachmentUsesTheEdgesPerNodeAsked() {
+        JsonObject r = service.generateGraph("barabasi_albert", 100, 3, null, 5L);
+
+        assertTrue(r.get("success").getAsBoolean(), r.toString());
+        assertEquals(3 + (100 - 3 - 1) * 3, r.get("edge_count").getAsInt());
+        assertEquals("preferential_attachment", r.get("model").getAsString());
+        assertEquals(3, r.get("edges_per_node").getAsInt());
+        assertTrue(r.get("workspace").getAsString().startsWith("Preferential attachment (100 nodes, 3 per node"),
+            r.toString());
+    }
+
+    /** A wiring probability of 1 links every pair, so the probability asked for is the one used. */
+    @Test
+    void randomGraphUsesTheProbabilityAsked() {
+        JsonObject r = service.generateGraph("erdos_renyi", 30, null, 1.0, null);
+
+        assertTrue(r.get("success").getAsBoolean(), r.toString());
+        assertEquals(30 * 29 / 2, r.get("edge_count").getAsInt());
+        assertEquals("random", r.get("model").getAsString());
+        assertEquals(1.0, r.get("wiring_probability").getAsDouble());
+        assertTrue(r.get("note").getAsString().contains("no seed"), r.toString());
+        assertTrue(r.get("workspace").getAsString().startsWith("Random graph (30 nodes"), r.toString());
+    }
+
+    @Test
+    void preferentialAttachmentLimitsAreInclusive() {
+        assertNull(GephiControlService.preferentialAttachmentRefusal(2, 1), "the smallest graph");
+        assertNull(GephiControlService.preferentialAttachmentRefusal(GephiControlService.GENERATE_MAX_NODES, 1),
+            "exactly the node cap");
+        assertTrue(GephiControlService.preferentialAttachmentRefusal(1, 1).contains("nodes"));
+        assertNull(GephiControlService.preferentialAttachmentRefusal(10, 9), "edges_per_node one below nodes");
+        assertTrue(GephiControlService.preferentialAttachmentRefusal(10, 0).contains("edges_per_node"));
+    }
+
+    /** 40 + (50,040 - 41) x 40 is exactly 2,000,000 edges: allowed; one node more is not. */
+    @Test
+    void preferentialAttachmentEdgeCapIsExact() {
+        assertNull(GephiControlService.preferentialAttachmentRefusal(50_040, 40));
+        String over = GephiControlService.preferentialAttachmentRefusal(50_041, 40);
+
+        assertTrue(over != null && over.contains("has 2000040 edges"), over);
+    }
+
+    @Test
+    void randomGraphLimitsAreInclusive() {
+        assertNull(GephiControlService.randomGraphRefusal(2, 1.0), "two nodes, every pair linked");
+        assertNull(GephiControlService.randomGraphRefusal(GephiControlService.GENERATE_MAX_RANDOM_NODES, 1e-6),
+            "exactly the node cap");
+        assertTrue(GephiControlService.randomGraphRefusal(2, 0.0).contains("wiring_probability"));
+    }
+
+    /** 2,001 nodes have 2,001,000 pairs; this probability expects exactly 2,000,000 edges. */
+    @Test
+    void randomGraphExpectedEdgeCapIsExact() {
+        double atCap = 0.9995002498750625;
+
+        assertNull(GephiControlService.randomGraphRefusal(2001, atCap));
+        String over = GephiControlService.randomGraphRefusal(2001, Math.nextUp(atCap));
+        assertTrue(over != null && over.contains("expects about 2000000 edges"), over);
     }
 }

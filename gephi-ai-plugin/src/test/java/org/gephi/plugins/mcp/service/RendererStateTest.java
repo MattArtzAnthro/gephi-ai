@@ -115,4 +115,45 @@ class RendererStateTest {
             throw new IllegalStateException("engine gone");
         }, 20, 200).get("state").getAsString());
     }
+
+    /** Counters read in turn from a fixed list; the last pair repeats. */
+    private static java.util.function.Supplier<java.util.Optional<long[]>> reads(long[]... pairs) {
+        java.util.concurrent.atomic.AtomicInteger next = new java.util.concurrent.atomic.AtomicInteger();
+        return () -> java.util.Optional.of(pairs[Math.min(next.getAndIncrement(), pairs.length - 1)].clone());
+    }
+
+    /** What counts is how far the counters moved, not how high they are after a long session. */
+    @Test
+    void highCountersThatStandStillAreNotDrawing() throws Exception {
+        com.google.gson.JsonObject r = GephiControlService.rendererStats(
+            reads(new long[] {90_000, 60_000}, new long[] {90_000, 60_000}), 5, 20);
+
+        assertEquals("not_drawing", r.get("state").getAsString());
+        assertEquals(90_000, r.get("frames").getAsLong());
+        assertEquals(60_000, r.get("world_updates").getAsLong());
+    }
+
+    @Test
+    void highWorldUpdateCountThatStandsStillIsAStall() throws Exception {
+        assertEquals("stalled", GephiControlService.rendererStats(
+            reads(new long[] {90_000, 60_000}, new long[] {90_016, 60_000}, new long[] {90_032, 60_000},
+                new long[] {90_048, 60_000}, new long[] {90_064, 60_000}), 5, 20).get("state").getAsString());
+    }
+
+    /** The stall is confirmed once the confirmation time has passed, and says how long it watched. */
+    @Test
+    void stallIsReportedForExactlyTheConfirmationTime() throws Exception {
+        com.google.gson.JsonObject r = GephiControlService.rendererStats(counters(0, false), 10, 30);
+
+        assertEquals(30, r.get("stalled_for_ms").getAsLong(), r.toString());
+    }
+
+    /** An engine that has drawn its very first frame (count 0, then 1) is ready. */
+    @Test
+    void readyAfterTheFirstFrameFromZero() throws Exception {
+        AtomicLong calls = new AtomicLong();
+
+        assertTrue(GephiControlService.awaitRendererReady(
+            () -> OptionalLong.of(calls.getAndIncrement() == 0 ? 0 : 1), 300));
+    }
 }
