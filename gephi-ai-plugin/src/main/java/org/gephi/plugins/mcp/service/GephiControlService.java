@@ -1641,8 +1641,12 @@ public class GephiControlService {
             try {
                 int nc = g.getNodeCount();
                 int ec = g.getEdgeCount();
-                double density = nc > 1 ? (2.0 * ec) / (nc * (nc - 1)) : 0;
-                double avgDeg = nc > 0 ? (2.0 * ec) / nc : 0;
+                // As the Gephi Density and Average Degree statistics count them: a directed tie
+                // fills one of n(n-1) ordered pairs and adds one to the mean in-degree and the mean
+                // out-degree; an undirected tie fills one of n(n-1)/2 pairs and adds to two degrees.
+                double ties = gm.isDirected() ? ec : 2.0 * ec;
+                double density = nc > 1 ? ties / ((double) nc * (nc - 1)) : 0;
+                double avgDeg = nc > 0 ? ties / nc : 0;
                 JsonObject r = new JsonObject();
                 r.addProperty("success", true);
                 r.addProperty("node_count", nc);

@@ -1327,8 +1327,9 @@ async def gephi_query_edges(limit: int = 100, offset: int = 0) -> str:
 @_tool(name="gephi_get_graph_stats")
 async def gephi_get_graph_stats() -> str:
     """Get the graph's basic numbers: node count, edge count, density, average degree and whether
-    it is directed. Cheap. For the full first reading (degree spread, components, clustering,
-    weights) use gephi_profile_graph.
+    it is directed. Cheap. On a directed graph density counts ordered pairs, edges / (n(n-1)), and
+    average degree is edges per node, as Gephi's own statistics do (plugin 1.6.0+). For the full
+    first reading (degree spread, components, clustering, weights) use gephi_profile_graph.
     """
     return fmt(await gephi.request("GET", "/graph/stats"))
 

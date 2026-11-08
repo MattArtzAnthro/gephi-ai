@@ -111,11 +111,14 @@ def structural_profile(graph: dict) -> dict:
         ((k2_mean - k_mean) ** 2) / (n * k_mean ** 3) if n and k_mean > 0 else 0.0
     )
 
+    directed = bool(graph.get("directed"))
     profile: dict[str, Any] = {
         "nodes": n,
         "edges": m,
-        "directed": bool(graph.get("directed")),
-        "density": (2 * m / (n * (n - 1))) if n > 1 else 0.0,
+        "directed": directed,
+        # A directed tie fills one of n(n-1) ordered pairs (Gephi's Density statistic), an
+        # undirected one one of n(n-1)/2.
+        "density": ((m if directed else 2 * m) / (n * (n - 1))) if n > 1 else 0.0,
         "degree": {
             "min": degrees[-1] if degrees else 0,
             "median": degrees[n // 2] if degrees else 0,

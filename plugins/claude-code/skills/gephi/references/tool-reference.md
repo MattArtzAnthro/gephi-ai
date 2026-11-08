@@ -232,6 +232,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_get_graph_stats
 - **Method**: GET `/graph/stats`
 - **Returns**: `{success, node_count, edge_count, density, average_degree, is_directed}`
+- **Notes**: On a directed graph density is edges / (n(n-1)) and average degree is edges per node, as Gephi's Density and Average Degree statistics count them; on an undirected graph, 2 x edges / (n(n-1)) and 2 x edges / n (plugin 1.6.0+; earlier plugins used the undirected formulas for both).
 
 ### gephi_get_graph_type
 - **Method**: GET `/graph/type`

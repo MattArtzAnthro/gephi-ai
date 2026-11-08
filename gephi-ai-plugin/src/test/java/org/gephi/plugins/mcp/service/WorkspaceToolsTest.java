@@ -198,6 +198,9 @@ class WorkspaceToolsTest {
         assertEquals(8, s.get("node_count").getAsInt());
         assertEquals(7, s.get("edge_count").getAsInt());
         assertFalse(s.get("is_directed").getAsBoolean());
+        // Undirected: each tie fills one of n(n-1)/2 pairs and adds to two degrees.
+        assertEquals(2.0 * 7 / (8 * 7), s.get("density").getAsDouble(), 1e-12);
+        assertEquals(2.0 * 7 / 8, s.get("average_degree").getAsDouble(), 1e-12);
 
         assertTrue(ok(service.getGraphType()).get("undirected").getAsBoolean());
 
@@ -211,6 +214,33 @@ class WorkspaceToolsTest {
         }
         assertTrue(found, cols.toString());
         assertTrue(ok(service.getColumns("edge")).getAsJsonArray("columns").size() > 0);
+    }
+
+    /**
+     * A directed tie fills one of n(n-1) ordered pairs, as Gephi's own Density statistic counts
+     * them. The undirected formula reported twice the density on a directed graph.
+     */
+    @Test
+    void directedDensityCountsOrderedPairs() {
+        ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
+        pc.closeCurrentProject();
+        pc.newProject();
+        GraphModel dm = Lookup.getDefault().lookup(GraphController.class).getGraphModel();
+        Graph g = dm.getDirectedGraph();
+        for (String id : new String[] {"p", "q", "r", "s"}) {
+            g.addNode(dm.factory().newNode(id));
+        }
+        String[][] ties = {{"p", "q"}, {"q", "p"}, {"q", "r"}};
+        for (String[] t : ties) {
+            g.addEdge(dm.factory().newEdge(g.getNode(t[0]), g.getNode(t[1]), true));
+        }
+
+        JsonObject s = ok(service.getGraphStats(false));
+
+        assertTrue(s.get("is_directed").getAsBoolean());
+        assertEquals(3.0 / (4 * 3), s.get("density").getAsDouble(), 1e-12);
+        // Edges per node: the mean in-degree, which equals the mean out-degree (Gephi's convention).
+        assertEquals(3.0 / 4, s.get("average_degree").getAsDouble(), 1e-12);
     }
 
     // ─── Statistics ──────────────────────────────────────────────────
