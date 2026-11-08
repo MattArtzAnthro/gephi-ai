@@ -382,6 +382,82 @@ class PanelExecutionTest {
         assertEquals(1, stat.runs.get());
     }
 
+    /**
+     * The interface thread was too busy: the hand-over timed out before the queued step started.
+     * The request reports the failure, and the step, when it finally runs, must not start the
+     * statistic behind the caller's back.
+     */
+    @Test
+    void handOverThatTimedOutBeforeStartingNeverStartsTheStatisticLater() throws Exception {
+        CountingStat stat = new CountingStat();
+        AtomicReference<Runnable> queued = new AtomicReference<>();
+        Consumer<Runnable> timesOut = r -> {
+            queued.set(r);
+            throw new RuntimeException("Gephi's UI thread is unresponsive");
+        };
+
+        assertThrows(RuntimeException.class,
+            () -> GephiControlService.executeStatistic(stat, null, 0, new FakeStatsUI(), timesOut, s -> neverMarked()));
+        queued.get().run();
+        Thread.sleep(300);
+
+        assertEquals(0, stat.runs.get(), "the statistic started after the request had given up");
+    }
+
+    /** A hand-over that timed out after the step had started is waited for, not reported as failed. */
+    @Test
+    void handOverThatTimedOutAfterStartingIsWaitedFor() throws Exception {
+        CountingStat stat = new CountingStat();
+        RealOrderStatsUI ui = new RealOrderStatsUI(0, true);
+        Consumer<Runnable> startsThenTimesOut = r -> {
+            Thread t = new Thread(r, "slow-interface-thread");
+            t.start();
+            long until = System.nanoTime() + 5_000_000_000L;
+            while (!ui.everMarked.get() && System.nanoTime() < until) {
+                Thread.onSpinWait();
+            }
+            throw new RuntimeException("Gephi's UI thread is unresponsive");
+        };
+
+        boolean stopped = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(10),
+            () -> GephiControlService.executeStatistic(stat, null, 0, ui, startsThenTimesOut,
+                s -> mark(ui.marked::get, ui.everMarked::get)));
+
+        assertFalse(stopped);
+        assertEquals(1, stat.runs.get());
+    }
+
+    /**
+     * Gephi's Statistics model keeps its listeners in a plain list that its worker thread iterates;
+     * adding and removing a listener for every run races with that. One listener per model, added
+     * once, does not.
+     */
+    @Test
+    void eachStatisticsModelGetsOneListenerForAllRuns() {
+        CountingModelUI model = new CountingModelUI();
+        CountingStat stat = new CountingStat();
+
+        GephiControlService.watchPanel(stat, List.of(model), List.of()).close();
+        GephiControlService.watchPanel(new CountingStat(), List.of(model), List.of()).close();
+
+        assertEquals(1, model.added.get(), "a listener was added for each run");
+        assertEquals(0, model.removed.get(), "a listener was removed while Gephi's worker may be iterating");
+    }
+
+    /** Counts listener additions and removals. */
+    static class CountingModelUI extends FakeModelUI {
+        final java.util.concurrent.atomic.AtomicInteger added = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger removed = new java.util.concurrent.atomic.AtomicInteger();
+
+        @Override public void addChangeListener(ChangeListener l) {
+            added.incrementAndGet();
+        }
+
+        @Override public void removeChangeListener(ChangeListener l) {
+            removed.incrementAndGet();
+        }
+    }
+
     /** Stands in for a workspace's Statistics model, reporting one statistic as running. */
     static class FakeModelUI implements StatisticsModelUI {
         Statistics running;

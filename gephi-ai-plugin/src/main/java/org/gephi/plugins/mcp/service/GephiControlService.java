@@ -2967,6 +2967,11 @@ public class GephiControlService {
         }
     }
 
+    /** Hand-over states: not started yet, started on the interface thread, given up by the caller. */
+    static final int HAND_OVER_PENDING = 0;
+    static final int HAND_OVER_STARTED = 1;
+    static final int HAND_OVER_ABANDONED = 2;
+
     /** How long a run whose running mark has gone may still report back. */
     static final long PANEL_FINISH_GRACE_MS = 2000;
     /** After a deadline cancels a statistic, how long to wait for it to actually stop. */
@@ -3094,28 +3099,50 @@ public class GephiControlService {
         return !checked;
     }
 
+    /** Statistics instances a Statistics model has shown as running, recorded by its one listener. */
+    private static final java.util.Set<Statistics> SEEN_MARKED =
+        java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>()));
+
+    /** Statistics models that already carry the plugin's listener. */
+    private static final java.util.Set<org.gephi.desktop.statistics.api.StatisticsModelUI> HOOKED =
+        java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>()));
+
+    /** Records the statistics a model now shows as running. */
+    private static void recordMarked(org.gephi.desktop.statistics.api.StatisticsModelUI model,
+        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis) {
+        for (org.gephi.statistics.spi.StatisticsUI ui : uis) {
+            Statistics running = model.getRunning(ui);
+            if (running != null) {
+                SEEN_MARKED.add(running);
+            }
+        }
+    }
+
     /**
      * Watches every workspace's Statistics model for this statistic's running mark. The panel
      * marks the model it is bound to, which after a workspace change can be another workspace's,
-     * so all of them are watched; their change events catch a mark set and cleared between checks.
+     * so all of them are watched. Each model gets one listener, added once and never removed:
+     * Gephi keeps listeners in a plain list that its statistic worker iterates, so adding and
+     * removing one per run would race with it. The listener records every statistic it sees
+     * marked, which catches a mark set and cleared between two checks.
      */
     static PanelRunMark watchPanel(Statistics stat,
         java.util.Collection<org.gephi.desktop.statistics.api.StatisticsModelUI> models,
         java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis) {
-        final java.util.concurrent.atomic.AtomicBoolean ever = new java.util.concurrent.atomic.AtomicBoolean();
+        for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
+            if (HOOKED.add(m)) {
+                m.addChangeListener(e -> recordMarked(m, uis));
+            }
+        }
         final java.util.function.BooleanSupplier marked = () -> {
             for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
                 if (panelIsRunning(m, stat, uis)) {
-                    ever.set(true);
+                    SEEN_MARKED.add(stat);
                     return true;
                 }
             }
             return false;
         };
-        final javax.swing.event.ChangeListener onChange = e -> marked.getAsBoolean();
-        for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
-            m.addChangeListener(onChange);
-        }
         return new PanelRunMark() {
             @Override
             public boolean isMarked() {
@@ -3124,21 +3151,18 @@ public class GephiControlService {
 
             @Override
             public boolean wasEverMarked() {
-                marked.getAsBoolean();
-                return ever.get();
+                return marked.getAsBoolean() || SEEN_MARKED.contains(stat);
             }
 
             @Override
             public void close() {
-                for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
-                    m.removeChangeListener(onChange);
-                }
+                SEEN_MARKED.remove(stat);
             }
         };
     }
 
     /** {@link #watchPanel} over the current project's workspaces. */
-    private static PanelRunMark watchPanel(Statistics stat) {
+    static PanelRunMark watchPanel(Statistics stat) {
         java.util.List<org.gephi.desktop.statistics.api.StatisticsModelUI> models = new java.util.ArrayList<>();
         ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
         Project project = pc == null ? null : pc.getCurrentProject();
@@ -3195,8 +3219,41 @@ public class GephiControlService {
                     done.countDown();
                 }
             };
-        try (PanelRunMark mark = watch.apply(stat)) {
-            onEdt.accept(() -> panel.execute(stat, listener));
+        // The watch is built on the interface thread right before execute(): the Statistics window
+        // binds the panel to a newly selected workspace on that same thread, so whichever model
+        // the panel marks is one being watched. If the hand-over times out before this step
+        // starts, the step must not start the statistic later, behind the caller's back; if it
+        // has already started, it is waited for.
+        final java.util.concurrent.atomic.AtomicInteger handOver = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicReference<PanelRunMark> markRef =
+            new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.CountDownLatch handedOver = new java.util.concurrent.CountDownLatch(1);
+        Runnable onInterfaceThread = () -> {
+            if (!handOver.compareAndSet(HAND_OVER_PENDING, HAND_OVER_STARTED)) {
+                return;
+            }
+            try {
+                markRef.set(watch.apply(stat));
+                panel.execute(stat, listener);
+            } finally {
+                handedOver.countDown();
+            }
+        };
+        try {
+            onEdt.accept(onInterfaceThread);
+        } catch (RuntimeException e) {
+            if (handOver.compareAndSet(HAND_OVER_PENDING, HAND_OVER_ABANDONED)) {
+                throw e;
+            }
+            if (!handedOver.await(STATISTIC_STOP_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                throw e;
+            }
+        }
+        PanelRunMark mark = markRef.get();
+        if (mark == null) {
+            throw new IllegalStateException("Gephi's Statistics panel was not reached");
+        }
+        try {
             // The panel marks a statistic inside execute() before handing it over, so one never
             // marked was declined (its model not yet bound after a workspace change) and will
             // never run or report back. It is run directly instead.
@@ -3206,6 +3263,8 @@ public class GephiControlService {
                 return executeStatistic(stat, gm, timeoutMs, null, onEdt, watch);
             }
             return awaitPanelResult(stat, timeoutMs, done, failure, mark);
+        } finally {
+            mark.close();
         }
     }
 

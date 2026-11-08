@@ -197,4 +197,29 @@ class PanelContractTest {
         assertTrue(e.getMessage().contains("without reporting back"), e.getMessage());
         assertEquals(1, CountingStatistic.RUNS.get(), "the statistic must not be run a second time");
     }
+
+    /**
+     * A workspace selected while the request waits for the interface thread gets its model from
+     * the Statistics window, and the panel binds to it before running. The watch must see that
+     * model, or the plugin runs the statistic a second time.
+     */
+    @Test
+    void panelBoundToAWorkspaceSelectedDuringTheHandOverRunsTheStatisticOnce() throws Exception {
+        panel.setup(model);
+        CountingStatistic stat = new CountingStatistic();
+        ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
+        Consumer<Runnable> selectThenRun = r -> {
+            Workspace other = pc.newWorkspace(pc.getCurrentProject());
+            StatisticsModelUIImpl otherModel = new StatisticsModelUIImpl(other);
+            other.add(otherModel);
+            panel.setup(otherModel);
+            r.run();
+        };
+
+        assertTimeoutPreemptively(Duration.ofSeconds(10), () -> GephiControlService.executeStatistic(stat, gm, 0, panel,
+            selectThenRun, GephiControlService::watchPanel));
+        Thread.sleep(500);
+
+        assertEquals(1, CountingStatistic.RUNS.get(), "the statistic ran twice");
+    }
 }
