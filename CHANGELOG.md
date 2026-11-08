@@ -128,7 +128,7 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   runs PIT over the control service. Tests written against the survivors pin boundaries the
   suite had left open, such as a pair together in exactly 90% of runs counting as a stable core.
 - **Static checks.** SpotBugs runs at `mvn verify` and bandit in `scripts/check.sh` and CI; the
-  Python coverage floor rises to 92%.
+  Python coverage floor rises to 91%, as CI measures it on Linux.
 
 ## MCP server 1.21.2 / Java plugin 1.5.2 / workflow packages 1.20.2
 
