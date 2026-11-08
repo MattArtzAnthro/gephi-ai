@@ -125,3 +125,22 @@ def test_comparing_against_an_empty_graph_reports_it_rather_than_raising(empty):
 
     assert result["nodes"]["removed"] == ["a", "b", "c"]
     assert result["nodes"]["added"] == []
+
+
+def test_graphs_that_share_no_ids_report_counts_and_examples_not_every_node():
+    """With nothing in common, listing every node and edge as added and removed is the total
+    turnover the warning says not to read: on two 1,000-node graphs it ran to 300,000 characters.
+    The reply keeps the counts and a few examples so the mismatch can still be seen."""
+    before = graph({f"n{i}": {} for i in range(50)}, [(f"n{i}", f"n{i + 1}") for i in range(49)])
+    after = graph({f"d{i}": {} for i in range(40)}, [(f"d{i}", f"d{i + 1}") for i in range(39)])
+
+    result = diff_graphs(before, after)
+
+    assert result["nodes"]["removed_count"] == 50
+    assert result["nodes"]["added_count"] == 40
+    assert result["nodes"]["removed"] == ["n0", "n1", "n10", "n11", "n12"]
+    assert len(result["nodes"]["added"]) == 5
+    assert result["edges"]["removed_count"] == 49
+    assert result["edges"]["added_count"] == 39
+    assert len(result["edges"]["added"]) == len(result["edges"]["removed"]) == 5
+    assert "examples" in result["warning"]

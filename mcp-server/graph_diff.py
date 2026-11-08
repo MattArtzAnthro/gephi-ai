@@ -42,6 +42,10 @@ def _number(attributes: dict[str, Any], column: str) -> float | None:
     return None
 
 
+# How many ids each list keeps when the two graphs share no node at all.
+DISJOINT_EXAMPLES = 5
+
+
 def diff_graphs(before: Graph, after: Graph, *, compare: str | None = None,
                 directed: bool = False) -> dict[str, Any]:
     """What changed between two versions of a network.
@@ -74,10 +78,17 @@ def diff_graphs(before: Graph, after: Graph, *, compare: str | None = None,
     }
 
     if a and b and not shared:
+        # Listing every node and edge here is the total turnover the warning says not to read,
+        # and on two large graphs it ran to hundreds of thousands of characters.
+        for section in (result["nodes"], result["edges"]):
+            for side in ("added", "removed"):
+                section[side + "_count"] = len(section[side])
+                section[side] = section[side][:DISJOINT_EXAMPLES]
         result["warning"] = (
             "The two graphs have no nodes in common, so every node reads as added or removed. "
             "That is far more often a mismatched identifier than real turnover: check that both "
-            "sides use the same node ids before treating this as a finding.")
+            "sides use the same node ids before treating this as a finding. The lists show the "
+            f"first {DISJOINT_EXAMPLES} examples; the counts give the totals.")
 
     if compare:
         grew, shrank, unchanged, comparable = [], [], [], 0

@@ -47,6 +47,17 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   with every edge pointing from the newer node to the older one, so in-degree, reciprocity,
   paths and density read wrongly on a null model meant for undirected data. The reply now says
   `directed: false`.
+- **The workspace list gives the index the other workspace tools take.** `gephi_list_workspaces`
+  returned only Gephi's `id`, while switch, delete, rename, duplicate and compare take a
+  zero-based position, so an agent passing the id acted on the wrong workspace or failed
+  ("Could not read workspace 22"). Each entry now carries `index`, and that error now says the
+  index is expected, not the id.
+- **Comparing two workspaces that share no nodes no longer floods the reply.**
+  `gephi_compare_workspaces` warned that two graphs with no nodes in common are far more often a
+  mismatched identifier than real turnover, then listed every node and edge as added and
+  removed anyway: about 300,000 characters for two 1,000-node graphs, too large for an agent to
+  read. The lists now keep five examples each, with the totals in `added_count` and
+  `removed_count`.
 - **Resetting filters also turns them off in Gephi's Filters panel.** `gephi_reset_filters`
   restored the full graph but left the panel showing the filter (or selection) as active, so the
   panel and the graph disagreed and a refresh could bring the filter back. It now clears them

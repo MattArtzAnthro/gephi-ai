@@ -1027,8 +1027,10 @@ async def gephi_new_workspace() -> str:
 
 @_tool(name="gephi_list_workspaces")
 async def gephi_list_workspaces() -> str:
-    """List the workspaces in the current project with their zero-based indexes and names, and
-    which one is on screen. The index is what the other workspace tools take.
+    """List the workspaces in the current project with their names, node and edge counts, and
+    which one is on screen. Each entry's `index` (zero-based position) is what the switch,
+    delete, rename, duplicate and compare tools take; `id` is Gephi's own number, not an index
+    (plugin 1.6.0+ returns `index`).
     """
     return fmt(await gephi.request("GET", "/workspace/list"))
 
@@ -3787,16 +3789,24 @@ async def gephi_compare_workspaces(before: int, after: int, compare: str | None 
     The comparison rests entirely on node identity: the two sides only diff meaningfully if the
     same id means the same thing in both. When they share no nodes at all the result says so
     rather than reporting total turnover, because a mismatched identifier looks identical to a
-    network that replaced every member and is very much more common.
+    network that replaced every member and is very much more common: the added and removed lists
+    then keep five examples each, with the totals in added_count and removed_count.
+
+    `before` and `after` are zero-based workspace indexes, the `index` field of
+    gephi_list_workspaces (not its `id`).
 
     Answers gephi/gephi#2013.
     """
     left = await _read_graph(before)
     if left is None:
-        return fmt({"success": False, "error": f"Could not read workspace {before}."})
+        return fmt({"success": False, "error": f"Could not read workspace {before}: workspaces are "
+                                                 "named by the zero-based index from "
+                                                 "gephi_list_workspaces, not by its id."})
     right = await _read_graph(after)
     if right is None:
-        return fmt({"success": False, "error": f"Could not read workspace {after}."})
+        return fmt({"success": False, "error": f"Could not read workspace {after}: workspaces are "
+                                                 "named by the zero-based index from "
+                                                 "gephi_list_workspaces, not by its id."})
     result = {"success": True, "before_workspace": before, "after_workspace": after}
     result.update(diff_graphs(left, right, compare=compare, directed=directed))
     return fmt(result)

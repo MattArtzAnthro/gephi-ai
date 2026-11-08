@@ -102,7 +102,8 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_list_workspaces
 - **Method**: GET `/workspace/list`
 - **Params**: `{}` (empty)
-- **Returns**: `{success, workspaces: [{id, current}]}`
+- **Returns**: `{success, workspaces: [{index, id, name, current, node_count, edge_count}]}`
+- **Notes**: `index` (zero-based position, plugin 1.6.0+) is what the switch, delete, rename, duplicate and compare tools take. `id` is Gephi's own number and is not an index; the two diverge once a workspace is deleted.
 
 ### gephi_switch_workspace
 - **Method**: POST `/workspace/switch`
@@ -481,9 +482,9 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_compare_workspaces
 - **Method**: reads both workspaces (switching to each and back), diffs node and edge sets, and, when `compare` names a numeric column, tracks it across the nodes present in both.
-- **Params**: `{before: int, after: int, compare?: str, directed?: bool (false)}`. Workspace arguments are zero-based indices, not the ids the workspace list reports.
+- **Params**: `{before: int, after: int, compare?: str, directed?: bool (false)}`. Workspace arguments are zero-based indices: the `index` in each `gephi_list_workspaces` entry, not its `id`.
 - **Returns**: `{success, nodes: {added, removed, shared, before, after}, edges: {added, removed, shared, directed}, changed: {column, comparable, grew, shrank, unchanged}|null, warning?}`.
-- **Notes**: the comparison rests on node identity. Two graphs sharing no nodes carry a warning, because a mismatched identifier looks exactly like a network that replaced every member and is much more common. Omitting `compare` returns `changed: null` rather than an empty section, since an empty one reads as a finding that nothing moved.
+- **Notes**: the comparison rests on node identity. Two graphs sharing no nodes carry a warning, because a mismatched identifier looks exactly like a network that replaced every member and is much more common; their `added` and `removed` lists then hold five examples each, with the totals in `added_count` and `removed_count`. Omitting `compare` returns `changed: null` rather than an empty section, since an empty one reads as a finding that nothing moved.
 
 ### gephi_bipartite_layout
 - **Method**: reads the graph, computes two columns of coordinates in Python, and pushes them as positions. No Gephi layout plugin is involved.

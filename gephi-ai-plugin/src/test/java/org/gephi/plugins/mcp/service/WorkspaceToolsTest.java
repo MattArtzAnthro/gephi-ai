@@ -243,6 +243,24 @@ class WorkspaceToolsTest {
         assertEquals(3.0 / 4, s.get("average_degree").getAsDouble(), 1e-12);
     }
 
+    /** The listing carries the index the switch, delete and compare tools take, not only Gephi's id. */
+    @Test
+    void theWorkspaceListingGivesTheIndexTheOtherToolsTake() {
+        ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
+        pc.newWorkspace(pc.getCurrentProject());
+        pc.newWorkspace(pc.getCurrentProject());
+
+        JsonArray list = ok(service.listWorkspaces()).getAsJsonArray("workspaces");
+
+        assertEquals(3, list.size());
+        for (int i = 0; i < list.size(); i++) {
+            JsonObject w = list.get(i).getAsJsonObject();
+            assertEquals(i, w.get("index").getAsInt(), w.toString());
+            ok(service.switchWorkspace(i));
+            assertEquals(w.get("id").getAsInt(), pc.getCurrentWorkspace().getId(), w.toString());
+        }
+    }
+
     // ─── Statistics ──────────────────────────────────────────────────
 
     @Test

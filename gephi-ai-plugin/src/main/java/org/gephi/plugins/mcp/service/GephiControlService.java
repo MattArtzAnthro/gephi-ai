@@ -612,8 +612,12 @@ public class GephiControlService {
             }
             JsonArray arr = new JsonArray();
             Workspace current = pc.getCurrentWorkspace();
+            int index = 0;
             for (Workspace ws : pc.getCurrentProject().getWorkspaces()) {
                 JsonObject o = new JsonObject();
+                // The position is what switch, delete, rename, duplicate and compare take; the Gephi
+                // id is not, and the two diverge as soon as a workspace is deleted.
+                o.addProperty("index", index++);
                 o.addProperty("id", ws.getId());
                 o.addProperty("name", ws.getName() != null ? ws.getName() : "Workspace " + ws.getId());
                 o.addProperty("current", ws.equals(current));

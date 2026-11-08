@@ -172,3 +172,13 @@ async def test_compare_partitions_names_a_column_that_is_not_there(rec):
                                                               against="faction"))
 
     assert out["success"] is False and "faction" in out["error"]
+
+
+async def test_an_unreadable_workspace_points_at_the_index_not_the_id(rec):
+    """Agents passed the id from the workspace list and got only "Could not read workspace 63"."""
+    rec.responses = [WORKSPACES, {"success": False, "error": "Workspace index out of range: 63"}]
+
+    out = json.loads(await gephi_mcp.gephi_compare_workspaces(before=63, after=1))
+
+    assert out["success"] is False
+    assert "index" in out["error"] and "gephi_list_workspaces" in out["error"], out["error"]
