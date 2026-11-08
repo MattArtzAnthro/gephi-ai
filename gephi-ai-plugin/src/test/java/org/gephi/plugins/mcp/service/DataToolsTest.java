@@ -273,4 +273,32 @@ class DataToolsTest {
 
         assertFalse(fc.getModel().isSelecting(), "the Filters panel still shows a selection filter");
     }
+
+    /**
+     * A filter still being computed when the reset arrives must not come back after it: Gephi's
+     * filter thread can apply its result once the reset has released the graph.
+     */
+    @Test
+    void filterStillComputingWhenResetIsCalledDoesNotComeBack() {
+        org.gephi.filters.api.FilterController fc =
+            Lookup.getDefault().lookup(org.gephi.filters.api.FilterController.class);
+        org.gephi.filters.spi.FilterBuilder degree = null;
+        for (org.gephi.filters.spi.FilterBuilder b
+            : Lookup.getDefault().lookupAll(org.gephi.filters.spi.FilterBuilder.class)) {
+            if ("Degree Range".equals(b.getName())) {
+                degree = b;
+            }
+        }
+        org.gephi.project.api.Workspace ws = Lookup.getDefault().lookup(ProjectController.class).getCurrentWorkspace();
+        for (int round = 0; round < 30; round++) {
+            org.gephi.filters.api.Query query = fc.createQuery(degree.getFilter(ws));
+            fc.add(query);
+            fc.filterVisible(query);
+            service.resetFilters();
+            GephiControlService.awaitFilterApplied(fc.getModel());
+
+            assertFalse(fc.getModel().isFiltering(), "round " + round + ": the filter came back after the reset");
+            assertTrue(gm.getVisibleView().isMainView(), "round " + round + ": the graph is filtered after the reset");
+        }
+    }
 }

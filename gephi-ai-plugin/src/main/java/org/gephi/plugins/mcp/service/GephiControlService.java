@@ -5220,6 +5220,9 @@ public class GephiControlService {
             Graph g = gm.getGraph();
             FilterController fc = Lookup.getDefault().lookup(FilterController.class);
             org.gephi.filters.api.FilterModel fm = fc == null ? null : fc.getModel();
+            // A filter still being computed would apply its result after the reset and bring
+            // itself back, so let it finish first.
+            awaitFilterApplied(fm);
             // Turn the filter off through Gephi's filter controller, as the Filters panel's own
             // Filter button does, so the panel stops showing it as active and a refresh cannot
             // bring it back. Clearing takes Gephi's blocking write lock; holding the plugin's
