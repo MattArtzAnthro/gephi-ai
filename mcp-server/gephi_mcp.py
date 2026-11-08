@@ -192,6 +192,13 @@ def _package_version() -> str:
         return "0.0.0"
 
 
+# Parameters with a fixed set of values, as the plugin accepts them. As Literal types they reach
+# the schema as an enum, so an agent sees the choices instead of guessing a spelling.
+_Table = Literal["node", "edge"]
+_ColumnType = Literal["string", "integer", "double", "float", "boolean", "long"]
+_FilterAction = Literal["select", "visible", "new_workspace", "column"]
+_ImportMode = Literal["new_workspace", "append"]
+
 #: What any MCP host learns on connecting, for hosts without the plugin's skill (Codex, Gemini, a
 #: bare uvx setup). The skill and its references carry the full practice.
 _INSTRUCTIONS = """\
@@ -1290,12 +1297,12 @@ async def gephi_get_graph_type() -> str:
 # ─── Attributes / Columns ────────────────────────────────────
 
 @_tool(name="gephi_get_columns")
-async def gephi_get_columns(target: str = "node") -> str:
+async def gephi_get_columns(target: _Table = "node") -> str:
     """List columns (attributes) in the node or edge table. target: "node" | "edge"."""
     return fmt(await gephi.request("GET", "/graph/columns", params={"target": target}))
 
 @_tool(name="gephi_add_column")
-async def gephi_add_column(name: str, type: str, target: str = "node") -> str:
+async def gephi_add_column(name: str, type: _ColumnType, target: _Table = "node") -> str:
     """Add a column to the node or edge table.
 
     type: "string" | "integer" | "double" | "float" | "boolean" | "long".
@@ -1612,8 +1619,8 @@ _SIMILARITY_NOTES = {
 
 
 @_tool(name="gephi_similarity_layout")
-async def gephi_similarity_layout(projection: str = "auto", dimensions: int = 8,
-                                  finish_noverlap: bool = True, basis: str = "spectral") -> str:
+async def gephi_similarity_layout(projection: Literal["auto", "spectral", "pca", "umap", "tsne"] = "auto", dimensions: int = 8,
+                                  finish_noverlap: bool = True, basis: Literal["spectral", "role"] = "spectral") -> str:
     """Position nodes by a spectral embedding of the graph instead of springs — a
     layout no Gephi plugin offers.
 
@@ -2212,7 +2219,7 @@ async def gephi_run_statistic(name: str, params: dict[str, Any] | None = None) -
                                    timeout=SLOW_REQUEST_TIMEOUT))
 
 @_tool(name="gephi_find_shortest_path")
-async def gephi_find_shortest_path(source: str, target: str, weighting: str = "none",
+async def gephi_find_shortest_path(source: str, target: str, weighting: Literal["none", "distance", "strength"] = "none",
                                    follow_direction: bool = True,
                                    mark_column: str | None = None) -> str:
     """Find the shortest path between two nodes (by id): the chain of nodes that links them.
@@ -2392,7 +2399,7 @@ async def gephi_list_filters() -> str:
 
 @_tool(name="gephi_apply_filter")
 async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
-                             action: str = "select", column: str | None = None,
+                             action: _FilterAction = "select", column: str | None = None,
                              dry_run: bool = False) -> str:
     """Apply a filter by name — the general-purpose filter tool.
 
@@ -2436,8 +2443,8 @@ async def gephi_apply_filter(name: str, params: dict[str, Any] | None = None,
 
 
 @_tool(name="gephi_apply_filters")
-async def gephi_apply_filters(filters: list[dict[str, Any]], combine: str = "all",
-                              action: str = "select", column: str | None = None,
+async def gephi_apply_filters(filters: list[dict[str, Any]], combine: Literal["all", "any"] = "all",
+                              action: _FilterAction = "select", column: str | None = None,
                               dry_run: bool = False) -> str:
     """Apply several filters together, e.g. "degree at least 3 AND in community 2" or
     "Country is Peru OR Country is Chile".
@@ -2457,7 +2464,7 @@ async def gephi_apply_filters(filters: list[dict[str, Any]], combine: str = "all
 
 @_tool(name="gephi_set_time_from_columns")
 async def gephi_set_time_from_columns(start: str | None = None, end: str | None = None,
-                                      target: str = "node", date_format: str | None = None) -> str:
+                                      target: _Table = "node", date_format: str | None = None) -> str:
     """Give nodes (or edges, target="edge") their time from a start column and/or an end
     column, so the network gains time data: Gephi's timeline, gephi_time_slice and the
     dynamic statistics then work.
@@ -2503,8 +2510,9 @@ async def gephi_get_timeline() -> str:
 
 
 @_tool(name="gephi_edit_column")
-async def gephi_edit_column(column: str, action: str, target: str = "node",
-                            value: str | None = None, type: str | None = None,
+async def gephi_edit_column(column: str, action: Literal["delete", "rename", "convert", "fill_empty", "clear"],
+                            target: _Table = "node",
+                            value: str | None = None, type: _ColumnType | None = None,
                             new_name: str | None = None) -> str:
     """Tidy one column of the node table (or the edge table, target="edge").
 
@@ -2526,7 +2534,7 @@ async def gephi_edit_column(column: str, action: str, target: str = "node",
 
 
 @_tool(name="gephi_column_value_frequencies")
-async def gephi_column_value_frequencies(column: str, target: str = "node") -> str:
+async def gephi_column_value_frequencies(column: str, target: _Table = "node") -> str:
     """Count how often each value appears in a column — the value distribution.
 
     Returns {value: count} for the given column, plus distinct_values and total.
@@ -2540,7 +2548,7 @@ async def gephi_column_value_frequencies(column: str, target: str = "node") -> s
 
 
 @_tool(name="gephi_detect_duplicates")
-async def gephi_detect_duplicates(column: str, target: str = "node",
+async def gephi_detect_duplicates(column: str, target: _Table = "node",
                                   case_sensitive: bool = False) -> str:
     """Find groups of nodes (or edges) that share a value in one column.
 
@@ -2575,7 +2583,7 @@ async def gephi_merge_nodes(ids: list[str], into: str | None = None) -> str:
 
 @_tool(name="gephi_create_regex_column")
 async def gephi_create_regex_column(column: str, new_column: str, regex: str,
-                                    target: str = "node") -> str:
+                                    target: _Table = "node") -> str:
     """Add a boolean column flagging rows whose value matches a regex.
 
     For each node/edge, tests `column`'s value against `regex` and writes
@@ -3041,7 +3049,7 @@ async def gephi_export_graphml(file: str) -> str:
     return fmt(await gephi.request("POST", "/export/graphml", json_data={"file": file}))
 
 @_tool(name="gephi_export_csv")
-async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes") -> str:
+async def gephi_export_csv(file: str, separator: str = ",", target: Literal["nodes", "edges", "both"] = "nodes") -> str:
     """Export the graph to CSV. target: "nodes" | "edges" | "both"."""
     if (problem := _make_output_folder(file)):
         return fmt({"success": False, "error": problem})
@@ -3049,7 +3057,7 @@ async def gephi_export_csv(file: str, separator: str = ",", target: str = "nodes
                                    json_data={"file": file, "separator": separator, "target": target}))
 
 @_tool(name="gephi_focus_view")
-async def gephi_focus_view(mode: str = "graph", id: str | None = None,
+async def gephi_focus_view(mode: Literal["graph", "zero", "node", "edge", "region"] = "graph", id: str | None = None,
                            source: str | None = None, target: str | None = None,
                            x: float | None = None, y: float | None = None,
                            w: float | None = None, h: float | None = None,
@@ -3082,7 +3090,7 @@ async def gephi_focus_view(mode: str = "graph", id: str | None = None,
 
 
 @_tool(name="gephi_set_selection_mode")
-async def gephi_set_selection_mode(mode: str = "rectangle") -> str:
+async def gephi_set_selection_mode(mode: Literal["rectangle", "direct", "disable", "off"] = "rectangle") -> str:
     """Set how the human's mouse selects nodes in the Gephi window.
 
     This removes the one manual step the pointing feature (gephi_get_selection)
@@ -4174,23 +4182,23 @@ def _import_body(file: str, mode: str | None, max_node_size: float | None = None
     return body
 
 @_tool(name="gephi_import_gexf")
-async def gephi_import_gexf(file: str, mode: str | None = None) -> str:
+async def gephi_import_gexf(file: str, mode: _ImportMode | None = None) -> str:
     """Import a graph from a GEXF file into a new workspace (see gephi_import_file for `mode`)."""
     return fmt(await gephi.request("POST", "/import/gexf", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_graphml")
-async def gephi_import_graphml(file: str, mode: str | None = None) -> str:
+async def gephi_import_graphml(file: str, mode: _ImportMode | None = None) -> str:
     """Import a graph from a GraphML file into a new workspace (see gephi_import_file for `mode`)."""
     return fmt(await gephi.request("POST", "/import/graphml", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_csv")
-async def gephi_import_csv(file: str, mode: str | None = None) -> str:
+async def gephi_import_csv(file: str, mode: _ImportMode | None = None) -> str:
     """Import a graph from a CSV file into a new workspace (see gephi_import_file for `mode`)."""
     return fmt(await gephi.request("POST", "/import/csv", json_data=_import_body(file, mode)))
 
 @_tool(name="gephi_import_file")
 async def gephi_import_file(file: str, max_node_size: float | None = None,
-                           mode: str | None = None) -> str:
+                           mode: _ImportMode | None = None) -> str:
     """Import a graph from any supported format (GEXF, GraphML, GML, CSV, DOT, Pajek, ...).
 
     Auto-detected by extension. If the imported graph looks collapsed into a small

@@ -842,3 +842,51 @@ def test_the_server_gives_hosts_its_working_rules():
     for must in ("gephi_health_check", "gephi_community_stability", "scale-free", "caption", "gephi_undo"):
         assert must in text, f"the server instructions do not mention {must}"
     assert len(text) < 2500, "instructions are read on every connection; keep them short"
+
+
+# Parameters with a fixed set of values, as the code that receives them accepts them. The schema
+# must carry them as an enum, so an agent sees the choices instead of guessing a spelling.
+_FIXED_VALUES = {
+    ("gephi_get_columns", "target"): ["node", "edge"],
+    ("gephi_add_column", "target"): ["node", "edge"],
+    ("gephi_add_column", "type"): ["string", "integer", "double", "float", "boolean", "long"],
+    ("gephi_set_time_from_columns", "target"): ["node", "edge"],
+    ("gephi_edit_column", "target"): ["node", "edge"],
+    ("gephi_edit_column", "action"): ["delete", "rename", "convert", "fill_empty", "clear"],
+    ("gephi_edit_column", "type"): ["string", "integer", "double", "float", "boolean", "long"],
+    ("gephi_column_value_frequencies", "target"): ["node", "edge"],
+    ("gephi_detect_duplicates", "target"): ["node", "edge"],
+    ("gephi_create_regex_column", "target"): ["node", "edge"],
+    ("gephi_export_csv", "target"): ["nodes", "edges", "both"],
+    ("gephi_similarity_layout", "basis"): ["spectral", "role"],
+    ("gephi_similarity_layout", "projection"): ["auto", "spectral", "pca", "umap", "tsne"],
+    ("gephi_find_shortest_path", "weighting"): ["none", "distance", "strength"],
+    ("gephi_apply_filter", "action"): ["select", "visible", "new_workspace", "column"],
+    ("gephi_apply_filters", "action"): ["select", "visible", "new_workspace", "column"],
+    ("gephi_apply_filters", "combine"): ["all", "any"],
+    ("gephi_focus_view", "mode"): ["graph", "zero", "node", "edge", "region"],
+    ("gephi_set_selection_mode", "mode"): ["rectangle", "direct", "disable", "off"],
+    ("gephi_import_file", "mode"): ["new_workspace", "append"],
+    ("gephi_import_gexf", "mode"): ["new_workspace", "append"],
+    ("gephi_import_graphml", "mode"): ["new_workspace", "append"],
+    ("gephi_import_csv", "mode"): ["new_workspace", "append"],
+}
+
+
+def _enum(schema):
+    if "enum" in schema:
+        return schema["enum"]
+    for option in schema.get("anyOf", []):
+        if "enum" in option:
+            return option["enum"]
+    return None
+
+
+def test_parameters_with_fixed_values_carry_them_as_an_enum():
+    tools = {t.name: t for t in gephi_mcp.mcp._tool_manager.list_tools()}
+    wrong = {}
+    for (tool, param), values in _FIXED_VALUES.items():
+        found = _enum(tools[tool].parameters["properties"][param])
+        if found != values:
+            wrong[f"{tool}.{param}"] = found
+    assert not wrong, f"these parameters do not list their values: {wrong}"
