@@ -389,6 +389,31 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   reset undid a size ranking. Sizes now stay unless `size` is given (plugin and server), and
   the legend drops the mappings a reset undid.
 
+### Also in this release (left out of the notes when 1.22.0 was released)
+- **An import or a generated graph no longer deletes an empty workspace the person named.** Only
+  an empty workspace still under Gephi's default name ("Workspace N") is tidied away.
+- **Parameters with a fixed set of values list them in the schema** (23 parameters across 18
+  tools), so an agent sees the allowed values instead of learning them from an error. The schema
+  lists the documented lowercase forms; the plugin also accepts some case variants and the aliases
+  `int` and `bool`, which the schema no longer offers.
+- **The server sends its working rules to every MCP host** as server instructions, so a host
+  without the plugin's skill (Codex, Gemini, a bare `uvx` setup) still gets them.
+- **Every tool description says when to use it rather than its sibling.** Two were wrong:
+  `gephi_set_layout_properties` only stages settings for the next `gephi_run_layout`, and
+  `gephi_create_project` replaces the current project and discards unsaved work.
+- **An interrupted request stops the statistic it started,** instead of leaving it running and
+  writing columns while a retry runs alongside it.
+- **A filter reset waits for a filter still being computed,** so the graph no longer stays
+  filtered with the Filters panel off.
+- **The plugin watches the Statistics panel from Gephi's interface thread and never starts a
+  statistic late,** closing three routes to a statistic running twice or after its request failed.
+- **`renderer.state` reports `stalled` only after 2 seconds without a graph update,** so one slow
+  update or a screenshot no longer reads as a frozen Gephi.
+- **A generated preferential-attachment graph is capped at 2,000,000 edges,** the same cap as the
+  random model, with a reason that names it; `edges_per_node` is at most 1000.
+- **The /explore and /visualize commands have valid YAML frontmatter,** which hosts other than
+  Claude Code had rejected.
+
 ### Development
 - **Mutation testing.** `mutmut run` in `mcp-server/` mutates the five modules with real logic
   (community stability, session ledger, partition matching, graph diff, statistic caveats);
