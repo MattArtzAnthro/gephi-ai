@@ -43,6 +43,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   `gephi_profile_graph` used the undirected formula for every graph, so a directed graph read
   twice as dense as Gephi's own Density statistic reports. A directed graph now counts ordered
   pairs, edges / (n(n-1)), and its average degree is edges per node, as Gephi counts them.
+- **Generated graphs are undirected.** `gephi_generate_graph` loaded both models as directed,
+  with every edge pointing from the newer node to the older one, so in-degree, reciprocity,
+  paths and density read wrongly on a null model meant for undirected data. The reply now says
+  `directed: false`.
 - **Resetting filters also turns them off in Gephi's Filters panel.** `gephi_reset_filters`
   restored the full graph but left the panel showing the filter (or selection) as active, so the
   panel and the graph disagreed and a refresh could bring the filter back. It now clears them

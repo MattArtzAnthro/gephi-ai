@@ -4800,10 +4800,14 @@ public class GephiControlService {
             Container c = Lookup.getDefault().lookup(Container.Factory.class).newContainer();
             c.setSource(generator.getName());
             c.setReport(new org.gephi.io.importer.api.Report());
+            // Both models are undirected. The generators set no edge type, so without this the
+            // default of the container made every generated graph directed.
+            c.getLoader().setEdgeDefault(org.gephi.io.importer.api.EdgeDirectionDefault.UNDIRECTED);
             generator.generate(c.getLoader());
             JsonObject r = loadContainer(c, name, "Generated " + name, null, null);
             if (r.get("success").getAsBoolean()) {
                 settings.entrySet().forEach(e -> r.add(e.getKey(), e.getValue()));
+                r.addProperty("directed", false);
                 r.addProperty("workspace", name);
             }
             return r;

@@ -92,6 +92,28 @@ class GenerateGraphTest {
         assertNotEquals(first, other);
     }
 
+    private static org.gephi.graph.api.GraphModel currentModel() {
+        return Lookup.getDefault().lookup(GraphController.class).getGraphModel();
+    }
+
+    /**
+     * Barabasi-Albert and Erdos-Renyi are undirected models. Loaded with Gephi's default edge type
+     * the graph came out directed, which made in-degree, reciprocity and density read wrongly.
+     */
+    @Test
+    void generatedGraphsAreUndirected() {
+        JsonObject ba = service.generateGraph("preferential_attachment", 60, 2, null, 3L);
+        assertTrue(ba.get("success").getAsBoolean(), ba.toString());
+        assertFalse(ba.get("directed").getAsBoolean(), ba.toString());
+        assertTrue(currentModel().isUndirected(), "preferential attachment graph is not undirected");
+        assertEquals(2 + (60 - 2 - 1) * 2, ba.get("edge_count").getAsInt());
+
+        JsonObject er = service.generateGraph("random", 60, null, 0.2, null);
+        assertTrue(er.get("success").getAsBoolean(), er.toString());
+        assertFalse(er.get("directed").getAsBoolean(), er.toString());
+        assertTrue(currentModel().isUndirected(), "random graph is not undirected");
+    }
+
     @Test
     void randomGraphSaysItCannotBeReproduced() {
         JsonObject r = service.generateGraph("random", 100, null, 0.1, null);

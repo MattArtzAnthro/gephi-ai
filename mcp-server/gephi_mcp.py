@@ -4372,8 +4372,11 @@ async def gephi_generate_graph(
       generator takes no seed, so this graph cannot be made again (`reproducible: false`);
       save or export it to keep it.
 
-    The workspace is named after the model and its settings; an empty workspace still under
-    Gephi's default name is removed, and one the person named is kept. Returns node_count, edge_count, the settings used, and `reproducible`.
+    Both models make an undirected graph (`directed: false`, plugin 1.6.0+). The workspace is
+    named after the model and its settings; an empty workspace still under Gephi's default name
+    is removed, and one the person named is kept. Returns node_count, edge_count, the settings
+    used, and `reproducible`. A seed reproduces the structure; Gephi numbers node ids from a
+    counter, so the ids differ between two runs of the same seed.
     """
     body: dict[str, Any] = {"model": model, "nodes": nodes}
     if edges_per_node is not None:
