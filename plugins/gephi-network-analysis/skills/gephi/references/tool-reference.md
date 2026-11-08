@@ -214,6 +214,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_remove_edge
 - **Method**: POST `/graph/edge/remove`
 - **Params**: `{source: str, target: str}`
+- **Notes**: Destructive, and not auto-snapshotted: call `gephi_snapshot` first if it may need undoing.
 
 ### gephi_set_edge_weight
 - **Method**: POST `/graph/edge/weight`
@@ -325,7 +326,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_run_layout
 - **Method**: POST `/layout/run`
 - **Params**: `{algorithm: str, iterations?: int (1000), properties?: {name: value}, sync?: bool (false)}`
-- **Returns**: `applied` reads back the value each matched setting holds, under its property key, with `applied_note` saying so (plugin 1.6.0+); cite it to confirm what the run used. Any setting name that matches no property of the layout is listed in `unapplied_params` with a `warning`; it was not applied, so fix the name and rerun. A `sync` run ends with a positions check: if the layout exploded numerically (coordinates that are not finite or absurdly large, which ForceAtlas 2 can produce on weighted graphs with a strong hub), the reply carries `layout_exploded` with the affected nodes and the fix. When it is present, do not export or style; follow the fix first.
+- **Returns**: `applied` reads back the value each matched setting holds, under its property key, with `applied_note` saying so (plugin 1.6.0+); cite it to confirm what the run used. Any setting name that matches no property of the layout is listed in `unapplied_params` with a `warning`; it was not applied, so fix the name and rerun. A `sync` run ends with a positions check: if the layout exploded numerically (coordinates that are not finite or absurdly large, which ForceAtlas 2 can produce on weighted graphs with a strong hub), the reply carries `layout_exploded` with the affected nodes and the fix. When it is present, do not export or style; follow the fix first. If the error says Gephi's UI thread is unresponsive, the reply carries `guidance`: the queued layout may still start once the thread frees, so call `gephi_get_layout_status` before any retry and do not retry while it reports running.
 - **Notes**: Without `sync`, returns at once with status "running" (poll `gephi_get_layout_status`); with `sync: true`, waits until the layout finishes. Use `sync: true` for passes run one after another, so the next pass does not start on a moving graph. Algorithm names: forceatlas2, yifanhu, openord, fruchterman, circular, random (plus any layout plugin installed in Gephi; `gephi_get_available_layouts` lists what is present). Check property spelling against `gephi_get_layout_properties`: OpenOrd takes display names (`"Edge Cut"`, `"Layout Size"`), ForceAtlas 2 and Yifan Hu take camelCase. See references/layout-guide.md.
 - **Developer note**: when calling the HTTP API directly, `/layout/run` takes tuning values under the key `properties`; values sent under `params` are ignored and the layout runs on its defaults.
 
@@ -485,7 +486,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Method**: reads both workspaces (switching to each and back), diffs node and edge sets, and, when `compare` names a numeric column, tracks it across the nodes present in both.
 - **Params**: `{before: int, after: int, compare?: str, directed?: bool (false)}`. Workspace arguments are zero-based indices: the `index` in each `gephi_list_workspaces` entry, not its `id`.
 - **Returns**: `{success, nodes: {added, removed, shared, before, after}, edges: {added, removed, shared, directed}, changed: {column, comparable, grew, shrank, unchanged}|null, warning?}`.
-- **Notes**: the comparison rests on node identity. Two graphs sharing no nodes carry a warning, because a mismatched identifier looks exactly like a network that replaced every member and is much more common; their `added` and `removed` lists then hold five examples each, with the totals in `added_count` and `removed_count`, and `nodes.label_overlap` (count and examples, server 1.22.1+) says whether the labels match instead, so the labels need not be read by hand. Omitting `compare` returns `changed: null` rather than an empty section, since an empty one reads as a finding that nothing moved.
+- **Notes**: the comparison rests on node identity. Two graphs sharing no nodes carry a warning, because a mismatched identifier looks exactly like a network that replaced every member and is much more common; their `added` and `removed` lists then hold five examples each, with the totals in `added_count` and `removed_count`, and `nodes.label_overlap` (count, `unique_on_both_sides`, and examples) says whether the labels match instead, so the labels need not be read by hand; a label is a candidate key only when one node on each side carries it. When the graphs overlap, a list longer than 200 is cut to its first 200 entries with its `_count`, so one coincidental shared id cannot bring back thousands. Omitting `compare` returns `changed: null` rather than an empty section, since an empty one reads as a finding that nothing moved.
 
 ### gephi_bipartite_layout
 - **Method**: reads the graph, computes two columns of coordinates in Python, and pushes them as positions. No Gephi layout plugin is involved.
@@ -552,13 +553,13 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Method**: POST `/filter/apply`
 - **Params**: `{name, params?: {property: value}, action?: "select"|"new_workspace"|"column", column?, dry_run?: bool (false)}`
 - **Returns**: dry run: counts of what would stay and go (`nodes_kept`, `nodes_removed`, and the edge equivalents); for `select`, `{success, filter, nodes_before, edges_before, nodes_after, edges_after}`; for `new_workspace`/`column`, a success message
-- **Usage**: apply any filter by name. `select` (default) hides what the filter excludes and changes no data; `gephi_reset_filters` shows it again. `new_workspace` copies the filtered subgraph into a new workspace (use for repeated filtering on large graphs, since hidden elements stay in memory); `column` writes membership to a true/false column. `dry_run: true` counts what would stay and go and changes nothing. A `select` filter stays on, into later conversations, and exports and checks then read only the visible graph. For AND, OR or NOT across filters use `gephi_apply_filters`. See references/filtering.md.
+- **Usage**: apply any filter by name. `select` (default) hides what the filter excludes and changes no data; `gephi_reset_filters` shows it again. `new_workspace` copies the filtered subgraph into a new workspace (use for repeated filtering on large graphs, since hidden elements stay in memory); `column` writes membership to a true/false column (not covered by the undo snapshot: call `gephi_snapshot` first if it may need undoing). `dry_run: true` counts what would stay and go and changes nothing. A `select` filter stays on, into later conversations, and exports and checks then read only the visible graph. For AND, OR or NOT across filters use `gephi_apply_filters`. See references/filtering.md.
 
 ### gephi_apply_filters
 - **Method**: POST `/filter/combine`
 - **Params**: `{filters: [{name, params?, exclude?: bool}], combine?: "all"|"any", action?: "select"|"new_workspace"|"column", column?, dry_run?: bool}`
 - **Returns**: dry run `{success, nodes_kept, edges_kept, nodes_removed, edges_removed, combine, filters}`; otherwise as `gephi_apply_filter`, plus `combine` and `filters`
-- **Usage**: several filters at once. `combine` "all" keeps what every filter keeps (AND), "any" what at least one keeps (OR); `exclude` inverts one filter (NOT). Run `dry_run` first and say what will be hidden. The combined query shows in Gephi's Filters panel, and a `select` filter stays on until `gephi_reset_filters`.
+- **Usage**: several filters at once. `combine` "all" keeps what every filter keeps (AND), "any" what at least one keeps (OR); `exclude` inverts one filter (NOT). Run `dry_run` first and say what will be hidden. The combined query shows in Gephi's Filters panel, and a `select` filter stays on until `gephi_reset_filters`. `action: "column"` is not covered by the undo snapshot: call `gephi_snapshot` first if it may need undoing.
 
 ## Data Laboratory
 

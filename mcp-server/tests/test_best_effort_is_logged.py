@@ -50,3 +50,20 @@ async def test_a_failing_caveat_lookup_is_logged_and_the_result_still_returns(ca
 
     assert '"success": true' in out
     assert "caveats boom" in caplog.text
+
+
+async def test_a_failing_auto_snapshot_is_logged_and_reports_no_undo(caplog, monkeypatch):
+    async def broken(op, enforce_cap=False):
+        raise RuntimeError("snapshot boom")
+
+    monkeypatch.setattr(gephi_mcp, "AUTO_SNAPSHOT", True)
+    monkeypatch.setattr(gephi_mcp, "_snapshot_current", broken)
+    caplog.set_level(logging.WARNING, logger="gephi_mcp")
+
+    assert await gephi_mcp._auto_snapshot("filter_by_degree") is False
+
+    [record] = [r for r in caplog.records if "snapshot boom" in r.getMessage()
+                or (r.exc_info and "snapshot boom" in str(r.exc_info[1]))]
+    assert record.levelno == logging.WARNING
+    assert "filter_by_degree" in record.getMessage()
+    assert record.exc_info is not None, "the traceback must be kept"

@@ -127,7 +127,7 @@ The full five-pass Beautiful Graph Recipe (settings, preview values, and trouble
 ## Hide, remove, and undo
 
 - `gephi_apply_filter` and `gephi_apply_filters` hide nodes and change nothing; `gephi_reset_filters` shows them again. Pass `dry_run` to count what a filter would hide or remove before running it. The remove and extract tools delete, keep one undo level, and have no redo; for an experiment, duplicate the workspace first.
-- Deleting tools take an undo snapshot first and report `undo_available`; `gephi_undo` restores it. Verify after each deleting step before taking the next. Run `gephi_remove_isolates` with `dry_run` first and say how many would go. Single `gephi_remove_node` and `gephi_remove_edge` calls take no snapshot; call `gephi_snapshot` before a risky run of small edits.
+- Tools that clear, bulk-remove, merge, extract, or prune the graph take an undo snapshot first and report `undo_available`; `gephi_undo` restores it. Verify after each such step before taking the next. Run `gephi_remove_isolates` with `dry_run` first and say how many would go. These take no snapshot: `gephi_remove_node`, `gephi_remove_edge`, and `gephi_apply_filter` or `gephi_apply_filters` with `action="column"` (it writes a column). Call `gephi_snapshot` first if you may need to undo one of them, or before a risky run of small edits.
 - For "what if X were gone", use `gephi_whatif`: it edits a throwaway copy and reports the change, and the real graph is never touched.
 - To keep outlier nodes in frame, prefer strong gravity at a small value over deleting them.
 - See references/filtering.md for turning a plain-language filter into a Gephi filter.

@@ -862,7 +862,9 @@ _FIXED_VALUES = {
     ("gephi_similarity_layout", "projection"): ["auto", "spectral", "pca", "umap", "tsne"],
     ("gephi_find_shortest_path", "weighting"): ["none", "distance", "strength"],
     ("gephi_apply_filter", "action"): ["select", "visible", "new_workspace", "column"],
-    ("gephi_apply_filters", "action"): ["select", "visible", "new_workspace", "column"],
+    # The plugin's /filter/combine refuses "visible" ("Unknown action: visible"), so the
+    # combining tool does not offer it.
+    ("gephi_apply_filters", "action"): ["select", "new_workspace", "column"],
     ("gephi_apply_filters", "combine"): ["all", "any"],
     ("gephi_focus_view", "mode"): ["graph", "zero", "node", "edge", "region"],
     ("gephi_set_selection_mode", "mode"): ["rectangle", "direct", "disable", "off"],

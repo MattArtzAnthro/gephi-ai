@@ -76,11 +76,12 @@ async def test_a_time_slice_ends_the_record_of_the_full_network(monkeypatch):
 
 async def test_a_cancelled_switch_still_leaves_no_stale_record(monkeypatch):
     # Gephi may have switched before the cancellation reached it.
-    install_fake_gephi(monkeypatch, faults={"/workspace/switch": asyncio.CancelledError()})
+    state = install_fake_gephi(monkeypatch, faults={"/workspace/switch": asyncio.CancelledError()})
+    state["duplicate"](switch=False)
     _record_layout()
 
     with pytest.raises(asyncio.CancelledError):
-        await gephi_mcp.gephi_switch_workspace(index=0)
+        await gephi_mcp.gephi_switch_workspace(index=1)
 
     assert _receipt()["layout"] is None
     assert _receipt()["earlier"][0]["layout"]["algorithm"] == "ForceAtlas 2"
@@ -136,3 +137,61 @@ async def test_compare_partitions_is_in_the_receipt(monkeypatch):
     assert (entry["column"], entry["against"]) == ("modularity_class", "site")
     assert entry["adjusted_rand"] == 1.0
     assert entry["compared"] == 10
+
+
+async def test_comparing_workspaces_keeps_the_record_of_the_graph_on_screen(monkeypatch):
+    # gephi_compare_workspaces switches to each workspace to read it and then back, so the graph
+    # on screen is the same afterwards. The switches are bookkeeping and must not end the record.
+    state = install_fake_gephi(monkeypatch)
+    state["duplicate"](switch=False)
+    _record_layout()
+
+    await gephi_mcp.gephi_compare_workspaces(before=0, after=1)
+
+    assert any(c[1] == "/workspace/switch" for c in state["calls"])
+    assert _receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+    assert _receipt()["earlier"] == []
+
+
+async def test_switching_to_the_workspace_already_on_screen_keeps_the_record(monkeypatch):
+    install_fake_gephi(monkeypatch)
+    _record_layout()
+
+    await gephi_mcp.gephi_switch_workspace(index=0)
+
+    assert _receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+    assert _receipt()["earlier"] == []
+
+
+async def test_deleting_a_workspace_that_is_not_on_screen_keeps_the_record(monkeypatch):
+    state = install_fake_gephi(monkeypatch)
+    state["duplicate"](switch=False)
+    _record_layout()
+
+    await gephi_mcp.gephi_delete_workspace(index=1)
+
+    assert state["deleted"] == [2]
+    assert _receipt()["layout"]["algorithm"] == "ForceAtlas 2"
+    assert _receipt()["earlier"] == []
+
+
+async def test_deleting_the_workspace_on_screen_still_ends_the_record(monkeypatch):
+    state = install_fake_gephi(monkeypatch)
+    state["duplicate"](switch=False)
+    _record_layout()
+
+    await gephi_mcp.gephi_delete_workspace(index=0)
+
+    assert _receipt()["layout"] is None
+    assert _receipt()["earlier"][0]["ended_by"] == "a workspace was deleted"
+
+
+async def test_an_unreadable_workspace_list_falls_back_to_ending_the_record(monkeypatch):
+    # Not knowing which workspace is on screen, the server cannot say the graph stayed the same.
+    state = install_fake_gephi(monkeypatch, faults={"/workspace/list": {"success": False}})
+    state["duplicate"](switch=False)
+    _record_layout()
+
+    await gephi_mcp.gephi_delete_workspace(index=1)
+
+    assert _receipt()["layout"] is None
