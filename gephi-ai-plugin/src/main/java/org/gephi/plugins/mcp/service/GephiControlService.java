@@ -3396,14 +3396,20 @@ public class GephiControlService {
      * saved for it, so the settings go on after selection, starting from the layout's defaults
      * as a directly run layout does; selecting it again makes the panel show them. Returns the
      * setting names that matched no property.
+     *
+     * <p>Selection and settings are two event-thread tasks. In a workspace with no saved settings
+     * for the layout, Gephi's Layout panel answers the selection by posting a load of the default
+     * preset to the event thread, and with no preset saved that load resets the layout to its
+     * defaults. Posted inside one task, the reset ran after the settings and the layout ran on
+     * defaults; the second task is queued behind it, so the settings go on last.
      */
     static java.util.List<String> startLayoutThroughController(org.gephi.layout.api.LayoutController lc,
         Layout layout, Map<String, Object> properties,
         int iterations,
         java.util.function.Consumer<Runnable> onEdt) {
         java.util.List<String> unapplied = new java.util.ArrayList<>();
+        onEdt.accept(() -> lc.setLayout(layout));
         onEdt.accept(() -> {
-            lc.setLayout(layout);
             try {
                 layout.resetPropertiesValues();
             } catch (Exception e) {

@@ -4,6 +4,17 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Fixed
+- **A layout setting no longer falls back to its default on the first run in a workspace.** In a
+  workspace with no saved settings for the layout, Gephi's Layout panel answers the selection by
+  queuing a load of the default preset, which resets the layout to its defaults. That reset ran
+  after Gephi AI's settings, so `gephi_run_layout` with `gravity: 5` could run ForceAtlas 2 at
+  gravity 1.0 (in 5 of 10 runs measured, and 3 of 6 eval trials), and sometimes partway through
+  a run that had started with the right value. The selection and the settings now go to Gephi's
+  event thread as two tasks, so the reset lands first. `applied` caught it every time.
+
 ## MCP server 1.22.0 / Java plugin 1.6.0 / workflow packages 1.21.0
 
 ### Added

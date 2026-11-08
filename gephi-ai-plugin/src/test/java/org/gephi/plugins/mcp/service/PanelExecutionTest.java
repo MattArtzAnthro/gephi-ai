@@ -632,6 +632,70 @@ class PanelExecutionTest {
         assertEquals(true, value(layout, "linLogMode"));
     }
 
+    /**
+     * Gephi's event thread: tasks run in the order they were posted, and a task posted while
+     * another runs waits its turn. accept() behaves like the service's onEdt: it posts the task and
+     * returns once that task has run, leaving anything posted after it still queued.
+     */
+    static class FakeEdt implements Consumer<Runnable> {
+        final java.util.ArrayDeque<Runnable> queue = new java.util.ArrayDeque<>();
+
+        void post(Runnable r) {
+            queue.addLast(r);
+        }
+
+        @Override public void accept(Runnable r) {
+            queue.addLast(r);
+            Runnable next;
+            do {
+                next = queue.removeFirst();
+                next.run();
+            } while (next != r);
+        }
+
+        void drain() {
+            while (!queue.isEmpty()) {
+                queue.removeFirst().run();
+            }
+        }
+    }
+
+    /**
+     * Gephi's Layout panel answers a layout newly selected in a workspace with no saved settings
+     * for it by posting a load of the default preset to the event thread; with no preset saved,
+     * that load resets the layout to its defaults.
+     */
+    static class PanelResettingController extends FakeLayoutController {
+        final FakeEdt edt;
+
+        PanelResettingController(FakeEdt edt) {
+            this.edt = edt;
+        }
+
+        @Override public void setLayout(Layout l) {
+            boolean newlySelected = l != selected;
+            super.setLayout(l);
+            if (newlySelected) {
+                edt.post(l::resetPropertiesValues);
+            }
+        }
+    }
+
+    @Test
+    void theLayoutPanelsQueuedDefaultsLandBeforeTheSettingsNotOnTopOfThem() {
+        FakeEdt edt = new FakeEdt();
+        PanelResettingController lc = new PanelResettingController(edt);
+        Layout layout = new ForceAtlas2Builder().buildLayout();
+
+        GephiControlService.startLayoutThroughController(lc, layout, Map.of("gravity", 5.0), 100, edt);
+        edt.drain();
+
+        // In 3 of 6 eval trials the first run reported applied gravity 1.0: the panel's reset ran
+        // after the settings went on, and the layout ran on the defaults.
+        assertEquals(5.0, value(layout, "gravity"));
+        assertEquals("execute 100", lc.calls.get(lc.calls.size() - 1));
+    }
+
     @Test
     void settingsNotGivenStartFromTheLayoutsDefaults() {
         FakeLayoutController lc = new FakeLayoutController();
