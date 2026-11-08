@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - run: shellcheck install.sh
       - name: PSScriptAnalyzer, errors only
         shell: pwsh
@@ -43,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - name: Install Gephi from the official tarball
         run: |
           curl -fsSL -o /tmp/gephi.tgz "https://github.com/gephi/gephi/releases/download/v$GEPHI_VERSION/gephi-$GEPHI_VERSION-linux-x64.tar.gz"
@@ -70,6 +74,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       # No Gephi preinstalled: the installer's own Homebrew path installs it.
       - name: Resolve the release to install
         run: |
@@ -100,6 +106,8 @@ jobs:
         shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - name: Install Gephi silently (Inno Setup)
         run: |
           $exe = "$env:RUNNER_TEMP\gephi-setup.exe"
