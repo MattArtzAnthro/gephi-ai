@@ -4176,8 +4176,8 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
 
     `mode`: by default ("new_workspace") the file opens in its own workspace, as it does
     from Gephi's File > Open, so its time format and id type always fit. An empty workspace
-    that was open is removed; one holding a graph is kept, and gephi_switch_workspace returns
-    to it. "append" adds the file to the current workspace instead, for merging two files;
+    still under Gephi's default name ("Workspace 1") is removed; one holding a graph, or one
+    the person named, is kept, and gephi_switch_workspace returns to it. "append" adds the file to the current workspace instead, for merging two files;
     Gephi refuses when their settings differ (for example one has timestamps and the other
     intervals). Warnings Gephi raised while reading the file come back as `import_issues`;
     tell the user about any that matter, such as nodes Gephi created because an edge names a node the file does not list.
@@ -4235,8 +4235,8 @@ async def gephi_generate_graph(
       generator takes no seed, so this graph cannot be made again (`reproducible: false`);
       save or export it to keep it.
 
-    The workspace is named after the model and its settings; an empty workspace that was open
-    is removed. Returns node_count, edge_count, the settings used, and `reproducible`.
+    The workspace is named after the model and its settings; an empty workspace still under
+    Gephi's default name is removed, and one the person named is kept. Returns node_count, edge_count, the settings used, and `reproducible`.
     """
     body: dict[str, Any] = {"model": model, "nodes": nodes}
     if edges_per_node is not None:

@@ -4802,7 +4802,13 @@ public class GephiControlService {
         boolean previousEmpty = false;
         if (previous != null) {
             Graph pg = getGraphController().getGraphModel(previous).getGraph();
-            previousEmpty = pg.getNodeCount() == 0 && pg.getEdgeCount() == 0;
+            // Only an untouched workspace is clutter: empty and still under Gephi's default
+            // name. One the person named is a decision, and stays.
+            org.gephi.project.api.WorkspaceInformation info =
+                previous.getLookup().lookup(org.gephi.project.api.WorkspaceInformation.class);
+            String previousName = info == null ? "" : info.getName();
+            previousEmpty = pg.getNodeCount() == 0 && pg.getEdgeCount() == 0
+                && previousName != null && previousName.matches("Workspace \\d+");
         }
         if (append && previous == null) {
             return error("No workspace to append to");

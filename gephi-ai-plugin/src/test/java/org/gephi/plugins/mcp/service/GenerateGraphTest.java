@@ -151,4 +151,30 @@ class GenerateGraphTest {
 
         assertTrue(r.get("error").getAsString().contains("expects about"), r.toString());
     }
+
+    private static int workspaceCount() {
+        return Lookup.getDefault().lookup(ProjectController.class).getCurrentProject().getWorkspaces().size();
+    }
+
+    /** An empty workspace the person named is theirs: generating a graph must not delete it. */
+    @Test
+    void anEmptyWorkspaceThePersonNamedIsKept() {
+        ProjectController pc = Lookup.getDefault().lookup(ProjectController.class);
+        pc.renameWorkspace(pc.getCurrentWorkspace(), "Fieldwork 2026");
+        int before = workspaceCount();
+
+        service.generateGraph("preferential_attachment", 50, 1, null, 1L);
+
+        assertEquals(before + 1, workspaceCount(), "the named empty workspace was deleted");
+    }
+
+    /** An empty workspace with Gephi's default name is still tidied away, as before. */
+    @Test
+    void anEmptyDefaultWorkspaceIsStillRemoved() {
+        int before = workspaceCount();
+
+        service.generateGraph("preferential_attachment", 50, 1, null, 1L);
+
+        assertEquals(before, workspaceCount(), "the empty default workspace was left behind");
+    }
 }
