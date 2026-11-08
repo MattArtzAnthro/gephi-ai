@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.22.1 / Java plugin 1.6.1 / workflow packages 1.21.1
 
 ### Fixed
 - **A layout setting no longer falls back to its default on the first run in a workspace.** In a
