@@ -969,7 +969,13 @@ async def gephi_health_check() -> str:
 
 @_tool(name="gephi_create_project")
 async def gephi_create_project(name: str = "New Project") -> str:
-    """Create a new empty Gephi project/workspace."""
+    """Create a new, empty Gephi project with one workspace.
+
+    WARNING: this replaces the current project, DISCARDING any unsaved changes in it without
+    prompting. If the current graph has work the person might want, gephi_save_project it (or
+    confirm with them) first. To keep the current graph and start another beside it, use
+    gephi_new_workspace.
+    """
     return fmt(await gephi.request("POST", "/project/new", json_data={"name": name}))
 
 @_tool(name="gephi_open_project")
@@ -992,14 +998,20 @@ async def gephi_open_project(file: str) -> str:
 
 @_tool(name="gephi_save_project")
 async def gephi_save_project(file: str) -> str:
-    """Save the current Gephi project. `file` is the absolute destination path."""
+    """Save the current project, every workspace with its graph, layout and styling, to a .gephi
+    file. `file` is the absolute destination path; a missing folder is created. Offer it
+    early in long sessions, since opening or creating a project discards unsaved work.
+    """
     if (problem := _make_output_folder(file)):
         return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/project/save", json_data={"file": file}))
 
 @_tool(name="gephi_get_project_info")
 async def gephi_get_project_info() -> str:
-    """Get current project info: workspace status, node/edge counts, and graph type."""
+    """Get the current project's state: whether one is open, the workspace on screen, and its node
+    and edge counts and graph type. Use it to orient at the start of a session, after
+    gephi_health_check.
+    """
     return fmt(await gephi.request("GET", "/project/info"))
 
 
@@ -1007,32 +1019,48 @@ async def gephi_get_project_info() -> str:
 
 @_tool(name="gephi_new_workspace")
 async def gephi_new_workspace() -> str:
-    """Create a new workspace in the current project."""
+    """Create a new, empty workspace in the current project and switch to it, keeping the other
+    workspaces and their graphs. To start over entirely, gephi_create_project replaces the
+    whole project instead.
+    """
     return fmt(await gephi.request("POST", "/workspace/new"))
 
 @_tool(name="gephi_list_workspaces")
 async def gephi_list_workspaces() -> str:
-    """List all workspaces in the current project."""
+    """List the workspaces in the current project with their zero-based indexes and names, and
+    which one is on screen. The index is what the other workspace tools take.
+    """
     return fmt(await gephi.request("GET", "/workspace/list"))
 
 @_tool(name="gephi_switch_workspace")
 async def gephi_switch_workspace(index: int) -> str:
-    """Switch to a different workspace by zero-based index."""
+    """Switch the view to the workspace at a zero-based index (see gephi_list_workspaces). Every
+    later tool acts on that workspace's graph.
+    """
     return fmt(await gephi.request("POST", "/workspace/switch", json_data={"index": index}))
 
 @_tool(name="gephi_delete_workspace")
 async def gephi_delete_workspace(index: int) -> str:
-    """Delete a workspace by zero-based index."""
+    """Delete the workspace at a zero-based index (see gephi_list_workspaces) and its graph. It
+    cannot be undone; gephi_undo does not restore a deleted workspace. Say which graph it holds
+    before deleting one the person did not create in this session.
+    """
     return fmt(await gephi.request("DELETE", "/workspace/delete", params={"index": str(index)}))
 
 @_tool(name="gephi_duplicate_workspace")
 async def gephi_duplicate_workspace(index: int) -> str:
-    """Duplicate a workspace by index, copying graph data, statistics, and appearance."""
+    """Duplicate the workspace at a zero-based index, copying its graph, statistics and appearance.
+    An instant in-memory copy to try something risky on and switch back from; gephi_snapshot
+    and gephi_undo do this automatically for one level of undo.
+    """
     return fmt(await gephi.request("POST", "/workspace/duplicate", json_data={"index": index}))
 
 @_tool(name="gephi_rename_workspace")
 async def gephi_rename_workspace(index: int, name: str) -> str:
-    """Rename the workspace at the given zero-based index."""
+    """Rename the workspace at a zero-based index (see gephi_list_workspaces), for example after a
+    filter or time slice made a new one. A workspace the person named is kept when an import
+    or generated graph would otherwise tidy an empty one away.
+    """
     return fmt(await gephi.request("POST", "/workspace/rename", json_data={"index": index, "name": name}))
 
 
@@ -1210,12 +1238,17 @@ async def gephi_get_node(id: str) -> str:
 
 @_tool(name="gephi_set_node_label")
 async def gephi_set_node_label(id: str, label: str) -> str:
-    """Set or change the label of a node."""
+    """Set or change the label of one node, by id: the text shown in the view and exports when
+    labels are on. To name whole groups on a map, gephi_label_clusters places one label per
+    cluster.
+    """
     return fmt(await gephi.request("POST", "/graph/node/label", json_data={"id": id, "label": label}))
 
 @_tool(name="gephi_set_node_position")
 async def gephi_set_node_position(id: str, x: float, y: float) -> str:
-    """Set the X/Y position of a node."""
+    """Move one node to an X/Y position, by id. For many nodes, gephi_batch_set_positions is one
+    call; a layout algorithm (gephi_run_layout) is usually the better way to place a graph.
+    """
     return fmt(await gephi.request("POST", "/graph/node/position", json_data={"id": id, "x": x, "y": y}))
 
 @_tool(name="gephi_batch_set_positions")
@@ -1258,19 +1291,27 @@ async def gephi_add_edges(edges: list[dict[str, Any]]) -> str:
 
 @_tool(name="gephi_remove_edge")
 async def gephi_remove_edge(source: str, target: str) -> str:
-    """Remove the edge between two nodes."""
+    """Remove the edge between two nodes (by id). Not covered by the automatic undo snapshot: take
+    gephi_snapshot first if the person may want it back. To hide edges rather than delete
+    them, use a filter such as gephi_filter_by_edge_weight.
+    """
     return fmt(await gephi.request("POST", "/graph/edge/remove",
                                    json_data={"source": source, "target": target}))
 
 @_tool(name="gephi_set_edge_weight")
 async def gephi_set_edge_weight(source: str, target: str, weight: float) -> str:
-    """Set the weight of an edge."""
+    """Set the weight of one edge, by its source and target ids. Weights feed weighted statistics,
+    the edge-weight filter and thickness by weight; say what the weight means (strength,
+    distance, count) when reporting them.
+    """
     return fmt(await gephi.request("POST", "/graph/edge/weight",
                                    json_data={"source": source, "target": target, "weight": weight}))
 
 @_tool(name="gephi_set_edge_label")
 async def gephi_set_edge_label(source: str, target: str, label: str) -> str:
-    """Set or change the label of an edge."""
+    """Set or change the label of one edge, by its source and target ids. Labels show in the view
+    and exports when edge labels are on in the preview settings.
+    """
     return fmt(await gephi.request("POST", "/graph/edge/label",
                                    json_data={"source": source, "target": target, "label": label}))
 
@@ -1285,12 +1326,17 @@ async def gephi_query_edges(limit: int = 100, offset: int = 0) -> str:
 
 @_tool(name="gephi_get_graph_stats")
 async def gephi_get_graph_stats() -> str:
-    """Get node count, edge count, density, average degree, and graph type."""
+    """Get the graph's basic numbers: node count, edge count, density, average degree and whether
+    it is directed. Cheap. For the full first reading (degree spread, components, clustering,
+    weights) use gephi_profile_graph.
+    """
     return fmt(await gephi.request("GET", "/graph/stats"))
 
 @_tool(name="gephi_get_graph_type")
 async def gephi_get_graph_type() -> str:
-    """Get whether the graph is directed, undirected, or mixed."""
+    """Get whether the graph is directed, undirected or mixed. It decides how degree, PageRank,
+    HITS and paths are read (in and out ties, and whether direction is followed).
+    """
     return fmt(await gephi.request("GET", "/graph/type"))
 
 
@@ -1298,7 +1344,10 @@ async def gephi_get_graph_type() -> str:
 
 @_tool(name="gephi_get_columns")
 async def gephi_get_columns(target: _Table = "node") -> str:
-    """List columns (attributes) in the node or edge table. target: "node" | "edge"."""
+    """List the columns (attributes) of the node or edge table, with their types: what data the
+    graph carries and which statistics have already run. Read it before colouring, sizing or
+    filtering by a column, since computed columns exist only after their statistic.
+    """
     return fmt(await gephi.request("GET", "/graph/columns", params={"target": target}))
 
 @_tool(name="gephi_add_column")
@@ -1313,7 +1362,9 @@ async def gephi_add_column(name: str, type: _ColumnType, target: _Table = "node"
 
 @_tool(name="gephi_set_node_attributes")
 async def gephi_set_node_attributes(id: str, attributes: dict[str, Any]) -> str:
-    """Set custom attributes on a node. Columns are created automatically if needed."""
+    """Set custom attributes (columns) on one node, by id. Columns are created when needed. For
+    many nodes, gephi_batch_set_node_attributes is one call instead of many.
+    """
     return fmt(await gephi.request("POST", "/graph/node/attributes",
                                    json_data={"id": id, "attributes": attributes}))
 
@@ -1324,7 +1375,10 @@ async def gephi_batch_set_node_attributes(updates: list[dict[str, Any]]) -> str:
 
 @_tool(name="gephi_set_edge_attributes")
 async def gephi_set_edge_attributes(source: str, target: str, attributes: dict[str, Any]) -> str:
-    """Set custom attributes on an edge. Columns are created automatically if needed."""
+    """Set custom attributes (columns) on one edge, by its source and target ids. Columns are
+    created when needed. For many edges, gephi_add_edges with attributes is one call instead
+    of many.
+    """
     return fmt(await gephi.request("POST", "/graph/edge/attributes",
                                    json_data={"source": source, "target": target, "attributes": attributes}))
 
@@ -1345,18 +1399,27 @@ def _fmt_styled(resp: dict[str, Any], operation: str, **detail: Any) -> str:
 
 @_tool(name="gephi_set_node_color")
 async def gephi_set_node_color(id: str, r: int, g: int, b: int, a: int = 255) -> str:
-    """Set the color of a single node. r/g/b/a are 0-255."""
+    """Set the colour of one node (r, g, b, a from 0 to 255), for example to point one out. For
+    colouring by a column use gephi_color_by_partition or gephi_color_by_ranking; for several
+    nodes, gephi_batch_set_node_colors.
+    """
     return fmt(await gephi.request("POST", "/appearance/node/color",
                                    json_data={"id": id, "r": r, "g": g, "b": b, "a": a}))
 
 @_tool(name="gephi_set_node_size")
 async def gephi_set_node_size(id: str, size: float) -> str:
-    """Set the size of a single node."""
+    """Set the size of one node, by id, for example to point one out. To size nodes by a measure
+    such as degree or PageRank, use gephi_size_by_ranking, which sizes every node
+    consistently and can make a legend.
+    """
     return fmt(await gephi.request("POST", "/appearance/node/size", json_data={"id": id, "size": size}))
 
 @_tool(name="gephi_set_edge_color")
 async def gephi_set_edge_color(source: str, target: str, r: int, g: int, b: int, a: int = 255) -> str:
-    """Set the color of a single edge. r/g/b/a are 0-255."""
+    """Set the colour of one edge (r, g, b, a from 0 to 255). For colouring by a column use
+    gephi_color_edges_by_partition, which colours every edge consistently and can make a
+    legend.
+    """
     return fmt(await gephi.request("POST", "/appearance/edge/color",
                                    json_data={"source": source, "target": target,
                                               "r": r, "g": g, "b": b, "a": a}))
@@ -1763,7 +1826,9 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
 
 @_tool(name="gephi_stop_layout")
 async def gephi_stop_layout() -> str:
-    """Stop a currently running layout algorithm."""
+    """Stop the layout that is running, keeping the positions it reached. Use it when a layout has
+    settled or is taking too long; a stopped run reports fewer iterations than were asked.
+    """
     global _layout_stops
     result = await gephi.request("POST", "/layout/stop")
     if result.get("success") and result.get("message") != "No layout running":
@@ -1777,23 +1842,34 @@ _layout_stops = 0
 
 @_tool(name="gephi_get_layout_status")
 async def gephi_get_layout_status() -> str:
-    """Check whether a layout algorithm is currently running."""
+    """Check whether a layout is still running, and which. Use it after starting a layout without
+    waiting for it (sync false) before reading positions or exporting a map.
+    """
     return fmt(await gephi.request("GET", "/layout/status"))
 
 @_tool(name="gephi_get_available_layouts")
 async def gephi_get_available_layouts() -> str:
-    """Get the list of available layout algorithms."""
+    """List the layout algorithms installed in this Gephi, by the names gephi_run_layout accepts,
+    including any added by other plugins. The layout guide in the skill says which to use for
+    which question.
+    """
     return fmt(await gephi.request("GET", "/layout/available"))
 
 @_tool(name="gephi_get_layout_properties")
 async def gephi_get_layout_properties(algorithm: str) -> str:
-    """Get tunable properties (gravity, scaling, speed, ...) for a layout algorithm."""
+    """Get a layout algorithm's tunable properties (gravity, scaling, speed, ...) with their names
+    and default values, to pass to gephi_run_layout as properties. Read it before changing a
+    property; the names differ between algorithms.
+    """
     return fmt(await gephi.request("GET", "/layout/properties", params={"algorithm": algorithm}))
 
 @_tool(name="gephi_set_layout_properties")
 async def gephi_set_layout_properties(algorithm: str, properties: dict[str, Any],
                                       iterations: int = 1000) -> str:
-    """Run a layout with custom property values (gravity, scaling, speed, ...)."""
+    """Stage property values (gravity, scaling, speed, ...) for a layout WITHOUT running it: the
+    next gephi_run_layout of the same algorithm applies them. Prefer gephi_run_layout with
+    properties, which sets and runs in one call.
+    """
     return fmt(await gephi.request("POST", "/layout/properties",
                                    json_data={"algorithm": algorithm, "properties": properties,
                                               "iterations": iterations}))
@@ -2250,7 +2326,10 @@ async def gephi_stop_statistic() -> str:
 
 @_tool(name="gephi_compute_degree")
 async def gephi_compute_degree() -> str:
-    """Compute degree, in-degree, and out-degree for all nodes."""
+    """Compute degree, in-degree and out-degree for every node: how many ties each has. The
+    cheapest centrality and the first to run; prefer it to betweenness on very large graphs
+    when the question is simply who has the most ties.
+    """
     return await fmt_stat("degree", await gephi.request("POST", "/statistics/degree"))
 
 @_tool(name="gephi_compute_betweenness")
@@ -2268,17 +2347,26 @@ async def gephi_compute_betweenness() -> str:
 
 @_tool(name="gephi_compute_pagerank")
 async def gephi_compute_pagerank() -> str:
-    """Compute PageRank for all nodes. Stores 'pageranks' on nodes."""
+    """Compute PageRank for every node: importance from being tied to important nodes, following
+    edge direction on directed graphs. Stores 'pageranks' on nodes. Use it for influence or
+    prestige; use betweenness for brokers between groups.
+    """
     return await fmt_stat("pagerank", await gephi.request("POST", "/statistics/pagerank"))
 
 @_tool(name="gephi_compute_connected_components")
 async def gephi_compute_connected_components() -> str:
-    """Compute connected components. Stores 'componentnumber' on nodes."""
+    """Compute connected components: which nodes can reach each other. Stores 'componentnumber' on
+    nodes. Run it before path-based measures, which treat separate components as infinitely
+    far apart; gephi_extract_giant_component keeps only the largest one.
+    """
     return fmt(await gephi.request("POST", "/statistics/connected-components"))
 
 @_tool(name="gephi_compute_clustering_coefficient")
 async def gephi_compute_clustering_coefficient() -> str:
-    """Compute the clustering coefficient for all nodes. Stores 'clustering' on nodes."""
+    """Compute the local clustering coefficient for every node: the share of a node's neighbours
+    that are linked to each other. Stores 'clustering' on nodes. For whether the network is
+    more clustered than chance, read clustering_vs_random from gephi_profile_graph instead.
+    """
     return await fmt_stat("clustering_coefficient",
                           await gephi.request("POST", "/statistics/clustering-coefficient"))
 
@@ -2294,7 +2382,10 @@ async def gephi_compute_avg_path_length() -> str:
 
 @_tool(name="gephi_compute_hits")
 async def gephi_compute_hits() -> str:
-    """Compute HITS hub and authority scores. Stores 'Authority' and 'Hub' on nodes."""
+    """Compute HITS hub and authority scores, for directed graphs where pointing to good sources
+    (hubs) differs from being pointed to by them (authorities). Stores 'Authority' and 'Hub'
+    on nodes. On an undirected graph both scores are the same; use PageRank instead.
+    """
     return fmt(await gephi.request("POST", "/statistics/hits"))
 
 @_tool(name="gephi_compute_eigenvector")
@@ -2376,7 +2467,10 @@ async def gephi_extract_giant_component() -> str:
 
 @_tool(name="gephi_reset_filters")
 async def gephi_reset_filters() -> str:
-    """Reset non-destructive filters and restore the full graph view."""
+    """Turn off the filters on the visible graph and show the full graph again, also in Gephi's
+    Filters panel. Data is untouched: select filters only hide. Filters that copied a subgraph
+    into a new workspace or wrote a column are not undone by this.
+    """
     return fmt(await gephi.request("POST", "/filter/reset"))
 
 
@@ -2606,7 +2700,10 @@ async def gephi_clear_graph() -> str:
 
 @_tool(name="gephi_edge_thickness_by_weight")
 async def gephi_edge_thickness_by_weight(min_thickness: float = 1, max_thickness: float = 5) -> str:
-    """Scale rendered edge thickness proportionally to edge weight."""
+    """Draw each edge's thickness in proportion to its weight, so heavier ties stand out in the
+    view and in exports. Changes only how edges are drawn, not the data. Check the weights
+    mean strength first (gephi_profile_graph reports heavy-tailed weights).
+    """
     return fmt(await gephi.request("POST", "/appearance/edge/thickness-by-weight",
                                    json_data={"min_thickness": min_thickness, "max_thickness": max_thickness}))
 
@@ -3036,21 +3133,30 @@ async def gephi_export_pdf(file: str) -> str:
 
 @_tool(name="gephi_export_svg")
 async def gephi_export_svg(file: str) -> str:
-    """Export the graph visualization as SVG (scalable vector graphics)."""
+    """Export the finished map as SVG, a vector image that stays sharp at any size and can be edited
+    in Illustrator or Inkscape. Renders through Gephi's Preview settings; ship it with a
+    caption. For a raster image use gephi_export_png, for print gephi_export_pdf.
+    """
     if (problem := _make_output_folder(file)):
         return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/svg", json_data={"file": file}))
 
 @_tool(name="gephi_export_graphml")
 async def gephi_export_graphml(file: str) -> str:
-    """Export the graph to GraphML (widely supported XML format)."""
+    """Export the graph to GraphML, the XML format most network libraries read (NetworkX, igraph,
+    yEd), with nodes, edges and their columns. To reopen the map in Gephi with its layout and
+    styling exactly as they are, use gephi_export_gexf, Gephi's own format.
+    """
     if (problem := _make_output_folder(file)):
         return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/graphml", json_data={"file": file}))
 
 @_tool(name="gephi_export_csv")
 async def gephi_export_csv(file: str, separator: str = ",", target: Literal["nodes", "edges", "both"] = "nodes") -> str:
-    """Export the graph to CSV. target: "nodes" | "edges" | "both"."""
+    """Export the graph's tables to CSV for spreadsheets and other tools: the node table, the edge
+    table, or both (target). Carries every column, including computed statistics. For a file
+    another network tool should open, prefer gephi_export_gexf or gephi_export_graphml.
+    """
     if (problem := _make_output_folder(file)):
         return fmt({"success": False, "error": problem})
     return fmt(await gephi.request("POST", "/export/csv",

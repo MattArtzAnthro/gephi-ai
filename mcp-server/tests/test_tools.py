@@ -890,3 +890,10 @@ def test_parameters_with_fixed_values_carry_them_as_an_enum():
         if found != values:
             wrong[f"{tool}.{param}"] = found
     assert not wrong, f"these parameters do not list their values: {wrong}"
+
+
+def test_every_tool_description_says_more_than_one_line():
+    """A one-line description gives an agent no way to choose between a tool and its siblings."""
+    short = {t.name: len(t.description or "") for t in gephi_mcp.mcp._tool_manager.list_tools()
+             if len(t.description or "") < 80}
+    assert not short, f"descriptions too short to choose by: {short}"
