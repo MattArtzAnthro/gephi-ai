@@ -66,3 +66,7 @@ item applies.
   `stalled` means the picture on screen has been frozen for 2 seconds while frames are still drawn. Screenshots wait
   up to 10 seconds for the graph view to start drawing instead of failing just after Gephi opens.
   `gephi_generate_graph` needs 1.6.0; on an older plugin it fails with "Unknown endpoint".
+- **1.6.1 and later:** a layout setting passed to `gephi_run_layout` holds on the first run in a
+  workspace. On 1.6.0, Gephi's Layout panel could reset it to its default (ForceAtlas 2 ran at
+  gravity 1.0 when 5 was asked). The reply's `applied` shows the value used: when it differs from
+  what was asked, suggest updating the Gephi plugin.
