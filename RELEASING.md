@@ -71,6 +71,15 @@ have yet, so it fails to install until PyPI catches up.
    cd mcp-server && GEPHI_LIVE_PLUGIN=1 PYTHONPATH=. .venv/bin/python -m pytest -v tests/test_plugin_live.py
    ```
 
+   **Record the .nbm's checksum.** Once the `.nbm` is built, run
+   `scripts/bump-version.sh --nbm-file gephi-ai-<java-version>.nbm` (the script also picks up
+   `./gephi-ai-<java-version>.nbm` by itself). It writes `nbm_sha256` into `latest.json`, and its
+   verify step fails if the value and the file disagree. The installers use that digest when
+   GitHub's API is unavailable, and refuse to install the plugin when they have no digest at
+   all. A Java bump removes the old digest, so every release that changes the plugin needs this
+   run. Before the release, check that it matches what GitHub will record:
+   `gh release view v<server-version> --json assets` lists a `sha256:` digest per asset.
+
 4. **Do not commit the built `.nbm`.** It attaches to the GitHub release in step 9,
    which is the single download path. A copy at the repo root went two releases stale
    once, and a binary committed here stays in git history for good.
@@ -170,8 +179,8 @@ have yet, so it fails to install until PyPI catches up.
    The one-command installers (`install.sh`, `install.ps1`) read this release
    too: they take the asset whose name ends in `.nbm` and verify it against the
    SHA-256 digest GitHub records for it, and when GitHub's API is rate-limited
-   they fall back to `latest.json` and build the URL as
-   `gephi-ai-<java-version>.nbm`. Keep that asset name. They skip the `.nbm`
+   they fall back to `latest.json`, build the URL as
+   `gephi-ai-<java-version>.nbm`, and verify against its `nbm_sha256`. Keep that asset name. They skip the `.nbm`
    entirely when the person's Gephi already bundles the plugin. Claude Desktop
    gets a `claude_desktop_config.json` entry pinned to the release, not the
    `.mcpb`. Nothing in the installers needs a version bump.

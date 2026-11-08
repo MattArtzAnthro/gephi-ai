@@ -6,6 +6,18 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+### Security
+- **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
+  unavailable (its hourly limit, a proxy), they read the version file instead, which had no
+  checksum, and installed the plugin with only a warning. `latest.json` now carries `nbm_sha256`,
+  the installers use it as a second source, and with no checksum from either source they stop
+  and say how to go on: try again later, or pass `--allow-unverified` (`-AllowUnverified` or
+  `GEPHI_AI_ALLOW_UNVERIFIED=1` on Windows). `scripts/bump-version.sh --nbm-file` writes the
+  digest at release time.
+- `install.sh` fetches over https only, including after a redirect.
+- **The CI workflows keep no GitHub token after checkout,** and Dependabot waits seven days
+  before proposing an action update.
+
 ### Fixed
 - **Comparing workspaces no longer ends the methods record.** `gephi_compare_workspaces` switches
   to each workspace to read it and switches back, but the receipt treated the switch as a new
@@ -30,6 +42,20 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   and do not retry while it reports running.
 - **A failed undo snapshot is logged.** The warning, with its traceback, goes to the server log
   instead of being dropped.
+- **Setting up Claude Desktop no longer loosens the permissions of its settings file.** The
+  installer replaced the file with a new one, so a file set to owner-only access became readable
+  by other users. The original permissions are now copied over.
+- **Gemini CLI is registered at the release the installer checked,** as Claude Desktop already
+  was, instead of at whatever `uvx` fetches next.
+- **A pre-release Gephi version no longer passes or confuses the version check.** `0.11.3-rc`
+  counts as 0.11.3 and is too old for a plugin that needs 0.11.4; a version that is not numeric
+  is treated as not new enough. Before, the bash check counted it as equal and the PowerShell
+  check counted it as new enough.
+- **On macOS, the installer recognizes Gephi by its own Java process,** so an editor or a shell
+  with a file inside `Gephi.app` on its command line is no longer taken for Gephi or force-quit.
+- **The installer workflow resolves the release once per job** and gives it to both runs, so a
+  release published between the first install and the re-run no longer fails the "re-run changes
+  nothing" check.
 
 ## MCP server 1.22.1 / Java plugin 1.6.1 / workflow packages 1.21.1
 
