@@ -45,6 +45,7 @@ dev = [
     # The Codex package test (plugins/gephi-network-analysis/tests) reads skill frontmatter.
     "pyyaml>=6.0",
     "bandit>=1.8",
+    "mutmut>=3.2",
 ]
 
 [project.scripts]
@@ -111,10 +112,17 @@ omit = ["tests/*", ".venv/*"]
 [tool.coverage.report]
 skip_empty = true
 # The floor only moves up. CI fails below it (python -m pytest --cov).
-fail_under = 90
+fail_under = 92
 
 [tool.bandit]
 # B311: seeded random.Random places nodes in layouts; nothing here is cryptographic.
 # B406: xml.sax.saxutils.escape writes escaped SVG for legends; parsing uses defusedxml.
 skips = ["B311", "B406"]
 exclude_dirs = [".venv", "tests", "dist"]
+
+[tool.mutmut]
+# Mutation testing for the modules with real logic: `mutmut run`, then `mutmut results`.
+source_paths = ["community_stability.py", "session_ledger.py", "partition_match.py", "graph_diff.py", "stats_integrity.py"]
+# The tests that exercise the mutated modules (the repo-level drift tests cannot run in mutmut's copy).
+pytest_add_cli_args_test_selection = ["tests/test_mutation_stats_integrity.py", "tests/test_mutation_graph_diff.py", "tests/test_mutation_partition_match.py", "tests/test_mutation_session_ledger.py", "tests/test_mutation_community_stability.py", "tests/test_best_effort_is_logged.py", "tests/test_community_stability_tool.py", "tests/test_community_stability.py", "tests/test_graph_diff.py", "tests/test_legend_tool.py", "tests/test_ledger_survives_snapshot.py", "tests/test_partition_match.py", "tests/test_receipt_across_graphs.py", "tests/test_session_ledger.py", "tests/test_stat_caveat_attachment.py", "tests/test_stats_integrity.py", "tests/test_group_c_tools.py", "tests/test_export_figure_tool.py"]
+also_copy = ["bipartite.py", "caveats.json", "community_stability.py", "figure.py", "gephi_mcp.py", "gephi_mcp_viewer", "graph_diff.py", "legend.py", "partition_match.py", "probe_verdicts.py", "pyproject.toml", "session_ledger.py", "stats_integrity.py", "text_network.py"]

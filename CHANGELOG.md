@@ -27,8 +27,6 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   basis keeps each hub among its own leaves. Similar-role nodes can still be directly
   connected (hubs that link to hubs), so its reading note says "similar role", never
   "unconnected". It counts ties and ignores edge weights. Spectral stays the default.
-
-### Added
 - **`gephi_health_check` reports whether Gephi is still drawing the graph.** `renderer.state` reads
   Gephi 0.11.4's frame and world-update counters: `stalled` means frames are still drawn but the
   graph is no longer updated, the freeze where the screen looks fine while Gephi is hung, which
@@ -122,6 +120,15 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **`gephi_reset_appearance` keeps node sizes.** It set every node to size 10, so a colour
   reset undid a size ranking. Sizes now stay unless `size` is given (plugin and server), and
   the legend drops the mappings a reset undid.
+
+### Development
+- **Mutation testing.** `mutmut run` in `mcp-server/` mutates the five modules with real logic
+  (community stability, session ledger, partition matching, graph diff, statistic caveats);
+  `mvn -Pmutation test-compile org.pitest:pitest-maven:mutationCoverage` in `gephi-ai-plugin/`
+  runs PIT over the control service. Tests written against the survivors pin boundaries the
+  suite had left open, such as a pair together in exactly 90% of runs counting as a stable core.
+- **Static checks.** SpotBugs runs at `mvn verify` and bandit in `scripts/check.sh` and CI; the
+  Python coverage floor rises to 92%.
 
 ## MCP server 1.21.2 / Java plugin 1.5.2 / workflow packages 1.20.2
 

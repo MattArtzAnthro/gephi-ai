@@ -258,3 +258,59 @@ def test_a_network_of_three_thousand_nodes_finishes_quickly():
 
     assert time.monotonic() - started < 15
     assert result["runs"] == 20 and len(result["node_stability"]) == 3000
+
+
+def test_no_runs_reports_nothing_rather_than_a_score():
+    """With no runs there is no score: callers read these keys, so their names and emptiness matter."""
+    result = consensus([])
+
+    assert result["runs"] == 0 and result["distinct_partitions"] == 0
+    assert result["node_stability"] == {} and result["unstable_nodes"] == []
+    assert result["consensus_groups"] == [] and result["mean_stability"] is None
+    assert result["warning"].startswith("No runs")
+
+
+def test_one_run_returns_its_groups_but_no_score():
+    """One draw says nothing about reproducibility: no score, its own groups, and a warning."""
+    result = consensus([{"a": 1, "b": 1, "c": 2}])
+
+    assert result["runs"] == 1 and result["distinct_partitions"] == 1
+    assert result["node_stability"] == {} and result["unstable_nodes"] == []
+    assert result["mean_stability"] is None
+    assert sorted(result["consensus_groups"]) == [["a", "b"], ["c"]]
+    assert result["warning"].startswith("Only one run")
+
+
+def test_mean_stability_pools_every_block_of_a_large_graph():
+    """Graphs over about 2,000 nodes are scored in blocks of rows; the pooled mean must add up all
+    of them. 2,100 nodes in pairs (0,1)(2,3)... in two runs and shifted pairs (1,2)(3,4)... in a
+    third. Each of the E = 1,050 first pairs is together in 2 of 3 runs: again 2*1/(3*2) = 1/3,
+    weight 2/3. Each of the O = 1,049 shifted pairs is together in 1 of 3: again 0, weight 1/3.
+    Mean = E/3 / (2E/3 + O/3) = E / (2E + O) = 1050 / 3149 = 0.33344, which rounds to 0.3334."""
+    n = 2100
+    paired = {i: i // 2 for i in range(n)}
+    shifted = {i: (i + 1) // 2 for i in range(n)}
+
+    result = consensus([paired, paired, shifted])
+
+    assert result["mean_stability"] == round(1050 / 3149, 4)
+
+
+def test_a_pair_together_in_exactly_nine_runs_of_ten_is_a_stable_core():
+    """The stable-core threshold is "at least 90% of runs", so exactly 9 of 10 counts."""
+    together = {"a": 1, "b": 1, "c": 2, "d": 3}
+    apart = {"a": 1, "b": 2, "c": 3, "d": 4}
+
+    result = consensus([together] * 9 + [apart])
+
+    assert {frozenset(g) for g in result["stable_core_groups"]} == {frozenset({"a", "b"})}
+
+
+def test_nodes_never_grouped_with_anyone_are_fully_stable_overall():
+    """No pair is ever together, so nothing could change between runs: mean stability is 1.0."""
+    alone = {"a": 1, "b": 2, "c": 3}
+
+    result = consensus([alone] * 3)
+
+    assert result["mean_stability"] == pytest.approx(1.0)
+    assert result["stable_core_groups"] == []
