@@ -6,6 +6,34 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## Unreleased
 
+### Security
+- **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
+  unavailable (its hourly limit, a proxy), they read the version file instead, which had no
+  checksum, and installed the plugin with only a warning. `latest.json` now carries `nbm_sha256`,
+  the installers use it as a second source, and with no checksum from either source they stop and
+  say how to go on: try again later, or pass `--allow-unverified` (`-AllowUnverified` or
+  `GEPHI_AI_ALLOW_UNVERIFIED=1` on Windows). `scripts/bump-version.sh --nbm-file` writes the
+  digest at release time.
+- `install.sh` fetches over https only, including after a redirect.
+
+### Fixed
+- **Setting up Claude Desktop no longer loosens the permissions of its settings file.** The
+  installer replaced the file with a new one, so a file set to owner-only access became readable
+  by other users. The original permissions are now copied over.
+- **Gemini CLI is registered at the release the installer checked,** as Claude Desktop already
+  was, instead of at whatever `uvx` fetches next.
+- **A pre-release Gephi version no longer passes or confuses the version check.** `0.11.3-rc`
+  counts as 0.11.3 and is too old for a plugin that needs 0.11.4; a version that is not numeric is
+  treated as not new enough.
+- **On macOS, the installer recognizes Gephi by its own Java process,** so an editor or a shell
+  with a file inside `Gephi.app` on its command line is no longer taken for Gephi or force-quit.
+- **The installers check that Gephi answers with `/health?quick=true` and wait 5 seconds,** so a
+  stalled Gephi is no longer reported as not running. Older plugins ignore the parameter.
+- **The installer workflow pins the release it tests,** so a release published between the first
+  install and the re-run no longer fails the "re-run changes nothing" check. Unit tests for both
+  installers (`scripts/test-installer.sh`, and a Pester file with a PowerShell parse check) run in
+  CI.
+
 ### Changed
 - **The MCP server and the Desktop bundle need Python 3.11 or newer.** Python 3.10 reached end of
   life in October 2026, and Pillow 13, which fixes the open Pillow advisories, no longer supports

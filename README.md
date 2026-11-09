@@ -57,11 +57,12 @@ Options go after `bash -s --` (for example `curl ... | bash -s -- --dry-run`):
 | `--clients claude,gemini` | Sets up only the assistants you name (`claude`, `codex`, `gemini`, `desktop`) |
 | `--skip-gephi-plugin` | Connects the assistants and leaves Gephi alone |
 | `--version 1.21.2` | Installs a specific release |
+| `--allow-unverified` | Installs the Gephi plugin even when no checksum can be found for it. Without this option the installer refuses to install an unchecked plugin and tells you to try again later |
 | `--open-gephi` | Opens Gephi at the end and checks that the plugin answers |
 | `--no-launch` | Does not reopen Gephi if the installer had to close it |
 | `--uninstall` | Removes what the installer added (uv and Gephi stay; a Claude Desktop entry that runs your own command is left alone) |
 
-On Windows the same options are `-DryRun`, `-Yes`, `-Clients`, `-SkipGephiPlugin`, `-Version`, `-OpenGephi`, `-NoLaunch`, and `-Uninstall`, passed as `& ([scriptblock]::Create((irm <url>))) -DryRun`. To read the script before running it, download [`install.sh`](install.sh) or [`install.ps1`](install.ps1) and run the file.
+On Windows the same options are `-DryRun`, `-Yes`, `-Clients`, `-SkipGephiPlugin`, `-Version`, `-AllowUnverified`, `-OpenGephi`, `-NoLaunch`, and `-Uninstall`, passed as `& ([scriptblock]::Create((irm <url>))) -DryRun`. With the plain `irm <url> | iex` form, which cannot take options, set `$env:GEPHI_AI_ALLOW_UNVERIFIED = "1"` first to allow an unchecked plugin install. To read the script before running it, download [`install.sh`](install.sh) or [`install.ps1`](install.ps1) and run the file.
 
 To install by hand instead, follow the three steps below.
 

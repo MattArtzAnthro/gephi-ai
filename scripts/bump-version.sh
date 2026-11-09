@@ -6,11 +6,16 @@
 # .mcp.json pin or a stale latest.json is the exact class of bug this prevents.
 #
 # Usage:
-#   scripts/bump-version.sh [--server X] [--java Y] [--plugin Z]
+#   scripts/bump-version.sh [--server X] [--java Y] [--plugin Z] [--nbm-file PATH]
 # Any track you omit is left unchanged. Reads the current version from each
 # track's source of truth, replaces that exact string everywhere it appears, then
 # verifies consistency. Does NOT touch CHANGELOG (prose, written by hand) or build
 # anything — run tests/build/publish separately (see RELEASING.md).
+#
+# latest.json also carries nbm_sha256, the SHA-256 of the built .nbm, which the installers
+# check the download against. It is written from --nbm-file, or from ./gephi-ai-<java>.nbm
+# when that file exists. A java bump drops the old digest, so run the script again with
+# --nbm-file once the .nbm is built (RELEASING.md step 3).
 #
 # Examples:
 #   scripts/bump-version.sh --server 1.9.22            # server-only release
@@ -23,12 +28,13 @@ sedi() {
   if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi
 }
 
-NEW_SERVER="" NEW_JAVA="" NEW_PLUGIN=""
+NEW_SERVER="" NEW_JAVA="" NEW_PLUGIN="" NBM_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --server) NEW_SERVER="$2"; shift 2 ;;
     --java)   NEW_JAVA="$2"; shift 2 ;;
     --plugin) NEW_PLUGIN="$2"; shift 2 ;;
+    --nbm-file) NBM_FILE="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -66,6 +72,20 @@ if [ -n "$NEW_JAVA" ] && [ "$NEW_JAVA" != "$OLD_JAVA" ]; then
   # and then never match again.
   sedi -E "s/Gephi AI Plugin \([0-9]+\.[0-9]+\.[0-9]+\+\)/Gephi AI Plugin ($NEW_JAVA+)/" plugins/claude-code/skills/gephi/SKILL.md
   jset latest.json nbm "$NEW_JAVA"
+  # The old digest belongs to the old .nbm; never leave it beside the new version.
+  python3 - <<'PY'
+import json
+d = json.load(open("latest.json")); d.pop("nbm_sha256", None)
+json.dump(d, open("latest.json", "w"), indent=2); open("latest.json", "a").write("\n")
+PY
+fi
+sha256_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi; }
+CUR_JAVA=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+[ -z "$NBM_FILE" ] && [ -f "gephi-ai-$CUR_JAVA.nbm" ] && NBM_FILE="gephi-ai-$CUR_JAVA.nbm"
+if [ -n "$NBM_FILE" ]; then
+  [ -f "$NBM_FILE" ] || { echo "no such file: $NBM_FILE" >&2; exit 2; }
+  jset latest.json nbm_sha256 "$(sha256_of "$NBM_FILE")"
+  echo "nbm_sha256 from $NBM_FILE"
 fi
 # The Gephi the plugin is built against is the oldest Gephi that will install it; the health
 # check reads it before advising a plugin update.
@@ -115,6 +135,15 @@ else
 fi
 check "README nbm"         "$(grep -oE 'gephi-ai-[0-9.]+\.nbm' README.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
 check "latest.json nbm"    "$(python3 -c "import json;print(json.load(open('latest.json'))['nbm'])")" "$J"
+# The installers refuse to install the plugin without a checksum, so a release needs one.
+LJ_SHA=$(python3 -c "import json;print(json.load(open('latest.json')).get('nbm_sha256', ''))")
+if [ -n "$NBM_FILE" ]; then
+  check "latest.json nbm_sha256" "$LJ_SHA" "$(sha256_of "$NBM_FILE")"
+elif [ -z "$LJ_SHA" ]; then
+  echo "  WARNING latest.json has no nbm_sha256: build the .nbm, then run  scripts/bump-version.sh --nbm-file gephi-ai-$J.nbm"
+elif ! printf '%s' "$LJ_SHA" | grep -qE '^[0-9a-f]{64}$'; then
+  echo "  MISMATCH latest.json nbm_sha256 is not a 64-digit hex digest"; fail=1
+fi
 check "SKILL plugin minimum" "$(grep -oE 'Gephi AI Plugin \([0-9.]+\+\)' plugins/claude-code/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$J"
 check "latest.json nbm_needs_gephi" "$(python3 -c "import json;print(json.load(open('latest.json')).get('nbm_needs_gephi', ''))")" "$GEPHI_MIN"
 check "SKILL version"      "$(grep -m1 'version:' plugins/claude-code/skills/gephi/SKILL.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$P"

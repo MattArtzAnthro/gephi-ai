@@ -10,6 +10,8 @@
 #   --clients LIST        only these, comma-separated: claude,codex,gemini,desktop
 #   --skip-gephi-plugin   leave Gephi Desktop alone; connect the assistants only
 #   --version X.Y.Z       install a specific release instead of the latest
+#   --allow-unverified    install the Gephi plugin even when no checksum can be
+#                         found for it (otherwise the installer refuses)
 #   --open-gephi          open Gephi at the end and check that the plugin answers
 #   --no-launch           do not reopen Gephi if the installer had to close it
 #   --uninstall           remove what this script installs (leaves uv and Gephi)
@@ -26,7 +28,7 @@ MODULE_BASE="org-gephi-plugins-gephi-ai"
 LEGACY_BASE="org-gephi-plugins-gephi-mcp"
 DOWNLOAD_PAGE="https://gephi.org/desktop/"
 
-YES=0 DRY=0 UNINSTALL=0 SKIP_NBM=0 NO_LAUNCH=0 OPEN_GEPHI=0 CLIENTS="" WANT_VERSION=""
+YES=0 DRY=0 UNINSTALL=0 SKIP_NBM=0 NO_LAUNCH=0 OPEN_GEPHI=0 CLIENTS="" WANT_VERSION="" ALLOW_UNVERIFIED=0
 CLOSED_GEPHI=0
 TMP="" LOG="" UVX="" STEP="starting" NBM_OK=0
 
@@ -101,13 +103,19 @@ output_has() {
   printf '%s\n' "$out" | grep -qE -- "$pat"
 }
 
-# ver_ge A B: true when version A >= B (numeric dot-separated parts).
+# ver_ge A B: true when version A >= B. A pre-release suffix ("0.11.3-rc") is
+# dropped, so 0.11.3-rc counts as 0.11.3. A version with a part that is not a
+# number is not new enough (returns 1).
 ver_ge() {
-  local IFS=. i a b
-  read -r -a a <<<"$1"; read -r -a b <<<"$2"
+  local IFS=. i a b x y
+  x=${1%%[-+]*}; y=${2%%[-+]*}
+  read -r -a a <<<"$x"; read -r -a b <<<"$y"
   for i in 0 1 2 3; do
-    [ "${a[i]:-0}" -gt "${b[i]:-0}" ] 2>/dev/null && return 0
-    [ "${a[i]:-0}" -lt "${b[i]:-0}" ] 2>/dev/null && return 1
+    x=${a[i]:-0}; y=${b[i]:-0}
+    case $x in "" | *[!0-9]*) return 1 ;; esac
+    case $y in "" | *[!0-9]*) return 1 ;; esac
+    [ "$((10#$x))" -gt "$((10#$y))" ] && return 0
+    [ "$((10#$x))" -lt "$((10#$y))" ] && return 1
   done
   return 0
 }
@@ -121,7 +129,8 @@ claude_has_server() {
   return 0
 }
 
-fetch() { curl -fsSL --retry 3 --connect-timeout 15 "$@"; }
+# https only, including after a redirect.
+fetch() { curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 --connect-timeout 15 "$@"; }
 
 sha256() {
   if has shasum; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi
@@ -173,12 +182,14 @@ read_release() {
     SERVER_VER=$(printf '%s\n' "$marker" | sed -n 's/.*"server": *"\([^"]*\)".*/\1/p' | head -1)
     NBM_VER=$(printf '%s\n' "$marker" | sed -n 's/.*"nbm": *"\([^"]*\)".*/\1/p' | head -1)
     NEEDS_GEPHI=$(printf '%s\n' "$marker" | sed -n 's/.*"nbm_needs_gephi": *"\([^"]*\)".*/\1/p' | head -1)
+    NBM_SHA=$(printf '%s\n' "$marker" | sed -n 's/.*"nbm_sha256": *"\([0-9A-Fa-f]\{64\}\)".*/\1/p' | head -1)
     if [ -z "$SERVER_VER" ] || [ -z "$NBM_VER" ]; then
       die "Could not read the release from GitHub. Try again in a few minutes."
     fi
     NBM_URL="https://github.com/$REPO/releases/download/v$SERVER_VER/gephi-ai-$NBM_VER.nbm"
     NEEDS_GEPHI=${NEEDS_GEPHI:-0.11.4}
     warn "GitHub's API was unavailable (often its hourly limit on a shared network); using the release's version file"
+    [ -n "$NBM_SHA" ] || warn "That file lists no checksum for the Gephi plugin"
     ok "Gephi AI $SERVER_VER (Gephi plugin $NBM_VER, needs Gephi $NEEDS_GEPHI or newer)"
     return 0
   fi
@@ -193,24 +204,33 @@ read_release() {
   NBM_SHA=$(printf '%s\n' "$pairs" | awk '$1 ~ /\.nbm$/ {sub(/^sha256:/, "", $2); print $2; exit}')
   NBM_VER=$(printf '%s\n' "$NBM_URL" | sed -n 's/.*gephi-ai-\([0-9.]*\)\.nbm$/\1/p')
 
-  NEEDS_GEPHI=$(fetch "https://raw.githubusercontent.com/$REPO/v$SERVER_VER/latest.json" 2>/dev/null |
-    sed -n 's/.*"nbm_needs_gephi": *"\([^"]*\)".*/\1/p' | head -1) || true
+  # The release's latest.json is the second source for the checksum, used when
+  # the API listed no digest for the asset.
+  local marker
+  marker=$(fetch "https://raw.githubusercontent.com/$REPO/v$SERVER_VER/latest.json" 2>/dev/null) || marker=""
+  NEEDS_GEPHI=$(printf '%s\n' "$marker" | sed -n 's/.*"nbm_needs_gephi": *"\([^"]*\)".*/\1/p' | head -1) || true
   NEEDS_GEPHI=${NEEDS_GEPHI:-0.11.4}
+  if [ -z "$NBM_SHA" ]; then
+    NBM_SHA=$(printf '%s\n' "$marker" | sed -n 's/.*"nbm_sha256": *"\([0-9A-Fa-f]\{64\}\)".*/\1/p' | head -1) || true
+  fi
 
   ok "Gephi AI $SERVER_VER (Gephi plugin $NBM_VER, needs Gephi $NEEDS_GEPHI or newer)"
 }
 
 # download URL SHA256 DEST: fetch a release asset and refuse it if the checksum
-# GitHub published for it does not match.
+# does not match. With no checksum, it refuses unless --allow-unverified was given.
 download() {
   local url=$1 want=$2 dest=$3 got
+  if [ -z "$want" ] && [ "$ALLOW_UNVERIFIED" != 1 ]; then
+    die "No checksum is available for $(basename "$url"), so it was not downloaded. Run this again later, or pass --allow-unverified to install it without a check."
+  fi
   fetch -o "$dest" "$url" || die "Download failed: $url"
   if [ -n "$want" ]; then
     got=$(sha256 "$dest")
-    [ "$got" = "$want" ] || die "Checksum mismatch for $(basename "$url"). Expected $want, got $got. Nothing was installed from it."
+    [ "$got" = "$(printf '%s' "$want" | tr 'A-F' 'a-f')" ] || die "Checksum mismatch for $(basename "$url"). Expected $want, got $got. Nothing was installed from it."
     ok "Downloaded $(basename "$url") (checksum verified)"
   else
-    warn "Downloaded $(basename "$url"); GitHub published no checksum to verify it against"
+    warn "Downloaded $(basename "$url") WITHOUT a checksum, as --allow-unverified asked"
   fi
 }
 
@@ -269,8 +289,11 @@ find_userdir() {
 }
 
 gephi_pattern() {
-  # The launcher passes --branding gephi on every platform; macOS also has the app path.
-  if [ "$OS" = Darwin ]; then printf '%s' "Gephi.app/Contents/"; else printf '%s' "branding gephi"; fi
+  # The launcher passes --branding gephi on every platform. On macOS, match only
+  # a java process that starts inside the app bundle, so an editor or a shell with
+  # a path in Gephi.app on its command line is not mistaken for Gephi.
+  if [ "$OS" = Darwin ]; then printf '%s' '^/.*Gephi\.app/Contents/.*/bin/java .*--branding gephi'
+  else printf '%s' "branding gephi"; fi
 }
 gephi_running() { pgrep -f "$(gephi_pattern)" >/dev/null 2>&1; }
 
@@ -309,7 +332,9 @@ bundled_version() {
     "$cluster/update_tracking/$(basename "$1")" 2>/dev/null | head -1 || true
 }
 
-health() { curl -s -m 2 http://127.0.0.1:8080/health 2>/dev/null || true; }
+# The quick answer skips the renderer sample and the lock probe, which can take longer than a
+# short wait when Gephi is stalled. A plugin that predates ?quick answers the full health.
+health() { curl -s -m 5 "http://127.0.0.1:8080/health?quick=true" 2>/dev/null || true; }
 
 ensure_gephi() {
   head_ "Gephi Desktop"
@@ -446,6 +471,16 @@ install_nbm() {
   fi
   [ -n "$have" ] && say "  Updating the plugin from $have to $NBM_VER"
 
+  # Refuse before closing Gephi when there is nothing to check the file against.
+  if [ -z "$NBM_SHA" ] && [ "$ALLOW_UNVERIFIED" != 1 ]; then
+    warn "No checksum for the Gephi plugin could be found, so it will not be installed"
+    say "  GitHub's release data and the release's version file both lacked one. Run this again in a few minutes,"
+    say "  or pass --allow-unverified to install the plugin without checking it."
+    fail_ "Gephi plugin not installed: no checksum to verify it against"
+    next_ "Re-run this installer later, or add --allow-unverified to install the plugin without a checksum."
+    return 1
+  fi
+
   quit_gephi
   local nbm="$TMP/gephi-ai.nbm" x="$TMP/nbm"
   if [ "$DRY" = 1 ]; then
@@ -557,7 +592,7 @@ ensure_uv() {
   ask "Install uv now (from astral.sh, the official installer)?" Y ||
     die "uv is required. Install it from https://docs.astral.sh/uv/ and run this again."
   if [ "$DRY" = 1 ]; then
-    run sh -c "curl -LsSf https://astral.sh/uv/install.sh | sh"
+    run sh -c "curl -LsSf --proto '=https' --proto-redir '=https' https://astral.sh/uv/install.sh | sh"
     UVX="$HOME/.local/bin/uvx"; return 0
   fi
   fetch https://astral.sh/uv/install.sh | sh
@@ -658,10 +693,10 @@ setup_gemini() {
   if printf '%s' "$list" | grep -q "gephi-ai"; then
     ok "Gemini CLI already has gephi-ai"
   else
-    run gemini mcp add -s user gephi-ai "$UVX" gephi-ai
+    run gemini mcp add -s user gephi-ai "$UVX" "gephi-ai@$SERVER_VER"
     ok "Registered gephi-ai with Gemini CLI"
   fi
-  check_server gephi-ai
+  check_server "gephi-ai==$SERVER_VER"
   done_ "Gemini CLI: gephi-ai server"
 }
 
@@ -676,7 +711,7 @@ DESKTOP_EXT="$HOME/Library/Application Support/Claude/Claude Extensions/local.mc
 desktop_edit() {
   mkdir -p "$(dirname "$DESKTOP_CFG")"
   "$(dirname "$UVX")/uv" run --no-project --quiet python - "$1" "$DESKTOP_CFG" "$UVX" "gephi-ai==$SERVER_VER" <<'PY'
-import json, os, shutil, sys, time
+import json, os, shutil, stat, sys, time
 action, path, uvx, spec = sys.argv[1:5]
 # Write through a symlinked settings file, not over the link.
 path = os.path.realpath(path)
@@ -728,6 +763,9 @@ tmp = path + ".tmp"
 with open(tmp, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
+# Keep the file's permissions: os.replace would otherwise leave a 0600 file at 0644.
+if os.path.exists(path):
+    os.chmod(tmp, stat.S_IMODE(os.stat(path).st_mode))
 os.replace(tmp, path)
 print(result)
 PY
@@ -834,7 +872,7 @@ uninstall() {
 
 usage() {
   say "Usage: install.sh [--yes] [--dry-run] [--clients claude,codex,gemini,desktop]"
-  say "                  [--skip-gephi-plugin] [--version X.Y.Z] [--open-gephi] [--no-launch] [--uninstall]"
+  say "                  [--skip-gephi-plugin] [--version X.Y.Z] [--allow-unverified] [--open-gephi] [--no-launch] [--uninstall]"
   say "Details: https://github.com/$REPO#install"
 }
 
@@ -848,6 +886,7 @@ main() {
       --skip-gephi-plugin) SKIP_NBM=1 ;;
       --version) WANT_VERSION=${2:-}; shift ;;
       --version=*) WANT_VERSION=${1#*=} ;;
+      --allow-unverified) ALLOW_UNVERIFIED=1 ;;
       --no-launch) NO_LAUNCH=1 ;;
       --open-gephi) OPEN_GEPHI=1 ;;
       --uninstall) UNINSTALL=1 ;;
@@ -902,7 +941,7 @@ main() {
   fi
   ask "Go ahead?" Y || { say "Nothing changed."; exit 0; }
 
-  if [ "$SKIP_NBM" = 0 ] && ensure_gephi; then install_nbm; fi
+  if [ "$SKIP_NBM" = 0 ] && ensure_gephi; then install_nbm || true; fi
 
   if want claude || want codex || want gemini || want desktop; then ensure_uv; fi
   if want claude || want codex || want desktop; then
@@ -941,4 +980,5 @@ main() {
   if grep -q "✗" "$TMP/summary" 2>/dev/null; then exit 1; fi
 }
 
-main "$@"
+# Tests source this file with GEPHI_AI_INSTALLER_TEST=1 to reach the functions without installing.
+[ "${GEPHI_AI_INSTALLER_TEST:-}" = 1 ] || main "$@"

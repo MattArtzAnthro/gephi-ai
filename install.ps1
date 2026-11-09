@@ -10,6 +10,9 @@
 #   -Clients LIST      only these, comma-separated: claude,codex,gemini,desktop
 #   -SkipGephiPlugin   leave Gephi Desktop alone; connect the assistants only
 #   -Version X.Y.Z     install a specific release instead of the latest
+#   -AllowUnverified   install the Gephi plugin even when no checksum can be found for
+#                      it (otherwise the installer refuses). Under `irm | iex`, which cannot
+#                      take options, set $env:GEPHI_AI_ALLOW_UNVERIFIED = "1" first.
 #   -OpenGephi         open Gephi at the end and check that the plugin answers
 #   -NoLaunch          do not reopen Gephi if the installer had to close it
 #   -Uninstall         remove what this script installs (leaves uv and Gephi)
@@ -23,6 +26,7 @@ param(
     [string[]]$Clients = @(),
     [switch]$SkipGephiPlugin,
     [string]$Version = "",
+    [switch]$AllowUnverified,
     [switch]$NoLaunch,
     [switch]$OpenGephi,
     [switch]$Uninstall
@@ -31,8 +35,9 @@ param(
 # Everything lives inside one function so that a failure never runs `exit`,
 # which under `irm | iex` would close the user's PowerShell window.
 function Install-GephiAI {
-    param($Yes, $DryRun, $Clients, $SkipGephiPlugin, $Version, $NoLaunch, $OpenGephi, $Uninstall)
+    param($Yes, $DryRun, $Clients, $SkipGephiPlugin, $Version, $AllowUnverified, $NoLaunch, $OpenGephi, $Uninstall)
 
+    $AllowUnverified = [bool]$AllowUnverified -or ($env:GEPHI_AI_ALLOW_UNVERIFIED -eq "1")
     $ErrorActionPreference = "Stop"
     $ProgressPreference = "SilentlyContinue"  # the progress bar slows downloads tenfold in 5.1
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -98,12 +103,16 @@ function Install-GephiAI {
         try { return ((& $exe @rest 2>&1) | Out-String) } catch { return "" } finally { $ErrorActionPreference = $old }
     }
 
+    # Version A >= B. A pre-release suffix ("0.11.3-rc") is dropped, so 0.11.3-rc
+    # counts as 0.11.3. A version with a part that is not a number is not new enough.
+    function Ver-Core($v) {
+        $core = ([string]$v -split "[-+]")[0]
+        $p = (@($core.Split(".")) + @("0", "0", "0"))[0..2]
+        foreach ($x in $p) { if ($x -notmatch "^[0-9]+$") { throw "not a number: $v" } }
+        return ($p -join ".")
+    }
     function Ver-Ge($a, $b) {
-        try {
-            $pa = (@($a.Split(".")) + @("0", "0", "0"))[0..2] -join "."
-            $pb = (@($b.Split(".")) + @("0", "0", "0"))[0..2] -join "."
-            return ([version]$pa -ge [version]$pb)
-        } catch { return $true }
+        try { return ([version](Ver-Core $a) -ge [version](Ver-Core $b)) } catch { return $false }
     }
 
     # CRC-32, the checksum Gephi records for installed plugin files.
@@ -150,10 +159,12 @@ public static class GephiAICrc32 {
                 if ($Version) { throw "There is no Gephi AI release $Version. Releases: https://github.com/$Repo/releases" }
                 throw "Could not reach GitHub. Check your internet connection and try again."
             }
-            $r = @{ Server = $m.server; Nbm = $m.nbm; NbmSha = ""
+            $sha = if ($m.nbm_sha256 -match "^[0-9A-Fa-f]{64}$") { $m.nbm_sha256 } else { "" }
+            $r = @{ Server = $m.server; Nbm = $m.nbm; NbmSha = $sha
                     NeedsGephi = $(if ($m.nbm_needs_gephi) { $m.nbm_needs_gephi } else { "0.11.4" }) }
             $r.NbmUrl = "https://github.com/$Repo/releases/download/v$($r.Server)/gephi-ai-$($r.Nbm).nbm"
             Warn "GitHub's API was unavailable (often its hourly limit on a shared network); using the release's version file"
+            if (-not $sha) { Warn "That file lists no checksum for the Gephi plugin" }
             Ok "Gephi AI $($r.Server) (Gephi plugin $($r.Nbm), needs Gephi $($r.NeedsGephi) or newer)"
             return $r
         }
@@ -166,19 +177,24 @@ public static class GephiAICrc32 {
         try {
             $latest = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/$Repo/v$($r.Server)/latest.json"
             if ($latest.nbm_needs_gephi) { $r.NeedsGephi = $latest.nbm_needs_gephi }
+            # Second source for the checksum, used when the API listed no digest.
+            if (-not $r.NbmSha -and $latest.nbm_sha256 -match "^[0-9A-Fa-f]{64}$") { $r.NbmSha = $latest.nbm_sha256 }
         } catch { }
         Ok "Gephi AI $($r.Server) (Gephi plugin $($r.Nbm), needs Gephi $($r.NeedsGephi) or newer)"
         return $r
     }
 
     function Download($url, $sha, $dest) {
+        if (-not $sha -and -not $AllowUnverified) {
+            throw "No checksum is available for $(Split-Path $url -Leaf), so it was not downloaded. Run this again later, or pass -AllowUnverified (or set `$env:GEPHI_AI_ALLOW_UNVERIFIED = '1') to install it without a check."
+        }
         Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
         if ($sha) {
             $got = (Get-FileHash -Algorithm SHA256 $dest).Hash.ToLower()
             if ($got -ne $sha.ToLower()) { Remove-Item $dest -Force; throw "Checksum mismatch for $(Split-Path $url -Leaf). Expected $sha, got $got. Nothing was installed from it." }
             Ok "Downloaded $(Split-Path $url -Leaf) (checksum verified)"
         } else {
-            Warn "Downloaded $(Split-Path $url -Leaf); GitHub published no checksum to verify it against"
+            Warn "Downloaded $(Split-Path $url -Leaf) WITHOUT a checksum, as -AllowUnverified asked"
         }
     }
 
@@ -242,7 +258,9 @@ public static class GephiAICrc32 {
     function Get-GephiProcess { return Get-Process -Name gephi64, gephi -ErrorAction SilentlyContinue }
 
     function Get-Health {
-        try { return Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 2 } catch { return $null }
+        # The quick answer skips the renderer sample and the lock probe, which can take longer than a
+        # short wait when Gephi is stalled. A plugin that predates ?quick answers the full health.
+        try { return Invoke-RestMethod -Uri "http://127.0.0.1:8080/health?quick=true" -TimeoutSec 5 } catch { return $null }
     }
 
     function Close-Gephi {
@@ -346,6 +364,16 @@ public static class GephiAICrc32 {
             return $true
         }
         if ($have) { Say "Updating the plugin from $have to $($rel.Nbm)" }
+
+        # Refuse before closing Gephi when there is nothing to check the file against.
+        if (-not $rel.NbmSha -and -not $AllowUnverified) {
+            Warn "No checksum for the Gephi plugin could be found, so it will not be installed"
+            Say "GitHub's release data and the release's version file both lacked one. Run this again in a few minutes,"
+            Say "or pass -AllowUnverified (or set `$env:GEPHI_AI_ALLOW_UNVERIFIED = '1' first) to install the plugin without checking it."
+            Fail "Gephi plugin not installed: no checksum to verify it against"
+            $script:Next.Add("Re-run this installer later, or use -AllowUnverified to install the plugin without a checksum.")
+            return $false
+        }
 
         Close-Gephi
         if ($DryRun) {
@@ -520,10 +548,10 @@ public static class GephiAICrc32 {
         }
         if ($list -match "gephi-ai") { Ok "Gemini CLI already has gephi-ai" }
         else {
-            if (-not (Run gemini mcp add -s user gephi-ai $script:Uvx gephi-ai)) { throw "gemini mcp add failed" }
+            if (-not (Run gemini mcp add -s user gephi-ai $script:Uvx "gephi-ai@$($script:ServerVer)")) { throw "gemini mcp add failed" }
             Ok "Registered gephi-ai with Gemini CLI"
         }
-        Test-Server "gephi-ai"
+        Test-Server "gephi-ai==$($script:ServerVer)"
         Done "Gemini CLI: gephi-ai server"
     }
 
@@ -541,7 +569,7 @@ public static class GephiAICrc32 {
     # terminal's PATH, so the entry names uvx by its full path. The edit runs in
     # Python through uv, the same code install.sh uses, and keeps a backup.
     $DesktopEditPy = @'
-import json, os, shutil, sys, time
+import json, os, shutil, stat, sys, time
 action, path, uvx, spec = sys.argv[1:5]
 # Write through a symlinked settings file, not over the link.
 path = os.path.realpath(path)
@@ -593,6 +621,9 @@ tmp = path + ".tmp"
 with open(tmp, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
+# Keep the file's permissions: os.replace would otherwise reset them.
+if os.path.exists(path):
+    os.chmod(tmp, stat.S_IMODE(os.stat(path).st_mode))
 os.replace(tmp, path)
 print(result)
 '@
@@ -723,6 +754,7 @@ print(result)
         }
 
         $rel = Read-Release
+        $script:ServerVer = $rel.Server
 
         Head "Plan"
         if ($SkipGephiPlugin) { Say "- Gephi Desktop: leave alone" }
@@ -813,7 +845,10 @@ print(result)
 }
 
 $script:Failed = $false
-Install-GephiAI -Yes:$Yes -DryRun:$DryRun -Clients $Clients -SkipGephiPlugin:$SkipGephiPlugin -Version $Version -NoLaunch:$NoLaunch -OpenGephi:$OpenGephi -Uninstall:$Uninstall
-# Run as a file, a failed step gives a non-zero exit for scripts and CI. Under
-# `irm | iex` there is no file, and exiting would close the user's window.
-if ($script:Failed -and $MyInvocation.MyCommand.Path) { exit 1 }
+# Tests load this file with GEPHI_AI_INSTALLER_TEST=1 to reach the functions without installing.
+if ($env:GEPHI_AI_INSTALLER_TEST -ne "1") {
+    Install-GephiAI -Yes:$Yes -DryRun:$DryRun -Clients $Clients -SkipGephiPlugin:$SkipGephiPlugin -Version $Version -AllowUnverified:$AllowUnverified -NoLaunch:$NoLaunch -OpenGephi:$OpenGephi -Uninstall:$Uninstall
+    # Run as a file, a failed step gives a non-zero exit for scripts and CI. Under
+    # `irm | iex` there is no file, and exiting would close the user's window.
+    if ($script:Failed -and $MyInvocation.MyCommand.Path) { exit 1 }
+}
