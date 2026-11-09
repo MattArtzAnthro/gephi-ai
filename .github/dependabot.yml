@@ -5,6 +5,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait a week after a release before proposing it, so a hijacked tag has time to be caught.
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]

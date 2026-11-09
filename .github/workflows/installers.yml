@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
   GITHUB_TOKEN: ${{ github.token }}
@@ -26,8 +30,11 @@ jobs:
   lint:
     name: Lint (shellcheck, PSScriptAnalyzer)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - run: shellcheck install.sh
       - name: PSScriptAnalyzer, errors only
         shell: pwsh
@@ -40,8 +47,11 @@ jobs:
   linux:
     name: Linux (official tarball, virtual display)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - name: Install Gephi from the official tarball
         run: |
           curl -fsSL -o /tmp/gephi.tgz "https://github.com/gephi/gephi/releases/download/v$GEPHI_VERSION/gephi-$GEPHI_VERSION-linux-x64.tar.gz"
@@ -60,8 +70,11 @@ jobs:
   macos:
     name: macOS (installer brings Gephi with Homebrew)
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       # No Gephi preinstalled: the installer's own Homebrew path installs it.
       - name: Install Gephi and the plugin
         run: bash install.sh --yes | tee install.log
@@ -78,6 +91,7 @@ jobs:
   windows:
     name: Windows (${{ matrix.shell }}, official installer)
     runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +101,8 @@ jobs:
         shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
       - name: Install Gephi silently (Inno Setup)
         run: |
           $exe = "$env:RUNNER_TEMP\gephi-setup.exe"
