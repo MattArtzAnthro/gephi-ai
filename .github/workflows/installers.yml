@@ -22,8 +22,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
-  GITHUB_TOKEN: ${{ github.token }}
   GEPHI_VERSION: 0.11.4
 
 jobs:
@@ -32,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: shellcheck install.sh
@@ -49,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Gephi from the official tarball
@@ -58,11 +56,20 @@ jobs:
           tar -xzf /tmp/gephi.tgz -C "$HOME"
           sudo apt-get update -q && sudo apt-get install -y -q xvfb
       - name: Install; Gephi must answer with the plugin
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: xvfb-run -a bash install.sh --yes --open-gephi | tee install.log
       - run: grep -q "Gephi answers on 127.0.0.1:8080" install.log
       - name: Re-run changes nothing
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: xvfb-run -a bash install.sh --yes | tee rerun.log && grep -q "already current" rerun.log
       - name: Uninstall removes the plugin
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           bash install.sh --uninstall --yes
           test ! -e "$HOME/.gephi/0.11/modules/org-gephi-plugins-gephi-ai.jar"
@@ -72,18 +79,27 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # No Gephi preinstalled: the installer's own Homebrew path installs it.
       - name: Install Gephi and the plugin
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash install.sh --yes | tee install.log
       # A person clicks Open in macOS's first-open prompt; a runner cannot.
       - run: xattr -dr com.apple.quarantine /Applications/Gephi.app || true
       - name: Re-run changes nothing; Gephi must answer with the plugin
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash install.sh --yes --open-gephi | tee rerun.log
       - run: grep -q "already current" rerun.log && grep -q "Gephi answers on 127.0.0.1:8080" rerun.log
       - name: Uninstall removes the plugin
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           bash install.sh --uninstall --yes
           test ! -e "$HOME/Library/Application Support/gephi/0.11/modules/org-gephi-plugins-gephi-ai.jar"
@@ -100,7 +116,7 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Gephi silently (Inno Setup)
@@ -111,17 +127,26 @@ jobs:
       # Run the way the README says to, through a script block, so the test
       # covers the irm | iex path (no file, no exit).
       - name: Install; Gephi must answer with the plugin
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $out = & ([scriptblock]::Create((Get-Content install.ps1 -Raw))) -Yes -OpenGephi *>&1 | Out-String
           $out
           if ($out -notmatch "Gephi answers on 127.0.0.1:8080" -or $out -match "\[fail\]") { exit 1 }
       - name: Re-run changes nothing
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           Get-Process gephi64 -ErrorAction SilentlyContinue | Stop-Process -Force
           $out = & ([scriptblock]::Create((Get-Content install.ps1 -Raw))) -Yes -NoLaunch *>&1 | Out-String
           $out
           if ($out -notmatch "already current") { exit 1 }
       - name: Uninstall removes the plugin
+        # Authenticated API calls avoid the 60-an-hour limit shared runners hit.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           & ([scriptblock]::Create((Get-Content install.ps1 -Raw))) -Uninstall -Yes
           if (Test-Path "$env:APPDATA\gephi\0.11\modules\org-gephi-plugins-gephi-ai.jar") { exit 1 }
