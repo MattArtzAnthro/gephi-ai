@@ -7,6 +7,8 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 ## [Unreleased]
 
 ### Added
+- **`SECURITY.md`:** report a vulnerability privately through the repository's Security tab;
+  what is in scope, and which versions get fixes.
 - **Opt-in timing log.** Set `GEPHI_AI_TIMING_LOG` to a file and the server appends one JSON line
   per tool call: wall time, outcome, the graph's size when known (no extra request is made for
   it), any busy or lock text, and the plugin requests the call made with their times, so time in
