@@ -18,6 +18,16 @@ RUFF=ruff
 (cd mcp-server && .venv/bin/bandit -q -c pyproject.toml -r .)
 (cd mcp-server && PYTHONPATH=. .venv/bin/python -m pytest -q -p no:cacheprovider --cov)
 bash plugins/claude-code/scripts/test-check-gephi.sh >/dev/null
+# The same script and workflow lint CI runs, so a push does not go red on a lint
+# that never ran here. Skipped with a warning on a Mac without the tool.
+if command -v shellcheck >/dev/null; then
+  shellcheck install.sh scripts/*.sh plugins/claude-code/scripts/*.sh
+else
+  echo "check.sh: shellcheck not installed; CI will run it" >&2
+fi
+if command -v actionlint >/dev/null; then actionlint; else echo "check.sh: actionlint not installed; CI will run it" >&2; fi
+mcp-server/.venv/bin/python -m unittest discover -s plugins/gephi-network-analysis/tests >/dev/null 2>&1 \
+  || mcp-server/.venv/bin/python -m unittest discover -s plugins/gephi-network-analysis/tests
 # The Java build takes a minute, so it runs only when plugin sources are staged
 # (CI runs it on every push regardless).
 if git diff --cached --name-only | grep -q '^gephi-ai-plugin/'; then
