@@ -6,6 +6,13 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## Unreleased
 
+### Added
+- **`SECURITY.md`:** report a vulnerability privately through the repository's Security tab;
+  what is in scope, and which versions get fixes.
+- **A bug report form and `CONTRIBUTING.md`.** The form asks for what `gephi_health_check`
+  returns, the Gephi version, the operating system, and Gephi's log; `CONTRIBUTING.md` lists the
+  checks to run before a pull request.
+
 ### Security
 - **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
   unavailable (its hourly limit, a proxy), they read the version file instead, which had no

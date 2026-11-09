@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in Gephi AI does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem goes through the Security tab's **Report a vulnerability** instead, not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you asked for or ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the problem. Attach the graph file if you can share it.
+  - type: textarea
+    id: health
+    attributes:
+      label: Health check
+      description: |
+        With Gephi open, ask your assistant to "Check if Gephi is running" and paste what `gephi_health_check` returns. It gives the plugin and server versions.
+      render: json
+  - type: input
+    id: gephi
+    attributes:
+      label: Gephi version
+      placeholder: "0.11.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Windows, Linux]
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: AI client
+      description: The assistant you use with Gephi AI, and how you connected it (installer, plugin, bundle, config file).
+      placeholder: "Claude Code, plugin"
+  - type: textarea
+    id: log
+    attributes:
+      label: Gephi log
+      description: |
+        The relevant part of `messages.log` in Gephi's user folder, under `var/log` (on macOS `~/Library/Application Support/gephi/0.11/var/log/`).
+      render: text
