@@ -13,6 +13,8 @@ __pycache__/
 .coverage
 .venv/
 mcp-server/dist/
+# Benchmark results (mcp-server/bench) are local measurements
+bench-results/
 
 # MCPB build artifacts
 # Match the " 2"/" 3" copies Finder leaves behind as well as lib/ itself;

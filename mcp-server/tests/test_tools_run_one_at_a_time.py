@@ -277,8 +277,15 @@ async def test_serializing_keeps_every_tool_listing_as_it_was():
     wrapped = set()
     for t in registered:
         original = inspect.unwrap(t.fn)
-        if original is not t.fn:
+        # Every tool also carries the timing wrapper; the lock and gate wrappers are the ones
+        # the never-waits tools must lack.
+        chain, fn = [], t.fn
+        while fn is not original:
+            chain.append(fn.__code__.co_name)  # wraps copies __qualname__, not the code
+            fn = fn.__wrapped__
+        if {"run_alone", "read"} & set(chain):
             wrapped.add(t.name)
+        assert "timed" in chain, f"{t.name} is missing the timing wrapper"
         before.add_tool(original, name=t.name, title=t.title, annotations=t.annotations,
                         icons=t.icons, meta=t.meta)
     assert wrapped == {t.name for t in registered} - {"gephi_stop_layout", "gephi_stop_statistic"}

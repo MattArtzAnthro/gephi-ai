@@ -6,6 +6,22 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+### Added
+- **Opt-in timing log.** Set `GEPHI_AI_TIMING_LOG` to a file and the server appends one JSON line
+  per tool call: wall time, outcome, the graph's size when known (no extra request is made for
+  it), any busy or lock text, and the plugin requests the call made with their times, so time in
+  Gephi can be told apart from time in the server.
+- **A repeatable benchmark,** `mcp-server/bench/benchmark.py`: seeded graphs at several sizes, a
+  fixed sequence of statistics, a layout and exports, repeats with median and spread, and
+  `--compare` between two runs that separates real changes from noise. It refuses port 8080, the
+  Gephi you work in, unless told otherwise.
+
+### Changed
+- **A sync layout notices the end of a short run at once.** It polled `/layout/status` after a
+  fixed one-second wait, which was most of the time of a 1,000-node layout in the benchmark; the
+  wait now starts at 50 ms and doubles up to a quarter second, within the same five-minute limit.
+  In the benchmark a 1,000-node layout went from 1.1 s to about 0.3 s.
+
 ### Fixed (Java plugin)
 - **Extracting the giant component of a large directed graph no longer overflows the request
   thread's stack.** It now runs on the statistic worker, like every other statistic; a source rule

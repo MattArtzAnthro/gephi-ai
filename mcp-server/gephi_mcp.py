@@ -18,6 +18,7 @@ Developed by Matt Artz (https://www.mattartz.me)
 import asyncio
 import contextlib
 import contextvars
+import datetime
 import functools
 import importlib.metadata
 import json
@@ -394,6 +395,128 @@ def _through_read_gate(fn):
     return read
 
 
+# ==================== Timing log (opt-in) ====================
+# When GEPHI_AI_TIMING_LOG names a file, every tool call appends one JSON line to it: when it
+# started, how long it took, how it ended, the graph's size when known, any busy or lock text, and
+# the HTTP requests it made to the plugin, so time spent waiting on Gephi can be told apart from
+# time spent in this server. Unset, a call costs one environment lookup.
+
+TIMING_LOG_ENV = "GEPHI_AI_TIMING_LOG"
+
+#: The requests made by the tool call running in this task, or None when it is not being logged.
+#: A context variable belongs to one task, so concurrent tool calls keep separate lists.
+_CALL_HTTP: contextvars.ContextVar[list[dict[str, Any]] | None] = contextvars.ContextVar(
+    "gephi_call_http", default=None)
+
+#: Longest list of requests kept per call.
+_HTTP_LIST_MAX = 20
+
+#: Node and edge counts this server last saw in a result, forgotten whenever the graph may have
+#: changed. Reading it costs nothing, so a log line never causes a request.
+_graph_size: tuple[int, int] | None = None
+
+#: Log files that already produced a warning, so a bad path warns once rather than every call.
+_timing_warned: set[str] = set()
+
+#: Text in a plugin message that says Gephi was busy, with the lock state it ends with.
+_BUSY_MARKERS = ("Graph is busy", "is already running", "UI thread is unresponsive")
+
+
+def _int_or_none(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _result_body(result: Any) -> dict[str, Any]:
+    try:
+        body = json.loads(result) if isinstance(result, str) else None
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _outcome_of(body: dict[str, Any]) -> tuple[str, str | None, str | None]:
+    """(outcome, error message, busy text) for a tool's parsed result."""
+    messages = [str(body[k]) for k in ("error", "message", "warning") if body.get(k)]
+    failed = body.get("success") is False or ("success" not in body and bool(body.get("error")))
+    busy = next((m for m in messages if any(t in m for t in _BUSY_MARKERS)), None)
+    return ("error" if failed else "ok"), (messages[0] if failed and messages else None), busy
+
+
+def _write_timing(path: str, record: dict[str, Any]) -> None:
+    """Append one line. A failure warns once per file and is otherwise ignored."""
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        if path not in _timing_warned:
+            _timing_warned.add(path)
+            logger.warning("could not write the timing log %s: %s", path, exc)
+
+
+def _timing_record(name: str, started: datetime.datetime, ms: float, result: Any,
+                   raised: BaseException | None, calls: list[dict[str, Any]]) -> dict[str, Any]:
+    global _graph_size
+    if raised is not None:
+        error: str | None = f"{type(raised).__name__}: {raised}"
+        outcome = "error"
+        busy = error if any(t in str(error) for t in _BUSY_MARKERS) else None
+    else:
+        body = _result_body(result)
+        outcome, error, busy = _outcome_of(body)
+        nodes, edges = _int_or_none(body.get("node_count")), _int_or_none(body.get("edge_count"))
+        if nodes is not None and edges is not None:
+            _graph_size = (nodes, edges)
+    size = _graph_size
+    return {"ts": started.isoformat(timespec="milliseconds"), "tool": name, "ms": ms,
+            "outcome": outcome, "error": error,
+            "nodes": size[0] if size else None, "edges": size[1] if size else None,
+            "busy": busy, "http": calls}
+
+
+def _timed(name: str, fn):
+    """Wrap a tool so each call is logged when GEPHI_AI_TIMING_LOG is set. functools.wraps keeps
+    the signature and docstring the SDK reads. A tool called from inside another tool is part of
+    that call and is not logged on its own."""
+    @functools.wraps(fn)
+    async def timed(*args: Any, **kwargs: Any) -> Any:
+        path = os.environ.get(TIMING_LOG_ENV)
+        if not path or _CALL_HTTP.get() is not None:
+            return await fn(*args, **kwargs)
+        calls: list[dict[str, Any]] = []
+        token = _CALL_HTTP.set(calls)
+        started = datetime.datetime.now(datetime.timezone.utc)
+        clock = time.perf_counter()
+        result: Any = None
+        raised: BaseException | None = None
+        try:
+            result = await fn(*args, **kwargs)
+            return result
+        except BaseException as exc:
+            raised = exc
+            raise
+        finally:
+            ms = round((time.perf_counter() - clock) * 1000, 1)
+            _CALL_HTTP.reset(token)
+            try:
+                _write_timing(path, _timing_record(name, started, ms, result, raised, calls))
+            except Exception:
+                logger.warning("could not build the timing log line for %s", name, exc_info=True)
+    return timed
+
+
+def _note_request(calls: list[dict[str, Any]], endpoint: str, clock: float,
+                  note: dict[str, Any], result: Any) -> None:
+    """Add one finished plugin request to the running call's list."""
+    entry: dict[str, Any] = {"endpoint": endpoint, "status": note.get("status"),
+                             "ms": round((time.perf_counter() - clock) * 1000, 1)}
+    if not isinstance(result, dict):
+        entry["error"] = "interrupted"
+    elif result.get("success") is False:
+        entry["error"] = str(result.get("error", ""))[:200]
+    if len(calls) < _HTTP_LIST_MAX:
+        calls.append(entry)
+
+
 def _tool(name: str, **kwargs: Any):
     """mcp.tool() with the annotation table applied, the tool lock for every tool that must run
     alone, and the read gate for the rest. Every tool registers through this so a new tool
@@ -402,10 +525,11 @@ def _tool(name: str, **kwargs: Any):
 
     def decorator(fn):
         if name in _NEVER_WAITS:
-            return register(fn)
+            return register(_timed(name, fn))
         if _runs_alone(name):
-            return register(_one_at_a_time(fn, holds_back_reads=name in _HOLDS_BACK_READS))
-        return register(_through_read_gate(fn))
+            return register(_timed(
+                name, _one_at_a_time(fn, holds_back_reads=name in _HOLDS_BACK_READS)))
+        return register(_timed(name, _through_read_gate(fn)))
     return decorator
 
 
@@ -493,6 +617,21 @@ class GephiClient:
                       params: dict[str, Any] | None = None,
                       json_data: dict[str, Any] | None = None,
                       timeout: float | None = None) -> dict[str, Any]:
+        calls = _CALL_HTTP.get()
+        if calls is None:
+            return await self._send(method, endpoint, params, json_data, timeout, {})
+        note: dict[str, Any] = {}
+        clock = time.perf_counter()
+        result: Any = None
+        try:
+            result = await self._send(method, endpoint, params, json_data, timeout, note)
+            return result
+        finally:
+            _note_request(calls, endpoint, clock, note, result)
+
+    async def _send(self, method: str, endpoint: str, params: dict[str, Any] | None,
+                    json_data: dict[str, Any] | None, timeout: float | None,
+                    note: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         # Cached graph facts describe a particular graph. Any call that could change which graph
         # we are looking at, or its shape, retires them before it runs. The methods record starts
@@ -510,6 +649,7 @@ class GephiClient:
                 headers = JSON_UTF8 if json_data is not None else None
                 response = await client.request(method=method, url=url, params=params,
                                                 json=json_data, headers=headers)
+                note["status"] = response.status_code
                 response.raise_for_status()
                 return response.json()
         except asyncio.CancelledError:
@@ -1698,9 +1838,14 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     # /layout/status says only whether a layout is running, not why it ended, so a stop sent
     # through gephi_stop_layout while this call waits is counted and checked afterwards.
     stops_before = _layout_stops
-    # Poll until layout stops
-    for _ in range(300):  # max ~5 minutes at 1s intervals
-        await asyncio.sleep(1)
+    # Poll until layout stops. The wait starts at 50 ms and doubles up to a quarter second, so a
+    # finished layout is noticed within 0.25 s at any size (a fixed 1 s wait was most of a
+    # 1,000-node layout's time), for at most about five minutes in all.
+    delay, waited = _LAYOUT_POLL_FIRST, 0.0
+    while waited < _LAYOUT_POLL_LIMIT:
+        await asyncio.sleep(delay)
+        waited += delay
+        delay = min(delay * 2, _LAYOUT_POLL_MAX)
         status = await gephi.request("GET", "/layout/status")
         if not status.get("running", True):
             stopped = _layout_stops != stops_before
@@ -1721,6 +1866,11 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result["status"] = "timeout"
     result["message"] = "Layout still running after 5 minutes"
     return fmt(result)
+
+#: A sync layout's first wait before polling /layout/status, the longest wait, and the total.
+_LAYOUT_POLL_FIRST = 0.05
+_LAYOUT_POLL_MAX = 0.25
+_LAYOUT_POLL_LIMIT = 300.0
 
 _SIMILARITY_NOTES = {
     "spectral": ("proximity = structurally close (spectral embedding); nearby nodes are often "
@@ -1943,8 +2093,9 @@ LEDGER = Ledger()
 
 def invalidate_graph_facts() -> None:
     """Forget cached facts about the graph. Called whenever the graph may have changed."""
-    global _graph_facts
+    global _graph_facts, _graph_size
     _graph_facts = None
+    _graph_size = None
 
 
 def note_weights_vary(weights_vary: bool) -> None:
