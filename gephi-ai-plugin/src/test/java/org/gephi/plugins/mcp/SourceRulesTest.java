@@ -217,7 +217,90 @@ class SourceRulesTest {
         assertEquals(true, namedThread("Thread t = new Thread(() -> {\n    run();\n}, \"Gephi AI starter\");"));
     }
 
+    /**
+     * Statistics recurse once per node (connected components on a long directed path), so every run
+     * of one goes through runOnStatisticThread and its 128 MB stack, never the request thread's.
+     */
+    @Test
+    void everyStatisticRunsOnTheStatisticThread() {
+        assertEquals(List.of(), statisticsOffTheStatisticThread(sources.get("GephiControlService.java")),
+            "Run a Statistics object as runOnStatisticThread(() -> stat.execute(gm), cancel); a direct"
+                + " execute call overflows the request thread's small stack on a deep graph");
+    }
+
+    /**
+     * Swing work reaches the interface thread only through runOnEDT, which waits with a limit. Any
+     * other file that must use invokeLater is listed here with its reason.
+     */
+    @Test
+    void swingWorkIsQueuedOnlyThroughRunOnEdt() {
+        // File -> reason. These touch their own Swing component and never wait on the result.
+        Map<String, String> deliberate = Map.of(
+            "WelcomeCloser.java", "closes Gephi's welcome dialog, fire and forget",
+            "ServerControlPanel.java", "updates its own labels from the server thread, fire and forget");
+        List<String> found = new ArrayList<>();
+        sources.forEach((file, text) -> {
+            if (!deliberate.containsKey(file)) {
+                found.addAll(swingCallsOutside(file, text, "runOnEDT"));
+            }
+        });
+        assertEquals(List.of(), found, "Queue Swing work with runOnEDT; invokeLater alone cannot be"
+            + " withdrawn or time out, so work queued behind a wedged interface runs after the caller"
+            + " was told it failed");
+    }
+
+    @Test
+    void theStatisticRuleAcceptsTheWrappedCallAndRejectsABareOne() {
+        String wrapped = "class A {\n    void m() {\n        runOnStatisticThread(() -> stat.execute(gm),"
+            + " task::cancel);\n        panel.execute(stat, listener);\n    }\n}\n";
+        String bare = "class A {\n    void m() {\n        Statistics stat = b.getStatistics();\n"
+            + "        stat.execute(gm);\n    }\n}\n";
+        assertEquals(List.of(), statisticsOffTheStatisticThread(wrapped));
+        assertEquals(List.of("line 4: stat.execute(gm)"), statisticsOffTheStatisticThread(bare));
+        String invoke = "class A {\n    void m() {\n        SwingUtilities.invokeLater(r);\n    }\n"
+            + "    <T> T runOnEDT(Callable<T> c) {\n        SwingUtilities.invokeLater(r);\n    }\n}\n";
+        assertEquals(List.of("A.java:3 is outside runOnEDT"), swingCallsOutside("A.java", invoke, "runOnEDT"));
+    }
+
     // ---- rule mechanics, package-private so the rules themselves are tested above ----
+
+    private static final Pattern STATISTIC_EXECUTE =
+        Pattern.compile("\\b\\w*[sS]tat\\w*\\.execute\\(\\s*\\w*(gm|[mM]odel)\\w*\\s*\\)");
+
+    /** Direct {@code <statistic>.execute(<model>)} calls that are not inside runOnStatisticThread(...). */
+    static List<String> statisticsOffTheStatisticThread(String text) {
+        List<int[]> wrapped = new ArrayList<>();
+        Matcher w = Pattern.compile("\\brunOnStatisticThread\\(").matcher(text);
+        while (w.find()) {
+            wrapped.add(new int[] {w.end() - 1, matching(text, w.end() - 1, '(', ')')});
+        }
+        List<String> found = new ArrayList<>();
+        Matcher m = STATISTIC_EXECUTE.matcher(text);
+        while (m.find()) {
+            String line = text.split("\n", -1)[lineOf(text, m.start()) - 1];
+            if (isComment(line)) {
+                continue;
+            }
+            boolean inside = wrapped.stream().anyMatch(r -> m.start() > r[0] && m.start() < r[1]);
+            if (!inside) {
+                found.add("line " + lineOf(text, m.start()) + ": " + m.group());
+            }
+        }
+        return found;
+    }
+
+    /** Calls of invokeLater or invokeAndWait that sit outside the member named {@code owner}. */
+    static List<String> swingCallsOutside(String file, String text, String owner) {
+        List<String> found = new ArrayList<>();
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (!isComment(lines[i]) && lines[i].matches(".*\\b(invokeLater|invokeAndWait)\\(.*")
+                && !owner.equals(memberName(lines[memberStart(lines, i)]))) {
+                found.add(file + ":" + (i + 1) + " is outside " + owner);
+            }
+        }
+        return found;
+    }
 
     static List<String> unreleasedLocks(String file, String text) {
         List<String> found = new ArrayList<>();

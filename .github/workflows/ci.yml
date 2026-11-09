@@ -39,6 +39,37 @@ jobs:
         working-directory: gephi-ai-plugin
         run: mvn -B test
 
+  gephi-plugins-build:
+    # Builds the plugin the way gephi/gephi-plugins does, from its own module pom, because that
+    # build produces the .nbm Gephi's plugin list offers. Needs the network; it cannot run locally.
+    name: Build as gephi-plugins builds it (JDK 17)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+          path: gephi-ai
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          repository: gephi/gephi-plugins
+          ref: master-forge
+          path: gephi-plugins
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad  # v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: gephi-plugins/pom.xml
+      - name: Put this repository's source and the upstream pom into the module
+        run: |
+          rm -rf gephi-plugins/modules/GephiAI/src
+          cp -R gephi-ai/gephi-ai-plugin/src gephi-plugins/modules/GephiAI/src
+          cp gephi-ai/upstream/gephi-plugins/GephiAI-pom.xml gephi-plugins/modules/GephiAI/pom.xml
+      - name: Package
+        working-directory: gephi-plugins
+        run: mvn -B -pl modules/GephiAI -am package
+
   mcp-server:
     name: MCP server (pytest, ruff, mypy, Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -96,6 +127,8 @@ jobs:
       - run: shellcheck install.sh scripts/*.sh plugins/claude-code/scripts/*.sh
       - name: Gephi check hook blocks when Gephi is down and allows when it is up
         run: bash plugins/claude-code/scripts/test-check-gephi.sh
+      - name: Installer functions (ver_ge, checksum rules, Desktop config rewrite)
+        run: bash scripts/test-installer.sh
       - run: pip install actionlint-py && actionlint
 
   desktop-bundle:

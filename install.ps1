@@ -843,7 +843,10 @@ print(result)
 }
 
 $script:Failed = $false
-Install-GephiAI -Yes:$Yes -DryRun:$DryRun -Clients $Clients -SkipGephiPlugin:$SkipGephiPlugin -Version $Version -AllowUnverified:$AllowUnverified -NoLaunch:$NoLaunch -OpenGephi:$OpenGephi -Uninstall:$Uninstall
-# Run as a file, a failed step gives a non-zero exit for scripts and CI. Under
-# `irm | iex` there is no file, and exiting would close the user's window.
-if ($script:Failed -and $MyInvocation.MyCommand.Path) { exit 1 }
+# Tests load this file with GEPHI_AI_INSTALLER_TEST=1 to reach the functions without installing.
+if ($env:GEPHI_AI_INSTALLER_TEST -ne "1") {
+    Install-GephiAI -Yes:$Yes -DryRun:$DryRun -Clients $Clients -SkipGephiPlugin:$SkipGephiPlugin -Version $Version -AllowUnverified:$AllowUnverified -NoLaunch:$NoLaunch -OpenGephi:$OpenGephi -Uninstall:$Uninstall
+    # Run as a file, a failed step gives a non-zero exit for scripts and CI. Under
+    # `irm | iex` there is no file, and exiting would close the user's window.
+    if ($script:Failed -and $MyInvocation.MyCommand.Path) { exit 1 }
+}

@@ -6,6 +6,28 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+### Fixed (Java plugin)
+- **Extracting the giant component of a large directed graph no longer overflows the request
+  thread's stack.** It now runs on the statistic worker, like every other statistic; a source rule
+  test checks every statistic call site.
+- **A layout request that reported "UI thread is unresponsive" no longer starts the layout later**
+  when the interface wakes, so a retry cannot run it twice. A step that had already started is
+  waited for instead of reported as failed.
+- **A statistic that outlives the wait cap or the stop grace keeps its claim until it really
+  ends,** so a retry is refused as still running from an earlier request instead of starting a
+  second copy.
+
+### Tests
+- Every read-only tool leaves the session methods record unchanged (one test over all of them).
+- Every fixed-choice tool parameter is accepted by the Java endpoint that receives it, read from
+  the Java source.
+- Installer unit tests (`scripts/test-installer.sh`: version comparison, checksum refusal, Claude
+  Desktop config permissions), run by `scripts/check.sh` and CI; a Pester file and a PowerShell
+  parse check for `install.ps1` in the installers workflow. Both installers load for testing with
+  `GEPHI_AI_INSTALLER_TEST=1`.
+- CI builds the plugin the way gephi/gephi-plugins does, from its module pom, kept in `upstream/`
+  with maven-surefire-plugin pinned.
+
 ### Security
 - **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
   unavailable (its hourly limit, a proxy), they read the version file instead, which had no

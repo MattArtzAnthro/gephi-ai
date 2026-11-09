@@ -18,6 +18,7 @@ RUFF=ruff
 (cd mcp-server && .venv/bin/bandit -q -c pyproject.toml -r .)
 (cd mcp-server && PYTHONPATH=. .venv/bin/python -m pytest -q -p no:cacheprovider --cov)
 bash plugins/claude-code/scripts/test-check-gephi.sh >/dev/null
+bash scripts/test-installer.sh >/dev/null
 # The Java build takes a minute, so it runs only when plugin sources are staged
 # (CI runs it on every push regardless).
 if git diff --cached --name-only | grep -q '^gephi-ai-plugin/'; then

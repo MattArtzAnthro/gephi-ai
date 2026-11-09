@@ -978,4 +978,5 @@ main() {
   if grep -q "✗" "$TMP/summary" 2>/dev/null; then exit 1; fi
 }
 
-main "$@"
+# Tests source this file with GEPHI_AI_INSTALLER_TEST=1 to reach the functions without installing.
+[ "${GEPHI_AI_INSTALLER_TEST:-}" = 1 ] || main "$@"

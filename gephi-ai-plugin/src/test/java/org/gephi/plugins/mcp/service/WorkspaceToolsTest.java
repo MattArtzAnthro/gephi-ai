@@ -307,6 +307,41 @@ class WorkspaceToolsTest {
         assertEquals(5, gm.getGraph().getNodeCount(), r.toString());
     }
 
+    /**
+     * Connected components recurse once per node of a long directed path. The giant-component tool
+     * must run them on the statistic worker's large stack, whatever thread the request arrived on.
+     */
+    @Test
+    void theGiantComponentOfALongDirectedPathDoesNotOverflowTheRequestThread() throws Exception {
+        Graph g = gm.getDirectedGraph();
+        g.clear();
+        int length = 200_000;
+        Node previous = null;
+        for (int i = 0; i < length; i++) {
+            Node n = gm.factory().newNode("p" + i);
+            g.addNode(n);
+            if (previous != null) {
+                g.addEdge(gm.factory().newEdge(previous, n, true));
+            }
+            previous = n;
+        }
+        java.util.concurrent.atomic.AtomicReference<Object> outcome =
+            new java.util.concurrent.atomic.AtomicReference<>();
+        Thread small = new Thread(null, () -> {
+            try {
+                outcome.set(service.extractGiantComponent());
+            } catch (Throwable t) {
+                outcome.set(t);
+            }
+        }, "small-stack-request", 512 * 1024);
+        small.start();
+        small.join(120_000);
+
+        assertFalse(small.isAlive(), "the request was still running after two minutes");
+        assertTrue(outcome.get() instanceof JsonObject, () -> "the request threw " + outcome.get());
+        assertTrue(((JsonObject) outcome.get()).get("success").getAsBoolean(), outcome.get().toString());
+    }
+
     @Test
     void anEgoNetworkKeepsNeighboursWithinTheDepth() {
         JsonObject r = ok(service.extractEgoNetwork("a", 1));

@@ -1037,4 +1037,221 @@ class PanelExecutionTest {
             mark.close();
         }
     }
+
+    // ---- a layout never starts after its request reported failure ----
+
+    /** Holds every task until released, as a wedged interface thread does; accept() times out. */
+    static class WedgedEdt implements Consumer<Runnable> {
+        final List<Runnable> held = new ArrayList<>();
+
+        @Override public void accept(Runnable r) {
+            held.add(r);
+            throw new RuntimeException("Gephi's UI thread is unresponsive");
+        }
+
+        void release() {
+            List<Runnable> now = new ArrayList<>(held);
+            held.clear();
+            now.forEach(Runnable::run);
+        }
+    }
+
+    @Test
+    void layoutSelectionThatTimedOutNeverRunsLater() {
+        FakeLayoutController lc = new FakeLayoutController();
+        Layout layout = new ForceAtlas2Builder().buildLayout();
+        WedgedEdt edt = new WedgedEdt();
+
+        assertThrows(RuntimeException.class,
+            () -> GephiControlService.startLayoutThroughController(lc, layout, Map.of("gravity", 5.0), 100, edt));
+        edt.release();
+
+        assertEquals(List.of(), lc.calls, "a task the caller was told had failed ran when the interface woke");
+    }
+
+    @Test
+    void layoutRunThatTimedOutNeverStartsLaterAndARetryRunsOnce() {
+        FakeLayoutController lc = new FakeLayoutController();
+        Layout layout = new ForceAtlas2Builder().buildLayout();
+        List<Runnable> held = new ArrayList<>();
+        int[] posts = {0};
+        // The selection step is taken at once; the settings step waits behind a busy interface thread.
+        Consumer<Runnable> secondStepTimesOut = r -> {
+            if (posts[0]++ == 0) {
+                r.run();
+                return;
+            }
+            held.add(r);
+            throw new RuntimeException("Gephi's UI thread is unresponsive");
+        };
+
+        assertThrows(RuntimeException.class, () -> GephiControlService.startLayoutThroughController(
+            lc, layout, Map.of("gravity", 5.0), 100, secondStepTimesOut));
+        GephiControlService.startLayoutThroughController(lc, layout, Map.of("gravity", 5.0), 100, DIRECT);
+        held.forEach(Runnable::run);
+
+        assertEquals(1, lc.calls.stream().filter(c -> c.startsWith("execute")).count(),
+            () -> "the layout was started more than once: " + lc.calls);
+    }
+
+    @Test
+    void layoutStepThatStartedBeforeTheTimeoutIsWaitedFor() {
+        FakeLayoutController lc = new FakeLayoutController();
+        Layout layout = new ForceAtlas2Builder().buildLayout();
+        Consumer<Runnable> startsThenTimesOut = r -> {
+            Thread t = new Thread(r, "slow-interface-thread");
+            t.start();
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                throw new AssertionError(e);
+            }
+            throw new RuntimeException("Gephi's UI thread is unresponsive");
+        };
+
+        GephiControlService.startLayoutThroughController(lc, layout, Map.of("gravity", 5.0), 100, startsThenTimesOut);
+
+        assertEquals("execute 100", lc.calls.get(lc.calls.size() - 1));
+    }
+
+    @Test
+    void layoutStepThatStartedButNeverFinishesFailsAfterTheGrace() throws Exception {
+        FakeLayoutController lc = new FakeLayoutController();
+        Layout layout = new ForceAtlas2Builder().buildLayout();
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch started = new java.util.concurrent.CountDownLatch(1);
+        FakeLayoutController blocking = new FakeLayoutController() {
+            @Override public void setLayout(Layout l) {
+                started.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        Consumer<Runnable> startsThenTimesOut = r -> {
+            new Thread(r, "wedged-interface-thread").start();
+            try {
+                started.await();
+            } catch (InterruptedException e) {
+                throw new AssertionError(e);
+            }
+            throw new RuntimeException("Gephi's UI thread is unresponsive");
+        };
+
+        try {
+            assertThrows(RuntimeException.class, () -> GephiControlService.startLayoutThroughController(
+                blocking, layout, Map.of(), 10, startsThenTimesOut, 100));
+        } finally {
+            release.countDown();
+        }
+        assertEquals(List.of(), lc.calls);
+    }
+
+    @Test
+    void layoutStepThatFailedOnTheInterfaceThreadStillReportsTheFailure() {
+        FakeLayoutController lc = new FakeLayoutController() {
+            @Override public void setLayout(Layout l) {
+                throw new IllegalStateException("layout refused");
+            }
+        };
+        Consumer<Runnable> failsLikeRunOnEdt = r -> {
+            try {
+                r.run();
+            } catch (RuntimeException e) {
+                throw new RuntimeException(e);
+            }
+        };
+
+        RuntimeException e = assertThrows(RuntimeException.class, () -> GephiControlService
+            .startLayoutThroughController(lc, new ForceAtlas2Builder().buildLayout(), Map.of(), 10, failsLikeRunOnEdt));
+        assertTrue(e.getCause().getMessage().contains("layout refused"), String.valueOf(e));
+    }
+
+    // ---- a statistic keeps its claim until it has really ended ----
+
+    /** Never ends within a short wait, and ignores cancel. */
+    static class StubbornStat extends SlowStat {
+        StubbornStat(long millis) {
+            super(millis);
+        }
+
+        @Override public boolean cancel() {
+            return false;
+        }
+    }
+
+    private static boolean claimFreesWithin(long millis, String name) throws InterruptedException {
+        long until = System.currentTimeMillis() + millis;
+        while (System.currentTimeMillis() < until) {
+            if (GephiControlService.claimStatistic(new SlowStat(1), name) == null) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return false;
+    }
+
+    @Test
+    void statisticThatOutlivesTheWaitCapKeepsItsClaimUntilItEnds() throws Exception {
+        GephiControlService.RUNNING_STATISTICS.clear();
+        try {
+            SlowStat stat = new SlowStat(1500);
+            assertNull(GephiControlService.claimStatistic(stat, "Slow"));
+
+            assertThrows(IllegalStateException.class, () -> GephiControlService.runClaimed(stat, null, 0,
+                new FakeStatsUI(), DIRECT, s -> mark(() -> true, () -> true), 200, 200));
+
+            String refused = GephiControlService.claimStatistic(new SlowStat(1), "Slow");
+            assertTrue(refused != null && refused.contains("already running"),
+                "a retry was allowed to start a second copy while the first still ran: " + refused);
+            assertTrue(refused.contains("earlier request"), refused);
+            assertTrue(claimFreesWithin(10_000, "Slow"), "the claim was never given up after the statistic ended");
+        } finally {
+            GephiControlService.RUNNING_STATISTICS.clear();
+        }
+    }
+
+    @Test
+    void statisticThatIgnoresItsStopKeepsItsClaimUntilItEnds() throws Exception {
+        GephiControlService.RUNNING_STATISTICS.clear();
+        try {
+            StubbornStat stat = new StubbornStat(1500);
+            assertNull(GephiControlService.claimStatistic(stat, "Stubborn"));
+
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> GephiControlService.runClaimed(stat, null, 100, new FakeStatsUI(), DIRECT,
+                    s -> mark(() -> true, () -> true), 200, 200));
+            assertTrue(e.getMessage().contains("has not finished"), e.getMessage());
+
+            String refused = GephiControlService.claimStatistic(new StubbornStat(1), "Stubborn");
+            assertTrue(refused != null && refused.contains("earlier request"), String.valueOf(refused));
+            assertTrue(claimFreesWithin(10_000, "Stubborn"), "the claim was never given up");
+        } finally {
+            GephiControlService.RUNNING_STATISTICS.clear();
+        }
+    }
+
+    @Test
+    void statisticThatFinishedOrFailedGivesUpItsClaimAtOnce() throws Exception {
+        GephiControlService.RUNNING_STATISTICS.clear();
+        try {
+            SlowStat done = new SlowStat(10);
+            assertNull(GephiControlService.claimStatistic(done, "Done"));
+            assertFalse(GephiControlService.runClaimed(done, null, 0, new FakeStatsUI(), DIRECT,
+                s -> mark(() -> true, () -> true), 5000, 5000));
+            assertNull(GephiControlService.claimStatistic(new SlowStat(1), "Done"));
+
+            SlowStat failing = new SlowStat(10);
+            FakeStatsUI ui = new FakeStatsUI();
+            ui.failWith = new IllegalStateException("boom");
+            assertNull(GephiControlService.claimStatistic(failing, "Failing"));
+            assertThrows(RuntimeException.class, () -> GephiControlService.runClaimed(failing, null, 0, ui, DIRECT,
+                s -> mark(() -> true, () -> true), 5000, 5000));
+            assertNull(GephiControlService.claimStatistic(new SlowStat(1), "Failing"));
+        } finally {
+            GephiControlService.RUNNING_STATISTICS.clear();
+        }
+    }
 }

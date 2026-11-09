@@ -9,9 +9,9 @@ name: Installers
 
 on:
   push:
-    paths: [install.sh, install.ps1, latest.json, .github/workflows/installers.yml]
+    paths: [install.sh, install.ps1, latest.json, scripts/test-installer.sh, scripts/install.Tests.ps1, .github/workflows/installers.yml]
   pull_request:
-    paths: [install.sh, install.ps1, latest.json, .github/workflows/installers.yml]
+    paths: [install.sh, install.ps1, latest.json, scripts/test-installer.sh, scripts/install.Tests.ps1, .github/workflows/installers.yml]
   workflow_dispatch:
 
 permissions:
@@ -25,13 +25,15 @@ env:
 
 jobs:
   lint:
-    name: Lint (shellcheck, PSScriptAnalyzer)
+    name: Lint and unit tests (shellcheck, PSScriptAnalyzer, parser, Pester)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           persist-credentials: false
-      - run: shellcheck install.sh
+      - run: shellcheck install.sh scripts/test-installer.sh
+      - name: install.sh unit tests
+        run: bash scripts/test-installer.sh
       - name: PSScriptAnalyzer, errors only
         shell: pwsh
         run: |
@@ -39,6 +41,22 @@ jobs:
           $found = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
           $found | Format-Table -AutoSize
           if ($found) { exit 1 }
+      - name: Parse install.ps1 and the Pester file; any parse error fails
+        shell: pwsh
+        run: |
+          $bad = $false
+          foreach ($f in "install.ps1", "scripts/install.Tests.ps1") {
+              $errors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$null, [ref]$errors)
+              foreach ($e in $errors) { Write-Host "$f`:$($e.Extent.StartLineNumber): $($e.Message)"; $bad = $true }
+          }
+          if ($bad) { exit 1 }
+      - name: install.ps1 unit tests (Pester)
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          $result = Invoke-Pester -Path scripts/install.Tests.ps1 -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0 -or $result.TotalCount -eq 0) { exit 1 }
 
   linux:
     name: Linux (official tarball, virtual display)

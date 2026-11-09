@@ -3080,11 +3080,70 @@ public class GephiControlService {
      */
     static String claimStatistic(Statistics stat, String name) {
         synchronized (RUNNING_STATISTICS) {
-            if (RUNNING_STATISTICS.containsValue(name)) {
-                return name + " is already running; wait for it to finish, or stop it with stop_statistic";
+            for (Map.Entry<Statistics, String> e : RUNNING_STATISTICS.entrySet()) {
+                if (e.getValue().equals(name)) {
+                    // The skill quotes the first message; keep it as one literal (test_repo_docs).
+                    return ABANDONED_STATISTICS.contains(e.getKey())
+                        ? name + " is already running from an earlier request that stopped waiting for it;"
+                            + " wait for it to finish, or stop it with stop_statistic"
+                        : name + " is already running; wait for it to finish, or stop it with stop_statistic";
+                }
             }
             RUNNING_STATISTICS.put(stat, name);
             return null;
+        }
+    }
+
+    /**
+     * Statistics whose request gave up (the wait cap or the stop grace passed) while Gephi still
+     * runs them. They keep their claim until they really end, so a retry is refused, not doubled.
+     */
+    static final java.util.Set<Statistics> ABANDONED_STATISTICS =
+        java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** A request stopped waiting for a statistic that Gephi is still running. */
+    static final class StatisticStillRunningException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        StatisticStillRunningException(String message) {
+            super(message);
+        }
+    }
+
+    /** Gives up the claim on a statistic that has really ended. */
+    private static void releaseStatistic(Statistics stat) {
+        RUNNING_STATISTICS.remove(stat);
+        if (ABANDONED_STATISTICS.remove(stat)) {
+            STOP_REQUESTED.remove(stat);
+        }
+    }
+
+    /**
+     * Runs a claimed statistic and gives up the claim when the run is over. If the request stops
+     * waiting while Gephi still runs the statistic, the claim stays until the statistic's own
+     * completion callback arrives, so no second copy can start alongside it.
+     */
+    static boolean runClaimed(Statistics stat, GraphModel gm, long timeoutMs,
+        org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
+        java.util.function.Consumer<Runnable> onEdt,
+        java.util.function.Function<Statistics, PanelRunMark> watch,
+        long waitCapMs, long stopGraceMs) throws InterruptedException {
+        boolean keepClaim = false;
+        try {
+            return executeStatistic(stat, gm, timeoutMs, panel, onEdt, watch, waitCapMs, stopGraceMs,
+                () -> releaseStatistic(stat));
+        } catch (StatisticStillRunningException e) {
+            keepClaim = true;
+            ABANDONED_STATISTICS.add(stat);
+            if (!RUNNING_STATISTICS.containsKey(stat)) {
+                // It ended while this was being recorded.
+                ABANDONED_STATISTICS.remove(stat);
+            }
+            throw e;
+        } finally {
+            if (!keepClaim) {
+                RUNNING_STATISTICS.remove(stat);
+            }
         }
     }
 
@@ -3287,6 +3346,15 @@ public class GephiControlService {
         org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
         java.util.function.Consumer<Runnable> onEdt,
         java.util.function.Function<Statistics, PanelRunMark> watch) throws InterruptedException {
+        return executeStatistic(stat, gm, timeoutMs, panel, onEdt, watch, STATISTIC_WAIT_CAP_MS,
+            STATISTIC_STOP_GRACE_MS, () -> { });
+    }
+
+    static boolean executeStatistic(Statistics stat, GraphModel gm, long timeoutMs,
+        org.gephi.desktop.statistics.api.StatisticsControllerUI panel,
+        java.util.function.Consumer<Runnable> onEdt,
+        java.util.function.Function<Statistics, PanelRunMark> watch,
+        long waitCapMs, long stopGraceMs, Runnable ended) throws InterruptedException {
         if (panel == null) {
             if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
                 org.gephi.utils.longtask.spi.LongTask task = (org.gephi.utils.longtask.spi.LongTask) stat;
@@ -3303,6 +3371,7 @@ public class GephiControlService {
             new org.gephi.utils.longtask.api.LongTaskListener() {
                 @Override
                 public void taskFinished(org.gephi.utils.longtask.spi.LongTask task) {
+                    ended.run();
                     done.countDown();
                 }
 
@@ -3310,6 +3379,7 @@ public class GephiControlService {
                 // versions never call it, and the wait below still ends at its limit.
                 public void fatalError(Throwable t) {
                     failure.set(t);
+                    ended.run();
                     done.countDown();
                 }
             };
@@ -3354,9 +3424,9 @@ public class GephiControlService {
             if (done.getCount() > 0 && !mark.wasEverMarked()) {
                 LOGGER.info("Gephi's Statistics panel did not take " + stat.getClass().getSimpleName()
                     + "; running it directly");
-                return executeStatistic(stat, gm, timeoutMs, null, onEdt, watch);
+                return executeStatistic(stat, gm, timeoutMs, null, onEdt, watch, waitCapMs, stopGraceMs, ended);
             }
-            return awaitPanelResult(stat, timeoutMs, done, failure, mark);
+            return awaitPanelResult(stat, timeoutMs, done, failure, mark, waitCapMs, stopGraceMs);
         } finally {
             mark.close();
         }
@@ -3364,9 +3434,9 @@ public class GephiControlService {
 
     private static boolean awaitPanelResult(Statistics stat, long timeoutMs,
         java.util.concurrent.CountDownLatch done, java.util.concurrent.atomic.AtomicReference<Throwable> failure,
-        PanelRunMark mark) throws InterruptedException {
+        PanelRunMark mark, long waitCapMs, long stopGraceMs) throws InterruptedException {
         boolean stopped = false;
-        long wait = timeoutMs > 0 ? timeoutMs : STATISTIC_WAIT_CAP_MS;
+        long wait = timeoutMs > 0 ? timeoutMs : waitCapMs;
         PanelWait outcome = awaitPanelRun(done, wait, mark);
         if (outcome == PanelWait.LOST) {
             throw new IllegalStateException(stat.getClass().getSimpleName() + " ended in Gephi's Statistics"
@@ -3374,13 +3444,13 @@ public class GephiControlService {
         }
         if (outcome == PanelWait.TIMED_OUT) {
             if (timeoutMs <= 0 || !(stat instanceof org.gephi.utils.longtask.spi.LongTask)) {
-                throw new IllegalStateException("The statistic is still running in Gephi after "
+                throw new StatisticStillRunningException("The statistic is still running in Gephi after "
                     + (wait / 60000) + " minutes; stop it from Gephi's Statistics panel.");
             }
             ((org.gephi.utils.longtask.spi.LongTask) stat).cancel();
             stopped = true;
-            if (!done.await(STATISTIC_STOP_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                throw new IllegalStateException("The statistic was stopped at its deadline but has"
+            if (!done.await(stopGraceMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                throw new StatisticStillRunningException("The statistic was stopped at its deadline but has"
                     + " not finished; restart Gephi if it keeps running.");
             }
         }
@@ -3407,9 +3477,16 @@ public class GephiControlService {
         Layout layout, Map<String, Object> properties,
         int iterations,
         java.util.function.Consumer<Runnable> onEdt) {
+        return startLayoutThroughController(lc, layout, properties, iterations, onEdt, STATISTIC_STOP_GRACE_MS);
+    }
+
+    static java.util.List<String> startLayoutThroughController(org.gephi.layout.api.LayoutController lc,
+        Layout layout, Map<String, Object> properties,
+        int iterations,
+        java.util.function.Consumer<Runnable> onEdt, long graceMs) {
         java.util.List<String> unapplied = new java.util.ArrayList<>();
-        onEdt.accept(() -> lc.setLayout(layout));
-        onEdt.accept(() -> {
+        handOver(onEdt, () -> lc.setLayout(layout), graceMs);
+        handOver(onEdt, () -> {
             try {
                 layout.resetPropertiesValues();
             } catch (Exception e) {
@@ -3418,8 +3495,53 @@ public class GephiControlService {
             unapplied.addAll(applyLayoutProperties(layout, properties));
             lc.setLayout(layout);
             lc.executeLayout(iterations);
-        });
+        }, graceMs);
         return unapplied;
+    }
+
+    /**
+     * Hands {@code task} to the interface thread through {@code onEdt}, which throws when the
+     * thread does not answer in time. A task that never started by then is withdrawn: when the
+     * thread finally gets to it, it does nothing, so a request told it failed never has its work
+     * done behind its back (and a retry cannot meet a second copy). A task that already started is
+     * waited for, up to {@code graceMs}, and counts as done unless it failed.
+     */
+    static void handOver(java.util.function.Consumer<Runnable> onEdt, Runnable task, long graceMs) {
+        final java.util.concurrent.atomic.AtomicInteger state = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicReference<Throwable> failed =
+            new java.util.concurrent.atomic.AtomicReference<>();
+        final java.util.concurrent.CountDownLatch finished = new java.util.concurrent.CountDownLatch(1);
+        Runnable guarded = () -> {
+            if (!state.compareAndSet(HAND_OVER_PENDING, HAND_OVER_STARTED)) {
+                return;
+            }
+            try {
+                task.run();
+            } catch (RuntimeException | Error t) {
+                failed.set(t);
+                throw t;
+            } finally {
+                finished.countDown();
+            }
+        };
+        try {
+            onEdt.accept(guarded);
+        } catch (RuntimeException e) {
+            if (state.compareAndSet(HAND_OVER_PENDING, HAND_OVER_ABANDONED)) {
+                throw e;
+            }
+            try {
+                if (!finished.await(graceMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    throw e;
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw e;
+            }
+            if (failed.get() != null) {
+                throw e;
+            }
+        }
     }
 
     private void onEdt(Runnable r) {
@@ -3509,13 +3631,13 @@ public class GephiControlService {
                 return error(busy);
             }
             try {
-                stopped = executeStatistic(stat, gm, timeoutMs,
+                stopped = runClaimed(stat, gm, timeoutMs,
                     statisticsPanelFor(ws,
                         Lookup.getDefault().lookup(org.gephi.desktop.statistics.api.StatisticsControllerUI.class)),
                     this::onEdt,
-                    GephiControlService::watchPanel);
+                    GephiControlService::watchPanel,
+                    STATISTIC_WAIT_CAP_MS, STATISTIC_STOP_GRACE_MS);
             } finally {
-                RUNNING_STATISTICS.remove(stat);
                 stoppedOnRequest = STOP_REQUESTED.remove(stat);
             }
             if (stoppedOnRequest) {
@@ -5221,8 +5343,9 @@ public class GephiControlService {
                 return error("ConnectedComponents statistic not found");
             }
 
+            // On the statistic worker's large stack: the search recurses once per node of a path.
             Statistics stat = ccBuilder.getStatistics();
-            stat.execute(gm);
+            runOnStatisticThread(() -> stat.execute(gm), () -> { });
 
             // Find the column
             Column ccCol = gm.getNodeTable().getColumn("componentnumber");
