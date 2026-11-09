@@ -2933,6 +2933,19 @@ public class GephiControlService {
      * not go on writing columns after its request has given up.
      */
     static void runOnStatisticThread(Runnable work, Runnable cancel) {
+        runOnStatisticThread(work, cancel, 0, STATISTIC_STOP_GRACE_MS, () -> { });
+    }
+
+    /**
+     * {@link #runOnStatisticThread(Runnable, Runnable)} with a deadline and a claim to give up.
+     * With {@code deadlineMs} above zero, a statistic still running then is cancelled, and the
+     * return value is true. The statistic is given {@code stopGraceMs} to end after a cancel (a
+     * deadline or an interrupted request). One that ignores it is still running and may still be
+     * writing columns, so this throws {@link StatisticStillRunningException} and leaves the claim
+     * alone: {@code ended} runs from the worker's own finally, when the statistic really ends.
+     */
+    static boolean runOnStatisticThread(Runnable work, Runnable cancel, long deadlineMs, long stopGraceMs,
+        Runnable ended) {
         java.util.concurrent.atomic.AtomicReference<Throwable> thrown =
             new java.util.concurrent.atomic.AtomicReference<>();
         Thread worker = new Thread(null, () -> {
@@ -2940,21 +2953,41 @@ public class GephiControlService {
                 work.run();
             } catch (Throwable t) {
                 thrown.set(t);
+            } finally {
+                ended.run();
             }
         }, "Gephi AI statistic", STATISTIC_STACK_BYTES);
         worker.setDaemon(true);
         worker.start();
+        boolean stoppedAtDeadline = false;
         try {
-            worker.join();
+            if (deadlineMs > 0) {
+                worker.join(deadlineMs);
+                if (worker.isAlive()) {
+                    stoppedAtDeadline = true;
+                    cancel.run();
+                    worker.join(stopGraceMs);
+                    if (worker.isAlive()) {
+                        throw new StatisticStillRunningException("The statistic was stopped at its deadline but has"
+                            + " not finished; restart Gephi if it keeps running.");
+                    }
+                }
+            } else {
+                worker.join();
+            }
         } catch (InterruptedException e) {
             cancel.run();
             worker.interrupt();
             try {
-                worker.join(STATISTIC_STOP_GRACE_MS);
+                worker.join(stopGraceMs);
             } catch (InterruptedException again) {
                 // Already interrupted; the flag is restored below.
             }
             Thread.currentThread().interrupt();
+            if (worker.isAlive()) {
+                throw new StatisticStillRunningException("Interrupted while a statistic was running; it was"
+                    + " stopped but has not finished");
+            }
             throw new RuntimeException("Interrupted while a statistic was running; it was stopped");
         }
         Throwable t = thrown.get();
@@ -2967,6 +3000,7 @@ public class GephiControlService {
         if (t != null) {
             throw new RuntimeException(t);
         }
+        return stoppedAtDeadline;
     }
 
     /**
@@ -3270,6 +3304,87 @@ public class GephiControlService {
         }
     }
 
+    /** How often a busy model is checked for idleness, how long that is kept up, and how long idle must last. */
+    static final long LISTENER_POLL_MS = 100;
+    static final long LISTENER_WAIT_MS = 60_000;
+    static final long LISTENER_SETTLE_MS = 300;
+
+    /** Models whose listener is waiting for the model to go idle. */
+    private static final java.util.Set<org.gephi.desktop.statistics.api.StatisticsModelUI> HOOK_PENDING =
+        java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>()));
+
+    /** Whether the model shows none of the statistics as running. */
+    private static boolean modelIdle(org.gephi.desktop.statistics.api.StatisticsModelUI model,
+        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis) {
+        for (org.gephi.statistics.spi.StatisticsUI ui : uis) {
+            if (model.isRunning(ui)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Adds the plugin's listener to a model, but only while the model is idle. Gephi's model keeps
+     * its listeners in a plain ArrayList that the statistic worker iterates when a run ends
+     * (setRunning(false), then addResult, each firing the list), and nothing synchronizes the two.
+     * A run starts on the interface thread, so an interface-thread registration made while the
+     * model is idle cannot overlap a fire. A busy model is polled off the interface thread until
+     * it has stayed idle for {@code settleMs} (a finishing run fires once more after its mark
+     * clears), then registered on the interface thread after checking again. If it never goes idle
+     * within {@code waitMs}, no listener is added and the plain mark checks carry the watch.
+     */
+    private static void hookWhenIdle(org.gephi.desktop.statistics.api.StatisticsModelUI m,
+        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis,
+        java.util.function.Consumer<Runnable> onEdt, long pollMs, long waitMs, long settleMs) {
+        if (HOOKED.contains(m)) {
+            return;
+        }
+        if (modelIdle(m, uis)) {
+            if (HOOKED.add(m)) {
+                m.addChangeListener(e -> recordMarked(m, uis));
+            }
+            return;
+        }
+        if (!HOOK_PENDING.add(m)) {
+            return;
+        }
+        final long giveUp = System.nanoTime() + waitMs * 1_000_000L;
+        new Runnable() {
+            private long idleSince = -1;
+
+            @Override
+            public void run() {
+                try {
+                    long now = System.nanoTime();
+                    if (HOOKED.contains(m) || now > giveUp) {
+                        HOOK_PENDING.remove(m);
+                        return;
+                    }
+                    if (!modelIdle(m, uis)) {
+                        idleSince = -1;
+                    } else if (idleSince < 0) {
+                        idleSince = now;
+                    } else if (now - idleSince >= settleMs * 1_000_000L) {
+                        onEdt.accept(() -> {
+                            try {
+                                if (modelIdle(m, uis) && HOOKED.add(m)) {
+                                    m.addChangeListener(e -> recordMarked(m, uis));
+                                }
+                            } finally {
+                                HOOK_PENDING.remove(m);
+                            }
+                        });
+                        return;
+                    }
+                    DEADLINES.schedule(this, pollMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                } catch (RuntimeException e) {
+                    HOOK_PENDING.remove(m);
+                }
+            }
+        }.run();
+    }
+
     /**
      * Watches every workspace's Statistics model for this statistic's running mark. The panel
      * marks the model it is bound to, which after a workspace change can be another workspace's,
@@ -3281,10 +3396,16 @@ public class GephiControlService {
     static PanelRunMark watchPanel(Statistics stat,
         java.util.Collection<org.gephi.desktop.statistics.api.StatisticsModelUI> models,
         java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis) {
+        return watchPanel(stat, models, uis, SwingUtilities::invokeLater, LISTENER_POLL_MS, LISTENER_WAIT_MS,
+            LISTENER_SETTLE_MS);
+    }
+
+    static PanelRunMark watchPanel(Statistics stat,
+        java.util.Collection<org.gephi.desktop.statistics.api.StatisticsModelUI> models,
+        java.util.Collection<? extends org.gephi.statistics.spi.StatisticsUI> uis,
+        java.util.function.Consumer<Runnable> onEdt, long pollMs, long waitMs, long settleMs) {
         for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
-            if (HOOKED.add(m)) {
-                m.addChangeListener(e -> recordMarked(m, uis));
-            }
+            hookWhenIdle(m, uis, onEdt, pollMs, waitMs, settleMs);
         }
         final java.util.function.BooleanSupplier marked = () -> {
             for (org.gephi.desktop.statistics.api.StatisticsModelUI m : models) {
@@ -3358,10 +3479,9 @@ public class GephiControlService {
         if (panel == null) {
             if (stat instanceof org.gephi.utils.longtask.spi.LongTask) {
                 org.gephi.utils.longtask.spi.LongTask task = (org.gephi.utils.longtask.spi.LongTask) stat;
-                return runWithDeadline(() -> runOnStatisticThread(() -> stat.execute(gm), task::cancel),
-                    task, timeoutMs);
+                return runOnStatisticThread(() -> stat.execute(gm), task::cancel, timeoutMs, stopGraceMs, ended);
             }
-            runOnStatisticThread(() -> stat.execute(gm), () -> { });
+            runOnStatisticThread(() -> stat.execute(gm), () -> { }, 0, stopGraceMs, ended);
             return false;
         }
         java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
@@ -3388,30 +3508,21 @@ public class GephiControlService {
         // the panel marks is one being watched. If the hand-over times out before this step
         // starts, the step must not start the statistic later, behind the caller's back; if it
         // has already started, it is waited for.
-        final java.util.concurrent.atomic.AtomicInteger handOver = new java.util.concurrent.atomic.AtomicInteger();
         final java.util.concurrent.atomic.AtomicReference<PanelRunMark> markRef =
             new java.util.concurrent.atomic.AtomicReference<>();
-        final java.util.concurrent.CountDownLatch handedOver = new java.util.concurrent.CountDownLatch(1);
-        Runnable onInterfaceThread = () -> {
-            if (!handOver.compareAndSet(HAND_OVER_PENDING, HAND_OVER_STARTED)) {
-                return;
-            }
-            try {
+        try {
+            handOver(onEdt, () -> {
                 markRef.set(watch.apply(stat));
                 panel.execute(stat, listener);
-            } finally {
-                handedOver.countDown();
-            }
-        };
-        try {
-            onEdt.accept(onInterfaceThread);
+            }, STATISTIC_STOP_GRACE_MS);
         } catch (RuntimeException e) {
-            if (handOver.compareAndSet(HAND_OVER_PENDING, HAND_OVER_ABANDONED)) {
-                throw e;
+            // The step failed, or the interface thread never answered: either way no run is under
+            // way that this request can wait for, and the claim is released by the caller.
+            PanelRunMark started = markRef.get();
+            if (started != null) {
+                started.close();
             }
-            if (!handedOver.await(STATISTIC_STOP_GRACE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                throw e;
-            }
+            throw e;
         }
         PanelRunMark mark = markRef.get();
         if (mark == null) {
@@ -3541,6 +3652,14 @@ public class GephiControlService {
             if (failed.get() != null) {
                 throw e;
             }
+        }
+        // A failure the interface thread did not carry back (an Error) still reaches the caller.
+        Throwable lost = failed.get();
+        if (lost instanceof Error) {
+            throw (Error) lost;
+        }
+        if (lost != null) {
+            throw new RuntimeException(lost);
         }
     }
 

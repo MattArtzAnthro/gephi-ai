@@ -332,7 +332,9 @@ bundled_version() {
     "$cluster/update_tracking/$(basename "$1")" 2>/dev/null | head -1 || true
 }
 
-health() { curl -s -m 2 http://127.0.0.1:8080/health 2>/dev/null || true; }
+# The quick answer skips the renderer sample and the lock probe, which can take longer than a
+# short wait when Gephi is stalled. A plugin that predates ?quick answers the full health.
+health() { curl -s -m 5 "http://127.0.0.1:8080/health?quick=true" 2>/dev/null || true; }
 
 ensure_gephi() {
   head_ "Gephi Desktop"

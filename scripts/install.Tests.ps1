@@ -17,6 +17,7 @@ BeforeAll {
     }
     Import-Nested "Ver-Core"
     Import-Nested "Ver-Ge"
+    Import-Nested "Get-Health"
     # Download reads the installer's $AllowUnverified; the tests set a global in its place.
     Import-Nested "Download" @{ '$AllowUnverified' = '$global:TestAllowUnverified' }
     function Ok($t) { }
@@ -69,5 +70,19 @@ Describe "Download" {
     It "allows no checksum when AllowUnverified is set" {
         $global:TestAllowUnverified = $true
         { Download "https://example.invalid/a.nbm" "" $global:TestDest } | Should -Not -Throw
+    }
+}
+
+Describe "Get-Health" {
+    It "asks the quick health answer and waits 5 seconds" {
+        Mock Invoke-RestMethod { @{ status = "running" } } -Verifiable
+        (Get-Health).status | Should -Be "running"
+        Should -Invoke Invoke-RestMethod -Times 1 -ParameterFilter {
+            $Uri -eq "http://127.0.0.1:8080/health?quick=true" -and $TimeoutSec -eq 5
+        }
+    }
+    It "reads a Gephi that does not answer as not running" {
+        Mock Invoke-RestMethod { throw "timed out" }
+        Get-Health | Should -BeNullOrEmpty
     }
 }

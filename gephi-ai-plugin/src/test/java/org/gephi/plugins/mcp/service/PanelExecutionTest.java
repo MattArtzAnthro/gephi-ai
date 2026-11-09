@@ -1254,4 +1254,216 @@ class PanelExecutionTest {
             GephiControlService.RUNNING_STATISTICS.clear();
         }
     }
+
+    // ---- the plugin's listener never joins a list that Gephi's worker is iterating ----
+
+    /**
+     * Keeps listeners in a plain ArrayList, as Gephi's StatisticsModelUIImpl does, and fires them on
+     * another thread, as its statistic worker does when a run ends.
+     */
+    static class WorkerFiredModelUI extends FakeModelUI {
+        final List<ChangeListener> listeners = new ArrayList<>();
+
+        @Override public void addChangeListener(ChangeListener l) {
+            if (!listeners.contains(l)) {
+                listeners.add(l);
+            }
+        }
+
+        void fireOnWorker(AtomicReference<Throwable> thrown) throws InterruptedException {
+            Thread worker = new Thread(() -> {
+                try {
+                    for (ChangeListener l : listeners) {
+                        l.stateChanged(new javax.swing.event.ChangeEvent(this));
+                    }
+                } catch (Throwable t) {
+                    thrown.set(t);
+                }
+            }, "fake statistic worker");
+            worker.start();
+            worker.join(10_000);
+        }
+    }
+
+    private static boolean sizeBecomes(List<?> list, int size, long millis) throws InterruptedException {
+        long until = System.currentTimeMillis() + millis;
+        while (System.currentTimeMillis() < until) {
+            if (list.size() == size) {
+                return true;
+            }
+            Thread.sleep(20);
+        }
+        return list.size() == size;
+    }
+
+    @Test
+    void listenerIsNotAddedWhileGephisWorkerIsFiringAndJoinsOnceItIsIdle() throws Exception {
+        WorkerFiredModelUI model = new WorkerFiredModelUI();
+        java.util.concurrent.CountDownLatch inFirstListener = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        model.listeners.add(e -> {
+            inFirstListener.countDown();
+            try {
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        model.running = new CountingStat();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        Thread fire = new Thread(() -> {
+            try {
+                model.fireOnWorker(thrown);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        fire.start();
+        assertTrue(inFirstListener.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        GephiControlService.watchPanel(new CountingStat(), List.of(model),
+            List.of(statisticsUiFor(CountingStat.class))).close();
+        assertEquals(1, model.listeners.size(), "a listener was added while Gephi's worker iterated the list");
+        release.countDown();
+        fire.join(10_000);
+        assertNull(thrown.get(), "Gephi's worker failed while the plugin watched: " + thrown.get());
+
+        model.running = null;
+        assertTrue(sizeBecomes(model.listeners, 2, 10_000), "the listener never joined once Gephi was idle");
+    }
+
+    @Test
+    void listenerIsAddedAtOnceWhenNothingIsRunningAndNeverWhenGephiStaysBusy() throws Exception {
+        StatisticsUI ui = statisticsUiFor(CountingStat.class);
+        WorkerFiredModelUI idle = new WorkerFiredModelUI();
+        GephiControlService.watchPanel(new CountingStat(), List.of(idle), List.of(ui)).close();
+        assertEquals(1, idle.listeners.size());
+
+        WorkerFiredModelUI busy = new WorkerFiredModelUI();
+        busy.running = new CountingStat();
+        GephiControlService.watchPanel(new CountingStat(), List.of(busy), List.of(ui), DIRECT, 20, 200, 20).close();
+        Thread.sleep(600);
+        assertEquals(0, busy.listeners.size(), "a listener was added to a model that never went idle");
+
+        busy.running = null;
+        GephiControlService.watchPanel(new CountingStat(), List.of(busy), List.of(ui)).close();
+        assertEquals(1, busy.listeners.size(), "a later watch of an idle model does not add its listener");
+    }
+
+    // ---- a failure on the hand-over is reported, and a run Gephi failed to start is not waited for ----
+
+    private static final Consumer<Runnable> FAILS_LIKE_RUN_ON_EDT = r -> {
+        try {
+            r.run();
+        } catch (RuntimeException e) {
+            throw new RuntimeException(e);
+        }
+    };
+
+    @Test
+    void watchThatFailsOnTheInterfaceThreadIsReportedWithItsCause() {
+        RuntimeException e = assertThrows(RuntimeException.class, () -> GephiControlService.executeStatistic(
+            new SlowStat(10), null, 0, new FakeStatsUI(), FAILS_LIKE_RUN_ON_EDT,
+            s -> {
+                throw new IllegalStateException("watch exploded");
+            }));
+
+        assertTrue(String.valueOf(e.getCause()).contains("watch exploded"), String.valueOf(e));
+        assertFalse(String.valueOf(e.getMessage()).contains("was not reached"), String.valueOf(e));
+    }
+
+    @Test
+    void controllerThatFailsAfterMarkingTheStatisticRunningFailsAtOnceAndFreesTheClaim() throws Exception {
+        GephiControlService.RUNNING_STATISTICS.clear();
+        try {
+            AtomicBoolean marked = new AtomicBoolean();
+            java.util.concurrent.atomic.AtomicInteger closed = new java.util.concurrent.atomic.AtomicInteger();
+            FakeStatsUI refuses = new FakeStatsUI() {
+                @Override public void execute(Statistics s, LongTaskListener listener) {
+                    marked.set(true);
+                    throw new IllegalStateException("controller refused");
+                }
+            };
+            SlowStat stat = new SlowStat(10);
+            assertNull(GephiControlService.claimStatistic(stat, "Refused"));
+
+            RuntimeException e = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                java.time.Duration.ofSeconds(5), () -> assertThrows(RuntimeException.class,
+                    () -> GephiControlService.runClaimed(stat, null, 0, refuses, FAILS_LIKE_RUN_ON_EDT,
+                        s -> new GephiControlService.PanelRunMark() {
+                            @Override public boolean isMarked() {
+                                return marked.get();
+                            }
+
+                            @Override public boolean wasEverMarked() {
+                                return marked.get();
+                            }
+
+                            @Override public void close() {
+                                closed.incrementAndGet();
+                            }
+                        }, 60_000, 60_000)));
+
+            assertTrue(String.valueOf(e.getCause()).contains("controller refused"), String.valueOf(e));
+            assertEquals(1, closed.get(), "the panel watch was left open");
+            assertNull(GephiControlService.claimStatistic(new SlowStat(1), "Refused"),
+                "the claim was kept for a run that never started");
+        } finally {
+            GephiControlService.RUNNING_STATISTICS.clear();
+        }
+    }
+
+    // ---- a statistic run directly keeps its claim until it has really ended ----
+
+    @Test
+    void directStatisticThatIgnoresItsStopKeepsItsClaimUntilItEnds() throws Exception {
+        GephiControlService.RUNNING_STATISTICS.clear();
+        try {
+            StubbornStat stat = new StubbornStat(1500);
+            assertNull(GephiControlService.claimStatistic(stat, "DirectStubborn"));
+
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> GephiControlService.runClaimed(stat, null, 100, null, DIRECT, s -> neverMarked(), 60_000, 200));
+            assertTrue(e.getMessage().contains("has not finished"), e.getMessage());
+
+            String refused = GephiControlService.claimStatistic(new StubbornStat(1), "DirectStubborn");
+            assertTrue(refused != null && refused.contains("earlier request"), String.valueOf(refused));
+            assertTrue(claimFreesWithin(10_000, "DirectStubborn"), "the claim was never given up");
+        } finally {
+            GephiControlService.RUNNING_STATISTICS.clear();
+        }
+    }
+
+    @Test
+    void interruptedDirectRequestWhoseStatisticKeepsRunningKeepsItsClaimUntilItEnds() throws Exception {
+        GephiControlService.RUNNING_STATISTICS.clear();
+        try {
+            StubbornStat stat = new StubbornStat(1500);
+            assertNull(GephiControlService.claimStatistic(stat, "DirectInterrupted"));
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            Thread request = new Thread(() -> {
+                try {
+                    GephiControlService.runClaimed(stat, null, 0, null, DIRECT, s -> neverMarked(), 60_000, 200);
+                } catch (Throwable t) {
+                    failure.set(t);
+                }
+            }, "request");
+            request.start();
+            long until = System.nanoTime() + 5_000_000_000L;
+            while (!stat.ran.get() && System.nanoTime() < until) {
+                Thread.onSpinWait();
+            }
+
+            request.interrupt();
+            request.join(10_000);
+
+            assertFalse(request.isAlive());
+            assertTrue(failure.get() instanceof IllegalStateException, String.valueOf(failure.get()));
+            String refused = GephiControlService.claimStatistic(new StubbornStat(1), "DirectInterrupted");
+            assertTrue(refused != null && refused.contains("earlier request"), String.valueOf(refused));
+            assertTrue(claimFreesWithin(10_000, "DirectInterrupted"), "the claim was never given up");
+        } finally {
+            GephiControlService.RUNNING_STATISTICS.clear();
+        }
+    }
 }

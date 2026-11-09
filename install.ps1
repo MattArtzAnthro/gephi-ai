@@ -258,7 +258,9 @@ public static class GephiAICrc32 {
     function Get-GephiProcess { return Get-Process -Name gephi64, gephi -ErrorAction SilentlyContinue }
 
     function Get-Health {
-        try { return Invoke-RestMethod -Uri "http://127.0.0.1:8080/health" -TimeoutSec 2 } catch { return $null }
+        # The quick answer skips the renderer sample and the lock probe, which can take longer than a
+        # short wait when Gephi is stalled. A plugin that predates ?quick answers the full health.
+        try { return Invoke-RestMethod -Uri "http://127.0.0.1:8080/health?quick=true" -TimeoutSec 5 } catch { return $null }
     }
 
     function Close-Gephi {

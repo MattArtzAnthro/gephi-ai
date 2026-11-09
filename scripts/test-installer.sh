@@ -97,5 +97,20 @@ expect "a second add changes nothing" test "$(edit add)" = current
 expect "remove answers removed" test "$(edit remove)" = removed
 expect "remove keeps the mode too" test "$(mode_of "$CFG")" = 0o600
 
+# --- health: asks the quick /health and waits long enough for a busy Gephi; curl is stubbed ---
+health_args() { # prints the arguments health() hands to curl
+  (
+    load
+    curl() { printf '%s\n' "$*" >"$WORK/curl-args"; return 0; }
+    health >/dev/null
+    cat "$WORK/curl-args"
+  )
+}
+HEALTH_ARGS=$(health_args)
+health_asks_quick() { case "$HEALTH_ARGS" in *"/health?quick=true"*) true ;; *) false ;; esac; }
+health_waits_five() { case " $HEALTH_ARGS " in *" -m 5 "*) true ;; *) false ;; esac; }
+expect "health asks for /health?quick=true" health_asks_quick
+expect "health waits 5 seconds" health_waits_five
+
 [ "$fail" -eq 0 ] && echo "ALL INSTALLER TESTS PASS" || echo "INSTALLER TESTS FAILED"
 exit "$fail"

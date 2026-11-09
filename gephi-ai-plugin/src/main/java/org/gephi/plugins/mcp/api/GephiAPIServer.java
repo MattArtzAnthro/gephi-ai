@@ -243,31 +243,50 @@ public class GephiAPIServer implements HttpHandler {
         return name.equals("127.0.0.1") || name.equals("localhost") || name.equals("::1");
     }
 
+    /** Whether a request asks for the quick answer (?quick=true). */
+    static boolean isQuick(Map<String, String> params) {
+        return params != null && "true".equalsIgnoreCase(params.get("quick"));
+    }
+
+    /**
+     * The /health answer. The full answer samples the renderer and probes the graph lock, which
+     * takes a quarter of a second normally and a few seconds when Gephi is stalled. The quick
+     * answer skips both, so a caller that only asks whether Gephi answers is not kept waiting.
+     */
+    static JsonObject health(boolean quick, java.util.function.Supplier<String> lockProbe,
+        java.util.function.Supplier<JsonObject> lockStats, java.util.function.Supplier<JsonObject> renderer) {
+        JsonObject result = new JsonObject();
+        result.addProperty("success", true);
+        result.addProperty("service", "Gephi AI API");
+        result.addProperty("version", moduleVersion());
+        String gephi = gephiVersion();
+        if (gephi != null) {
+            result.addProperty("gephi_version", gephi);
+        }
+        result.addProperty("status", "running");
+        if (quick) {
+            result.addProperty("quick", true);
+            return result;
+        }
+        // "busy" here (persistently) means Gephi is wedged and needs a restart.
+        result.addProperty("graph_lock", lockProbe.get());
+        result.add("graph_lock_stats", lockStats.get());
+        result.add("renderer", renderer.get());
+        // No side effects here: /health is a pure liveness probe that clients may
+        // poll at any frequency. The node click listener is installed once at
+        // plugin startup by Installer, as soon as the visualization controller is
+        // available, and again defensively by /selection (GephiControlService.
+        // getSelection calls ensureClickListener itself).
+        return result;
+    }
+
     @SuppressWarnings("unchecked")
     private JsonObject routeRequest(String uri, String method, Map<String, String> params, JsonObject body) {
 
         // ─── Health ──────────────────────────────────────────────────
 
         if ("/health".equals(uri) || "/".equals(uri)) {
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("service", "Gephi AI API");
-            result.addProperty("version", moduleVersion());
-            String gephi = gephiVersion();
-            if (gephi != null) {
-                result.addProperty("gephi_version", gephi);
-            }
-            result.addProperty("status", "running");
-            // "busy" here (persistently) means Gephi is wedged and needs a restart.
-            result.addProperty("graph_lock", service.graphLockProbe());
-            result.add("graph_lock_stats", service.graphLockStats());
-            result.add("renderer", service.rendererStats());
-            // No side effects here: /health is a pure liveness probe that clients may
-            // poll at any frequency. The node click listener is installed once at
-            // plugin startup by Installer, as soon as the visualization controller is
-            // available, and again defensively by /selection (GephiControlService.
-            // getSelection calls ensureClickListener itself).
-            return result;
+            return health(isQuick(params), service::graphLockProbe, service::graphLockStats, service::rendererStats);
         }
 
         // ─── Human selection journal ─────────────────────────────────

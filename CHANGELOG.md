@@ -16,6 +16,17 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **A statistic that outlives the wait cap or the stop grace keeps its claim until it really
   ends,** so a retry is refused as still running from an earlier request instead of starting a
   second copy.
+- **The plugin adds its listener to Gephi's Statistics model only while no statistic is running,**
+  so a run finishing in the Statistics panel can no longer lose its result to a concurrent change
+  of Gephi's listener list.
+- **A failure while handing a statistic to Gephi's Statistics panel is reported with its real
+  cause** instead of "panel was not reached", and a run Gephi fails to start fails at once and
+  frees its claim instead of waiting out the timeout.
+- **A statistic run directly that ignores its stop keeps its claim until it ends,** so a retry is
+  refused instead of starting a second copy, and a statistic that ignores cancel at its deadline
+  no longer blocks the request indefinitely.
+- **`/health?quick=true` skips the renderer sample and the graph lock probe.** Both installers now
+  request it and wait 5 seconds, so a stalled Gephi is no longer reported as not running.
 
 ### Tests
 - Every read-only tool leaves the session methods record unchanged (one test over all of them).
