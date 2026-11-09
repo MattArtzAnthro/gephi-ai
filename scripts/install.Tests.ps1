@@ -46,7 +46,7 @@ AfterAll {
     }
     Remove-Item Env:GEPHI_AI_INSTALLER_TEST -ErrorAction SilentlyContinue
     Remove-Variable TestAllowUnverified, TestSrc, TestDest, TestDryRun, TestNext, TestLegacyBase, TestModuleBase,
-        TestUserdir, TestClosed -Scope Global -ErrorAction SilentlyContinue
+        TestUserdir, TestClosed, TestProfile -Scope Global -ErrorAction SilentlyContinue
 }
 
 Describe "Ver-Ge" {
@@ -111,6 +111,7 @@ Describe "Version-FromFolder" {
     It "reads <name> as '<want>'" -ForEach @(
         @{ name = "Gephi-0.11.4"; want = "0.11.4" }
         @{ name = "Gephi-0.10";   want = "0.10" }
+        @{ name = "Gephi-0.11.3-rc1"; want = "0.11.3-rc1" }
         @{ name = "Gephi";        want = "" }
         @{ name = "Gephi-beta";   want = "" }
     ) {
@@ -126,6 +127,10 @@ Describe "Install-Nbm with no checksum" {
         $global:TestClosed = 0
         $global:TestUserdir = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path (Join-Path $global:TestUserdir "modules") -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $global:TestUserdir "update_tracking") -Force | Out-Null
+        # The old plugin's backup goes under the user profile, which Linux runners do not set.
+        $global:TestProfile = $env:USERPROFILE
+        $env:USERPROFILE = Join-Path $global:TestUserdir "profile"
         Set-Content -Path (Join-Path $global:TestUserdir "modules\$($global:TestLegacyBase).jar") -Value "old"
         function global:Find-Userdir($h) { return $global:TestUserdir }
         function global:Get-BundledModule($h) { return $null }
@@ -133,12 +138,24 @@ Describe "Install-Nbm with no checksum" {
         function global:Close-Gephi { $global:TestClosed++ }
         function global:Remove-Tracked($u, $b) { Remove-Item (Join-Path $u "modules\$b.jar") -ErrorAction SilentlyContinue }
     }
-    AfterEach { Remove-Item $global:TestUserdir -Recurse -Force -ErrorAction SilentlyContinue }
+    AfterEach {
+        $env:USERPROFILE = $global:TestProfile
+        Remove-Item $global:TestUserdir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
     It "refuses before closing Gephi or removing the old plugin" {
         $rel = @{ Nbm = "9.9.9"; NbmSha = ""; NbmUrl = "https://example.invalid/gephi-ai-9.9.9.nbm" }
         Install-Nbm $rel @{ Home = "C:\Gephi-0.11.4"; Version = "0.11.4" } | Should -BeFalse
         Test-Path (Join-Path $global:TestUserdir "modules\$($global:TestLegacyBase).jar") | Should -BeTrue
+        $global:TestClosed | Should -Be 0
+    }
+    It "still succeeds when the plugin is already current" {
+        Remove-Item (Join-Path $global:TestUserdir "modules\$($global:TestLegacyBase).jar")
+        Set-Content -Path (Join-Path $global:TestUserdir "modules\$($global:TestModuleBase).jar") -Value "current"
+        Set-Content -Path (Join-Path $global:TestUserdir "update_tracking\$($global:TestModuleBase).xml") `
+            -Value '<module specification_version="9.9.9"/>'
+        $rel = @{ Nbm = "9.9.9"; NbmSha = ""; NbmUrl = "https://example.invalid/gephi-ai-9.9.9.nbm" }
+        Install-Nbm $rel @{ Home = "C:\Gephi-0.11.4"; Version = "0.11.4" } | Should -BeTrue
         $global:TestClosed | Should -Be 0
     }
 }

@@ -131,6 +131,22 @@ expect "Gephi on a Java set in gephi.conf counts" matches_gephi \
 expect "an editor with a file in Gephi.app does not" not_gephi \
   "/Applications/Visual Studio Code.app/Contents/MacOS/Electron /Applications/Gephi.app/Contents/Resources/gephi/etc/gephi.conf"
 expect "a shell searching for the branding flag does not" not_gephi "grep -r --branding gephi /Applications/Gephi.app"
+# The installer itself, run as /bin/bash -c "...", has the pattern on its own command line.
+own_line_is_not_gephi() { ( load; not_gephi "/bin/bash -c pgrep -f '$(OS=Darwin gephi_pattern)'" ); }
+expect "the pattern does not match a command line that contains it" own_line_is_not_gephi
+
+# --- Linux: the Gephi version comes from the folder name ---
+folder_version() { # folder_version NAME -> the version find_gephi reads from a folder so named
+  local fh="$WORK/folders/$1"
+  rm -rf "$WORK/folders"; mkdir -p "$fh/bin"; printf '#!/bin/sh\n' >"$fh/bin/gephi"; chmod +x "$fh/bin/gephi"
+  ( load; OS=Linux; HOME="$WORK/folders"; has() { [ "$1" != gephi ] && command -v "$1" >/dev/null; }
+    find_gephi >/dev/null 2>&1; printf '%s' "$GEPHI_VER" )
+}
+expect "gephi-0.11.4 reads as 0.11.4" test "$(folder_version gephi-0.11.4)" = 0.11.4
+# Read as unknown, a pre-release folder would skip the version check altogether.
+expect "gephi-0.11.3-rc1 reads as 0.11.3-rc1, so the version check sees it" \
+  test "$(folder_version gephi-0.11.3-rc1)" = 0.11.3-rc1
+expect "a folder with no version reads as unknown" test "$(folder_version gephi)" = ""
 
 # --- no checksum: refuse before closing Gephi or removing the old plugin ---
 refusal_leaves_legacy() {
@@ -150,6 +166,33 @@ refusal_leaves_legacy() {
   )
 }
 expect "no checksum: the old plugin stays and Gephi is not closed" refusal_leaves_legacy
+
+# --- no checksum is needed when nothing has to be downloaded ---
+no_checksum_needed() { # no_checksum_needed bundled|current -> install_nbm succeeds without one
+  local ud="$WORK/userdir"
+  rm -rf "$ud" "$WORK/quit"; mkdir -p "$ud/modules" "$ud/update_tracking"
+  (
+    load
+    find_userdir() { USERDIR="$ud"; }
+    quit_gephi() { echo quit >>"$WORK/quit"; }
+    NBM_SHA="" ALLOW_UNVERIFIED=0 DRY=0 NBM_VER=9.9.9
+    if [ "$1" = bundled ]; then
+      gephi_bundled_module() { echo "$WORK/gephi/gephi/modules/$MODULE_BASE.jar"; }
+      bundled_version() { echo 9.9.9; }
+    else
+      gephi_bundled_module() { return 1; }
+      touch "$ud/modules/$MODULE_BASE.jar"
+      echo '<module specification_version="9.9.9"/>' >"$ud/update_tracking/$MODULE_BASE.xml"
+    fi
+    install_nbm >/dev/null 2>&1 && [ "$NBM_OK" = 1 ] && [ ! -e "$WORK/quit" ]
+  )
+}
+expect "no checksum: a Gephi that bundles the plugin is still fine" no_checksum_needed bundled
+expect "no checksum: an already current plugin is still fine" no_checksum_needed current
+
+# --- a leftover dangling .tmp link does not stop the Claude Desktop step ---
+rm -f "$CFG"; ln -sf "$WORK/nowhere" "$CFG.tmp"
+expect "a dangling .tmp link is replaced" test "$(edit add)" = added
 
 [ "$fail" -eq 0 ] && echo "ALL INSTALLER TESTS PASS" || echo "INSTALLER TESTS FAILED"
 exit "$fail"

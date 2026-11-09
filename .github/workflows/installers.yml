@@ -42,9 +42,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           read -r server nbm sha < <(python3 -c "import json; d = json.load(open('latest.json')); print(d['server'], d['nbm'], d.get('nbm_sha256') or '-')")
-          # The release is cut after the push that bumps latest.json; until then there is nothing to compare.
-          if ! digest=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$server" --jq ".assets[] | select(.name == \"gephi-ai-$nbm.nbm\") | .digest // \"\""); then
-            echo "No release v$server yet; nothing to compare."; exit 0
+          # The release is cut after the push that bumps latest.json; until then there is nothing to
+          # compare. Any other failure (a rate limit, a GitHub error) fails the check.
+          if ! digest=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$server" --jq ".assets[] | select(.name == \"gephi-ai-$nbm.nbm\") | .digest // \"\"" 2>gh-error.txt); then
+            cat gh-error.txt
+            if grep -q "HTTP 404" gh-error.txt && [ "$GITHUB_EVENT_NAME" != release ]; then
+              echo "No release v$server yet; nothing to compare."; exit 0
+            fi
+            echo "::error::could not read release v$server"; exit 1
           fi
           [ -n "$digest" ] || { echo "::error::release v$server has no gephi-ai-$nbm.nbm, or GitHub recorded no digest for it"; exit 1; }
           if [ "$digest" != "sha256:$sha" ]; then
@@ -98,8 +103,10 @@ jobs:
       - name: Resolve the release to install
         env:
           GH_TOKEN: ${{ github.token }}
+          # Set when a published release started the run: test that release, not the latest one.
+          PUBLISHED_TAG: ${{ github.event.release.tag_name }}
         run: |
-          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          tag=${PUBLISHED_TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}
           test -n "$tag"
           echo "REL_VERSION=${tag#v}" >> "$GITHUB_ENV"
       - name: Install; Gephi must answer with the plugin
@@ -133,8 +140,10 @@ jobs:
       - name: Resolve the release to install
         env:
           GH_TOKEN: ${{ github.token }}
+          # Set when a published release started the run: test that release, not the latest one.
+          PUBLISHED_TAG: ${{ github.event.release.tag_name }}
         run: |
-          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          tag=${PUBLISHED_TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}
           test -n "$tag"
           echo "REL_VERSION=${tag#v}" >> "$GITHUB_ENV"
       - name: Install Gephi and the plugin
@@ -181,8 +190,10 @@ jobs:
       - name: Resolve the release to install
         env:
           GH_TOKEN: ${{ github.token }}
+          # Set when a published release started the run: test that release, not the latest one.
+          PUBLISHED_TAG: ${{ github.event.release.tag_name }}
         run: |
-          $tag = gh release view --repo $env:GITHUB_REPOSITORY --json tagName --jq .tagName
+          $tag = if ($env:PUBLISHED_TAG) { $env:PUBLISHED_TAG } else { gh release view --repo $env:GITHUB_REPOSITORY --json tagName --jq .tagName }
           if (-not $tag) { exit 1 }
           "REL_VERSION=$($tag -replace '^v', '')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       # Run the way the README says to, through a script block, so the test

@@ -24,8 +24,8 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **A release can no longer carry a checksum the released plugin does not match.**
   `scripts/bump-version.sh` takes the digest only from `--nbm-file`, which must be named for the
   plugin version being released, never from a stray local rebuild; `scripts/check-drift.sh` and
-  the Installers workflow, which now also runs when a release is published, compare `latest.json`
-  with the digest GitHub records for the attached `.nbm`.
+  the Installers workflow compare `latest.json` with the digest GitHub records for the attached
+  `.nbm`. The workflow now also runs when a release is published, and installs that release.
 - `install.sh` fetches over https only, including after a redirect.
 
 ### Fixed
@@ -42,7 +42,8 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   a file inside `Gephi.app` on its command line is no longer taken for Gephi or force-quit. A Gephi
   set to run on another Java in `gephi.conf` is still recognized.
 - **On Windows, a Gephi folder not named `Gephi-<version>` no longer reads as too old.** Its
-  version counts as unknown and the plugin installs, as it does on Linux.
+  version counts as unknown and the plugin installs, as it does on Linux. On both, a pre-release
+  folder such as `Gephi-0.11.3-rc1` reads as that version, so the version check still applies.
 - **The installers wait 5 seconds for Gephi's health check instead of 2,** so a stalled Gephi,
   whose full check takes longer, is no longer reported as not running.
 - **The installer workflow pins the release it tests,** so a release published between the first

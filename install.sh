@@ -267,7 +267,8 @@ find_gephi() {
       [ -n "$c" ] && { GEPHI_HOME=$c; GEPHI_BIN="$c/bin/gephi"; }
     fi
     [ -n "$GEPHI_BIN" ] || return 1
-    GEPHI_VER=$(basename "$GEPHI_HOME" | sed -n 's/^gephi-\([0-9.]*\)$/\1/p')
+    # gephi-0.11.4, or gephi-0.11.4-rc1 (a pre-release, which the version check reads as 0.11.4).
+    GEPHI_VER=$(basename "$GEPHI_HOME" | sed -n 's/^gephi-\([0-9][0-9.]*\(-[A-Za-z0-9.]\{1,\}\)\{0,1\}\)$/\1/p')
   fi
   return 0
 }
@@ -291,8 +292,10 @@ find_userdir() {
 gephi_pattern() {
   # The launcher passes --branding gephi on every platform. On macOS, match only
   # a java process (Gephi's own Java or one gephi.conf points to), so an editor or a
-  # shell with a path in Gephi.app on its command line is not mistaken for Gephi.
-  if [ "$OS" = Darwin ]; then printf '%s' '^/.*/bin/java .*--branding gephi'
+  # shell with a path in Gephi.app on its command line is not mistaken for Gephi. The
+  # bracket keeps the pattern from matching a command line that contains the pattern,
+  # such as this installer run with bash -c.
+  if [ "$OS" = Darwin ]; then printf '%s' '^/.*/bin/jav[a] .*--branding gephi'
   else printf '%s' "branding gephi"; fi
 }
 gephi_running() { pgrep -f "$(gephi_pattern)" >/dev/null 2>&1; }
@@ -763,7 +766,7 @@ else:
 if os.path.exists(path):
     shutil.copy2(path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
 tmp = path + ".tmp"
-if os.path.exists(tmp):
+if os.path.lexists(tmp):
     os.remove(tmp)
 # Created owner-only, so the settings are never readable by others while being written; then
 # given the original file's permissions, which os.replace would otherwise not keep.

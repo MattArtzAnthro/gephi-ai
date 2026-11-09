@@ -255,10 +255,11 @@ public static class GephiAICrc32 {
         if ($m) { return $m.Matches[0].Groups[1].Value } else { return "" }
     }
 
-    # "Gephi-0.11.4" -> "0.11.4". Any other folder name gives "" (version unknown), which the
-    # version check skips, rather than a name that would read as too old.
+    # "Gephi-0.11.4" -> "0.11.4", "Gephi-0.11.3-rc1" -> "0.11.3-rc1" (a pre-release, which the
+    # version check reads as 0.11.3). Any other folder name gives "" (version unknown), which
+    # the version check skips, rather than a name that would read as too old.
     function Version-FromFolder($name) {
-        if ($name -match '^Gephi-([0-9]+(\.[0-9]+)*)$') { return $Matches[1] }
+        if ($name -match '^Gephi-([0-9]+(\.[0-9]+)*(-[A-Za-z0-9.]+)?)$') { return $Matches[1] }
         return ""
     }
 
