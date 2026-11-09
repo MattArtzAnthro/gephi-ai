@@ -1,6 +1,7 @@
 # Pester tests for install.ps1. The script is dot-sourced with GEPHI_AI_INSTALLER_TEST=1, which
 # skips the final Install-GephiAI call. Its helpers are nested inside Install-GephiAI, so each is
-# pulled out of the parsed script and defined here. Nothing touches the network.
+# pulled out of the parsed script and defined globally here (a definition dot-sourced inside a
+# helper function would vanish when the helper returns). Nothing touches the network.
 # Run: Invoke-Pester scripts/install.Tests.ps1
 
 BeforeAll {
@@ -13,6 +14,8 @@ BeforeAll {
         if (-not $def) { throw "install.ps1 has no function $name" }
         $text = $def.Extent.Text
         foreach ($k in $rename.Keys) { $text = $text.Replace($k, $rename[$k]) }
+        # Define it globally: dot-sourced here, it would live only in this helper's scope.
+        $text = $text -replace "^function\s+$name\b", "function global:$name"
         . ([scriptblock]::Create($text))
     }
     Import-Nested "Ver-Core"
@@ -20,11 +23,14 @@ BeforeAll {
     Import-Nested "Get-Health"
     # Download reads the installer's $AllowUnverified; the tests set a global in its place.
     Import-Nested "Download" @{ '$AllowUnverified' = '$global:TestAllowUnverified' }
-    function Ok($t) { }
-    function Warn($t) { }
+    function global:Ok($t) { }
+    function global:Warn($t) { }
 }
 
 AfterAll {
+    foreach ($f in 'Ver-Core', 'Ver-Ge', 'Get-Health', 'Download', 'Ok', 'Warn') {
+        Remove-Item "Function:\global:$f" -ErrorAction SilentlyContinue
+    }
     Remove-Item Env:GEPHI_AI_INSTALLER_TEST -ErrorAction SilentlyContinue
     Remove-Variable TestAllowUnverified, TestSrc, TestDest -Scope Global -ErrorAction SilentlyContinue
 }
