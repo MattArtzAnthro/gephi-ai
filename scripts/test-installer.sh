@@ -4,8 +4,9 @@
 # Offline: fetch is stubbed, and HOME is a temp folder, so no real config is read or written.
 # Run: bash scripts/test-installer.sh   (INSTALL_SH=path tests another copy)
 # Variables set and functions defined here are used by the sourced installer, and expect()
-# runs functions handed to it by name; the linter sees neither.
-# shellcheck disable=SC2034,SC2329
+# runs functions handed to it by name; the linter sees neither. Older shellcheck (0.9, on CI's
+# Ubuntu image) reports such functions as SC2317, newer ones as SC2329.
+# shellcheck disable=SC2034,SC2317,SC2329
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_SH="${INSTALL_SH:-$HERE/../install.sh}"
