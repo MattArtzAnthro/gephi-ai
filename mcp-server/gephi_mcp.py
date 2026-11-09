@@ -411,6 +411,10 @@ _CALL_HTTP: contextvars.ContextVar[list[dict[str, Any]] | None] = contextvars.Co
 #: Longest list of requests kept per call.
 _HTTP_LIST_MAX = 20
 
+#: Longest error text kept in a log line. A failed call's message can quote the person's data
+#: (node labels, column names, file paths); the log keeps only its start.
+_LOG_TEXT_MAX = 200
+
 #: Node and edge counts this server last saw in a result, forgotten whenever the graph may have
 #: changed. Reading it costs nothing, so a log line never causes a request.
 _graph_size: tuple[int, int] | None = None
@@ -439,7 +443,7 @@ def _outcome_of(body: dict[str, Any]) -> tuple[str, str | None, str | None]:
     messages = [str(body[k]) for k in ("error", "message", "warning") if body.get(k)]
     failed = body.get("success") is False or ("success" not in body and bool(body.get("error")))
     busy = next((m for m in messages if any(t in m for t in _BUSY_MARKERS)), None)
-    return ("error" if failed else "ok"), (messages[0] if failed and messages else None), busy
+    return ("error" if failed else "ok"), (messages[0][:_LOG_TEXT_MAX] if failed and messages else None), busy
 
 
 def _write_timing(path: str, record: dict[str, Any]) -> None:
@@ -457,7 +461,7 @@ def _timing_record(name: str, started: datetime.datetime, ms: float, result: Any
                    raised: BaseException | None, calls: list[dict[str, Any]]) -> dict[str, Any]:
     global _graph_size
     if raised is not None:
-        error: str | None = f"{type(raised).__name__}: {raised}"
+        error: str | None = f"{type(raised).__name__}: {raised}"[:_LOG_TEXT_MAX]
         outcome = "error"
         busy = error if any(t in str(error) for t in _BUSY_MARKERS) else None
     else:
@@ -512,7 +516,7 @@ def _note_request(calls: list[dict[str, Any]], endpoint: str, clock: float,
     if not isinstance(result, dict):
         entry["error"] = "interrupted"
     elif result.get("success") is False:
-        entry["error"] = str(result.get("error", ""))[:200]
+        entry["error"] = str(result.get("error", ""))[:_LOG_TEXT_MAX]
     if len(calls) < _HTTP_LIST_MAX:
         calls.append(entry)
 

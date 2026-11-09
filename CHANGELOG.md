@@ -10,7 +10,8 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 - **Opt-in timing log.** Set `GEPHI_AI_TIMING_LOG` to a file and the server appends one JSON line
   per tool call: wall time, outcome, the graph's size when known (no extra request is made for
   it), any busy or lock text, and the plugin requests the call made with their times, so time in
-  Gephi can be told apart from time in the server.
+  Gephi can be told apart from time in the server. Error text is cut to 200 characters,
+  since it can quote node labels or file paths; the log stays local and is never sent anywhere.
 - **A repeatable benchmark,** `mcp-server/bench/benchmark.py`: seeded graphs at several sizes, a
   fixed sequence of statistics, a layout and exports, repeats with median and spread, and
   `--compare` between two runs that separates real changes from noise. It refuses port 8080, the

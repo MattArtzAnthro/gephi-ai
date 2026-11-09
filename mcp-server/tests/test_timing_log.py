@@ -158,3 +158,28 @@ async def test_a_tool_called_inside_another_is_not_logged_twice(monkeypatch, log
 
     await gephi_mcp._timed("outer", outer)()
     assert [r["tool"] for r in lines(log)] == ["outer"]
+
+
+# A failed call's message can quote the user's data (node labels, column names, file paths), so the
+# log keeps only its start, as it already did for plugin request errors.
+LONG = "Node 'Participant " + "x" * 400 + "' not found"
+
+
+async def test_a_long_error_result_is_cut_to_200_characters(monkeypatch, log):
+    install_fake_gephi(monkeypatch, faults={"/statistics/degree": {"success": False, "error": LONG}})
+    out = await gephi_mcp.gephi_compute_degree()
+    assert LONG in out, "the tool's own result is never shortened"
+    (rec,) = lines(log)
+    assert rec["outcome"] == "error" and len(rec["error"]) <= 200
+    assert rec["error"].startswith("Node 'Participant")
+
+
+async def test_a_long_raised_exception_is_cut_to_200_characters(monkeypatch, log):
+    async def boom(*args, **kwargs):
+        raise RuntimeError(LONG)
+
+    monkeypatch.setattr(gephi_mcp.gephi, "request", boom)
+    with pytest.raises(RuntimeError, match="Participant"):
+        await gephi_mcp.gephi_get_graph_stats()
+    (rec,) = lines(log)
+    assert rec["outcome"] == "error" and len(rec["error"]) <= 200

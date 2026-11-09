@@ -56,7 +56,7 @@ nothing is written. A failure to write logs one warning to stderr and never chan
 | `tool` | Tool name |
 | `ms` | Wall time in milliseconds, including any wait for the tool lock |
 | `outcome` | `ok` or `error` |
-| `error` | The error message, or null |
+| `error` | The first 200 characters of the error message, or null |
 | `nodes`, `edges` | The graph's size when this server has seen it in a result, else null |
 | `busy` | The plugin's busy text, with its lock state, when the result carries one |
 | `http` | The requests the call made to the plugin: `endpoint`, `status`, `ms`, and `error` on failure |
@@ -68,6 +68,11 @@ nothing is written. A failure to write logs one warning to stderr and never chan
 The gap between `ms` and the sum of the `http` times is time spent in this server. The size is never
 fetched for the log; it comes from the last result that carried node and edge counts, and is
 forgotten when a call may have changed the graph.
+
+The log stays on your machine and nothing is sent anywhere. Error text can quote your data (node
+labels, column names, file paths), so read the log before attaching it to a bug report. The file
+grows by a few hundred bytes per call and is never rotated: turn the variable off when you are done,
+and point it at a local folder rather than an iCloud-synced one.
 
 `bench/benchmark.py` runs a fixed sequence of tools at several graph sizes against a separate Gephi
 and compares runs. See [bench/README.md](bench/README.md).
