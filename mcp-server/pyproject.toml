@@ -4,7 +4,7 @@ version = "1.22.1"
 description = "MCP Server for controlling Gephi Desktop via remote API"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     { name = "Matt Artz" }
 ]
@@ -14,7 +14,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -79,7 +78,7 @@ exclude = ["caveats.local.json", "mutants"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint.per-file-ignores]
 # Linear algebra keeps its conventional single-capital names. A is an adjacency matrix,
@@ -94,8 +93,8 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
 
 [tool.mypy]
-# 3.12, not the 3.10 floor: numpy's type stubs use 3.12 syntax and mypy cannot read them at
-# 3.10. The floor stays covered by ruff's py310 target and by CI running the tests on 3.10.
+# 3.12, not the 3.11 floor: numpy's type stubs use 3.12 syntax and mypy cannot read them at
+# 3.11. The floor stays covered by ruff's py311 target and by CI running the tests on 3.11.
 python_version = "3.12"
 warn_unused_configs = true
 ignore_missing_imports = true

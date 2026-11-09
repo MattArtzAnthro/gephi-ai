@@ -4,6 +4,13 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Changed
+- **The MCP server and the Desktop bundle need Python 3.11 or newer.** Python 3.10 reached end of
+  life in October 2026, and Pillow 13, which fixes the open Pillow advisories, no longer supports
+  it. The lockfiles now resolve Pillow 13.0.0 on every supported Python, and CI tests 3.11 to 3.14.
+
 ## MCP server 1.22.1 / Java plugin 1.6.1 / workflow packages 1.21.1
 
 ### Fixed
