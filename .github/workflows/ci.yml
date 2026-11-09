@@ -122,7 +122,7 @@ jobs:
         with:
           persist-credentials: false
       # Pinned to a commit because it is a third-party action.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Smoke-test the bundle over stdio
         # The test launches the bundle with the manifest's uv command, as Claude Desktop does.
         # The variable turns a missing uv from a skip into a failure on every runner.
