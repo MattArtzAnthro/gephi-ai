@@ -152,7 +152,7 @@ public static class GephiAICrc32 {
         if (-not $rel) {
             # GitHub allows 60 API calls an hour per network address, which a classroom
             # on one network can use up. The release's latest.json is served from
-            # elsewhere and carries the same versions, though not the checksums.
+            # elsewhere and carries the same versions and, in newer releases, the plugin's checksum.
             $ref = if ($Version) { "v$($Version.TrimStart('v'))" } else { "main" }
             try { $m = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/$Repo/$ref/latest.json" }
             catch {
@@ -215,7 +215,7 @@ public static class GephiAICrc32 {
         }
         foreach ($d in (Get-ChildItem "$env:ProgramFiles\Gephi*", "$env:LOCALAPPDATA\Programs\Gephi*" -Directory -ErrorAction SilentlyContinue)) {
             if ((Test-Path (Join-Path $d.FullName "bin\gephi64.exe")) -and -not ($found | Where-Object { $_.Home -eq $d.FullName })) {
-                $found += [pscustomobject]@{ Home = $d.FullName; Version = ($d.Name -replace "^Gephi-", "") }
+                $found += [pscustomobject]@{ Home = $d.FullName; Version = (Version-FromFolder $d.Name) }
             }
         }
         if ($found.Count -eq 0) { return $null }
@@ -255,11 +255,19 @@ public static class GephiAICrc32 {
         if ($m) { return $m.Matches[0].Groups[1].Value } else { return "" }
     }
 
+    # "Gephi-0.11.4" -> "0.11.4". Any other folder name gives "" (version unknown), which the
+    # version check skips, rather than a name that would read as too old.
+    function Version-FromFolder($name) {
+        if ($name -match '^Gephi-([0-9]+(\.[0-9]+)*)$') { return $Matches[1] }
+        return ""
+    }
+
     function Get-GephiProcess { return Get-Process -Name gephi64, gephi -ErrorAction SilentlyContinue }
 
     function Get-Health {
-        # The quick answer skips the renderer sample and the lock probe, which can take longer than a
-        # short wait when Gephi is stalled. A plugin that predates ?quick answers the full health.
+        # The 5-second wait leaves a stalled Gephi, whose full health check samples the renderer and
+        # probes the graph lock, time to answer. A plugin that knows ?quick skips both; the plugins
+        # released so far ignore the parameter and give the full answer.
         try { return Invoke-RestMethod -Uri "http://127.0.0.1:8080/health?quick=true" -TimeoutSec 5 } catch { return $null }
     }
 
@@ -306,6 +314,25 @@ public static class GephiAICrc32 {
         $userdir = Find-Userdir $gephi.Home
         Ok "Gephi user folder: $userdir"
 
+        $track = Join-Path $userdir "update_tracking\$ModuleBase.xml"
+        $have = $null
+        if (Test-Path $track) {
+            $m = Select-String -Path $track -Pattern 'specification_version="([^"]*)"' | Select-Object -First 1
+            if ($m) { $have = $m.Matches[0].Groups[1].Value }
+        }
+        $bundled = Get-BundledModule $gephi.Home
+        $current = ($have -eq $rel.Nbm -and (Test-Path (Join-Path $userdir "modules\$ModuleBase.jar")))
+        # Refuse before closing Gephi or removing anything when the plugin has to be downloaded
+        # and there is nothing to check it against.
+        if (-not $bundled -and -not $current -and -not $rel.NbmSha -and -not $AllowUnverified) {
+            Warn "No checksum for the Gephi plugin could be found, so it will not be installed"
+            Say "GitHub's release data and the release's version file both lacked one. Run this again in a few minutes,"
+            Say "or pass -AllowUnverified (or set `$env:GEPHI_AI_ALLOW_UNVERIFIED = '1' first) to install the plugin without checking it."
+            Fail "Gephi plugin not installed: no checksum to verify it against"
+            $script:Next.Add("Re-run this installer later, or use -AllowUnverified to install the plugin without a checksum.")
+            return $false
+        }
+
         # Plugin 1.2.x and older was named "Gephi AI (MCP)". Left in place it grabs
         # port 8080 first and the assistant talks to the old version.
         if ((Test-Path (Join-Path $userdir "modules\$LegacyBase.jar")) -or (Test-Path (Join-Path $userdir "update_tracking\$LegacyBase.xml"))) {
@@ -334,13 +361,6 @@ public static class GephiAICrc32 {
             }
         }
 
-        $track = Join-Path $userdir "update_tracking\$ModuleBase.xml"
-        $have = $null
-        if (Test-Path $track) {
-            $m = Select-String -Path $track -Pattern 'specification_version="([^"]*)"' | Select-Object -First 1
-            if ($m) { $have = $m.Matches[0].Groups[1].Value }
-        }
-        $bundled = Get-BundledModule $gephi.Home
         if ($bundled) {
             $bver = Get-BundledVersion $bundled
             Ok ("Gephi $($gephi.Version) already includes the Gephi AI plugin" + $(if ($bver) { " ($bver)" } else { "" }))
@@ -358,22 +378,12 @@ public static class GephiAICrc32 {
             Done ("Gephi plugin: built into Gephi" + $(if ($bver) { " ($bver)" } else { "" }))
             return $true
         }
-        if ($have -eq $rel.Nbm -and (Test-Path (Join-Path $userdir "modules\$ModuleBase.jar"))) {
+        if ($current) {
             Ok "Plugin $($rel.Nbm) is already installed"
             Done "Gephi plugin $($rel.Nbm) (already current)"
             return $true
         }
         if ($have) { Say "Updating the plugin from $have to $($rel.Nbm)" }
-
-        # Refuse before closing Gephi when there is nothing to check the file against.
-        if (-not $rel.NbmSha -and -not $AllowUnverified) {
-            Warn "No checksum for the Gephi plugin could be found, so it will not be installed"
-            Say "GitHub's release data and the release's version file both lacked one. Run this again in a few minutes,"
-            Say "or pass -AllowUnverified (or set `$env:GEPHI_AI_ALLOW_UNVERIFIED = '1' first) to install the plugin without checking it."
-            Fail "Gephi plugin not installed: no checksum to verify it against"
-            $script:Next.Add("Re-run this installer later, or use -AllowUnverified to install the plugin without a checksum.")
-            return $false
-        }
 
         Close-Gephi
         if ($DryRun) {
@@ -788,7 +798,7 @@ print(result)
                 $script:Next.Add("Update Gephi from $DownloadPage, then re-run this installer.")
                 $gephi = $null
             } else {
-                Ok "Found Gephi $($gephi.Version) at $($gephi.Home)"
+                Ok ("Found Gephi " + $(if ($gephi.Version) { "$($gephi.Version) " } else { "" }) + "at $($gephi.Home)")
                 $nbmOk = Install-Nbm $rel $gephi
             }
         }

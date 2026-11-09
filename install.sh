@@ -171,7 +171,7 @@ read_release() {
 
   # GitHub allows 60 API calls an hour per network address, which a classroom
   # on one network can use up. The release's latest.json is served from
-  # elsewhere and carries the same versions, though not the checksums.
+  # elsewhere and carries the same versions and, in newer releases, the plugin's checksum.
   if [ -z "$SERVER_VER" ]; then
     local ref=main marker
     [ -n "$WANT_VERSION" ] && ref="v${WANT_VERSION#v}"
@@ -290,9 +290,9 @@ find_userdir() {
 
 gephi_pattern() {
   # The launcher passes --branding gephi on every platform. On macOS, match only
-  # a java process that starts inside the app bundle, so an editor or a shell with
-  # a path in Gephi.app on its command line is not mistaken for Gephi.
-  if [ "$OS" = Darwin ]; then printf '%s' '^/.*Gephi\.app/Contents/.*/bin/java .*--branding gephi'
+  # a java process (Gephi's own Java or one gephi.conf points to), so an editor or a
+  # shell with a path in Gephi.app on its command line is not mistaken for Gephi.
+  if [ "$OS" = Darwin ]; then printf '%s' '^/.*/bin/java .*--branding gephi'
   else printf '%s' "branding gephi"; fi
 }
 gephi_running() { pgrep -f "$(gephi_pattern)" >/dev/null 2>&1; }
@@ -332,8 +332,9 @@ bundled_version() {
     "$cluster/update_tracking/$(basename "$1")" 2>/dev/null | head -1 || true
 }
 
-# The quick answer skips the renderer sample and the lock probe, which can take longer than a
-# short wait when Gephi is stalled. A plugin that predates ?quick answers the full health.
+# The 5-second wait leaves a stalled Gephi, whose full health check samples the renderer and
+# probes the graph lock, time to answer. A plugin that knows ?quick skips both; the plugins
+# released so far ignore the parameter and give the full answer.
 health() { curl -s -m 5 "http://127.0.0.1:8080/health?quick=true" 2>/dev/null || true; }
 
 ensure_gephi() {
@@ -418,6 +419,18 @@ install_nbm() {
   find_userdir
   ok "Gephi user folder: $USERDIR"
 
+  # Refuse before closing Gephi or removing anything when the plugin has to be downloaded and
+  # there is nothing to check it against.
+  if [ -z "$NBM_SHA" ] && [ "$ALLOW_UNVERIFIED" != 1 ] && ! gephi_bundled_module >/dev/null &&
+     ! { [ "$(installed_module_version)" = "$NBM_VER" ] && [ -f "$USERDIR/modules/$MODULE_BASE.jar" ]; }; then
+    warn "No checksum for the Gephi plugin could be found, so it will not be installed"
+    say "  GitHub's release data and the release's version file both lacked one. Run this again in a few minutes,"
+    say "  or pass --allow-unverified to install the plugin without checking it."
+    fail_ "Gephi plugin not installed: no checksum to verify it against"
+    next_ "Re-run this installer later, or add --allow-unverified to install the plugin without a checksum."
+    return 1
+  fi
+
   # Plugin 1.2.x and older was named "Gephi AI (MCP)". Left in place it grabs
   # port 8080 first and the assistant talks to the old version.
   if [ -f "$USERDIR/modules/$LEGACY_BASE.jar" ] || [ -f "$USERDIR/update_tracking/$LEGACY_BASE.xml" ]; then
@@ -470,16 +483,6 @@ install_nbm() {
     return 0
   fi
   [ -n "$have" ] && say "  Updating the plugin from $have to $NBM_VER"
-
-  # Refuse before closing Gephi when there is nothing to check the file against.
-  if [ -z "$NBM_SHA" ] && [ "$ALLOW_UNVERIFIED" != 1 ]; then
-    warn "No checksum for the Gephi plugin could be found, so it will not be installed"
-    say "  GitHub's release data and the release's version file both lacked one. Run this again in a few minutes,"
-    say "  or pass --allow-unverified to install the plugin without checking it."
-    fail_ "Gephi plugin not installed: no checksum to verify it against"
-    next_ "Re-run this installer later, or add --allow-unverified to install the plugin without a checksum."
-    return 1
-  fi
 
   quit_gephi
   local nbm="$TMP/gephi-ai.nbm" x="$TMP/nbm"
@@ -760,10 +763,13 @@ else:
 if os.path.exists(path):
     shutil.copy2(path, path + time.strftime(".bak-%Y%m%d-%H%M%S"))
 tmp = path + ".tmp"
-with open(tmp, "w", encoding="utf-8") as f:
+if os.path.exists(tmp):
+    os.remove(tmp)
+# Created owner-only, so the settings are never readable by others while being written; then
+# given the original file's permissions, which os.replace would otherwise not keep.
+with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
-# Keep the file's permissions: os.replace would otherwise leave a 0600 file at 0644.
 if os.path.exists(path):
     os.chmod(tmp, stat.S_IMODE(os.stat(path).st_mode))
 os.replace(tmp, path)

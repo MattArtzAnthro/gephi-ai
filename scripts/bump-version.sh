@@ -13,9 +13,11 @@
 # anything — run tests/build/publish separately (see RELEASING.md).
 #
 # latest.json also carries nbm_sha256, the SHA-256 of the built .nbm, which the installers
-# check the download against. It is written from --nbm-file, or from ./gephi-ai-<java>.nbm
-# when that file exists. A java bump drops the old digest, so run the script again with
-# --nbm-file once the .nbm is built (RELEASING.md step 3).
+# check the download against. It is written only from --nbm-file, which must be the .nbm for
+# the plugin version in the POM (gephi-ai-<java>.nbm): a rebuild is not byte-identical, so a
+# stray copy at the repo root is never picked up on its own. A java bump drops the old digest,
+# so run the script again with --nbm-file once the .nbm is built (RELEASING.md step 3), and
+# attach that same file to the release. scripts/check-drift.sh compares the two afterwards.
 #
 # Examples:
 #   scripts/bump-version.sh --server 1.9.22            # server-only release
@@ -62,6 +64,15 @@ if [ -n "$NEW_SERVER" ] && [ "$NEW_SERVER" != "$OLD_SERVER" ]; then
   sedi "s/gephi-ai==$OLD_SERVER/gephi-ai==$NEW_SERVER/" mcpb/pyproject.toml
   sedi "s/^version = \"$OLD_SERVER\"/version = \"$NEW_SERVER\"/" mcpb/pyproject.toml
   jset latest.json server "$NEW_SERVER"
+  # uv.lock records the package's own version; left behind, the next `uv run` rewrites it.
+  python3 - "$OLD_SERVER" "$NEW_SERVER" <<'PY'
+import re, sys
+old, new = sys.argv[1], sys.argv[2]
+path = "mcp-server/uv.lock"
+text = open(path).read()
+text = re.sub(r'(\[\[package\]\]\nname = "gephi-ai"\nversion = )"' + re.escape(old) + '"', r'\g<1>"' + new + '"', text)
+open(path, "w").write(text)
+PY
 fi
 
 if [ -n "$NEW_JAVA" ] && [ "$NEW_JAVA" != "$OLD_JAVA" ]; then
@@ -81,9 +92,10 @@ PY
 fi
 sha256_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi; }
 CUR_JAVA=$(grep -m1 '<version>' gephi-ai-plugin/pom.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-[ -z "$NBM_FILE" ] && [ -f "gephi-ai-$CUR_JAVA.nbm" ] && NBM_FILE="gephi-ai-$CUR_JAVA.nbm"
 if [ -n "$NBM_FILE" ]; then
   [ -f "$NBM_FILE" ] || { echo "no such file: $NBM_FILE" >&2; exit 2; }
+  [ "$(basename "$NBM_FILE")" = "gephi-ai-$CUR_JAVA.nbm" ] ||
+    { echo "--nbm-file must be the .nbm for plugin $CUR_JAVA (gephi-ai-$CUR_JAVA.nbm), not $(basename "$NBM_FILE")" >&2; exit 2; }
   jset latest.json nbm_sha256 "$(sha256_of "$NBM_FILE")"
   echo "nbm_sha256 from $NBM_FILE"
 fi
@@ -124,6 +136,7 @@ check "Codex .mcp.json pin" "$(python3 -c "import json;print(json.load(open('plu
 check "mcpb manifest"      "$(python3 -c "import json;print(json.load(open('mcpb/manifest.json'))['version'])")" "$S"
 check "mcpb pyproject pin" "$(grep -oE 'gephi-ai==[0-9.]+' mcpb/pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" "$S"
 check "latest.json server" "$(python3 -c "import json;print(json.load(open('latest.json'))['server'])")" "$S"
+check "uv.lock gephi-ai"   "$(grep -A1 '^name = "gephi-ai"$' mcp-server/uv.lock | sed -n 's/^version = "\(.*\)"/\1/p')" "$S"
 # /health reads its version from the module manifest, which nbm-maven-plugin generates from
 # the POM, so there is nothing to sweep here. What must stay true is that nobody reintroduces
 # a literal — that is the drift this check used to chase.

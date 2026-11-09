@@ -12,6 +12,9 @@ on:
     paths: [install.sh, install.ps1, latest.json, scripts/test-installer.sh, scripts/install.Tests.ps1, .github/workflows/installers.yml]
   pull_request:
     paths: [install.sh, install.ps1, latest.json, scripts/test-installer.sh, scripts/install.Tests.ps1, .github/workflows/installers.yml]
+  # A published release is installed end to end at once, and its .nbm checked against latest.json.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -34,12 +37,28 @@ jobs:
         with:
           persist-credentials: false
       - run: shellcheck install.sh scripts/test-installer.sh
+      - name: latest.json's plugin checksum matches the release's .nbm
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          read -r server nbm sha < <(python3 -c "import json; d = json.load(open('latest.json')); print(d['server'], d['nbm'], d.get('nbm_sha256') or '-')")
+          # The release is cut after the push that bumps latest.json; until then there is nothing to compare.
+          if ! digest=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$server" --jq ".assets[] | select(.name == \"gephi-ai-$nbm.nbm\") | .digest // \"\""); then
+            echo "No release v$server yet; nothing to compare."; exit 0
+          fi
+          [ -n "$digest" ] || { echo "::error::release v$server has no gephi-ai-$nbm.nbm, or GitHub recorded no digest for it"; exit 1; }
+          if [ "$digest" != "sha256:$sha" ]; then
+            echo "::error::latest.json nbm_sha256 is '$sha' but the release's gephi-ai-$nbm.nbm is $digest; installs that fall back to latest.json would refuse it"
+            exit 1
+          fi
+          echo "latest.json nbm_sha256 matches gephi-ai-$nbm.nbm in release v$server"
       - name: install.sh unit tests
         run: bash scripts/test-installer.sh
       - name: PSScriptAnalyzer, errors only
         shell: pwsh
         run: |
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0
           $found = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
           $found | Format-Table -AutoSize
           if ($found) { exit 1 }
@@ -56,7 +75,8 @@ jobs:
       - name: install.ps1 unit tests (Pester)
         shell: pwsh
         run: |
-          Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          Install-Module Pester -RequiredVersion 6.2.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          Import-Module Pester -RequiredVersion 6.2.0
           $result = Invoke-Pester -Path scripts/install.Tests.ps1 -Output Detailed -PassThru
           if ($result.FailedCount -gt 0 -or $result.TotalCount -eq 0) { exit 1 }
 

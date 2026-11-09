@@ -23,16 +23,30 @@ BeforeAll {
     Import-Nested "Get-Health"
     # Download reads the installer's $AllowUnverified; the tests set a global in its place.
     Import-Nested "Download" @{ '$AllowUnverified' = '$global:TestAllowUnverified' }
+    Import-Nested "Version-FromFolder"
+    # Install-Nbm reads the installer's settings; the tests set globals in their place.
+    Import-Nested "Install-Nbm" @{
+        '$AllowUnverified' = '$global:TestAllowUnverified'; '$DryRun' = '$global:TestDryRun'
+        '$script:Next' = '$global:TestNext'; '$LegacyBase' = '$global:TestLegacyBase'
+        '$ModuleBase' = '$global:TestModuleBase'
+    }
     function global:Ok($t) { }
     function global:Warn($t) { }
+    function global:Say($t) { }
+    function global:Head($t) { }
+    function global:Fail($t) { }
+    function global:Done($t) { }
 }
 
 AfterAll {
-    foreach ($f in 'Ver-Core', 'Ver-Ge', 'Get-Health', 'Download', 'Ok', 'Warn') {
+    foreach ($f in 'Ver-Core', 'Ver-Ge', 'Get-Health', 'Download', 'Version-FromFolder', 'Install-Nbm',
+                   'Ok', 'Warn', 'Say', 'Head', 'Fail', 'Done', 'Find-Userdir', 'Get-BundledModule', 'Ask',
+                   'Close-Gephi', 'Remove-Tracked') {
         Remove-Item "Function:\global:$f" -ErrorAction SilentlyContinue
     }
     Remove-Item Env:GEPHI_AI_INSTALLER_TEST -ErrorAction SilentlyContinue
-    Remove-Variable TestAllowUnverified, TestSrc, TestDest -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable TestAllowUnverified, TestSrc, TestDest, TestDryRun, TestNext, TestLegacyBase, TestModuleBase,
+        TestUserdir, TestClosed -Scope Global -ErrorAction SilentlyContinue
 }
 
 Describe "Ver-Ge" {
@@ -90,5 +104,41 @@ Describe "Get-Health" {
     It "reads a Gephi that does not answer as not running" {
         Mock Invoke-RestMethod { throw "timed out" }
         Get-Health | Should -BeNullOrEmpty
+    }
+}
+
+Describe "Version-FromFolder" {
+    It "reads <name> as '<want>'" -ForEach @(
+        @{ name = "Gephi-0.11.4"; want = "0.11.4" }
+        @{ name = "Gephi-0.10";   want = "0.10" }
+        @{ name = "Gephi";        want = "" }
+        @{ name = "Gephi-beta";   want = "" }
+    ) {
+        Version-FromFolder $name | Should -Be $want
+    }
+}
+
+Describe "Install-Nbm with no checksum" {
+    BeforeEach {
+        $global:TestAllowUnverified = $false; $global:TestDryRun = $false
+        $global:TestNext = [System.Collections.Generic.List[string]]::new()
+        $global:TestLegacyBase = "org-gephi-plugins-gephi-mcp"; $global:TestModuleBase = "org-gephi-plugins-gephi-ai"
+        $global:TestClosed = 0
+        $global:TestUserdir = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path (Join-Path $global:TestUserdir "modules") -Force | Out-Null
+        Set-Content -Path (Join-Path $global:TestUserdir "modules\$($global:TestLegacyBase).jar") -Value "old"
+        function global:Find-Userdir($h) { return $global:TestUserdir }
+        function global:Get-BundledModule($h) { return $null }
+        function global:Ask($q, $d) { return $true }
+        function global:Close-Gephi { $global:TestClosed++ }
+        function global:Remove-Tracked($u, $b) { Remove-Item (Join-Path $u "modules\$b.jar") -ErrorAction SilentlyContinue }
+    }
+    AfterEach { Remove-Item $global:TestUserdir -Recurse -Force -ErrorAction SilentlyContinue }
+
+    It "refuses before closing Gephi or removing the old plugin" {
+        $rel = @{ Nbm = "9.9.9"; NbmSha = ""; NbmUrl = "https://example.invalid/gephi-ai-9.9.9.nbm" }
+        Install-Nbm $rel @{ Home = "C:\Gephi-0.11.4"; Version = "0.11.4" } | Should -BeFalse
+        Test-Path (Join-Path $global:TestUserdir "modules\$($global:TestLegacyBase).jar") | Should -BeTrue
+        $global:TestClosed | Should -Be 0
     }
 }

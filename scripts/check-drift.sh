@@ -89,9 +89,24 @@ else
     ok "latest.json server $LATEST_SERVER has release v$LATEST_SERVER"
     # The .nbm is the primary download path in README; a release without it
     # attached sends people to the repo-root fallback instead.
-    if gh api "repos/{owner}/{repo}/releases/tags/v$LATEST_SERVER" \
-         --jq '.assets[].name' 2>/dev/null | grep -q "gephi-ai-$LATEST_NBM.nbm"; then
+    ASSETS=$(gh api "repos/{owner}/{repo}/releases/tags/v$LATEST_SERVER" \
+         --jq '.assets[] | "\(.name) \(.digest // "")"' 2>/dev/null || true)
+    NBM_LINE=$(printf '%s\n' "$ASSETS" | grep -F "gephi-ai-$LATEST_NBM.nbm" | head -1 || true)
+    if [ -n "$NBM_LINE" ]; then
       ok "release v$LATEST_SERVER has gephi-ai-$LATEST_NBM.nbm attached"
+      # The installers fall back to latest.json's checksum when GitHub's API is unavailable, so
+      # it has to be the digest of the file attached here, not of a local rebuild.
+      REL_SHA=$(printf '%s' "$NBM_LINE" | sed -n 's/.* sha256:\([0-9a-f]\{64\}\)$/\1/p')
+      LJ_SHA=$(python3 -c "import json;print(json.load(open('latest.json')).get('nbm_sha256', ''))" 2>/dev/null)
+      if [ -z "$LJ_SHA" ]; then
+        note "latest.json has no nbm_sha256, so the installers refuse the plugin whenever GitHub's API is unavailable (fix: scripts/bump-version.sh --nbm-file gephi-ai-$LATEST_NBM.nbm, using the file attached to the release)"
+      elif [ -z "$REL_SHA" ]; then
+        ok "latest.json has nbm_sha256 (GitHub recorded no digest for the asset to compare it with)"
+      elif [ "$REL_SHA" = "$LJ_SHA" ]; then
+        ok "latest.json nbm_sha256 matches the release's gephi-ai-$LATEST_NBM.nbm"
+      else
+        note "latest.json nbm_sha256 ($LJ_SHA) is not the digest of the release's gephi-ai-$LATEST_NBM.nbm ($REL_SHA), so installs that fall back to latest.json refuse the plugin (fix: download the release asset and run scripts/bump-version.sh --nbm-file on it)"
+      fi
     else
       note "release v$LATEST_SERVER is missing asset gephi-ai-$LATEST_NBM.nbm — README points users at the Releases page for it"
     fi

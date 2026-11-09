@@ -4,6 +4,7 @@ bump-version.sh has to move every pin the Desktop bundle carries along with the 
 and build-mcpb.sh has to refuse a version the bundle does not pin before it builds anything.
 """
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -31,6 +32,7 @@ BUMP_FILES = [
     "plugins/gephi-network-analysis/skills/gephi/SKILL.md",
     "mcpb/manifest.json",
     "mcpb/pyproject.toml",
+    "mcp-server/uv.lock",
     "latest.json",
     "README.md",
     ".claude-plugin/marketplace.json",
@@ -303,3 +305,90 @@ def test_bump_changes_only_the_manifest_version_line(tmp_path):
     assert set(old) - set(new) == {f'  "version": "{_server_version()}",'}
     assert set(new) - set(old) == {f'  "version": "{new_version}",'}
     assert len(old) == len(new)
+
+
+def _lock_version(root):
+    text = (root / "mcp-server/uv.lock").read_text()
+    return re.search(r'^name = "gephi-ai"\nversion = "([^"]+)"', text, re.M).group(1)
+
+
+def test_a_server_bump_moves_the_lock_too(tmp_path):
+    # A lock left at the old version is rewritten by the next `uv run`, which leaves a
+    # modified file in the checkout of anyone who runs the server from it.
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    major, minor, patch = _server_version().split(".")
+    new = f"{major}.{minor}.{int(patch) + 1}"
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh", "--server", new],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert _lock_version(tmp_path) == new
+
+
+def test_the_bump_check_catches_a_stale_lock(tmp_path):
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    lock = tmp_path / "mcp-server/uv.lock"
+    lock.write_text(lock.read_text().replace(
+        f'name = "gephi-ai"\nversion = "{_server_version()}"', 'name = "gephi-ai"\nversion = "0.0.1"'))
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh"],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode != 0
+    assert "uv.lock gephi-ai" in run.stdout
+
+
+def _java_version(root):
+    return json.loads((root / "latest.json").read_text())["nbm"]
+
+
+def test_nbm_file_writes_its_digest(tmp_path):
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    nbm = tmp_path / f"gephi-ai-{_java_version(tmp_path)}.nbm"
+    nbm.write_bytes(b"plugin bytes")
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh", "--nbm-file", nbm.name],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    written = json.loads((tmp_path / "latest.json").read_text())["nbm_sha256"]
+    assert written == hashlib.sha256(b"plugin bytes").hexdigest()
+
+
+def test_nbm_file_for_another_plugin_version_is_refused(tmp_path):
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    before = (tmp_path / "latest.json").read_text()
+    other = tmp_path / "gephi-ai-0.0.1.nbm"
+    other.write_bytes(b"old plugin")
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh", "--nbm-file", other.name],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode != 0
+    assert "must be the .nbm for plugin" in run.stderr
+    assert (tmp_path / "latest.json").read_text() == before
+
+
+def test_a_stray_nbm_at_the_root_does_not_replace_the_digest(tmp_path):
+    # A local rebuild is not byte-identical to the released file; picking it up on its own
+    # would write a digest no download matches.
+    _need("bash")
+    _need("python3")
+    _copy_tree(BUMP_FILES, tmp_path)
+    before = json.loads((tmp_path / "latest.json").read_text()).get("nbm_sha256")
+    (tmp_path / f"gephi-ai-{_java_version(tmp_path)}.nbm").write_bytes(b"a local rebuild")
+
+    run = subprocess.run(["bash", "scripts/bump-version.sh"],
+                         cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert json.loads((tmp_path / "latest.json").read_text()).get("nbm_sha256") == before

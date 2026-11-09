@@ -57,14 +57,15 @@ def _git(cwd, env, *args):
 
 # ─── check-drift.sh ──────────────────────────────────────────────
 
-LATEST = {"server": "9.1.0", "nbm": "9.0.2", "plugin": "9.1.0"}
+DIGEST = "ab" * 32
+LATEST = {"server": "9.1.0", "nbm": "9.0.2", "plugin": "9.1.0", "nbm_sha256": DIGEST}
 
 
-def _drift_repo(tmp_path, pypi_status="200", release=True, asset=True):
+def _drift_repo(tmp_path, pypi_status="200", release=True, asset=True, asset_digest=DIGEST, latest=None):
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir(parents=True)
     _tool(fake_bin, "curl", f'echo "{pypi_status}"\n')
-    asset_line = f'echo "gephi-ai-{LATEST["nbm"]}.nbm"' if asset else "true"
+    asset_line = f'echo "gephi-ai-{LATEST["nbm"]}.nbm sha256:{asset_digest}"' if asset else "true"
     _tool(fake_bin, "gh", f'case "$1" in\n  release) exit {0 if release else 1} ;;\n'
                           f'  api) {asset_line} ;;\nesac\n')
     env = _env(tmp_path, fake_bin)
@@ -76,7 +77,7 @@ def _drift_repo(tmp_path, pypi_status="200", release=True, asset=True):
     shutil.copy2(REPO / "scripts/check-drift.sh", work / "scripts/check-drift.sh")
     (work / "plugins/claude-code/.mcp.json").write_text(json.dumps(
         {"mcpServers": {"gephi-ai": {"command": "uvx", "args": ["--from", "gephi-ai==9.1.0", "gephi-ai"]}}}))
-    (work / "latest.json").write_text(json.dumps(LATEST))
+    (work / "latest.json").write_text(json.dumps(LATEST if latest is None else latest))
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], env=env, check=True)
     _git(work, env, "init", "-q", "-b", "main")
     _git(work, env, "add", ".")
@@ -293,3 +294,25 @@ def test_a_documented_tool_count_that_disagrees_fails_the_artifact(tmp_path):
 
     assert run.returncode == 1
     assert "README.md does not say 2 tools" in run.stdout
+
+
+def test_drift_check_fails_when_latest_json_has_another_digest_than_the_release(tmp_path):
+    # The installers check the plugin against latest.json when GitHub's API is unavailable, so
+    # a digest from a local rebuild would make every such install refuse the released file.
+    _need("bash", "git", "python3")
+    work, env = _drift_repo(tmp_path, asset_digest="cd" * 32)
+
+    run = _drift(work, env)
+
+    assert run.returncode == 1
+    assert "is not the digest of the release's gephi-ai-9.0.2.nbm" in run.stdout
+
+
+def test_drift_check_fails_when_latest_json_has_no_digest(tmp_path):
+    _need("bash", "git", "python3")
+    work, env = _drift_repo(tmp_path, latest={k: v for k, v in LATEST.items() if k != "nbm_sha256"})
+
+    run = _drift(work, env)
+
+    assert run.returncode == 1
+    assert "latest.json has no nbm_sha256" in run.stdout

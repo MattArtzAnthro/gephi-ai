@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Unit tests for install.sh: ver_ge, download's checksum rules, and the Claude Desktop config
-# rewrite. install.sh is sourced with GEPHI_AI_INSTALLER_TEST=1, which skips its final main call.
+# Unit tests for install.sh: ver_ge, download's checksum rules, the Claude Desktop config
+# rewrite, the health request, which processes count as Gephi on macOS, and the refusal to
+# change anything when no checksum is available. install.sh is sourced with GEPHI_AI_INSTALLER_TEST=1, which skips its final main call.
 # Offline: fetch is stubbed, and HOME is a temp folder, so no real config is read or written.
 # Run: bash scripts/test-installer.sh   (INSTALL_SH=path tests another copy)
 # Variables set and functions defined here are used by the sourced installer, and expect()
@@ -112,6 +113,43 @@ health_asks_quick() { case "$HEALTH_ARGS" in *"/health?quick=true"*) true ;; *) 
 health_waits_five() { case " $HEALTH_ARGS " in *" -m 5 "*) true ;; *) false ;; esac; }
 expect "health asks for /health?quick=true" health_asks_quick
 expect "health waits 5 seconds" health_waits_five
+
+# --- a new Claude Desktop config is written owner-only ---
+rm -f "$CFG"
+edit add >/dev/null
+expect "a new config is created 0600" test "$(mode_of "$CFG")" = 0o600
+
+# --- macOS: which processes count as a running Gephi ---
+matches_gephi() { # matches_gephi "COMMAND LINE" -> true when the macOS pattern matches it
+  ( load; OS=Darwin; printf '%s\n' "$1" | grep -qE "$(gephi_pattern)" )
+}
+not_gephi() { ! matches_gephi "$1"; }
+expect "Gephi on its bundled Java counts" matches_gephi \
+  "/Applications/Gephi.app/Contents/PlugIns/jdk-17.0.21+9-jre/Contents/Home/bin/java -Djdk.home=/Applications/Gephi.app/Contents/PlugIns/jdk-17.0.21+9-jre/Contents/Home -classpath x org.netbeans.Main --branding gephi"
+expect "Gephi on a Java set in gephi.conf counts" matches_gephi \
+  "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java -Djdk.home=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home -classpath x org.netbeans.Main --branding gephi"
+expect "an editor with a file in Gephi.app does not" not_gephi \
+  "/Applications/Visual Studio Code.app/Contents/MacOS/Electron /Applications/Gephi.app/Contents/Resources/gephi/etc/gephi.conf"
+expect "a shell searching for the branding flag does not" not_gephi "grep -r --branding gephi /Applications/Gephi.app"
+
+# --- no checksum: refuse before closing Gephi or removing the old plugin ---
+refusal_leaves_legacy() {
+  local ud="$WORK/userdir"
+  rm -rf "$ud" "$WORK/quit"; mkdir -p "$ud/modules"
+  (
+    load
+    touch "$ud/modules/$LEGACY_BASE.jar"
+    find_userdir() { USERDIR="$ud"; }
+    gephi_bundled_module() { return 1; }
+    ask() { return 0; }
+    quit_gephi() { echo quit >>"$WORK/quit"; }
+    NBM_SHA="" ALLOW_UNVERIFIED=0 DRY=0 NBM_VER=9.9.9
+    install_nbm >/dev/null 2>&1
+    rc=$?
+    [ "$rc" != 0 ] && [ -f "$ud/modules/$LEGACY_BASE.jar" ] && [ ! -e "$WORK/quit" ]
+  )
+}
+expect "no checksum: the old plugin stays and Gephi is not closed" refusal_leaves_legacy
 
 [ "$fail" -eq 0 ] && echo "ALL INSTALLER TESTS PASS" || echo "INSTALLER TESTS FAILED"
 exit "$fail"

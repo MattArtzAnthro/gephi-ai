@@ -19,27 +19,38 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   checksum, and installed the plugin with only a warning. `latest.json` now carries `nbm_sha256`,
   the installers use it as a second source, and with no checksum from either source they stop and
   say how to go on: try again later, or pass `--allow-unverified` (`-AllowUnverified` or
-  `GEPHI_AI_ALLOW_UNVERIFIED=1` on Windows). `scripts/bump-version.sh --nbm-file` writes the
-  digest at release time.
+  `GEPHI_AI_ALLOW_UNVERIFIED=1` on Windows). They refuse before closing Gephi or removing an old
+  "Gephi AI (MCP)" plugin, so a refusal leaves the installed plugin as it was.
+- **A release can no longer carry a checksum the released plugin does not match.**
+  `scripts/bump-version.sh` takes the digest only from `--nbm-file`, which must be named for the
+  plugin version being released, never from a stray local rebuild; `scripts/check-drift.sh` and
+  the Installers workflow, which now also runs when a release is published, compare `latest.json`
+  with the digest GitHub records for the attached `.nbm`.
 - `install.sh` fetches over https only, including after a redirect.
 
 ### Fixed
 - **Setting up Claude Desktop no longer loosens the permissions of its settings file.** The
   installer replaced the file with a new one, so a file set to owner-only access became readable
-  by other users. The original permissions are now copied over.
+  by other users. The new file is now written owner-only and then given the original's
+  permissions; a settings file the installer creates stays owner-only.
 - **Gemini CLI is registered at the release the installer checked,** as Claude Desktop already
   was, instead of at whatever `uvx` fetches next.
 - **A pre-release Gephi version no longer passes or confuses the version check.** `0.11.3-rc`
   counts as 0.11.3 and is too old for a plugin that needs 0.11.4; a version that is not numeric is
   treated as not new enough.
-- **On macOS, the installer recognizes Gephi by its own Java process,** so an editor or a shell
-  with a file inside `Gephi.app` on its command line is no longer taken for Gephi or force-quit.
-- **The installers check that Gephi answers with `/health?quick=true` and wait 5 seconds,** so a
-  stalled Gephi is no longer reported as not running. Older plugins ignore the parameter.
+- **On macOS, the installer recognizes Gephi by its Java process,** so an editor or a shell with
+  a file inside `Gephi.app` on its command line is no longer taken for Gephi or force-quit. A Gephi
+  set to run on another Java in `gephi.conf` is still recognized.
+- **On Windows, a Gephi folder not named `Gephi-<version>` no longer reads as too old.** Its
+  version counts as unknown and the plugin installs, as it does on Linux.
+- **The installers wait 5 seconds for Gephi's health check instead of 2,** so a stalled Gephi,
+  whose full check takes longer, is no longer reported as not running.
 - **The installer workflow pins the release it tests,** so a release published between the first
   install and the re-run no longer fails the "re-run changes nothing" check. Unit tests for both
   installers (`scripts/test-installer.sh`, and a Pester file with a PowerShell parse check) run in
-  CI.
+  CI, with Pester and PSScriptAnalyzer pinned to exact versions.
+- **A server release updates `mcp-server/uv.lock` too.** The 1.22.1 release left the lock at
+  1.22.0, so running the server from a checkout with `uv run` rewrote it.
 
 ### Changed
 - **The MCP server and the Desktop bundle need Python 3.11 or newer.** Python 3.10 reached end of

@@ -72,13 +72,14 @@ have yet, so it fails to install until PyPI catches up.
    ```
 
    **Record the .nbm's checksum.** Once the `.nbm` is built, run
-   `scripts/bump-version.sh --nbm-file gephi-ai-<java-version>.nbm` (the script also picks up
-   `./gephi-ai-<java-version>.nbm` by itself). It writes `nbm_sha256` into `latest.json`, and its
-   verify step fails if the value and the file disagree. The installers use that digest when
-   GitHub's API is unavailable, and refuse to install the plugin when they have no digest at
-   all. A Java bump removes the old digest, so every release that changes the plugin needs this
-   run. Before the release, check that it matches what GitHub will record:
-   `gh release view v<server-version> --json assets` lists a `sha256:` digest per asset.
+   `scripts/bump-version.sh --nbm-file gephi-ai-<java-version>.nbm`. It writes `nbm_sha256` into
+   `latest.json`, and refuses a file named for another plugin version. Attach this same file to
+   the release in step 9: a rebuild is not byte-identical, so its digest would not match. The
+   installers use the digest when GitHub's API is unavailable, and refuse to install the plugin
+   when they have none. A Java bump removes the old digest, so every release that changes the
+   plugin needs this run. Once the release is published, the Installers workflow and
+   `scripts/check-drift.sh` (step 11) compare it with the digest GitHub recorded for the attached
+   `.nbm`.
 
 4. **Do not commit the built `.nbm`.** It attaches to the GitHub release in step 9,
    which is the single download path. A copy at the repo root went two releases stale
