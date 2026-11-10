@@ -314,3 +314,26 @@ def test_nodes_never_grouped_with_anyone_are_fully_stable_overall():
 
     assert result["mean_stability"] == pytest.approx(1.0)
     assert result["stable_core_groups"] == []
+
+
+def _peak_bytes(n: int) -> int:
+    import tracemalloc
+
+    one_community = {i: 0 for i in range(n)}
+    tracemalloc.start()
+    try:
+        result = consensus([one_community] * 3)
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+        assert len(result["consensus_groups"][0]) == n
+
+
+def test_memory_does_not_grow_with_the_square_of_a_community():
+    """Pairs are scored in fixed-size blocks; keeping every agreed pair from every block made
+    memory grow with the square of a community's size, and a 112,000-node follower graph with
+    communities of tens of thousands ran the server out of memory. Doubling the community must
+    not come close to quadrupling the peak."""
+    small, large = _peak_bytes(2000), _peak_bytes(4000)
+
+    assert large < 1.5 * small, f"peak {small / 1e6:.0f} MB -> {large / 1e6:.0f} MB"

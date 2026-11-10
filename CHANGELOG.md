@@ -13,6 +13,13 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   returns, the Gephi version, the operating system, and Gephi's log; `CONTRIBUTING.md` lists the
   checks to run before a pull request.
 
+### Fixed
+- **`gephi_community_stability` no longer runs out of memory on large graphs.** It scored pairs
+  in fixed-size blocks but kept every agreed pair from every block, so memory grew with the
+  square of the largest community: a 112,000-node follower graph took the server down. Each
+  block is now folded into the groups as it is scored, and peak memory stays near 370 MB from
+  2,000 to 20,000 nodes in one community.
+
 ### Security
 - **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
   unavailable (its hourly limit, a proxy), they read the version file instead, which had no
