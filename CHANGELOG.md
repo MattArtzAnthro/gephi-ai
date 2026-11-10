@@ -13,6 +13,13 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   returns, the Gephi version, the operating system, and Gephi's log; `CONTRIBUTING.md` lists the
   checks to run before a pull request.
 
+### Fixed
+- **`gephi_compare_partitions` and the bipartite tools find a column by the id
+  `gephi_get_columns` reports.** They matched names against column titles only, so a statistic
+  whose id differs from its title (the Inferred Class plugin's `stat_inf_class`, titled
+  "Inferred Class") was reported as having no values. Names now resolve through the same
+  id-or-title lookup the graph view uses.
+
 ### Security
 - **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
   unavailable (its hourly limit, a proxy), they read the version file instead, which had no

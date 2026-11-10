@@ -19,6 +19,8 @@ from __future__ import annotations
 from itertools import combinations
 from typing import Any
 
+from gephi_mcp_viewer import resolve_column_key
+
 Graph = dict[str, Any]
 
 
@@ -33,6 +35,7 @@ def column_value(attributes: dict[str, Any], column: str) -> Any:
 
 def split_modes(graph: Graph, column: str) -> tuple[list[str], list[str]]:
     """The two groups of nodes named by `column`, in the order the values first appear."""
+    column = resolve_column_key(graph, column)
     seen: dict[Any, list[str]] = {}
     for node in graph.get("nodes", []):
         value = column_value(node.get("attributes"), column)
@@ -66,6 +69,7 @@ def project_bipartite(graph: Graph, column: str, keep: str,
     """
     if weighting not in WEIGHTINGS:
         raise ValueError(f"Unknown weighting {weighting!r}; use one of {', '.join(WEIGHTINGS)}.")
+    column = resolve_column_key(graph, column)
     left, right = split_modes(graph, column)
     modes = {}
     for node in graph.get("nodes", []):
