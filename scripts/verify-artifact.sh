@@ -13,6 +13,9 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Drop the publish marker first: set -e ends the script at any failed step, so a marker left
+# from an earlier passing run would otherwise outlive a failed one.
+rm -f "$(git rev-parse --show-toplevel)/.artifact-verified"
 
 FAIL=0
 say() { printf '  %s\n' "$1"; }
@@ -112,8 +115,10 @@ PY
 echo
 echo "Installing the artifact and exercising it:"
 VENV=$(mktemp -d)/venv
-python3 -m venv "$VENV" >/dev/null
-"$VENV/bin/pip" install -q "$WHEEL" 2>/dev/null
+# Both are silent on success. Their output is the only explanation when either fails (Debian's
+# venv says to install python3-venv on stdout), and set -e stops the run right there.
+python3 -m venv "$VENV"
+"$VENV/bin/pip" install -q --disable-pip-version-check "$WHEEL"
 
 "$VENV/bin/python" - <<'PY' || FAIL=1
 import re, sys
@@ -168,7 +173,6 @@ rm -rf "$(dirname "$VENV")"
 echo
 if [ "$FAIL" -ne 0 ]; then
   echo "ARTIFACT VERIFICATION FAILED — do not publish."
-  rm -f "$(git rev-parse --show-toplevel)/.artifact-verified"
   exit 1
 fi
 

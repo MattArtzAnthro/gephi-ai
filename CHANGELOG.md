@@ -13,6 +13,14 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   returns, the Gephi version, the operating system, and Gephi's log; `CONTRIBUTING.md` lists the
   checks to run before a pull request.
 
+### Fixed
+- **`scripts/verify-artifact.sh` no longer leaves an old publish marker behind a failed run,
+  and says why it stopped.** A step that failed early (the build, the venv) ended the script
+  before the cleanup that removes `.artifact-verified`, so a marker from an earlier passing run
+  still let the publish gate through. The marker is now removed first. On Debian and Ubuntu
+  without `python3-venv`, the venv step's explanation was sent to `/dev/null` and the run ended
+  with no message; it is now shown.
+
 ### Security
 - **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
   unavailable (its hourly limit, a proxy), they read the version file instead, which had no
