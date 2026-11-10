@@ -52,6 +52,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   CI, with Pester and PSScriptAnalyzer pinned to exact versions.
 - **A server release updates `mcp-server/uv.lock` too.** The 1.22.1 release left the lock at
   1.22.0, so running the server from a checkout with `uv run` rewrote it.
+- **Exports and imports work with the server in WSL and Gephi on Windows.** A WSL path such as
+  `/tmp/qa.gexf` reached Gephi as `C:\tmp\qa.gexf`, so exports landed where the server never
+  looked and `gephi_visual_qa`, `gephi_label_clusters` and `gephi_view_graph` failed. `/health`
+  now reports Gephi's `os`, and under WSL the server rewrites each file path for a Windows Gephi
+  (`/mnt/c/...` to `C:\...`, other paths to `\\wsl$\<distro>\...`).
 
 ### Changed
 - **The MCP server and the Desktop bundle need Python 3.11 or newer.** Python 3.10 reached end of
