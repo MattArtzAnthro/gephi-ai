@@ -4,6 +4,36 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.23.2 / workflow packages 1.22.2
+
+### Fixed
+- **The edge-weight caveat also survives a computed layout.** `gephi_community_layout`,
+  `gephi_similarity_layout` and `gephi_bipartite_layout` move nodes and the camera, which were
+  counted as edits to the graph, so after any of them betweenness on a weighted graph came back
+  without the caveat. Node positions and the view no longer clear what is known about the graph.
+- **The receipt gives the resolution of the partition in the column.** When
+  `gephi_community_stability` puts your partition back, its own runs are no longer recorded as the
+  modularity run behind that column; they stay in the receipt under `analyses`. Before, a partition
+  computed at resolution 0.5 was described as computed at the stability run's 2.0.
+- **A cancelled or failed stability run, or profile, still puts your partition back.** The restore
+  ran only when the runs returned, so stopping a long stability run from the chat left one of its
+  randomized runs in `modularity_class`.
+- **The edge-weight caveat fires again after a profile or a stability run.** The caveat that
+  Gephi's centralities ignore edge weights (gephi#557) needs to know that the graph's weights
+  vary, which `gephi_profile_graph` establishes. Since 1.23.0 the profile and
+  `gephi_community_stability` write your partition back to the graph, and every write to node
+  values or a new column was treated as an edit that might change the graph, so the fact was
+  forgotten and betweenness on a weighted graph came back without the caveat. Writing node values
+  and adding columns no longer clears what is known about the graph; edits to nodes, edges and
+  edge weights still do.
+
+### Development
+- **A live workflow test** (`mcp-server/tests/live_workflow_test.py`) checks, against a second
+  Gephi, what holds across calls on several kinds of network: the partition, the receipt, the
+  caveats, claims and undo. The unit suite replaces the HTTP client and the smoke test makes one
+  call per tool, so neither could see the defects fixed in this release and in 1.23.1. RELEASING.md
+  makes it a step of every server release.
+
 ## MCP server 1.23.1 / workflow packages 1.22.1
 
 ### Fixed
