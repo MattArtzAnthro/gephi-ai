@@ -1,8 +1,8 @@
 {
-  "server": "1.23.0",
+  "server": "1.23.1",
   "nbm": "1.6.1",
   "nbm_needs_gephi": "0.11.4",
-  "plugin": "1.22.0",
+  "plugin": "1.22.1",
   "nbm_sha256": "07b877f952b016fe3eada9cc512533e46f156bac3712f0ebc000fdce7abba62d",
   "_comment": "Canonical latest-version marker read by gephi_health_check. Bump on every release (part of RELEASING.md). server = PyPI gephi-ai, nbm = Gephi Java plugin, plugin = Claude and Codex workflow packages. nbm_sha256 = SHA-256 of the released gephi-ai-<nbm>.nbm, which the installers check the download against (written by bump-version.sh). nbm_needs_gephi = the oldest Gephi Desktop that installs that nbm (the plugin's gephi.version), set by bump-version.sh."
 }

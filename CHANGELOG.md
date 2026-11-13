@@ -4,6 +4,18 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## MCP server 1.23.1 / workflow packages 1.22.1
+
+### Fixed
+- **`gephi_community_stability` randomizes every run.** Gephi runs Louvain with Randomize off,
+  and from Gephi 0.11.4 a run with it off gives the same answer every time on a graph such as
+  Les Miserables, so twenty runs reported one partition and a stability of 1.0 without having
+  sampled anything. Each run now switches Randomize on, through the generic statistics route
+  (no plugin change), so the nodes are visited in a new order each time; measured live, the same
+  graph gives four distinct partitions and a mean stability of 0.926. If Gephi does not accept the
+  setting, the reply carries `randomize_warning` instead of presenting identical runs as stable
+  communities. `gephi_compute_modularity` is unchanged and runs as Gephi's own button does.
+
 ## MCP server 1.23.0 / workflow packages 1.22.0
 
 ### Added
