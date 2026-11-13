@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.23.0 / workflow packages 1.22.0
 
 ### Added
 - **`SECURITY.md`:** report a vulnerability privately through the repository's Security tab;
@@ -13,22 +13,37 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   returns, the Gephi version, the operating system, and Gephi's log; `CONTRIBUTING.md` lists the
   checks to run before a pull request.
 
-### Security
-- **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
-  unavailable (its hourly limit, a proxy), they read the version file instead, which had no
-  checksum, and installed the plugin with only a warning. `latest.json` now carries `nbm_sha256`,
-  the installers use it as a second source, and with no checksum from either source they stop and
-  say how to go on: try again later, or pass `--allow-unverified` (`-AllowUnverified` or
-  `GEPHI_AI_ALLOW_UNVERIFIED=1` on Windows). They refuse before closing Gephi or removing an old
-  "Gephi AI (MCP)" plugin, so a refusal leaves the installed plugin as it was.
-- **A release can no longer carry a checksum the released plugin does not match.**
-  `scripts/bump-version.sh` takes the digest only from `--nbm-file`, which must be named for the
-  plugin version being released, never from a stray local rebuild; `scripts/check-drift.sh` and
-  the Installers workflow compare `latest.json` with the digest GitHub records for the attached
-  `.nbm`. The workflow now also runs when a release is published, and installs that release.
-- `install.sh` fetches over https only, including after a redirect.
+### Changed
+- **Updates to the Gephi plugin come through Gephi's plugin center.** Gephi AI is listed in
+  Gephi's own plugin center (Tools > Plugins > Available Plugins) from plugin 1.6.1. The README's
+  install steps and the update advice from `gephi_health_check` now point there, with the `.nbm`
+  from Releases kept for a release the center does not list yet.
+- **The MCP server and the Desktop bundle need Python 3.11 or newer.** Python 3.10 reached end of
+  life in October 2026, and Pillow 13, which fixes the open Pillow advisories, no longer supports
+  it. The lockfiles now resolve Pillow 13.0.0 on every supported Python, and CI tests 3.11 to 3.14.
 
 ### Fixed
+- **The update notice follows a plugin updated mid-session.** `gephi_health_check` checked for
+  updates once per server process, so after the Gephi plugin was updated it went on reporting the
+  old version as installed and an update as waiting. The check now runs again when the plugin or
+  Gephi version it sees changes.
+- **`gephi_community_stability` and `gephi_profile_graph` no longer replace the partition you
+  had.** Each modularity run rewrites `modularity_class`, and neither tool put it back, so after
+  `gephi_community_stability` the column held the last of its runs (34 communities before, 35 of
+  different sizes after two runs, measured), although its description promised the run you
+  already had survives (gephi#2590). Both now read the column first and write it back after their
+  runs, also when a run fails partway; the reply says it was restored, or carries
+  `modularity_class_restore_failed` when it could not be. `gephi_community_stability` reads it
+  before running anything and refuses when it cannot. On a graph with no partition before, the
+  column keeps the last run, and the stability reply says so. Gephi's Statistics panel still
+  shows the score of the last run.
+- **`gephi_session_receipt` names the layout that placed the nodes.** Only `gephi_run_layout`
+  was recorded, so after `gephi_community_layout`, `gephi_similarity_layout` or
+  `gephi_bipartite_layout` the receipt still named the layout that ran before (Fruchterman
+  Reingold, 1000 iterations, for a map drawn by `gephi_community_layout`). Each now records
+  itself and its settings when it has moved the nodes: the partition column, smallest disc and
+  Noverlap pass; the basis, the projection asked for and the one used, depth and Noverlap pass;
+  the mode column, separation and spacing.
 - **Setting up Claude Desktop no longer loosens the permissions of its settings file.** The
   installer replaced the file with a new one, so a file set to owner-only access became readable
   by other users. The new file is now written owner-only and then given the original's
@@ -52,11 +67,29 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   CI, with Pester and PSScriptAnalyzer pinned to exact versions.
 - **A server release updates `mcp-server/uv.lock` too.** The 1.22.1 release left the lock at
   1.22.0, so running the server from a checkout with `uv run` rewrote it.
+- **`/explore` and `/import-and-explore` no longer end in a fixed recipe.** Their step on letting
+  the intake and profile guide what follows said not to run a fixed recipe, and then the style and
+  layout steps always colored by `modularity_class`, sized by degree, and ran ForceAtlas 2, the
+  layout the profile's tree-like flag says cannot separate reply, retweet, and mention networks. Now
+  they color by the attribute the person named when it passes the partition baseline, size by the
+  metric their interest picked, and use `gephi_community_layout` when the profile flags a tree-like
+  graph, with ForceAtlas 2 as the default otherwise. The same change is in the Codex skills
+  `explore-network` and `import-and-explore`, and a package test holds all four to it.
 
-### Changed
-- **The MCP server and the Desktop bundle need Python 3.11 or newer.** Python 3.10 reached end of
-  life in October 2026, and Pillow 13, which fixes the open Pillow advisories, no longer supports
-  it. The lockfiles now resolve Pillow 13.0.0 on every supported Python, and CI tests 3.11 to 3.14.
+### Security
+- **The installers no longer install the Gephi plugin without a checksum.** When GitHub's API was
+  unavailable (its hourly limit, a proxy), they read the version file instead, which had no
+  checksum, and installed the plugin with only a warning. `latest.json` now carries `nbm_sha256`,
+  the installers use it as a second source, and with no checksum from either source they stop and
+  say how to go on: try again later, or pass `--allow-unverified` (`-AllowUnverified` or
+  `GEPHI_AI_ALLOW_UNVERIFIED=1` on Windows). They refuse before closing Gephi or removing an old
+  "Gephi AI (MCP)" plugin, so a refusal leaves the installed plugin as it was.
+- **A release can no longer carry a checksum the released plugin does not match.**
+  `scripts/bump-version.sh` takes the digest only from `--nbm-file`, which must be named for the
+  plugin version being released, never from a stray local rebuild; `scripts/check-drift.sh` and
+  the Installers workflow compare `latest.json` with the digest GitHub records for the attached
+  `.nbm`. The workflow now also runs when a release is published, and installs that release.
+- `install.sh` fetches over https only, including after a redirect.
 
 ## MCP server 1.22.1 / Java plugin 1.6.1 / workflow packages 1.21.1
 
