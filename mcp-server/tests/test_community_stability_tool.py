@@ -471,6 +471,49 @@ async def test_the_partition_is_put_back_when_a_run_fails_partway(rec):
     assert dict(partition_writes(after_last_run(rec))) == HAD
 
 
+async def test_the_partition_is_put_back_when_the_call_is_cancelled(rec, monkeypatch):
+    """Stopping a long stability run from the chat cancels the call mid-run. The partition the
+    person had must still go back: a cancelled call that leaves a randomized run in their column
+    is the overwrite this restore exists to prevent."""
+    import asyncio
+
+    rec.nodes = held(HAD)
+    rec.responses = plan([STABLE])
+    seen = {"runs": 0}
+
+    async def request(method, endpoint, params=None, json_data=None, timeout=None):
+        if endpoint == DETECT:
+            seen["runs"] += 1
+            if seen["runs"] == 2:
+                rec.calls.append({"method": method, "endpoint": endpoint, "json": json_data})
+                raise asyncio.CancelledError()
+        return await rec(method, endpoint, params, json_data, timeout)
+
+    monkeypatch.setattr(gephi_mcp.gephi, "request", request)
+
+    with pytest.raises(asyncio.CancelledError):
+        await gephi_mcp.gephi_community_stability(runs=3)
+
+    assert dict(partition_writes(after_last_run(rec))) == HAD
+
+
+async def test_the_receipt_keeps_the_resolution_of_the_partition_in_the_column(rec):
+    """After a stability run puts the person's partition back, the column holds the partition
+    they computed, so the receipt's modularity entry must keep that run's resolution, not the
+    stability run's (the stability run is recorded under analyses with its own)."""
+    gephi_mcp.LEDGER.reset()
+    rec.responses = [{"success": True, "modularity": 0.4, "communities": 2}]
+    await gephi_mcp.gephi_compute_modularity(resolution=0.5)
+    rec.nodes = held(HAD)
+    rec.responses = plan([STABLE] * 2)
+
+    await gephi_mcp.gephi_community_stability(runs=2, resolution=2.0)
+
+    stats = json.loads(await gephi_mcp.gephi_session_receipt())["statistics"]
+    said = [st["params"].get("resolution") for st in stats if st["metric"] == "modularity"]
+    assert said == [0.5]
+
+
 async def test_with_no_partition_before_the_last_run_is_left_and_the_reply_says_so(rec):
     rec.responses = plan([STABLE] * 2)
 

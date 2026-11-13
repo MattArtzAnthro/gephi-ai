@@ -217,6 +217,8 @@ def test_needs_graph_facts_is_true_when_a_caveat_depends_on_the_graph():
     ("DELETE", "/workspace/delete"),
     ("POST", "/project/open"),
     ("POST", "/import/gexf"),
+    ("POST", "/graph/edge/weight"),
+    ("POST", "/graph/edge/attributes"),
 ])
 def test_these_calls_change_which_graph_we_are_looking_at(method, endpoint):
     assert mutates_graph(method, endpoint) is True
@@ -233,6 +235,17 @@ def test_these_calls_change_which_graph_we_are_looking_at(method, endpoint):
     ("POST", "/layout/run"),
     ("POST", "/preview/settings"),
     ("POST", "/datalab/frequencies"),
+    # Node values and new columns change neither the node set, the direction, nor any edge
+    # weight. Treating them as edits erased weights_vary after every profile and stability run,
+    # which write a partition back, so the edge-weight caveat could never fire.
+    ("POST", "/graph/nodes/attributes"),
+    ("POST", "/graph/node/attributes"),
+    ("POST", "/graph/columns/add"),
+    # Moving nodes and the camera changes no node, tie or weight; the computed layouts post both,
+    # so treating them as edits silenced the edge-weight caveat after any of those layouts.
+    ("POST", "/graph/nodes/positions"),
+    ("POST", "/graph/node/position"),
+    ("POST", "/view/focus"),
 ])
 def test_these_calls_leave_the_graph_facts_valid(method, endpoint):
     assert mutates_graph(method, endpoint) is False
@@ -304,3 +317,38 @@ async def test_profiling_the_graph_teaches_the_caveat_layer_about_weights(rec):
 
     assert "gephi-557" in {c["id"] for c in out.get("caveats", [])}, (
         "profiling established that weights vary, so the weight caveat must now fire")
+
+
+async def test_the_weight_caveat_survives_the_partition_write_back(monkeypatch):
+    """Through the real client: profile and stability both write node values after learning that
+    weights vary. Betweenness after them must still carry the edge-weight caveat."""
+    import gephi_mcp as g
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"success": True, "set": 3, "not_found": 0, "betweenness": "done"}
+
+    class FakeAsyncClient:
+        def __init__(self, *_a, **_k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def request(self, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(g.httpx, "AsyncClient", FakeAsyncClient)
+    g.note_weights_vary(True)
+    await g.gephi.request("POST", "/graph/columns/add", json_data={"name": "x"})
+    await g.gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": []})
+
+    out = json.loads(await g.gephi_compute_betweenness())
+
+    assert "gephi-557" in {c["id"] for c in out.get("caveats", [])}

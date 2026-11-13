@@ -1953,17 +1953,23 @@ async def _fetch_graph_facts() -> GraphFacts:
     return _graph_facts
 
 
-async def fmt_stat(metric: str, resp: dict[str, Any], **params: Any) -> str:
+async def fmt_stat(metric: str, resp: dict[str, Any], record: bool = True,
+                   **params: Any) -> str:
     """Format a statistic result, attaching any known defect that applies to it.
 
     Adds a `caveats` key only when the list is non-empty, so a call with nothing to warn about is
     byte-identical to what it returned before. Failure anywhere in this layer returns the
     statistic unchanged: a bug here must never fail a measurement that otherwise succeeded.
+
+    record: add the run to the receipt's statistics. False when the run's columns did not stay
+    on the graph (a stability run that put the person's partition back), because the receipt
+    describes what the columns hold.
     """
     try:
         if not (isinstance(resp, dict) and resp.get("success", True)):
             return fmt(resp)
-        LEDGER.record("statistic", metric=metric, params=dict(params))
+        if record:
+            LEDGER.record("statistic", metric=metric, params=dict(params))
         facts = await _fetch_graph_facts() if needs_graph_facts(metric) else GraphFacts()
         found = caveats_for(metric, params=params, facts=facts)
         if found:
@@ -2098,6 +2104,20 @@ async def _restore_partition(had: dict[str, Any]) -> dict[str, Any] | None:
     return written
 
 
+async def _restore_partition_to_the_end(had: dict[str, Any]) -> dict[str, Any] | None:
+    """`_restore_partition`, run to the end even while the call is being cancelled.
+
+    Returns what `_restore_partition` returns (None when the partition went back), or a failure
+    when the restore could not finish within the cleanup bound."""
+    async def restore() -> tuple[dict[str, Any] | None]:
+        return (await _restore_partition(had),)
+
+    done = await _shielded(restore)
+    if done is None:
+        return {"success": False, "error": "putting the partition back did not finish in time"}
+    return done[0]
+
+
 def _note_partition(result: dict[str, Any], had: dict[str, Any],
                     failed: dict[str, Any] | None) -> dict[str, Any]:
     """Say on a result what became of the partition modularity_class held before the call."""
@@ -2214,8 +2234,12 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
                               "read first could not be put back."),
                     "detail": before})
     had = before["partition"]
-    collected = await _stability_runs(runs, resolution)
-    failed = await _restore_partition(had)
+    try:
+        collected = await _stability_runs(runs, resolution)
+    finally:
+        # Also on a cancelled or crashed call: stopping the runs must not leave one of them in
+        # the person's column.
+        failed = await _restore_partition_to_the_end(had)
     if isinstance(collected, dict):
         return fmt(_note_partition(dict(collected), had, failed))
     partitions, reruns, randomized = collected
@@ -2278,7 +2302,10 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
     LEDGER.record("community_stability", runs=runs, resolution=resolution,
                   mean_stability=result.get("mean_stability"),
                   consensus_column=result.get("consensus_column"))
-    return await fmt_stat("modularity", result, resolution=resolution)
+    # With the person's partition back in the column, this call's runs are not what the column
+    # holds; the run is in the receipt under analyses with its resolution.
+    put_back = bool(had) and not failed
+    return await fmt_stat("modularity", result, record=not put_back, resolution=resolution)
 
 
 async def _compute_profile(include_slow: bool = False) -> dict:
@@ -2307,8 +2334,12 @@ async def _compute_profile(include_slow: bool = False) -> dict:
     # The run below rewrites modularity_class; the export above holds what was there, which goes
     # back so profiling never replaces a partition the person already had.
     had = _partition_of(graph["nodes"], "key")
-    mod = await _run_modularity()
-    _note_partition(profile, had, await _restore_partition(had))
+    failed = None
+    try:
+        mod = await _run_modularity()
+    finally:
+        failed = await _restore_partition_to_the_end(had)
+    _note_partition(profile, had, failed)
     if mod.get("success"):
         profile["modularity"] = {k: mod[k] for k in ("modularity", "communities") if k in mod}
     cc = await gephi.request("POST", "/statistics/clustering-coefficient", json_data={})

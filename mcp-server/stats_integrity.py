@@ -159,6 +159,17 @@ _NON_STRUCTURAL = (
     "/preview/",
     "/datalab/frequencies",
     "/datalab/duplicates",
+    # Node values and new columns leave the node set, the direction and every edge weight as
+    # they were. Profile and stability write a partition back after learning weights_vary, and
+    # counting that as an edit erased the fact, so the edge-weight caveat never fired.
+    "/graph/nodes/attributes",
+    "/graph/node/attributes",
+    "/graph/columns/add",
+    # Positions and the camera move pixels, not nodes or ties. The computed layouts post both,
+    # and counting them as edits silenced the edge-weight caveat after every such layout.
+    "/graph/nodes/positions",
+    "/graph/node/position",
+    "/view/focus",
     "/graph/shortest-path",
     "/selection",
     "/health",
