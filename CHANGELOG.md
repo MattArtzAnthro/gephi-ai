@@ -6,6 +6,18 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## Unreleased
 
+### Changed
+- **The tree-like flag gives its measure and a prediction to check, not a certainty.** It fires on
+  any graph with two ties per node or fewer, and said force layouts "will NOT separate" its
+  communities "no matter how long they run". On a sparse graph with four planted communities
+  (1.85 ties per node) ForceAtlas 2 separated them to 0.485, so the claim held for star-and-branch
+  networks like reply networks but not for sparsity as such. The flag now states the ties per node
+  and says force layouts often cannot separate such communities, and to compare
+  `gephi_community_layout` with a force layout by `gephi_visual_qa`'s partition separation. The
+  skill, the layout guide, the tool reference, the community layout's description, and the
+  `/explore` and `/import-and-explore` workflows (Claude Code and Codex) now run both layouts on a
+  flagged graph and keep the one with the clearer separation.
+
 ### Fixed
 - **The Claude Code plugin's Gephi check no longer hangs on a frozen Gephi.** The PreToolUse
   hook waited without limit when something accepted the connection and never answered, then said

@@ -1,8 +1,8 @@
 """Community-anchored radial layout: one radial fan per community, packed as discs.
 
-Force-directed layouts cannot separate communities in tree-like networks
-(replies, retweets, citations from a seed): communities there are stars fanning
-out from hubs, and interleaved star-arms have no ties pulling them together.
+Force-directed layouts often cannot separate communities in tree-like networks
+(replies, retweets, citations from a seed): communities there are usually stars
+fanning out from hubs, and interleaved star-arms have few ties pulling them together.
 This layout takes a detected partition and draws each community as its own
 radial fan (hub at center, members ringed by graph distance from the hub,
 branch angles sized by subtree), then packs the fans as non-overlapping discs.

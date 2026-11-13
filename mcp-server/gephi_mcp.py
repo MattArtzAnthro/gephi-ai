@@ -1929,14 +1929,15 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
                                  min_community_size: int = 6,
                                  finish_noverlap: bool = True) -> str:
     """Lay the graph out as one radial fan per community, packed as discs —
-    the layout for networks where force layouts stay mixed no matter how long
-    they run.
+    the layout for networks where force layouts stay mixed however long they
+    run (measure it with gephi_visual_qa rather than assume it).
 
     Use on tree-like networks (replies, retweets, mentions, citations from a
     seed — anything the profile flags as leaf-majority or tree-like): their
-    communities are stars fanning out from hubs, interleaved star-arms have no
-    ties pulling them together, so ForceAtlas 2 leaves real communities
-    visually interpenetrating. This layout takes the DETECTED partition and
+    communities are usually stars fanning out from hubs, interleaved star-arms
+    have few ties pulling them together, so ForceAtlas 2 often leaves real
+    communities visually interpenetrating; compare the two by partition
+    separation in gephi_visual_qa. This layout takes the DETECTED partition and
     draws each community as its own disc: hub at center, members ringed by
     graph distance from the hub, branch angles sized by subtree.
 

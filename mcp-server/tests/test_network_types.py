@@ -77,6 +77,19 @@ def test_a_directed_tree_is_flagged_tree_like(tmp_path):
     assert "tree-like" in flags(profile)
 
 
+def test_the_tree_like_flag_states_its_ratio_and_a_prediction_to_check(tmp_path):
+    """The flag fires on any graph with up to two ties per node. A sparse graph with four planted
+    communities (1.85 ties per node) separated under ForceAtlas 2 to 0.485, so "force layouts will
+    NOT separate them no matter how long they run" overclaims. It gives the measured ratio and
+    says how to check the prediction instead."""
+    _, profile = profile_of(NETWORKS["directed tree-like"], tmp_path)
+    flag = next(f for f in profile["flags"] if f.startswith("tree-like"))
+    assert "1.0 ties per node" in flag              # 599 ties among 600 nodes
+    assert "often cannot separate" in flag
+    assert "gephi_visual_qa" in flag and "gephi_community_layout" in flag
+    assert "will NOT" not in flag and "no matter how long" not in flag
+
+
 @pytest.mark.parametrize("name", ["les-miserables (weighted)", "karate (two clubs)",
                                   "four planted blocks", "tiny (two nodes)"])
 def test_well_formed_graphs_raise_no_flags(name, tmp_path):

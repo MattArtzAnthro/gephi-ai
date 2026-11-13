@@ -86,7 +86,7 @@ Three numbers set layout parameters before any render:
 
 - `weights.heavy_tailed`: a few ties are far heavier than the rest and will dominate a force layout. Log-transform the weights or lower `edgeWeightInfluence` first.
 - Strongly negative `degree.assortativity` (hubs link mostly to small nodes, not to each other): hub-and-spoke wiring. Each hub sits in a halo of its neighbours that the layout produces; that halo is not a finding. Leave Dissuade Hubs off.
-- The hairball flag: filter weak ties or raise `scalingRatio` before rendering. The tree-like flag: force layouts will not separate communities; run modularity, then `gephi_community_layout`, and state its reading rule (disc placement is for legibility, not structure).
+- The hairball flag: filter weak ties or raise `scalingRatio` before rendering. The tree-like flag: force layouts often leave such communities mixed; run modularity, then compare `gephi_community_layout` with a force layout by `gephi_visual_qa`'s separation, keep the clearer, and state the disc layout's reading rule if it wins (disc placement is for legibility, not structure).
 
 Then let their goal and the profile guide every later choice:
 

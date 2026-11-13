@@ -18,7 +18,7 @@ not be criticized for crossing edges.
 | What the person wants | Use | Notes |
 |---|---|---|
 | "Show me the groups/communities" | ForceAtlas 2 in two passes (LinLog off, then on) | The default for almost everything; see the two passes below |
-| Groups in a TREE-LIKE network (replies, retweets, seeded citations) | Community layout (`gephi_community_layout`) | Force layouts cannot separate star-shaped communities: run modularity first, then this; see the tree-like section below |
+| Groups in a TREE-LIKE network (replies, retweets, seeded citations) | Community layout (`gephi_community_layout`), compared with a force layout | Force layouts often leave star-shaped communities mixed: run modularity first, measure both by separation; see the tree-like section below |
 | A second, deterministic view of structural closeness | Similarity layout (`gephi_similarity_layout`) | Spectral embedding; proximity = structurally close, often directly connected. Not a role map. Compare against FA2; nodes the two place differently are worth a look |
 | "Who plays similar roles?" (even if not directly connected) | Similarity layout with `basis="role"` | Role features (degree, neighbours' degree, clustering, two-hop reach); proximity = similar role. Similar-role nodes can also be connected (hubs often link to hubs), so say "similar role", never "unconnected". Ignores edge weights |
 | A huge network (50k+ nodes) | OpenOrd first, then a short ForceAtlas 2 pass | OpenOrd is built for scale; FA2 refines the detail |
@@ -382,15 +382,17 @@ of interactions) have a characteristic shape the demo networks never show:
 - **External matplotlib re-render note:** GEXF colors parse as strings like
   `rgb(27,175,122)`; handle that format, not only hex.
 
-## Tree-like networks: when force layouts cannot separate communities
+## Tree-like networks: when force layouts leave communities mixed
 
-Reply, retweet, mention, and seeded-citation networks are tree-like (barely
-more ties than nodes; the profile flags it). Their communities are stars
-fanning out from hub accounts, and interleaved star-arms have no ties pulling
-them together, so **ForceAtlas 2 leaves real communities mixed no matter how
-many iterations run**. This is structural, not a tuning problem: when thousands
-of LinLog iterations barely move `partition.separation` in `gephi_visual_qa`,
-more iterations will not help.
+Reply, retweet, mention, and seeded-citation networks are often tree-like (two
+ties per node or fewer; the profile flags it and gives the ratio). Their
+communities are usually stars fanning out from hub accounts, and interleaved
+star-arms have few ties pulling them together, so **ForceAtlas 2 often leaves real
+communities mixed however many iterations run**. Sparsity alone does not decide
+it: a sparse graph whose groups have ties among their members can still separate
+under a force layout. Measure rather than assume. When thousands of LinLog
+iterations barely move `partition.separation` in `gephi_visual_qa`, more
+iterations will not help, and the community layout below is the better map.
 
 The fix is `gephi_community_layout`: detect communities first (modularity),
 then draw each as its own radial disc (hub at center, members ringed by

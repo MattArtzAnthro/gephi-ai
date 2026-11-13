@@ -362,7 +362,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Method**: computed server-side (Python), positions pushed via POST `/graph/nodes/positions`
 - **Params**: `{partition_column?: str ("Modularity Class"), min_community_size?: int (6), finish_noverlap?: bool (true)}`
 - **Returns**: includes `separation_before`/`separation_after` (1.0 = fully mixed, near 0 = tight discs)
-- **Notes**: One radial fan per community, packed as discs. For tree-like networks (replies, retweets) where force layouts cannot separate communities. Reading rule: disc placement is legibility, not structure; say so.
+- **Notes**: One radial fan per community, packed as discs. For tree-like networks (replies, retweets) where force layouts often leave communities mixed; compare the two by `gephi_visual_qa`'s separation. Reading rule: disc placement is legibility, not structure; say so.
 
 ## Statistics
 

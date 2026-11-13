@@ -330,10 +330,10 @@ def structural_profile(graph: dict) -> dict:
         )
     if n >= 100 and 0 < seen_pairs <= 2.0 * n:
         flags.append(
-            "tree-like: barely more ties than nodes, so communities are star/branch "
-            "structures with no ties pulling them together — force layouts will NOT "
-            "separate them no matter how long they run; after community detection "
-            "use gephi_community_layout instead"
+            f"tree-like: {seen_pairs / n:.1f} ties per node, so communities are likely stars "
+            "and branches with few ties between their arms, which force layouts often cannot "
+            "separate — after community detection, compare gephi_community_layout with a force "
+            "layout using gephi_visual_qa's partition separation and keep the clearer"
         )
     profile["flags"] = flags
     return profile
