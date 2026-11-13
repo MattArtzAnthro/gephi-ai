@@ -128,6 +128,47 @@ jobs:
           bash install.sh --uninstall --yes
           test ! -e "$HOME/.gephi/0.11/modules/org-gephi-plugins-gephi-ai.jar"
 
+  live-workflow:
+    # The properties a session depends on, across tool calls, on every generated network type
+    # (mcp-server/tests/live_workflow_test.py), against a real Gephi with the released plugin and
+    # the server from this checkout. Release and on demand only: it takes several minutes.
+    name: Live workflow test (Linux, every network type)
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install Gephi from the official tarball
+        run: |
+          curl -fsSL -o /tmp/gephi.tgz "https://github.com/gephi/gephi/releases/download/v$GEPHI_VERSION/gephi-$GEPHI_VERSION-linux-x64.tar.gz"
+          tar -xzf /tmp/gephi.tgz -C "$HOME"
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb
+      - name: Resolve the release to install
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          tag=${PUBLISHED_TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}
+          test -n "$tag"
+          echo "REL_VERSION=${tag#v}" >> "$GITHUB_ENV"
+      - name: Install the plugin and open Gephi on a display that outlives the step
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          Xvfb :99 -screen 0 1600x1200x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          DISPLAY=:99 bash install.sh --yes --open-gephi --version "$REL_VERSION" | tee install.log
+          grep -q "Gephi answers on 127.0.0.1:8080" install.log
+      - name: Live workflow test
+        working-directory: mcp-server
+        env:
+          GEPHI_API_URL: http://127.0.0.1:8080
+          GEPHI_SKIP_UPDATE_CHECK: "1"
+        run: PYTHONPATH=. uv run --extra dev python tests/live_workflow_test.py
+
   macos:
     name: macOS (installer brings Gephi with Homebrew)
     runs-on: macos-latest

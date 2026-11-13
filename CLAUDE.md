@@ -100,4 +100,4 @@ locally without touching your own setup, point `HOME` at an empty folder:
 Desktop step only edits the settings file under `HOME`. Close a running Gephi first, or
 add `--skip-gephi-plugin`: the installer closes the Gephi it finds whatever `HOME` says.
 
-A `fix` commit carries a test that fails without it. Plugin changes also get the live smoke test in a separate Gephi; its docstring gives the command.
+A `fix` commit carries a test that fails without it. Plugin changes also get the live smoke test in a separate Gephi; its docstring gives the command. Every server release also gets `mcp-server/tests/live_workflow_test.py` against that Gephi: the unit suite replaces the HTTP client, so properties that hold across calls are checked only there.

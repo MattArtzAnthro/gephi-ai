@@ -61,6 +61,23 @@ have yet, so it fails to install until PyPI catches up.
    a Gephi dialog is left open, and on any interface-thread warning or error the
    run adds to Gephi's own log.
 
+   Then run the live workflow test against the same second Gephi. It checks what holds across
+   calls, which neither the unit suite (it replaces the HTTP client) nor the smoke test (one call
+   per tool) can see: a partition surviving profile, stability and whatif, the receipt naming the
+   layout and the partition's resolution, the edge-weight caveat after a profile and a layout,
+   claims verifying against live values, and undo restoring a filter. It runs on generated
+   networks of several kinds, and on your own when `GEPHI_TEST_NETWORKS` names a folder of them
+   (one sub-folder each with `nodes.csv` and `edges.csv`; keep such data out of this repository):
+
+   ```bash
+   cd mcp-server && GEPHI_API_URL=http://127.0.0.1:8091 PYTHONPATH=. \
+       uv run --with networkx python tests/live_workflow_test.py
+   ```
+
+   It refuses to run without `GEPHI_API_URL`, because it opens a new project for every network.
+   Run it for every server release, not only plugin releases: every defect it covers was in the
+   server.
+
    When the Claude Code plugin changed (hooks, agents, commands), also run the live
    plugin checks. They start real Claude sessions and confirm that Claude Code applies
    the plugin's health-check hook, the agents' tool lists and the commands'
