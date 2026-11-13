@@ -70,9 +70,10 @@ You need [Gephi Desktop](https://gephi.org) 0.11.4 or newer and an AI assistant.
 
 ### 1. Add the plugin to Gephi
 
-1. Download `gephi-ai-1.6.1.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases).
-2. In Gephi, open **Tools > Plugins > Downloaded > Add Plugins**, select the file, and click **Install**.
-3. Restart Gephi. **Tools > Gephi AI Server** shows that the plugin is running.
+1. In Gephi, open **Tools > Plugins > Available Plugins**, tick **Gephi AI**, and click **Install**.
+2. Restart Gephi. **Tools > Gephi AI Server** shows that the plugin is running.
+
+Gephi AI is listed in Gephi's own plugin center. To install a release the center does not list yet, download `gephi-ai-1.6.1.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and add it through **Tools > Plugins > Downloaded > Add Plugins**.
 
 ### 2. Connect your assistant
 
@@ -154,13 +155,13 @@ With Gephi open, ask your assistant: **"Check if Gephi is running."** It should 
 
 ## Updating
 
-The health check tells you once per session when something is out of date.
+The health check tells you when something is out of date, once for each installed version.
 
 - **Installed with the one-command installer:** run it again. It updates whatever is behind and leaves the rest alone.
 - **Claude Code:** `claude plugin update gephi-network-analysis@gephi-ai`, then start a new session.
 - **Claude Desktop bundle:** download the newest `.mcpb` from Releases and double-click it.
 - **Config file or `uvx` setups:** nothing to do; `uvx` fetches the latest release when the app restarts.
-- **Gephi plugin:** install the newest `.nbm` through **Tools > Plugins > Downloaded** and restart Gephi.
+- **Gephi plugin:** Gephi offers the update under **Tools > Plugins > Updates**; install it and restart Gephi. A release the plugin center does not list yet installs from its `.nbm` through **Tools > Plugins > Downloaded**.
 
 <details>
 <summary>Upgrade notes</summary>

@@ -98,7 +98,7 @@ AUTO_SNAPSHOT = os.environ.get("GEPHI_AUTO_SNAPSHOT", "1") != "0"
 SNAPSHOT_MAX_NODES = int(os.environ.get("GEPHI_SNAPSHOT_MAX_NODES", "200000"))
 UNDO_PREFIX = "[undo] "
 
-# ── Version freshness (checked once per session in health_check) ──────────
+# ── Version freshness (checked in health_check, once per plugin version) ──
 try:
     # version() can RETURN None rather than raise when a site-packages directory holds
     # more than one dist-info for this package (an orphaned one from an earlier install
@@ -112,7 +112,7 @@ except Exception:  # running from source, not an installed dist
 # One canonical version file on main; a raw file is not GitHub-API-rate-limited.
 LATEST_URL = ("https://raw.githubusercontent.com/MattArtzAnthro/gephi-ai/"
               "main/latest.json")
-_freshness_cache: dict[str, Any] = {}  # checked once per process
+_freshness_cache: dict[str, Any] = {}  # checked once per plugin and Gephi version
 
 
 def _semver(v: str) -> tuple[int, ...]:
@@ -130,11 +130,14 @@ def _is_behind(installed: str | None, latest: str | None) -> bool:
 
 async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
     """Compare the running server + Gephi plugin against the latest published
-    versions. Fail-silent, 2s timeout, cached once per process, opt-out via
+    versions. Fail-silent, 2s timeout, cached per plugin and Gephi version, opt-out via
     GEPHI_SKIP_UPDATE_CHECK. Returns an 'update' dict when something is behind."""
     if os.environ.get("GEPHI_SKIP_UPDATE_CHECK"):
         return None
-    if "result" in _freshness_cache:
+    # Keyed by the Gephi plugin and Gephi versions, so a plugin updated mid-session is checked
+    # again instead of reported as still behind.
+    key = (health.get("version"), health.get("gephi_version"))
+    if _freshness_cache.get("key") == key and "result" in _freshness_cache:
         return _freshness_cache["result"]
     result = None
     try:
@@ -172,13 +175,16 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
                     "Claude Code: run `claude plugin update "
                     "gephi-network-analysis@gephi-ai`, then restart. "
                     "Claude Desktop: download the newest .mcpb from the Releases "
-                    "page. Gephi plugin: install the newest .nbm from Releases via "
-                    "Tools > Plugins > Downloaded, then restart Gephi."),
+                    "page. Gephi plugin: in Gephi, open Tools > Plugins > Updates (or "
+                    "Available Plugins), install Gephi AI, then restart Gephi; if Gephi does "
+                    "not list the new version yet, install the newest .nbm from Releases via "
+                    "Tools > Plugins > Downloaded."),
             }
         else:
             result = {"available": False}  # checked and current (distinct from None)
     except Exception:
         result = None  # check couldn't run (offline/error) — status unknown, stay silent
+    _freshness_cache["key"] = key
     _freshness_cache["result"] = result
     return result
 
@@ -944,7 +950,7 @@ async def gephi_health_check() -> str:
     "unknown" (the renderer could not be read).
 
     Also reports `server_version` (the MCP server) alongside `version` (the Gephi
-    plugin), plus a freshness signal checked once per session: `update` when the
+    plugin), plus a freshness signal checked once per installed plugin: `update` when the
     install is behind the latest release (tell the user once, plainly, with the
     how_to_update step; when the newest Gephi plugin needs a newer Gephi, that step says to
     update Gephi first), or `up_to_date: true` when it is current. Neither appears
@@ -1753,6 +1759,10 @@ async def gephi_similarity_layout(projection: Literal["auto", "spectral", "pca",
                 break
             await asyncio.sleep(0.5)
     await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
+    # The receipt reports the last layout recorded; without this it named whatever ran before.
+    LEDGER.record("run_layout", algorithm="gephi_similarity_layout", basis=basis,
+                  projection=projection, projection_used=method, dimensions=dimensions,
+                  finish_noverlap=finish_noverlap)
     result = {"success": True, "layout": "similarity", "basis": basis, "projection_used": method,
               "nodes_positioned": len(positions),
               "reading_note": _SIMILARITY_NOTES[basis]}
@@ -1823,6 +1833,9 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
             await asyncio.sleep(0.5)
     await gephi.request("POST", "/view/focus", json_data={"mode": "graph"})
     after = separation_score(graph, positions, partition_column)
+    LEDGER.record("run_layout", algorithm="gephi_community_layout",
+                  partition_column=partition_column, min_community_size=min_community_size,
+                  finish_noverlap=finish_noverlap)
     return fmt(_carry_filter_warning(exported, {"success": True, "layout": "community-discs", **info,
                 "nodes_positioned": len(positions),
                 "separation_before": before, "separation_after": after,
@@ -2036,10 +2049,100 @@ def _partition_value(attributes: dict[str, Any]) -> Any:
     return None
 
 
+def _partition_of(nodes: list[dict[str, Any]], id_key: str) -> dict[str, Any]:
+    """{node id: community id} for the nodes that carry one."""
+    return {n[id_key]: value for n in nodes
+            if (value := _partition_value(n.get("attributes", {}))) is not None}
+
+
+#: The node column Gephi's modularity writes its partition to, on every run.
+PARTITION_COLUMN = "modularity_class"
+
+
+async def _current_partition() -> dict[str, Any]:
+    """The partition modularity_class holds now, read before a tool's own runs overwrite it.
+
+    Returns {"success": True, "partition": {node: community}}, empty when the graph has none, or
+    the failed response.
+    """
+    found = await gephi.request("GET", "/graph/nodes",
+                                params={"columns": PARTITION_COLUMN, "limit": 10**9})
+    if not found.get("success", True):
+        return found
+    return {"success": True, "partition": _partition_of(found.get("nodes") or [], "id")}
+
+
+async def _restore_partition(had: dict[str, Any]) -> dict[str, Any] | None:
+    """Write the partition a tool found back to modularity_class after its own runs.
+
+    Returns None when it went back on every node, or when there was none to put back; otherwise
+    the response that says why it did not.
+    """
+    if not had:
+        return None
+    written = await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": [
+        {"id": node, "attributes": {PARTITION_COLUMN: value}} for node, value in had.items()]})
+    if written.get("success", True) and not written.get("not_found"):
+        return None
+    return written
+
+
+def _note_partition(result: dict[str, Any], had: dict[str, Any],
+                    failed: dict[str, Any] | None) -> dict[str, Any]:
+    """Say on a result what became of the partition modularity_class held before the call."""
+    if failed is not None:
+        result["modularity_class_restore_failed"] = (
+            "The partition you had in modularity_class could not be put back, so the column now "
+            "holds this call's last modularity run, not yours. Recompute or reload your "
+            "partition before colouring by it or citing it.")
+        result["modularity_class_restore_detail"] = failed
+    elif had:
+        result["modularity_class"] = (
+            "restored: it holds the partition you had before this call. Gephi's Statistics "
+            "panel still shows the score of this call's last modularity run.")
+    return result
+
+
 #: Per-node stability is written to this node column by gephi_community_stability.
 STABILITY_COLUMN = "community_stability"
 #: Above this many nodes, gephi_community_stability returns summaries instead of per-node lists.
 LIST_NODES_UP_TO = 50
+
+
+async def _stability_runs(runs: int, resolution: float
+                         ) -> tuple[list[dict[str, Any]], int] | dict[str, Any]:
+    """Run detection `runs` times and read each partition back.
+
+    Returns (partitions, reruns after non-convergence), or the failed response that stopped it.
+    """
+    from gephi_mcp_viewer import parse_gexf
+
+    partitions: list[dict[str, Any]] = []
+    reruns = 0
+    deadline, slowest = MODULARITY_DEADLINE, 0.0
+    for _ in range(runs):
+        started = time.monotonic()
+        mod = await _run_modularity(resolution, deadline)
+        if not (isinstance(mod, dict) and mod.get("success")):
+            return mod
+        reruns += mod.get("reruns_after_nonconvergence", 0)
+        if not mod.get("reruns_after_nonconvergence"):
+            slowest = max(slowest, time.monotonic() - started)
+            deadline = min(MODULARITY_DEADLINE, max(MODULARITY_MIN_DEADLINE, 20 * slowest))
+        exported = await _export_gexf_inline()
+        if not (isinstance(exported, dict) and exported.get("success")):
+            return exported
+        graph = parse_gexf(exported["content"], max_nodes=10**9)
+        partition = _partition_of(graph["nodes"], "key")
+        if not partition:
+            return {"success": False,
+                    "error": ("Ran community detection but could not read any partition back "
+                              "from the graph. Gephi titles the column 'Modularity Class'; if "
+                              "this build names it something else, the read-back needs "
+                              "updating. Reporting nothing rather than an empty result, "
+                              "because an empty result looks exactly like a stable one.")}
+        partitions.append(partition)
+    return partitions, reruns
 
 
 @_tool(name="gephi_community_stability")
@@ -2071,8 +2174,11 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
 
     Both are written to their own columns (`consensus_community`, and `stable_core` with -1 for
     nodes in no core) rather than overwriting `modularity_class`, so the run you already had
-    survives (gephi#2590). Each node's stability goes to `community_stability`, ready to colour or
-    size by. On graphs over 50 nodes the reply carries summaries and the least stable nodes, not
+    survives (gephi#2590). Each run rewrites `modularity_class`, so the partition it held is read
+    first and written back after the runs; `modularity_class` in the reply says so, and
+    `modularity_class_restore_failed` says when it could not be. On a graph with no partition
+    before, the column is left holding the last run. Each node's stability goes to
+    `community_stability`, ready to colour or size by. On graphs over 50 nodes the reply carries summaries and the least stable nodes, not
     every node's score or every group's members; those are on the graph.
 
     Use this before describing communities as a finding. Answers gephi#2968, which Gephi closed
@@ -2083,42 +2189,32 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
                     "error": ("runs must be at least 2: a single run is the thing you already "
                               "have, and says nothing about whether it is reproducible.")})
 
-    from gephi_mcp_viewer import parse_gexf
-
-    partitions: list[dict[str, Any]] = []
-    reruns = 0
-    deadline, slowest = MODULARITY_DEADLINE, 0.0
-    for _ in range(runs):
-        started = time.monotonic()
-        mod = await _run_modularity(resolution, deadline)
-        if not (isinstance(mod, dict) and mod.get("success")):
-            return fmt(mod)
-        reruns += mod.get("reruns_after_nonconvergence", 0)
-        if not mod.get("reruns_after_nonconvergence"):
-            slowest = max(slowest, time.monotonic() - started)
-            deadline = min(MODULARITY_DEADLINE, max(MODULARITY_MIN_DEADLINE, 20 * slowest))
-        exported = await _export_gexf_inline()
-        if not (isinstance(exported, dict) and exported.get("success")):
-            return fmt(exported)
-        graph = parse_gexf(exported["content"], max_nodes=10**9)
-        partition = {
-            n["key"]: value
-            for n in graph["nodes"]
-            if (value := _partition_value(n.get("attributes", {}))) is not None
-        }
-        if not partition:
-            return fmt({"success": False,
-                        "error": ("Ran community detection but could not read any partition back "
-                                  "from the graph. Gephi titles the column 'Modularity Class'; if "
-                                  "this build names it something else, the read-back needs "
-                                  "updating. Reporting nothing rather than an empty result, "
-                                  "because an empty result looks exactly like a stable one.")})
-        partitions.append(partition)
+    # Every run below rewrites modularity_class, so what it holds now is read first and written
+    # back afterwards, whether or not the runs succeed.
+    before = await _current_partition()
+    if not before.get("success", True):
+        return fmt({"success": False,
+                    "error": ("Could not read modularity_class before running, so nothing was "
+                              "run: the runs overwrite that column, and a partition that was not "
+                              "read first could not be put back."),
+                    "detail": before})
+    had = before["partition"]
+    collected = await _stability_runs(runs, resolution)
+    failed = await _restore_partition(had)
+    if isinstance(collected, dict):
+        return fmt(_note_partition(dict(collected), had, failed))
+    partitions, reruns = collected
 
     result: dict[str, Any] = {"success": True, "resolution": resolution}
     result.update(consensus(partitions))
     if reruns:
         result["reruns_after_nonconvergence"] = reruns
+    _note_partition(result, had, failed)
+    if not had:
+        # Nothing to protect, and the plugin cannot drop a column, so the last run stays: say
+        # so, because it is one draw and the consensus column is the partition to use.
+        result["modularity_class"] = ("holds the last of these runs; the graph had no partition "
+                                      "before this call. Use the consensus column instead.")
 
     groups = result.get("consensus_groups") or []
     cores = result.pop("stable_core_groups", None) or []
@@ -2188,7 +2284,11 @@ async def _compute_profile(include_slow: bool = False) -> dict:
     # on the statistics path. Keeping it is what lets the edge-weight caveats ever fire.
     note_weights_vary(bool(profile.get("weighted")))
 
+    # The run below rewrites modularity_class; the export above holds what was there, which goes
+    # back so profiling never replaces a partition the person already had.
+    had = _partition_of(graph["nodes"], "key")
     mod = await _run_modularity()
+    _note_partition(profile, had, await _restore_partition(had))
     if mod.get("success"):
         profile["modularity"] = {k: mod[k] for k in ("modularity", "communities") if k in mod}
     cc = await gephi.request("POST", "/statistics/clustering-coefficient", json_data={})
@@ -2226,7 +2326,8 @@ async def gephi_profile_graph(include_slow: bool = False) -> str:
     low means people address hubs rather than converse with them), plus
     Gephi-computed modularity (community count and score; random graphs with the
     same degrees score 0.3-0.6, so the score alone never shows strong communities:
-    run gephi_community_stability) and clustering coefficient with its
+    run gephi_community_stability; a partition already in modularity_class is put back
+    afterwards) and clustering coefficient with its
     random-graph expectation
     (clustering_vs_random is the verdict: observed/expected for this exact
     degree sequence — quote the ratio, never the raw coefficient alone).
@@ -3849,6 +3950,8 @@ async def gephi_bipartite_layout(mode_column: str, separation: float = 600.0,
                                  json_data={"positions": positions})
     if not (isinstance(pushed, dict) and pushed.get("success")):
         return fmt(pushed)
+    LEDGER.record("run_layout", algorithm="gephi_bipartite_layout", mode_column=mode_column,
+                  separation=separation, spacing=spacing)
     left, right = split_modes(graph, mode_column)
     return fmt({"success": True, "positioned": len(positions),
                 "modes": {"left": len(left), "right": len(right)},

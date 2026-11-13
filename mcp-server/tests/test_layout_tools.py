@@ -492,3 +492,56 @@ def test_small_pieces_sit_together_in_a_compact_block():
     w, h = np.ptp(small, axis=0)
     assert max(w, h) <= 2 * min(w, h), "the small pieces should form a block, not a row"
     assert max(w, h) <= np.ptp(main, axis=0).max(), "the block should not outsize the main piece"
+
+
+# ─── The session receipt names the layout that placed the nodes ─────────────────────
+
+@pytest.fixture
+def after_fruchterman_reingold():
+    """A force layout ran first, as it did live before the computed layout replaced it."""
+    gephi_mcp.LEDGER.reset()
+    gephi_mcp.LEDGER.record("run_layout", algorithm="Fruchterman Reingold", iterations=1000)
+    yield
+    gephi_mcp.LEDGER.reset()
+
+
+async def test_the_receipt_names_community_layout_after_it_replaces_a_force_layout(
+        monkeypatch, fast_sleep, after_fruchterman_reingold):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    await gephi_mcp.gephi_community_layout(partition_column="Modularity Class",
+                                           min_community_size=4)
+
+    assert gephi_mcp.LEDGER.receipt()["layout"] == {
+        "algorithm": "gephi_community_layout", "partition_column": "Modularity Class",
+        "min_community_size": 4, "finish_noverlap": True}
+
+
+async def test_a_community_layout_that_moved_nothing_leaves_the_receipt_alone(
+        monkeypatch, after_fruchterman_reingold):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf(), push_ok=False))
+
+    await gephi_mcp.gephi_community_layout(partition_column="Modularity Class")
+
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "Fruchterman Reingold"
+
+
+async def test_the_receipt_names_similarity_layout_and_the_projection_it_used(
+        monkeypatch, after_fruchterman_reingold):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf()))
+
+    out = json.loads(await gephi_mcp.gephi_similarity_layout(
+        projection="spectral", dimensions=4, finish_noverlap=False))
+
+    assert gephi_mcp.LEDGER.receipt()["layout"] == {
+        "algorithm": "gephi_similarity_layout", "basis": "spectral", "projection": "spectral",
+        "projection_used": out["projection_used"], "dimensions": 4, "finish_noverlap": False}
+
+
+async def test_a_similarity_layout_that_moved_nothing_leaves_the_receipt_alone(
+        monkeypatch, after_fruchterman_reingold):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", FakeGephi(two_stars_gexf(), push_ok=False))
+
+    await gephi_mcp.gephi_similarity_layout(projection="spectral")
+
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "Fruchterman Reingold"

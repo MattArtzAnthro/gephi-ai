@@ -101,6 +101,26 @@ class CodexPluginPackageTests(unittest.TestCase):
             self.assertNotIn("Dispatch the", text)
             self.assertNotIn("$ARGUMENTS", text)
 
+    def test_exploration_styling_and_layout_follow_the_profile(self):
+        # The explore procedures say "do not run a fixed recipe"; their style and
+        # layout steps must then follow the profile and the person, not always
+        # colour by modularity_class and run ForceAtlas 2 (which cannot separate
+        # tree-like networks).
+        paths = [
+            REPO_ROOT / "plugins/claude-code/commands/explore.md",
+            REPO_ROOT / "plugins/claude-code/commands/import-and-explore.md",
+            PLUGIN_ROOT / "skills/explore-network/SKILL.md",
+            PLUGIN_ROOT / "skills/import-and-explore/SKILL.md",
+        ]
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertIn("tree-like", text)
+                self.assertIn("gephi_community_layout", text)
+                self.assertIn("the attribute they named", text)
+                self.assertIn("the metric their interest picked", text)
+                self.assertNotIn('Tell the user: "Running ForceAtlas 2 layout..."', text)
+
     def test_skill_frontmatter_and_health_gate(self):
         for skill_dir in sorted((PLUGIN_ROOT / "skills").iterdir()):
             if not skill_dir.is_dir():

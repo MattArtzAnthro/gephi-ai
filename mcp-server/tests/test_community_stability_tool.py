@@ -44,11 +44,16 @@ class Recorder:
         self.calls = []
         self.responses = []
         self.health = None  # answers GET /health when set, outside the response queue
+        # Answers GET /graph/nodes, outside the queue: the partition the graph held before the
+        # tool ran. Empty by default, a graph on which modularity has never run.
+        self.nodes = {"success": True, "nodes": []}
 
     async def __call__(self, method, endpoint, params=None, json_data=None, timeout=None):
         self.calls.append({"method": method, "endpoint": endpoint, "json": json_data})
         if self.health is not None and endpoint == "/health":
             return self.health
+        if method == "GET" and endpoint == "/graph/nodes":
+            return self.nodes
         if self.responses:
             return self.responses.pop(0)
         return {"success": True}
@@ -357,3 +362,140 @@ async def test_after_one_run_finishes_the_rest_get_a_deadline_scaled_to_it(rec):
     sent = [c["json"]["timeout_ms"] for c in rec.calls if c["endpoint"] == "/statistics/modularity"]
     assert sent[0] == int(gephi_mcp.MODULARITY_DEADLINE * 1000)
     assert all(t == int(gephi_mcp.MODULARITY_MIN_DEADLINE * 1000) for t in sent[1:])
+
+
+# ─── The partition the person already had (gephi#2590) ─────────────────────────────────
+
+def held(assignments):
+    """GET /graph/nodes for a graph that already holds a partition. Gephi keys node attributes by
+    column title, so the column reads "Modularity Class" here, as it does live."""
+    return {"success": True, "nodes": [
+        {"id": n, "label": n, "attributes": {"Modularity Class": c}}
+        for n, c in assignments.items()]}
+
+
+HAD = {"a": 7, "b": 7, "c": 8, "d": 8}
+
+
+def partition_writes(calls):
+    """Every value written to modularity_class, in order, as (node, value) pairs."""
+    return [(u["id"], u["attributes"]["modularity_class"])
+            for c in calls if c["endpoint"] == "/graph/nodes/attributes"
+            for u in c["json"]["updates"] if "modularity_class" in u["attributes"]]
+
+
+def after_last_run(rec):
+    last = max(i for i, c in enumerate(rec.calls) if c["endpoint"] == "/statistics/modularity")
+    return rec.calls[last + 1:]
+
+
+async def test_the_partition_you_had_is_back_in_modularity_class_afterwards(rec):
+    """Every run rewrites modularity_class. The docstring promises the partition you had survives,
+    so once the runs are over that column must hold yours again, not the last run's."""
+    rec.nodes = held(HAD)
+    rec.responses = plan([STABLE, {"a": 1, "b": 2, "c": 2, "d": 2}])
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
+
+    assert dict(partition_writes(after_last_run(rec))) == HAD
+    assert out["success"] is True
+    assert "restored" in out["modularity_class"]
+    assert "modularity_class_restore_failed" not in out
+
+
+async def test_a_restore_that_fails_is_reported_not_claimed(rec):
+    rec.nodes = held(HAD)
+    rec.responses = plan([STABLE] * 2) + [{"success": False, "error": "Gephi is busy"}]
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
+
+    assert "could not be put back" in out["modularity_class_restore_failed"]
+    assert out["modularity_class_restore_detail"]["error"] == "Gephi is busy"
+    assert "modularity_class" not in out, "a failed restore must not also be reported as done"
+
+
+async def test_a_restore_that_misses_nodes_is_not_a_restore(rec):
+    rec.nodes = held(HAD)
+    rec.responses = plan([STABLE] * 2) + [{"success": True, "set": 3, "not_found": 1}]
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
+
+    assert "modularity_class_restore_failed" in out
+
+
+async def test_the_partition_is_put_back_when_a_run_fails_partway(rec):
+    rec.nodes = held(HAD)
+    rec.responses = plan([STABLE]) + [{"success": False, "error": "Gephi is busy"}]
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=3))
+
+    assert out["success"] is False and "busy" in out["error"]
+    assert dict(partition_writes(after_last_run(rec))) == HAD
+
+
+async def test_with_no_partition_before_the_last_run_is_left_and_the_reply_says_so(rec):
+    rec.responses = plan([STABLE] * 2)
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
+
+    assert partition_writes(rec.calls) == []
+    assert "last" in out["modularity_class"]
+
+
+async def test_when_the_partition_cannot_be_read_first_nothing_is_run(rec):
+    """Running without knowing what was there would overwrite a partition with no way back."""
+    rec.nodes = {"success": False, "error": "Gephi did not answer"}
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
+
+    assert out["success"] is False
+    assert "/statistics/modularity" not in rec.endpoints()
+
+
+def profile_route(rec, before, restore=None):
+    """gephi_profile_graph's calls, answered by endpoint: it runs modularity on the live graph."""
+    async def route(method, endpoint, params=None, json_data=None, timeout=None):
+        rec.calls.append({"method": method, "endpoint": endpoint, "json": json_data})
+        if endpoint == "/export/gexf":
+            return {"success": True, "content": gexf(before)}
+        if endpoint == "/statistics/modularity":
+            return {"success": True, "modularity": 0.4, "communities": 2}
+        if endpoint == "/graph/nodes/attributes":
+            return restore or {"success": True, "set": len(before), "not_found": 0}
+        return {"success": True, "average_clustering_coefficient": 0.5}
+    return route
+
+
+async def test_profiling_leaves_the_partition_you_had_in_place(rec, monkeypatch):
+    monkeypatch.setattr(gephi_mcp.gephi, "request", profile_route(rec, HAD))
+
+    out = json.loads(await gephi_mcp.gephi_profile_graph())
+
+    assert dict(partition_writes(after_last_run(rec))) == {k: str(v) for k, v in HAD.items()}
+    assert "restored" in out["modularity_class"]
+
+
+async def test_a_profile_whose_restore_fails_says_so(rec, monkeypatch):
+    failed = {"success": False, "error": "Gephi is busy"}
+    monkeypatch.setattr(gephi_mcp.gephi, "request", profile_route(rec, HAD, failed))
+
+    out = json.loads(await gephi_mcp.gephi_profile_graph())
+
+    assert "could not be put back" in out["modularity_class_restore_failed"]
+    assert "modularity_class" not in out
+
+
+async def test_profiling_a_graph_with_no_partition_writes_none(rec, monkeypatch):
+    no_partition = gexf(STABLE).replace("Modularity Class", "Something Else")
+
+    async def route(method, endpoint, params=None, json_data=None, timeout=None):
+        rec.calls.append({"method": method, "endpoint": endpoint, "json": json_data})
+        if endpoint == "/export/gexf":
+            return {"success": True, "content": no_partition}
+        return {"success": True, "modularity": 0.4}
+    monkeypatch.setattr(gephi_mcp.gephi, "request", route)
+
+    out = json.loads(await gephi_mcp.gephi_profile_graph())
+
+    assert "/graph/nodes/attributes" not in rec.endpoints()
+    assert "modularity_class" not in out and "modularity_class_restore_failed" not in out

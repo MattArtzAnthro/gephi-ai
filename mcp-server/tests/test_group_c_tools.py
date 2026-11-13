@@ -182,3 +182,26 @@ async def test_an_unreadable_workspace_points_at_the_index_not_the_id(rec):
 
     assert out["success"] is False
     assert "index" in out["error"] and "gephi_list_workspaces" in out["error"], out["error"]
+
+
+TWO_MODE = gexf({"p1": "person", "p2": "person", "e1": "event"}, [("p1", "e1"), ("p2", "e1")])
+
+
+async def test_the_receipt_names_bipartite_layout_after_it_replaces_a_force_layout(rec):
+    gephi_mcp.LEDGER.record("run_layout", algorithm="ForceAtlas 2", iterations=500)
+    rec.responses = [{"success": True, "content": TWO_MODE}, {"success": True}]
+
+    await gephi_mcp.gephi_bipartite_layout(mode_column="kind", separation=400.0, spacing=30.0)
+
+    assert gephi_mcp.LEDGER.receipt()["layout"] == {
+        "algorithm": "gephi_bipartite_layout", "mode_column": "kind",
+        "separation": 400.0, "spacing": 30.0}
+
+
+async def test_a_bipartite_layout_that_moved_nothing_leaves_the_receipt_alone(rec):
+    gephi_mcp.LEDGER.record("run_layout", algorithm="ForceAtlas 2", iterations=500)
+    rec.responses = [{"success": True, "content": TWO_MODE}, {"success": False, "error": "busy"}]
+
+    await gephi_mcp.gephi_bipartite_layout(mode_column="kind")
+
+    assert gephi_mcp.LEDGER.receipt()["layout"]["algorithm"] == "ForceAtlas 2"

@@ -365,3 +365,52 @@ async def test_no_requirement_published_changes_nothing(monkeypatch):
     _latest(monkeypatch, g, {"server": "1.0.0", "nbm": "1.5.0"})
     r = await g._check_freshness({"version": "1.4.0", "gephi_version": "0.11.1"})
     assert r["how_to_update"].startswith("Claude Code:")
+
+
+def _latest_client(payload):
+    class _Resp:
+        def json(self):
+            return payload
+
+    class _Client:
+        calls = 0
+
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+        async def get(self, url):
+            type(self).calls += 1
+            return _Resp()
+
+    return _Client
+
+
+async def test_update_advice_points_to_gephis_plugin_center(monkeypatch):
+    # The plugin is listed in Gephi's own plugin center, so that is where Gephi users update it;
+    # the .nbm from Releases stays as the fallback for a release the center has not caught up with.
+    import gephi_mcp as g
+    g._freshness_cache.clear()
+    monkeypatch.delenv("GEPHI_SKIP_UPDATE_CHECK", raising=False)
+    monkeypatch.setattr(g.httpx, "AsyncClient", _latest_client({"server": g.__version__, "nbm": "99.0.0"}))
+    r = await g._check_freshness({"version": "1.6.1", "gephi_version": "0.11.4"})
+    advice = r["how_to_update"]
+    assert "Tools > Plugins > Updates" in advice
+    assert advice.index("Tools > Plugins > Updates") < advice.index("Tools > Plugins > Downloaded")
+
+
+async def test_freshness_is_checked_again_when_the_gephi_plugin_changes(monkeypatch):
+    # Checked once per process, the answer outlived a plugin update made mid-session: after 1.6.1
+    # was installed, the health check still said 1.5.2 was installed and an update was waiting.
+    import gephi_mcp as g
+    g._freshness_cache.clear()
+    monkeypatch.delenv("GEPHI_SKIP_UPDATE_CHECK", raising=False)
+    client = _latest_client({"server": g.__version__, "nbm": "1.6.1"})
+    monkeypatch.setattr(g.httpx, "AsyncClient", client)
+    old = await g._check_freshness({"version": "1.5.2", "gephi_version": "0.11.4"})
+    assert old["available"] is True
+    new = await g._check_freshness({"version": "1.6.1", "gephi_version": "0.11.4"})
+    assert new == {"available": False}
+    again = await g._check_freshness({"version": "1.6.1", "gephi_version": "0.11.4"})
+    assert again == {"available": False}
+    assert client.calls == 2  # the same plugin is not checked twice

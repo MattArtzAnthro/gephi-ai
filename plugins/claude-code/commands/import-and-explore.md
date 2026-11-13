@@ -61,10 +61,10 @@ when the data has time columns.
 
 7. **Style the graph** (guided by the above):
    - Communities: `gephi_compute_modularity` (resolution 1.0), then `gephi_community_stability`, and say how stable the groups are.
-   - Color by community: `gephi_color_by_partition` with column `"modularity_class"` (or `stable_core` when the stability check warned), leaving `colors` unset so the plugin applies its validated palette, largest group first.
-   - Size by degree: `gephi_size_by_ranking` with column `"degree"` and the default sizes (about one to ten on screen).
+   - Color: `gephi_color_by_partition` with the attribute they named when it passed the partition baseline, otherwise `"modularity_class"` (or `stable_core` when the stability check warned), leaving `colors` unset so the plugin applies its validated palette, largest group first.
+   - Size: `gephi_size_by_ranking` with the metric their interest picked (compute it first), otherwise `"degree"`, and the default sizes (about one to ten on screen).
 
-8. **Layout**: Tell the user: "Running ForceAtlas 2 layout..." Call `gephi_run_layout` with algorithm `"ForceAtlas 2"` in two passes with `sync: true`: first 1500 iterations with properties `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01, "barnesHutOptimization": true}`, then 3000 iterations with `{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001, "barnesHutOptimization": true}` (see the layout guide). Leave Dissuade Hubs off.
+8. **Layout**: Pick it from the profile and the layout guide’s purpose table, and say which one and why before running it. If the profile flagged the graph as tree-like (replies, retweets, mentions, seeded citations), use `gephi_community_layout` on the partition chosen above: force layouts cannot separate star-shaped communities however long they run. Otherwise the default is ForceAtlas 2: call `gephi_run_layout` with algorithm `"ForceAtlas 2"` in two passes with `sync: true`: first 1500 iterations with properties `{"linLogMode": false, "scalingRatio": 10, "strongGravityMode": true, "gravity": 0.01, "barnesHutOptimization": true}`, then 3000 iterations with `{"linLogMode": true, "scalingRatio": 0.5, "strongGravityMode": true, "gravity": 0.001, "barnesHutOptimization": true}` (see the layout guide). Leave Dissuade Hubs off.
 
 9. **Report**: Summarize:
    - Graph size (nodes, edges)
