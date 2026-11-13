@@ -1987,17 +1987,28 @@ async def _modularity_can_loop() -> bool:
 
 
 async def _run_modularity(resolution: float | None = None,
-                          deadline: float = MODULARITY_DEADLINE) -> dict[str, Any]:
+                          deadline: float = MODULARITY_DEADLINE,
+                          randomize: bool = False) -> dict[str, Any]:
     """Run Gephi's modularity with a deadline.
 
     A stopped run writes nothing, so the partition column still holds the previous run; a caller
     must never read it back. On Gephi before 0.11.4 a stopped run is repeated, and the result
     carries `reruns_after_nonconvergence`; from 0.11.4 the stop is reported.
+
+    randomize: switch on Gephi's Randomize, so each run visits the nodes in a new order. Only the
+    generic statistics route can set it; the modularity route runs with Gephi's default (off).
     """
+    endpoint = "/statistics/modularity"
     body: dict[str, Any] = {"timeout_ms": int(deadline * 1000)}
     if resolution is not None:
         body["resolution"] = resolution
-    mod = await gephi.request("POST", "/statistics/modularity", json_data=body,
+    if randomize:
+        endpoint = "/statistics/run"
+        body = {"name": "Modularity",
+                "params": {"resolution": 1.0 if resolution is None else resolution,
+                           "useWeight": False, "random": True,
+                           "timeout_ms": int(deadline * 1000)}}
+    mod = await gephi.request("POST", endpoint, json_data=body,
                               timeout=deadline + REQUEST_TIMEOUT)
     if not (isinstance(mod, dict) and mod.get("stopped")):
         return mod
@@ -2009,7 +2020,7 @@ async def _run_modularity(resolution: float | None = None,
         return mod
     stopped = 1
     for _ in range(MODULARITY_ATTEMPTS - 1):
-        mod = await gephi.request("POST", "/statistics/modularity", json_data=body,
+        mod = await gephi.request("POST", endpoint, json_data=body,
                                   timeout=deadline + REQUEST_TIMEOUT)
         if not (isinstance(mod, dict) and mod.get("stopped")):
             if isinstance(mod, dict) and mod.get("success"):
@@ -2110,21 +2121,25 @@ LIST_NODES_UP_TO = 50
 
 
 async def _stability_runs(runs: int, resolution: float
-                         ) -> tuple[list[dict[str, Any]], int] | dict[str, Any]:
-    """Run detection `runs` times and read each partition back.
+                         ) -> tuple[list[dict[str, Any]], int, bool] | dict[str, Any]:
+    """Run detection `runs` times, each randomized, and read each partition back.
 
-    Returns (partitions, reruns after non-convergence), or the failed response that stopped it.
+    Returns (partitions, reruns after non-convergence, whether every run was randomized), or the
+    failed response that stopped it.
     """
     from gephi_mcp_viewer import parse_gexf
 
     partitions: list[dict[str, Any]] = []
     reruns = 0
+    randomized = True
     deadline, slowest = MODULARITY_DEADLINE, 0.0
     for _ in range(runs):
         started = time.monotonic()
-        mod = await _run_modularity(resolution, deadline)
+        mod = await _run_modularity(resolution, deadline, randomize=True)
         if not (isinstance(mod, dict) and mod.get("success")):
             return mod
+        if "random" in (mod.get("unapplied_params") or []):
+            randomized = False
         reruns += mod.get("reruns_after_nonconvergence", 0)
         if not mod.get("reruns_after_nonconvergence"):
             slowest = max(slowest, time.monotonic() - started)
@@ -2142,7 +2157,7 @@ async def _stability_runs(runs: int, resolution: float
                               "updating. Reporting nothing rather than an empty result, "
                               "because an empty result looks exactly like a stable one.")}
         partitions.append(partition)
-    return partitions, reruns
+    return partitions, reruns, randomized
 
 
 @_tool(name="gephi_community_stability")
@@ -2203,12 +2218,17 @@ async def gephi_community_stability(runs: int = 20, resolution: float = 1.0,
     failed = await _restore_partition(had)
     if isinstance(collected, dict):
         return fmt(_note_partition(dict(collected), had, failed))
-    partitions, reruns = collected
+    partitions, reruns, randomized = collected
 
     result: dict[str, Any] = {"success": True, "resolution": resolution}
     result.update(consensus(partitions))
     if reruns:
         result["reruns_after_nonconvergence"] = reruns
+    if not randomized:
+        result["randomize_warning"] = (
+            "Gephi's modularity did not accept the Randomize setting, so the runs were not "
+            "randomized: they may repeat one answer, and agreement between them does not show "
+            "that the communities are stable.")
     _note_partition(result, had, failed)
     if not had:
         # Nothing to protect, and the plugin cannot drop a column, so the last run stays: say

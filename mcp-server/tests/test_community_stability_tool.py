@@ -81,13 +81,48 @@ def rec(monkeypatch):
 
 STABLE = {"a": 1, "b": 1, "c": 2, "d": 2}
 
+# Stability runs go through the generic statistics route, which can switch on Randomize.
+DETECT = "/statistics/run"
+
 
 async def test_it_runs_detection_once_per_requested_run(rec):
     rec.responses = plan([STABLE] * 3)
 
     await gephi_mcp.gephi_community_stability(runs=3)
 
-    assert rec.endpoints().count("/statistics/modularity") == 3
+    assert rec.endpoints().count(DETECT) == 3
+
+
+async def test_every_stability_run_asks_gephi_to_randomize(rec):
+    """Gephi runs Louvain with Randomize off, and from Gephi 0.11.4 a run with it off repeats
+    the same answer on a graph like Les Miserables: twenty runs, one partition, stability 1.0,
+    with nothing sampled. Each run has to visit the nodes in a new order to test anything."""
+    rec.responses = plan([STABLE] * 3)
+
+    await gephi_mcp.gephi_community_stability(runs=3, resolution=2.0)
+
+    runs = [c["json"] for c in rec.calls if c["endpoint"] == DETECT]
+    assert len(runs) == 3
+    for body in runs:
+        assert body["name"] == "Modularity"
+        assert body["params"]["random"] is True
+        assert body["params"]["resolution"] == 2.0
+        assert body["params"]["useWeight"] is False
+        assert body["params"]["timeout_ms"] > 0
+
+
+async def test_a_gephi_that_cannot_randomize_says_the_runs_were_not_sampled(rec):
+    """A Modularity without the random setting would run every pass in one order; the reply has
+    to say so instead of presenting identical runs as stable communities."""
+    rec.responses = []
+    for p in [STABLE] * 2:
+        rec.responses.append({"success": True, "modularity": 0.4, "communities": 2,
+                              "unapplied_params": ["random"]})
+        rec.responses.append({"success": True, "content": gexf(p)})
+
+    out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
+
+    assert "not randomized" in out["randomize_warning"]
 
 
 async def test_stable_communities_are_reported_as_stable(rec):
@@ -200,7 +235,7 @@ async def test_every_detection_run_carries_a_deadline_for_gephi(rec):
 
     await gephi_mcp.gephi_community_stability(runs=2)
 
-    sent = [c["json"] for c in rec.calls if c["endpoint"] == "/statistics/modularity"]
+    sent = [c["json"]["params"] for c in rec.calls if c["endpoint"] == DETECT]
     assert sent and all(j.get("timeout_ms", 0) > 0 for j in sent)
 
 
@@ -224,7 +259,7 @@ async def test_on_gephi_0113_a_stopped_run_is_repeated_and_the_stale_column_is_n
     assert out["runs"] == 2
     assert out["distinct_partitions"] == 2
     assert out["reruns_after_nonconvergence"] == 1
-    assert rec.endpoints().count("/statistics/modularity") == 3
+    assert rec.endpoints().count(DETECT) == 3
 
 
 async def test_on_gephi_0113_a_run_that_never_converges_stops_the_analysis(rec):
@@ -359,7 +394,7 @@ async def test_after_one_run_finishes_the_rest_get_a_deadline_scaled_to_it(rec):
 
     await gephi_mcp.gephi_community_stability(runs=3)
 
-    sent = [c["json"]["timeout_ms"] for c in rec.calls if c["endpoint"] == "/statistics/modularity"]
+    sent = [c["json"]["params"]["timeout_ms"] for c in rec.calls if c["endpoint"] == DETECT]
     assert sent[0] == int(gephi_mcp.MODULARITY_DEADLINE * 1000)
     assert all(t == int(gephi_mcp.MODULARITY_MIN_DEADLINE * 1000) for t in sent[1:])
 
@@ -385,7 +420,10 @@ def partition_writes(calls):
 
 
 def after_last_run(rec):
-    last = max(i for i, c in enumerate(rec.calls) if c["endpoint"] == "/statistics/modularity")
+    """The calls after the last detection run: stability runs go through DETECT, the profile's
+    single run through the modularity route."""
+    runs = (DETECT, "/statistics/modularity")
+    last = max(i for i, c in enumerate(rec.calls) if c["endpoint"] in runs)
     return rec.calls[last + 1:]
 
 
@@ -449,7 +487,7 @@ async def test_when_the_partition_cannot_be_read_first_nothing_is_run(rec):
     out = json.loads(await gephi_mcp.gephi_community_stability(runs=2))
 
     assert out["success"] is False
-    assert "/statistics/modularity" not in rec.endpoints()
+    assert DETECT not in rec.endpoints()
 
 
 def profile_route(rec, before, restore=None):
