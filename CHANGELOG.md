@@ -25,6 +25,12 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   knowing what the weight means.
 
 ### Fixed
+- **`scripts/verify-artifact.sh` no longer leaves an old publish marker behind a failed run,
+  and says why it stopped.** A step that failed early (the build, the venv) ended the script
+  before the cleanup that removes `.artifact-verified`, so a marker from an earlier passing run
+  still let the publish gate through. The marker is now removed first. On Debian and Ubuntu
+  without `python3-venv`, the venv step's explanation was sent to `/dev/null` and the run ended
+  with no message; it is now shown. (#22, thanks @rmdes)
 - **Another program on Gephi's port is named as such.** When something else answered at
   `GEPHI_API_URL` (8080 is a common default), the Claude Code hook said Gephi was not running and
   the server passed on that program's own error page, for example `{"detail": "Not Found"}`. Both

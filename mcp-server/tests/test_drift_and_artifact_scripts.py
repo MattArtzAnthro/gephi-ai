@@ -263,6 +263,38 @@ def test_a_probe_overlay_in_the_sdist_fails_the_artifact(tmp_path):
     assert not (work / ".artifact-verified").exists(), "a failed run left the publish marker"
 
 
+def test_a_run_that_stops_early_leaves_no_publish_marker(tmp_path):
+    """set -e ends the script at the first failed step (a build, creating the venv), before the
+    cleanup at the end, so a marker from an earlier passing run outlived a failed one."""
+    _need("bash", "git", "python3")
+    work, env = _artifact_repo(tmp_path)
+    _tool(tmp_path / "fake-bin", "uv", "exit 1\n")
+    (work / ".artifact-verified").write_text("")
+
+    run = _verify(work, env)
+
+    assert run.returncode != 0
+    assert not (work / ".artifact-verified").exists(), "a failed run left the publish marker"
+
+
+def test_a_venv_that_cannot_be_made_says_why(tmp_path):
+    """Debian's python3 without python3-venv explains itself on stdout, which went to /dev/null:
+    the run stopped after "Installing the artifact" with nothing on either stream."""
+    _need("bash", "git", "python3")
+    work, env = _artifact_repo(tmp_path)
+    real = shutil.which("python3")
+    _tool(tmp_path / "fake-bin", "python3",
+          'if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then\n'
+          '  echo "The virtual environment was not created successfully because ensurepip is not'
+          ' available. apt install python3-venv"; exit 1\nfi\n'
+          f'exec "{real}" "$@"\n')
+
+    run = _verify(work, env)
+
+    assert run.returncode != 0
+    assert "ensurepip is not available" in run.stdout + run.stderr
+
+
 def test_a_register_carrying_a_verdict_fails_the_artifact(tmp_path):
     _need("bash", "git", "python3")
     stamped = {"caveats": [{"id": "gephi-0001", "says": "Reproduced on this Gephi on 2026-01-02.",
