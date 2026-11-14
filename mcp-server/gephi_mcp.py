@@ -525,9 +525,16 @@ class GephiClient:
             return {"success": False, "error": TIMEOUT_ERROR}
         except httpx.HTTPStatusError as e:
             try:
-                return e.response.json()
+                body = e.response.json()
             except Exception:
-                return {"success": False, "error": f"HTTP {e.response.status_code}: {e.response.text}"}
+                body = None
+            if isinstance(body, dict) and "success" in body:
+                return body
+            # Every plugin reply carries "success"; anything else is another program on the port.
+            return {"success": False, "error": (
+                f"HTTP {e.response.status_code}: {e.response.text[:200]}. Something other than "
+                f"the Gephi plugin answered at {self.base_url}; if Gephi's API is on another "
+                "port, set GEPHI_API_URL to it, for example http://127.0.0.1:8081.")}
         except Exception as e:
             return {"success": False, "error": f"Request failed: {str(e)}"}
 

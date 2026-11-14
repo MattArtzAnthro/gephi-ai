@@ -22,5 +22,19 @@ GEPHI_API_URL="http://127.0.0.1:8731" bash "$HOOK" >/dev/null 2>&1
 rc=$?
 if [ "$rc" -eq 0 ]; then echo "ok   up -> exit 0"; else echo "FAIL up: expected 0, got $rc"; fail=1; fi
 
+# 3) Another service holds the port (404 on /health) -> exit 2, and say so: "Gephi is not
+#    running" sends the person to restart a Gephi that is running on another port.
+other="$(mktemp -d)"
+( cd "$other" && exec python3 -m http.server 8732 --bind 127.0.0.1 ) >/dev/null 2>&1 &
+srv2=$!
+trap 'kill "$srv" "$srv2" 2>/dev/null; rm -rf "$tmp" "$other"' EXIT
+sleep 1
+msg=$(GEPHI_API_URL="http://127.0.0.1:8732" bash "$HOOK" 2>&1 >/dev/null)
+rc=$?
+case "$rc:$msg" in
+  2:*GEPHI_API_URL*) echo "ok   other service -> exit 2, names GEPHI_API_URL" ;;
+  *) echo "FAIL other service: expected exit 2 naming GEPHI_API_URL, got $rc: $msg"; fail=1 ;;
+esac
+
 [ "$fail" -eq 0 ] && echo "ALL HOOK TESTS PASS" || echo "HOOK TESTS FAILED"
 exit "$fail"

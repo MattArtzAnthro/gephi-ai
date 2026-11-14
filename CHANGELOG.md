@@ -25,6 +25,10 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   knowing what the weight means.
 
 ### Fixed
+- **Another program on Gephi's port is named as such.** When something else answered at
+  `GEPHI_API_URL` (8080 is a common default), the Claude Code hook said Gephi was not running and
+  the server passed on that program's own error page, for example `{"detail": "Not Found"}`. Both
+  now say something other than the Gephi plugin answered and point at `GEPHI_API_URL`. (#21, thanks @rmdes)
 - **`gephi_compare_partitions` and the bipartite tools find a column by the id
   `gephi_get_columns` reports.** They matched names against column titles only, so a statistic
   whose id differs from its title (the Inferred Class plugin's `stat_inf_class`, titled
