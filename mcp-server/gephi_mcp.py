@@ -18,6 +18,7 @@ Developed by Matt Artz (https://www.mattartz.me)
 import asyncio
 import contextlib
 import contextvars
+import csv
 import functools
 import importlib.metadata
 import json
@@ -1607,6 +1608,29 @@ async def _empty_export_failure() -> dict:
     return {"success": False, "error": error, "blocking_columns": blocking}
 
 
+async def _name_time_columns(profile: dict) -> None:
+    """Add to the profile's time signal the columns that hold the times.
+
+    Gephi gives every table its own time column, filled or not, so that one is named only for
+    a table whose rows carry times. Columns that cannot be listed leave the signal as it is.
+    """
+    signal = next((s for s in profile.get("type_signals", []) if s["type"] == "time"), None)
+    if signal is None:
+        return
+    named: list[dict[str, str]] = []
+    for table in ("node", "edge"):
+        listing = await gephi.request("GET", "/graph/columns", params={"target": table})
+        if not (isinstance(listing, dict) and listing.get("success")):
+            return
+        carries_times = signal["evidence"].get(f"{table}s_with_times", 0) > 0
+        for col in listing.get("columns") or []:
+            kind = str(col.get("type"))
+            if ("Timestamp" in kind or "Interval" in kind) and (
+                    carries_times or not col.get("property")):
+                named.append({"table": table, "column": str(col.get("id")), "type": kind})
+    signal["evidence"]["columns"] = named
+
+
 async def _export_gexf_to_file(path: str) -> dict:
     """Export the graph to a GEXF file, treating an empty file as the failure it is."""
     result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
@@ -2411,6 +2435,7 @@ async def _compute_profile(include_slow: bool = False) -> dict:
 
     graph = parse_gexf(exported["content"], max_nodes=10**9)
     profile = structural_profile(graph)
+    await _name_time_columns(profile)
     # The profile establishes, in passing, the one fact the caveat layer cannot afford to fetch
     # on the statistics path. Keeping it is what lets the edge-weight caveats ever fire.
     note_weights_vary(bool(profile.get("weighted")))
@@ -4554,19 +4579,49 @@ def _import_body(file: str, mode: str | None, max_node_size: float | None = None
         body["max_node_size"] = max_node_size
     return body
 
-def _explain_import(result: Any, file: str) -> Any:
+def _edge_list_facts(file: str) -> dict[str, Any] | None:
+    """What a spreadsheet edge list says for itself: whether it states direction, and its rows.
+
+    Returns None for anything that is not a readable edge list (no source and target columns,
+    not text, not there), so the caller says only what it knows.
+    """
+    try:
+        with open(file, newline="", encoding="utf-8-sig") as handle:
+            header = handle.readline()
+            delimiter = max(",;\t", key=header.count)
+            names = [h.strip().lower() for h in next(csv.reader([header], delimiter=delimiter), [])]
+            if "source" not in names or "target" not in names:
+                return None
+            src, tgt = names.index("source"), names.index("target")
+            rows = sum(1 for row in csv.reader(handle, delimiter=delimiter)
+                       if len(row) > max(src, tgt) and row[src].strip() and row[tgt].strip())
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return None
+    return {"states_direction": "type" in names, "rows": rows}
+
+
+def _explain_import(result: Any, file: str, mode: str | None = None) -> Any:
     """Say in plain words what Gephi decided while importing, where it changes later numbers."""
     if not (isinstance(result, dict) and result.get("success")):
         return result
+    spreadsheet = file.lower().endswith((".csv", ".tsv"))
+    facts = _edge_list_facts(file) if spreadsheet else None
     issues = result.get("import_issues") or []
     if any("parallel edges" in str(i.get("message", "")).lower() for i in issues):
+        counted = ""
+        ties = result.get("edge_count")
+        # In append mode edge_count is the whole graph's, so the difference would mean nothing.
+        if facts and mode != "append" and isinstance(ties, int) and facts["rows"] > ties:
+            result["merged_rows"] = {"rows": facts["rows"], "ties": ties,
+                                     "merged": facts["rows"] - ties}
+            counted = f"The file has {facts['rows']} rows and the graph has {ties} ties. "
         result["merged_rows_note"] = (
-            "Some rows named the same pair of nodes more than once. Gephi merged each repeated "
-            "pair into one tie and added the rows' weights together, so an edge weight now "
-            "counts how many rows the pair had (or sums their weights). Tell the person, and "
-            "read weights as counts."
+            "Some rows named the same pair of nodes more than once. " + counted + "Gephi merged "
+            "each repeated pair into one tie and added the rows' weights together, so an edge "
+            "weight now counts how many rows the pair had (or sums their weights). Tell the "
+            "person, and read weights as counts."
         )
-    if file.lower().endswith((".csv", ".tsv")):
+    if spreadsheet and not (facts and facts["states_direction"]):
         result["direction_note"] = (
             "Gephi reads a spreadsheet edge list as directed unless the file says otherwise. "
             "The direction here is that default, not a fact about the data: ask whether the "
@@ -4589,7 +4644,7 @@ async def gephi_import_graphml(file: str, mode: _ImportMode | None = None) -> st
 async def gephi_import_csv(file: str, mode: _ImportMode | None = None) -> str:
     """Import a graph from a CSV file into a new workspace (see gephi_import_file for `mode`)."""
     return fmt(_explain_import(
-        await gephi.request("POST", "/import/csv", json_data=_import_body(file, mode)), file))
+        await gephi.request("POST", "/import/csv", json_data=_import_body(file, mode)), file, mode))
 
 @_tool(name="gephi_import_file")
 async def gephi_import_file(file: str, max_node_size: float | None = None,
@@ -4605,8 +4660,9 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
     the person named, is kept, and gephi_switch_workspace returns to it. "append" adds the file to the current workspace instead, for merging two files;
     Gephi refuses when their settings differ (for example one has timestamps and the other
     intervals). When Gephi merged repeated rows into weighted ties the reply says so in
-    `merged_rows_note`, and a spreadsheet import carries `direction_note`, because Gephi reads
-    an edge list as directed by default; pass both on to the person.
+    `merged_rows_note` (with the counts in `merged_rows` when the file can be read), and a
+    spreadsheet edge list with no Type column carries `direction_note`, because Gephi reads
+    it as directed by default; pass both on to the person.
     Warnings Gephi raised while reading the file come back as `import_issues`;
     tell the user about any that matter, such as nodes Gephi created because an edge names a node the file does not list.
 
@@ -4627,7 +4683,7 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
     """
     return fmt(_explain_import(
         await gephi.request("POST", "/import/file",
-                            json_data=_import_body(file, mode, max_node_size)), file))
+                            json_data=_import_body(file, mode, max_node_size)), file, mode))
 
 
 @_tool(name="gephi_generate_graph")

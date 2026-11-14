@@ -179,3 +179,79 @@ def test_every_gexf_export_goes_through_a_guarded_helper():
     # to /export/gexf on its own would skip them and meet the empty export unprotected.
     source = inspect.getsource(gephi_mcp)
     assert len(re.findall(r'"/export/gexf"', source)) == 2
+
+
+# ─── The time signal names its columns ───────────────────────
+
+DYNAMIC_GEXF = (
+    '<gexf xmlns="http://gexf.net/1.3" version="1.3"><graph mode="dynamic" '
+    'defaultedgetype="undirected"><nodes><node id="a"/><node id="b"/><node id="c"/></nodes>'
+    '<edges><edge id="0" source="a" target="b" start="1" end="2"/>'
+    '<edge id="1" source="b" target="c" start="2" end="3"/></edges></graph></gexf>'
+)
+STATIC_GEXF = DYNAMIC_GEXF.replace(' mode="dynamic"', "").replace(' start="1" end="2"', "") \
+                          .replace(' start="2" end="3"', "")
+
+
+def _fake_profile_run(monkeypatch, content, edge_columns):
+    calls = []
+
+    async def fake(method, endpoint, **kwargs):
+        calls.append(endpoint)
+        if endpoint == "/export/gexf":
+            return {"success": True, "content": content}
+        if endpoint == "/graph/columns":
+            target = kwargs["params"]["target"]
+            return {"success": True, "columns": edge_columns if target == "edge" else NODE_COLUMNS}
+        return {"success": False}
+
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake)
+    return calls
+
+
+async def test_the_time_signal_names_the_columns_that_hold_times(monkeypatch):
+    columns = EDGE_COLUMNS[:3] + [_col("score", "TimestampDoubleMap", False)]
+    _fake_profile_run(monkeypatch, DYNAMIC_GEXF, columns)
+    out = json.loads(await gephi_mcp.gephi_profile_graph())
+    time_signal = next(s for s in out["type_signals"] if s["type"] == "time")
+    # The ties carry times, the nodes do not: the node table's empty time column is not named.
+    assert time_signal["evidence"]["columns"] == [
+        {"table": "edge", "column": "timeset", "type": "TimestampSet"},
+        {"table": "edge", "column": "score", "type": "TimestampDoubleMap"},
+    ]
+
+
+async def test_a_static_graph_asks_for_no_columns(monkeypatch):
+    calls = _fake_profile_run(monkeypatch, STATIC_GEXF, EDGE_COLUMNS[:3])
+    out = json.loads(await gephi_mcp.gephi_profile_graph())
+    assert all(s["type"] != "time" for s in out["type_signals"])
+    assert "/graph/columns" not in calls
+
+
+async def test_the_time_signal_stands_when_columns_cannot_be_read(monkeypatch):
+    async def fake(method, endpoint, **kwargs):
+        if endpoint == "/export/gexf":
+            return {"success": True, "content": DYNAMIC_GEXF}
+        return {"success": False, "error": "no workspace"}
+
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake)
+    out = json.loads(await gephi_mcp.gephi_profile_graph())
+    time_signal = next(s for s in out["type_signals"] if s["type"] == "time")
+    assert "columns" not in time_signal["evidence"]
+
+
+def test_a_timed_graph_with_nothing_on_the_timeline_says_so():
+    # What is left after a date column is converted to text: Gephi still calls the graph
+    # dynamic, and no node or tie has a time. The reading must not promise a timeline.
+    from gephi_mcp_viewer.profile import structural_profile
+
+    empty = DYNAMIC_GEXF.replace(' start="1" end="2"', "").replace(' start="2" end="3"', "")
+    profile = structural_profile(parse_gexf(empty, max_nodes=10**9))
+    time_signal = next(s for s in profile["type_signals"] if s["type"] == "time")
+    assert time_signal["evidence"] == {"dynamic": True, "nodes_with_times": 0,
+                                       "edges_with_times": 0}
+    assert "gephi_set_time_from_columns" in time_signal["reading"]
+
+    full = structural_profile(parse_gexf(DYNAMIC_GEXF, max_nodes=10**9))
+    reading = next(s for s in full["type_signals"] if s["type"] == "time")["reading"]
+    assert "gephi_set_time_from_columns" not in reading

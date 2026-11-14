@@ -92,7 +92,8 @@ def _two_sets(nodes: Sequence[str], pairs: set[tuple[str, str]]) -> dict[str, in
 
 
 def _type_signals(nodes: Sequence[str], edges: list[tuple[str, str]], weights: list[float],
-                  directed: bool, weighted: bool, components: int, timed: bool) -> list[dict]:
+                  directed: bool, weighted: bool, components: int,
+                  times: dict | None) -> list[dict]:
     """What structure can show about the kind of network, each as evidence plus a question.
 
     Structure shows what a network could be, never what it is: a grid has no odd cycle and is
@@ -155,10 +156,15 @@ def _type_signals(nodes: Sequence[str], edges: list[tuple[str, str]], weights: l
                "statistics.",
                "Are ties from a node to itself meaningful here, or left over from the data?")
 
-    if timed:
-        signal("time", {"dynamic": True},
+    if times is not None:
+        on_timeline = times["nodes_with_times"] or times["edges_with_times"]
+        signal("time", {"dynamic": True, **times},
                "Nodes or ties carry times, so this network changes over time. A single map and "
-               "a single set of statistics describe every period at once.",
+               "a single set of statistics describe every period at once."
+               if on_timeline else
+               "Gephi read this network as one that changes over time, but no node or tie has "
+               "a time on the timeline now. The times may sit as text in an ordinary column; "
+               "gephi_set_time_from_columns puts a start and an end column on the timeline.",
                "Should this be read as one network, or period by period?")
 
     if weighted:
@@ -270,7 +276,9 @@ def structural_profile(graph: dict) -> dict:
 
     profile["type_signals"] = _type_signals(
         nodes, seen_edges, weights, directed, profile["weighted"], len(comp_sizes),
-        bool(graph.get("dynamic")) or graph.get("mode") == "dynamic")
+        {"nodes_with_times": sum(1 for item in graph["nodes"] if item.get("spells")),
+         "edges_with_times": sum(1 for item in graph["edges"] if item.get("spells"))}
+        if graph.get("dynamic") or graph.get("mode") == "dynamic" else None)
     two_mode = any(s["type"] == "two_mode" for s in profile["type_signals"])
 
     flags = []

@@ -10,12 +10,12 @@ description: |
 compatibility: Requires Gephi Desktop 0.11.4+ running with the Gephi AI Plugin (1.6.1+) installed, and the gephi-ai MCP server connected.
 metadata:
   author: Matt Artz
-  version: "1.22.2"
+  version: "1.23.0"
 ---
 
 # Gephi Network Analysis Skill
 
-*Skill version 1.22.2. If commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
+*Skill version 1.23.0. If commands or tools mentioned here seem missing, the installed plugin is outdated; see the README's Updating section.*
 
 You have access to 121 MCP tools from the `gephi-ai` server (tool names start with `gephi_`; Claude Code shows them as `mcp__plugin_gephi-network-analysis_gephi-ai__gephi_*` from the plugin, or `mcp__gephi-ai__gephi_*` when the server is registered by hand) for controlling Gephi Desktop. Use them to build, analyze, style, and export network graphs.
 
@@ -76,7 +76,7 @@ Run `gephi_profile_graph`: one call gives size, density, the degree distribution
 | `negative_weights` | Positive and negative ties mean different things. Analyse them apart (filter by weight), or take absolute values and say which. | Leave weights out of statistics and layout, and say so. |
 | `weight_meaning` | A larger weight is a stronger tie: carry on. It is a distance or cost: do not filter "weak" ties or weight the layout by it without inverting it first. | Treat as strength and say it was assumed. |
 | `merged_rows_note` | Weights count repeated rows. Read them as counts. | Read them as counts. |
-| `time` | Read period by period with `gephi_get_timeline` and `gephi_time_slice` (references/change-over-time.md). | One network across all periods; say so. |
+| `time` | Read period by period with `gephi_get_timeline` and `gephi_time_slice` (references/change-over-time.md). When its evidence shows no node or tie with a time, put the date column on the timeline first with `gephi_set_time_from_columns`. | One network across all periods; say so. |
 | `self_loops` | Keep them, or remove them if they are left over from the data. | Keep them and report the count. |
 | tree-like flag on an org chart or other hierarchy | Communities found are branches of the tree, not social groups. | Describe groups as branches. |
 

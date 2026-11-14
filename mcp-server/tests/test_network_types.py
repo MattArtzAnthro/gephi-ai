@@ -212,8 +212,11 @@ def test_self_loops_are_counted(tmp_path):
 
 
 def test_a_timestamped_network_signals_its_time_dimension(tmp_path):
-    _, profile = profile_of(NETWORKS["timestamped"], tmp_path)
-    assert "time" in signals(profile)
+    graph, profile = profile_of(NETWORKS["timestamped"], tmp_path)
+    # Every node and tie in this network carries a start, and the signal says how many do.
+    assert signals(profile)["time"]["evidence"] == {
+        "dynamic": True, "nodes_with_times": len(graph["nodes"]),
+        "edges_with_times": len(graph["edges"])}
 
 
 @pytest.mark.parametrize("name", ["weight is a distance", "les-miserables (weighted)"])

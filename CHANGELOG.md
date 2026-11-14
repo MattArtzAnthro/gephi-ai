@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.24.0 / workflow packages 1.23.0
 
 ### Added
 - **The profile says what kind of network the structure suggests.** `gephi_profile_graph` now
@@ -15,8 +15,13 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   and one question for the person; none is stated as a fact. The skill has a table of what each
   answer changes.
 - **An import says what Gephi decided.** `gephi_import_file` and `gephi_import_csv` add
-  `merged_rows_note` when repeated rows were merged into weighted ties, and `direction_note` on a
-  spreadsheet, because Gephi reads an edge list as directed by default.
+  `merged_rows_note` when repeated rows were merged into weighted ties, with the number of rows
+  and ties in `merged_rows` when the file can be read, and `direction_note` on a spreadsheet edge
+  list that has no Type column, because Gephi reads it as directed by default.
+- **The time signal says where the times are.** Its evidence counts the nodes and ties that have
+  a time on the timeline and names the columns that hold times. When Gephi reads a graph as
+  timed and nothing is on the timeline, which is what remains after a date column is converted
+  to text, the signal says so and points to `gephi_set_time_from_columns`.
 
 ### Changed
 - **Two flags no longer mislead on two-mode data.** The hub-and-spoke and "mostly one-way" flags
@@ -29,7 +34,9 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   `/tmp/qa.gexf` reached Gephi as `C:\tmp\qa.gexf`, so exports landed where the server never
   looked and `gephi_visual_qa`, `gephi_label_clusters` and `gephi_view_graph` failed. `/health`
   now reports Gephi's `os`, and under WSL the server rewrites each file path for a Windows Gephi
-  (`/mnt/c/...` to `C:\...`, other paths to `\\wsl$\<distro>\...`). (#18, thanks @rmdes)
+  (`/mnt/c/...` to `C:\...`, other paths to `\\wsl$\<distro>\...`). The rewriting needs a Gephi
+  plugin that reports `os`: it takes effect with the next Java plugin release, and until then
+  paths are passed as before. (#18, thanks @rmdes)
 - **`scripts/verify-artifact.sh` no longer leaves an old publish marker behind a failed run,
   and says why it stopped.** A step that failed early (the build, the venv) ended the script
   before the cleanup that removes `.artifact-verified`, so a marker from an earlier passing run
