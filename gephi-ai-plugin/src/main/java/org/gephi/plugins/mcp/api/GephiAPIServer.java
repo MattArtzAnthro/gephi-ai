@@ -258,6 +258,8 @@ public class GephiAPIServer implements HttpHandler {
                 result.addProperty("gephi_version", gephi);
             }
             result.addProperty("status", "running");
+            // Lets a server under WSL hand a Windows Gephi paths it can open (\\wsl$\...).
+            result.addProperty("os", System.getProperty("os.name"));
             // "busy" here (persistently) means Gephi is wedged and needs a restart.
             result.addProperty("graph_lock", service.graphLockProbe());
             result.add("graph_lock_stats", service.graphLockStats());

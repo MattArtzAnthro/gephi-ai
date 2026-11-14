@@ -25,6 +25,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   knowing what the weight means.
 
 ### Fixed
+- **Exports and imports work with the server in WSL and Gephi on Windows.** A WSL path such as
+  `/tmp/qa.gexf` reached Gephi as `C:\tmp\qa.gexf`, so exports landed where the server never
+  looked and `gephi_visual_qa`, `gephi_label_clusters` and `gephi_view_graph` failed. `/health`
+  now reports Gephi's `os`, and under WSL the server rewrites each file path for a Windows Gephi
+  (`/mnt/c/...` to `C:\...`, other paths to `\\wsl$\<distro>\...`). (#18, thanks @rmdes)
 - **`scripts/verify-artifact.sh` no longer leaves an old publish marker behind a failed run,
   and says why it stopped.** A step that failed early (the build, the venv) ended the script
   before the cleanup that removes `.artifact-verified`, so a marker from an earlier passing run

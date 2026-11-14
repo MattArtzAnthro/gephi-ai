@@ -52,6 +52,7 @@ from stats_integrity import (
     needs_graph_facts,
     replaces_graph,
 )
+from wsl_paths import windows_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gephi_mcp")
@@ -487,6 +488,27 @@ class GephiClient:
     def __init__(self, base_url: str = GEPHI_API_URL):
         self.base_url = base_url.rstrip("/")
         self.timeout = REQUEST_TIMEOUT
+        self._gephi_os: str | None = None  # asked once, only when a path may need translating
+
+    async def _gephi_on_windows(self) -> bool:
+        if self._gephi_os is None:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    health = (await client.request("GET", f"{self.base_url}/health")).json()
+                self._gephi_os = str(health.get("os") or "")
+            except Exception:
+                return False  # not cached: ask again on the next path
+        return self._gephi_os.startswith("Windows")
+
+    async def _for_gephi(self, json_data: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Rewrite a "file" path for a Windows Gephi when this server runs under WSL."""
+        distro = os.environ.get("WSL_DISTRO_NAME")
+        path = (json_data or {}).get("file")
+        if not distro or not isinstance(path, str) or not path.startswith("/"):
+            return json_data
+        if not await self._gephi_on_windows():
+            return json_data
+        return {**(json_data or {}), "file": windows_path(path, distro)}
 
     async def request(self, method: str, endpoint: str,
                       params: dict[str, Any] | None = None,
@@ -503,6 +525,7 @@ class GephiClient:
             if replaces_graph(method, endpoint) and not _WORKSPACE_BOOKKEEPING.get():
                 LEDGER.start_new_graph(_graph_change(endpoint))
         try:
+            json_data = await self._for_gephi(json_data)
             async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
                 # Name the charset: Gephi's HTTP server decodes a body as US-ASCII when none is
                 # given, which corrupted every non-ASCII id and label on older plugin builds.
