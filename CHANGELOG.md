@@ -1431,7 +1431,7 @@ PyPI package is unchanged and is still `gephi-mcp`.
   were silently counted as selected anyway. `focusView` now polls
   `getSelectedNodes()` (bounded, 1s) and reports the real, settled count.
   Live-testing this also surfaced a genuine Gephi-side limitation, not
-  something in our plugin: `select`'s "custom selection" engine mode does not
+  something in this plugin: `select`'s "custom selection" engine mode does not
   interoperate cleanly with `gephi_get_selection`'s read path (Gephi's own
   `setCustomSelection()` never clears the `rectangleSelection` flag
   `setRectangleSelection()` sets, confirmed via bytecode). Rather than paper
@@ -1968,7 +1968,7 @@ scaffolding." Fixed the tool, not just the one instance.
 
 ### Fixed
 - **Corrected 1.9.10's "crowded core = resolution problem" claim.** Root
-  cause was actually a request-building bug in this session's own manual
+  cause was actually a request-building bug in manual
   testing: raw HTTP calls to `/layout/run` were sent with the tuning values
   under a `"params"` key instead of the correct `"properties"` key. The
   endpoint accepted this silently (`success: true`) and ran every layout on

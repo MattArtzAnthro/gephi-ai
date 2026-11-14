@@ -16,6 +16,63 @@ that version from PyPI itself when someone installs the bundle. Publishing the
 server last means releasing a bundle that points at a version PyPI does not
 have yet, so it fails to install until PyPI catches up.
 
+## The server and the Gephi plugin update at different times
+
+The server reaches people almost at once: `uvx` and the workflow packages pull the new version.
+The Gephi plugin reaches them only when they install a new `.nbm` or accept the update in
+Gephi's plugin center. Every release therefore runs for a while beside the previous version of
+the other half, and has to work with it. Three rules keep that true.
+
+1. **The plugin's HTTP API only grows.** A plugin release may add endpoints and reply fields. It
+   never removes or renames one that a released server reads, and it keeps its module code name,
+   because Gephi treats a plugin with a new code name as a different plugin.
+   `mcp-server/tests/test_plugin_endpoints.py` fails when the server calls a path the plugin's
+   router no longer answers.
+2. **The server never needs the newest plugin.** Server code that uses something a plugin
+   release adds either behaves as before when the plugin lacks it, or refuses that one option
+   with `_needs_plugin((major, minor, patch), "<feature>")`, which names the plugin version to
+   update to. No tool may fail outright because the plugin is one release old.
+3. **Raising `gephi.version` is a release of its own.** Gephi refuses a plugin built for a newer
+   Gephi, so everyone on the older Gephi stays on the previous plugin until they update Gephi.
+   `bump-version.sh` writes the new minimum to `nbm_needs_gephi` in `latest.json`, and the
+   health check then tells those people to update Gephi first.
+
+### The three pairs
+
+Run these on a second Gephi (its own settings folder and port), never on a Gephi in use. To give
+that Gephi exactly one plugin build, unzip the `.nbm` and copy its `netbeans/` contents into an
+empty settings folder:
+
+```bash
+unzip -q gephi-ai-<java-version>.nbm -d /tmp/nbm
+mkdir -p /tmp/gephi-test && cp -R /tmp/nbm/netbeans/. /tmp/gephi-test/
+/Applications/Gephi.app/Contents/Resources/gephi/bin/gephi --userdir /tmp/gephi-test \
+    --cachedir /tmp/gephi-test-cache -J-Dgephi.mcp.port=8091
+curl -s http://127.0.0.1:8091/health     # confirms which plugin build answered
+```
+
+| Pair | What it shows | How to run it |
+|---|---|---|
+| New plugin, this server | The release as a whole | The live smoke test and the live workflow test (step 3 below) |
+| New plugin, previous server release | Someone who updated the plugin in Gephi while their package still pins the older server | That release's own smoke test, from a worktree of its tag (below) |
+| Previous plugin release, this server | Most users on the day of a server release | Download the previous `.nbm` with `gh release download`, install it as above, and run the live workflow test |
+
+The previous server's smoke test, against the Gephi that holds the new plugin:
+
+```bash
+git worktree add --detach /tmp/prev-server v<previous-server-version>
+cd /tmp/prev-server/mcp-server && GEPHI_API_URL=http://127.0.0.1:8091 PYTHONPATH=. \
+    uv run --with mcp --with httpx --with pydantic python tests/live_smoke_test.py
+git worktree remove /tmp/prev-server
+```
+
+Every line must PASS in all three. A server-only release needs the third pair alone, and the
+live workflow test in step 3 is that pair when the second Gephi holds the released plugin.
+
+Delete a test build of the `.nbm` from `gephi-ai-plugin/target/` afterwards. It carries the
+same file name as the released one and different bytes, and step 9 must attach the file whose
+checksum is in `latest.json`.
+
 ## Steps
 
 1. **Bump the versions.**
@@ -155,28 +212,21 @@ have yet, so it fails to install until PyPI catches up.
 
    `.mcpb` files are gitignored — they ship as release assets only.
 
-8. **Commit and push.** A push that changes `.github/workflows/ci.yml` requires the
-   `workflow` scope. Git routes GitHub credentials through the `gh` CLI by default, and
-   that token carries only `gist, read:org, repo`, so a push touching a workflow file is
-   rejected. This shows up most often on a force-push, where a rewritten history carries
-   the workflow file through along with everything else. A second macOS keychain item
-   holds the fix: `GitHub - https://api.github.com` under account `MattArtzAnthro`,
-   scoped `repo, user, workflow`. Use that token instead of the `gh` default for any push
-   touching a workflow file, and supply it through a credential helper that reads the
-   keychain at push time. Never put the token in a URL, a file, or `git config`, where it
-   stays findable after the fact.
+8. **Commit and push.** A push that changes a file under `.github/workflows/` needs a token
+   with the `workflow` scope, and the `gh` CLI's default token may not carry it (check with
+   `gh auth status`). Supply a token that has the scope through a credential helper that reads
+   it from the system keychain at push time. Never put a token in a URL, a file, or
+   `git config`, where it stays findable after the fact.
 
    ```bash
    git -c credential.helper= \
-       -c credential.helper='!f() { echo "username=MattArtzAnthro"; echo "password=$(security find-generic-password -s "GitHub - https://api.github.com" -a MattArtzAnthro -w)"; }; f' \
+       -c credential.helper='!f() { echo "username=<user>"; echo "password=$(<command that prints the token>)"; }; f' \
        push origin main
    ```
 
-   The empty `-c credential.helper=` is not decoration and the push fails without it.
-   Passing a helper with `-c` ADDS to the chain rather than replacing it, so the inherited
-   `osxkeychain` entry is consulted first, hands over the cached token that lacks the scope,
-   and the push is rejected a second time with the same message. Resetting the list to empty
-   first is what makes the new helper the only one asked.
+   The empty `-c credential.helper=` is required. Passing a helper with `-c` adds to the chain
+   and does not replace it, so the inherited helper is asked first, hands over the token
+   that lacks the scope, and the push is rejected again with the same message.
 
 9. **Cut the GitHub release.** Tag is `v<server-version>`, and both artifacts
    attach:
