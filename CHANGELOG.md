@@ -25,6 +25,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   knowing what the weight means.
 
 ### Fixed
+- **`gephi_community_stability` no longer runs out of memory on large graphs.** It scored pairs
+  in fixed-size blocks but kept every agreed pair from every block, so memory grew with the
+  square of the largest community: a 112,000-node follower graph took the server down. Each
+  block is now folded into the groups as it is scored, and peak memory stays near 370 MB from
+  2,000 to 20,000 nodes in one community. (#19, thanks @rmdes)
 - **A graph with a date column no longer breaks every tool that reads it.** A CSV edge list with
   a date column imports with an attribute column that holds a set of times. Gephi's GEXF exporter
   cannot write such a column and produces an empty file, which the plugin reports as a success.

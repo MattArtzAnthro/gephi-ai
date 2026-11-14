@@ -84,13 +84,28 @@ def _pair_rates(labels: np.ndarray, rows: slice) -> tuple[np.ndarray, np.ndarray
     return shared, together
 
 
-def _groups(nodes: list[str], pairs: list[tuple[np.ndarray, np.ndarray]]) -> list[list[str]]:
-    """Connected groups over the given pairs, largest first; unpaired nodes stand alone."""
-    n = len(nodes)
+def _components(n: int, pairs: list[tuple[np.ndarray, np.ndarray]]) -> np.ndarray:
+    """Each node's connected component over the given pairs."""
     rows = np.concatenate([r for r, _ in pairs]) if pairs else np.zeros(0, int)
     cols = np.concatenate([c for _, c in pairs]) if pairs else np.zeros(0, int)
     graph = coo_matrix((np.ones(len(rows), dtype=np.int8), (rows, cols)), shape=(n, n))
-    _, component = connected_components(graph, directed=False)
+    return connected_components(graph, directed=False)[1]
+
+
+def _forest(n: int, pairs: list[tuple[np.ndarray, np.ndarray]]) -> list[tuple[np.ndarray, np.ndarray]]:
+    """The same groups as `pairs` in n pairs: each node joined to its group's first member.
+
+    Pairs inside a community grow with the square of its size, so keeping every block's pairs
+    ran a 112,000-node graph out of memory; folding each block in keeps memory at O(n).
+    """
+    component = _components(n, pairs)
+    _, first = np.unique(component, return_index=True)
+    return [(np.arange(n), first[component])]
+
+
+def _groups(nodes: list[str], pairs: list[tuple[np.ndarray, np.ndarray]]) -> list[list[str]]:
+    """Connected groups over the given pairs, largest first; unpaired nodes stand alone."""
+    component = _components(len(nodes), pairs)
     members: dict[int, list[str]] = {}
     for i, c in enumerate(component):
         members.setdefault(int(c), []).append(nodes[i])
@@ -152,9 +167,9 @@ def consensus(runs: list[Partition]) -> dict[str, Any]:
             stability[nodes[node_index]] = (round(float(mass_sq[i] / mass[i]), 4)
                                             if mass[i] else 1.0)
         r, c = np.nonzero(rate > 0.5)
-        agreed.append((own[r], c))
+        agreed = _forest(n, agreed + [(own[r], c)])
         r, c = np.nonzero(rate >= STABLE_CORE)
-        held.append((own[r], c))
+        held = _forest(n, held + [(own[r], c)])
 
     groups = _groups(nodes, agreed)
     cores = _groups(nodes, held)
