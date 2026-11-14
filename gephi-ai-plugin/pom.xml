@@ -43,10 +43,6 @@
 
     <repositories>
         <repository>
-            <id>oss-sonatype</id>
-            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-        </repository>
-        <repository>
             <id>netbeans</id>
             <url>https://netbeans.apidesign.org/maven2/</url>
         </repository>
