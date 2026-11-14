@@ -246,3 +246,18 @@ def test_ci_enforces_both_coverage_floors_and_the_hook_test():
         minimum = re.search(rf"<coverage\.{counter}\.minimum>([\d.]+)<", pom)
         assert minimum and float(minimum.group(1)) > 0, counter
     assert "<goal>check</goal>" in pom and "jacoco-maven-plugin" in pom
+
+
+def test_the_plugin_build_lists_no_retired_repository():
+    """oss.sonatype.org no longer resolves; every lookup that reaches it fails, jdtls's included."""
+    assert "oss.sonatype.org" not in _read("gephi-ai-plugin/pom.xml")
+
+
+def test_pyright_reads_the_project_venv_and_skips_mutation_copies():
+    """Without the venv pyright resolves packages from whatever Python is on PATH and reports
+    errors the project does not have; mutants/ holds copies of the server module."""
+    import tomllib
+
+    pyright = tomllib.loads(_read("mcp-server/pyproject.toml"))["tool"]["pyright"]
+    assert (pyright["venvPath"], pyright["venv"]) == (".", ".venv")
+    assert "mutants" in pyright["exclude"]

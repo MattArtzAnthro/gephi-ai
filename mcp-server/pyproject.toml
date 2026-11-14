@@ -101,6 +101,13 @@ python_version = "3.12"
 warn_unused_configs = true
 ignore_missing_imports = true
 
+[tool.pyright]
+# Read packages from the project venv, not whatever Python is first on PATH. A custom exclude
+# replaces pyright's defaults, so the hidden and cache folders are listed again.
+venvPath = "."
+venv = ".venv"
+exclude = ["mutants", "dist", ".venv", "**/__pycache__", "**/.*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
