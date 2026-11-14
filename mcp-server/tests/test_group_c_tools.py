@@ -174,6 +174,40 @@ async def test_compare_partitions_names_a_column_that_is_not_there(rec):
     assert out["success"] is False and "faction" in out["error"]
 
 
+def id_unlike_title_gexf(rows):
+    """A statistic column whose id is not its title, as the Inferred Class plugin writes it."""
+    ns = "".join(f'<node id="{k}"><attvalues><attvalue for="stat_inf_class" value="{m}"/>'
+                 f'<attvalue for="club" value="{c}"/></attvalues></node>' for k, m, c in rows)
+    return textwrap.dedent("""\
+        <?xml version="1.0" encoding="UTF-8"?>
+        <gexf xmlns="http://gexf.net/1.3" version="1.3"><graph defaultedgetype="undirected">
+        <attributes class="node"><attribute id="stat_inf_class" title="Inferred Class" type="integer"/>
+        <attribute id="club" title="club" type="string"/></attributes>
+        <nodes>%s</nodes><edges></edges></graph></gexf>
+        """) % ns
+
+
+async def test_compare_partitions_reads_a_column_by_an_id_unlike_its_title(rec):
+    """gephi_get_columns reports the id stat_inf_class; the parsed graph keys it by title."""
+    rec.responses = [{"success": True, "content": id_unlike_title_gexf(
+        [("a", 0, "Mr. Hi"), ("b", 0, "Mr. Hi"), ("c", 1, "Officer"), ("d", 1, "Officer")])}]
+
+    out = json.loads(await gephi_mcp.gephi_compare_partitions(
+        column="stat_inf_class", against="club"))
+
+    assert out["success"] is True, out
+    assert out["adjusted_rand"] == 1.0 and out["compared"] == 4
+
+
+def test_the_two_modes_are_read_by_an_id_unlike_its_title():
+    from bipartite import split_modes
+    from gephi_mcp_viewer import parse_gexf
+
+    graph = parse_gexf(id_unlike_title_gexf([("a", 0, "x"), ("b", 1, "x")]))
+
+    assert split_modes(graph, "stat_inf_class") == (["a"], ["b"])
+
+
 async def test_an_unreadable_workspace_points_at_the_index_not_the_id(rec):
     """Agents passed the id from the workspace list and got only "Could not read workspace 63"."""
     rec.responses = [WORKSPACES, {"success": False, "error": "Workspace index out of range: 63"}]

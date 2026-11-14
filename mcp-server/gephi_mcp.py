@@ -3978,6 +3978,8 @@ async def gephi_compare_partitions(column: str, against: str) -> str:
     if graph is None:
         return fmt({"success": False, "error": "Could not read the current graph."})
     nodes = graph.get("nodes", [])
+    # The parsed graph keys attributes by title; a statistic's id can differ from it entirely.
+    column, against = (gephi_mcp_viewer.resolve_column_key(graph, c) for c in (column, against))
     for name in (column, against):
         if not any(column_value(n.get("attributes"), name) is not None for n in nodes):
             return fmt({"success": False,

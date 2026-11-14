@@ -25,6 +25,11 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   knowing what the weight means.
 
 ### Fixed
+- **`gephi_compare_partitions` and the bipartite tools find a column by the id
+  `gephi_get_columns` reports.** They matched names against column titles only, so a statistic
+  whose id differs from its title (the Inferred Class plugin's `stat_inf_class`, titled
+  "Inferred Class") was reported as having no values. Names now resolve through the same
+  id-or-title lookup the graph view uses. (#20, thanks @rmdes)
 - **`gephi_community_stability` no longer runs out of memory on large graphs.** It scored pairs
   in fixed-size blocks but kept every agreed pair from every block, so memory grew with the
   square of the largest community: a 112,000-node follower graph took the server down. Each
