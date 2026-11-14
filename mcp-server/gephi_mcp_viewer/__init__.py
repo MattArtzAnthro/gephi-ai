@@ -62,6 +62,8 @@ def resolve_column_key(graph: dict, name):
 
 def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
     """Parse GEXF from a file path or a GEXF document string."""
+    if not path.strip():
+        raise ValueError("GEXF input is empty: expected a file path or a GEXF document")
     if path.lstrip().startswith("<"):
         root = ET.fromstring(path)
     else:
@@ -153,6 +155,7 @@ def parse_gexf(path: str, max_nodes: int = 1500) -> dict:
         "node_count_total": node_count_total,
         "edge_count_total": edge_count_total, "truncated": truncated,
         "dynamic": any(item.get("spells") for item in nodes + edges),
+        "mode": graph_el.get("mode"),
         "time_min": min(times) if times else None,
         "time_max": max(times) if times else None,
         "attr_key": attr_key,

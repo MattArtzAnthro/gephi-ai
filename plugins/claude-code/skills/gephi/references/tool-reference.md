@@ -408,6 +408,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Method**: exports the graph (GEXF) and computes size, density, degree distribution, connectivity, weight signal, modularity, and clustering coefficient in one call
 - **Params**: `{include_slow?: bool (false)}`: also computes average path length/diameter when true (expensive; only sensible under ~3k nodes)
 - **Notes**: run this first, before analyzing anything else. Its `degree` block gives `min`, `median`, `max`, `gini` (degree inequality, 0 equal to 1 one node holding every tie), and `top_5pct_edge_share`, which describe a heavy tail without fitting a curve. Auto-raises flags (fragmentation, hub dominance, likely hairball) to guide layout/sizing/coloring choices downstream.
+- **Type signals**: `type_signals` is a list of `{type, evidence, reading, question}` for `two_mode`, `all_ties_returned`, `negative_weights`, `self_loops`, `time` and `weight_meaning`. Each is a question to put to the person, never a statement of what the network is; SKILL.md has the table of what each one changes.
 
 ### gephi_compute_betweenness
 - **Method**: POST `/statistics/betweenness`
@@ -705,7 +706,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_import_file
 - **Method**: POST `/import/file`
 - **Params**: `{file: str, mode?: "new_workspace"|"append", max_node_size?: float}`
-- **Returns**: `{success, node_count, edge_count, import_mode, import_issues?: [{level, message}]}`
+- **Returns**: `{success, node_count, edge_count, import_mode, import_issues?: [{level, message}], merged_rows_note?, direction_note?}`. `merged_rows_note` appears when Gephi merged repeated rows into weighted ties; `direction_note` on a CSV or TSV, because Gephi reads an edge list as directed by default. Pass both on to the person
 - **Notes**: Imports open in their own workspace, so no new project is needed. Auto-detects format by extension. Supports GEXF, GraphML, GML, CSV, DOT, Pajek. By default the file opens in its own workspace, as from Gephi's File > Open, so its time format and id type always fit; an empty workspace still under Gephi's default name is removed, and one holding a graph or one the person named is kept. `mode: "append"` adds the file to the current workspace, and fails when the two disagree on time format or id type; appending a node file attaches its columns to nodes whose ids already exist. An edge CSV with repeated source-target rows is merged on import (weights summed, one row's other values kept); load such rows with `gephi_add_edges` instead. Tell the user about `import_issues` that matter, such as nodes Gephi created because an edge names a node the file does not list.
 
 ### gephi_generate_graph

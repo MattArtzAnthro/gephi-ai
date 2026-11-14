@@ -4,6 +4,11 @@ Each type exercises code the others do not: weights, direction, fragments, two m
 ties and self-loops, awkward ids, density, a dominant hub, timestamps, scale, and the trivial
 case. `live_workflow_test.py` runs every one against a live Gephi; `test_network_types.py` runs
 the profile's reading of every one offline. Add a type here and both pick it up.
+
+Some types are here because nothing in the file says what they are: two modes with no column
+naming them, mutual ties written once in each direction, weights that run negative, and weights
+that measure distance. `event_log_rows()` is the one type that cannot be a graph object: a dated
+edge list, which only becomes what it is when Gephi imports the CSV.
 """
 
 import random
@@ -75,6 +80,25 @@ def generated() -> dict[str, nx.Graph]:
     for u, v, d in timed.edges(data=True):
         d["start"] = max(int(u), int(v)) // 20
     timed.graph["mode"] = "dynamic"
+    # Two modes with nothing to tell them apart: numeric ids, no column naming the mode.
+    unlabelled = nx.Graph()
+    for member in range(1000, 1060):
+        for meeting in rng.sample(range(2000, 2015), rng.randint(1, 6)):
+            unlabelled.add_edge(str(member), str(meeting))
+    # Mutual ties written once in each direction, so the file reads as directed.
+    mutual = nx.relabel_nodes(nx.watts_strogatz_graph(80, 6, 0.2, seed=7), str).to_directed()
+    # Signed: alliances are positive, rivalries negative.
+    signed = nx.relabel_nodes(nx.gnm_random_graph(50, 180, seed=7), str)
+    for _, _, d in signed.edges(data=True):
+        d["weight"] = float(rng.choice([1, 1, 1, 2, 3, -1, -2, -3]))
+    # The weight is a distance between sites: a larger number means a weaker tie.
+    sites = {str(i): (rng.uniform(0, 500), rng.uniform(0, 500)) for i in range(40)}
+    distance = nx.Graph()
+    for a in sites:
+        for b in sites:
+            gap = ((sites[a][0] - sites[b][0]) ** 2 + (sites[a][1] - sites[b][1]) ** 2) ** 0.5
+            if a < b and gap < 220:
+                distance.add_edge(a, b, weight=round(gap, 1))
     big = nx.relabel_nodes(nx.powerlaw_cluster_graph(12000, 2, 0.1, seed=7), str)
     tiny = nx.Graph([("a", "b")])
     return {"several components + isolates": islands, "two-mode (people, events)": two_mode,
@@ -84,4 +108,23 @@ def generated() -> dict[str, nx.Graph]:
             "directed weighted replies": replies,
             "les-miserables (weighted)": les, "karate (two clubs)": karate,
             "heavy-tailed weights": heavy, "directed tree-like": tree,
-            "four planted blocks": sbm}
+            "four planted blocks": sbm,
+            "two-mode, unlabelled (numeric ids)": unlabelled,
+            "mutual ties stored directed": mutual,
+            "signed weights": signed, "weight is a distance": distance}
+
+
+def event_log_rows() -> list[tuple[str, str, str]]:
+    """A dated message log as edge-list rows (source, target, date): 1,500 rows over 220 pairs.
+
+    Written to CSV with a `source,target,date` header and imported, Gephi merges the repeated
+    pairs into weights and turns `date` into an edge column holding a set of times.
+    """
+    rng = random.Random(11)
+    people = [f"u{i:03d}" for i in range(60)]
+    pairs = rng.sample([(a, b) for a in people for b in people if a != b], 220)
+    rows = []
+    for _ in range(1500):
+        a, b = rng.choice(pairs)
+        rows.append((a, b, f"2025-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}"))
+    return sorted(rows, key=lambda r: r[2])

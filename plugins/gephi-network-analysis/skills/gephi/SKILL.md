@@ -63,7 +63,23 @@ Write for someone who has never used network software. The first time you use a 
 
 ## The first reading
 
-Run `gephi_profile_graph`: one call gives size, density, the degree distribution, components, isolates, the weight distribution, modularity, clustering against its random expectation, and flags. Absorb it, give a short plain-language first reading that joins their description with the numbers, and ask the two or three questions the profile raises. The first reading is provisional by design: success is what the person notices next, not how fast a verdict lands.
+Run `gephi_profile_graph`: one call gives size, density, the degree distribution, components, isolates, the weight distribution, modularity, clustering against its random expectation, flags, and `type_signals`. Absorb it, give a short plain-language first reading that joins their description with the numbers, and ask the two or three questions the profile raises. The first reading is provisional by design: success is what the person notices next, not how fast a verdict lands.
+
+**What kind of network is it?** The profile's `type_signals` list what the structure suggests about the kind of network, and an import's `merged_rows_note` and `direction_note` say what Gephi decided while reading the file. Each signal gives its evidence, a reading, and one question. Structure shows what a network could be, never what it is, so put the questions to the person once, together with what the column names suggest, before choosing metrics. If they cannot answer, use the default below and list it under "Choices I made".
+
+| Signal or note | If the person confirms | Default when they cannot answer |
+|---|---|---|
+| `two_mode` | Two kinds of node (people and events). Centrality and community detection do not apply as they stand. Use `gephi_bipartite_layout`, or `gephi_bipartite_projection` to get ties among one kind. | Report it as possibly two-mode; run no one-mode statistics as findings. |
+| `all_ties_returned` | The ties are mutual. Read degree, not in- and out-degree, and do not report reciprocity. | Treat as mutual and say so. |
+| `direction_note` | Direction is real only if the data has it. | Do not interpret direction. |
+| `negative_weights` | Positive and negative ties mean different things. Analyse them apart (filter by weight), or take absolute values and say which. | Leave weights out of statistics and layout, and say so. |
+| `weight_meaning` | A larger weight is a stronger tie: carry on. It is a distance or cost: do not filter "weak" ties or weight the layout by it without inverting it first. | Treat as strength and say it was assumed. |
+| `merged_rows_note` | Weights count repeated rows. Read them as counts. | Read them as counts. |
+| `time` | Read period by period with `gephi_get_timeline` and `gephi_time_slice` (references/change-over-time.md). | One network across all periods; say so. |
+| `self_loops` | Keep them, or remove them if they are left over from the data. | Keep them and report the count. |
+| tree-like flag on an org chart or other hierarchy | Communities found are branches of the tree, not social groups. | Describe groups as branches. |
+
+A graph with a date column can fail to export with an error naming the column; follow the error (`gephi_edit_column`, convert to string) and run the tool again.
 
 Three numbers set layout parameters before any render:
 

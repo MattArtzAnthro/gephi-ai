@@ -1540,6 +1540,55 @@ async def gephi_size_by_ranking(column: str, min_size: float = 10, max_size: flo
 
 # ─── Reading the graph ───────────────────────────────────────
 
+_TIME_SET_TYPES = frozenset({"TimestampSet", "IntervalSet"})
+
+
+async def _empty_export_failure() -> dict:
+    """The failure to report when Gephi's GEXF export produced nothing.
+
+    Gephi's GEXF exporter throws on an attribute column that holds a set of times, logs the
+    error, and writes nothing, while the plugin still answers success. A CSV edge list with a
+    date column imports as exactly such a column. An export that worked always has content,
+    since even an empty graph gets a document, so empty output is never a result to parse.
+    This names the columns responsible so the caller can say what to change.
+    """
+    blocking: list[dict[str, str]] = []
+    for table in ("node", "edge"):
+        listing = await gephi.request("GET", "/graph/columns", params={"target": table})
+        columns = listing.get("columns") if isinstance(listing, dict) else None
+        for col in columns or []:
+            if col.get("type") in _TIME_SET_TYPES and not col.get("property"):
+                blocking.append({"table": table, "column": str(col.get("id")),
+                                 "type": str(col.get("type"))})
+    if blocking:
+        named = ", ".join(f"'{c['column']}' ({c['table']} table, {c['type']})" for c in blocking)
+        error = (
+            f"Gephi exported an empty GEXF document, so the graph could not be read. Gephi's "
+            f"GEXF exporter cannot write an attribute column that holds a set of times, and "
+            f"this graph has one: {named}. Convert it to text with gephi_edit_column "
+            f"(action='convert', type='string') or delete it (action='delete'), then run "
+            f"this again. Gephi's own time column is separate and stays as it is."
+        )
+    else:
+        error = (
+            "Gephi exported an empty GEXF document, so the graph could not be read. Gephi "
+            "logs the cause in its messages.log (Help > Show Log in Gephi)."
+        )
+    return {"success": False, "error": error, "blocking_columns": blocking}
+
+
+async def _export_gexf_to_file(path: str) -> dict:
+    """Export the graph to a GEXF file, treating an empty file as the failure it is."""
+    result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
+    if isinstance(result, dict) and result.get("success"):
+        try:
+            if os.path.getsize(path) == 0:
+                return await _empty_export_failure()
+        except OSError:
+            pass  # the file cannot be checked from here; leave Gephi's answer as given
+    return result
+
+
 async def _export_gexf_inline() -> dict:
     """Export the graph inline as GEXF, with the filter state made explicit.
 
@@ -1557,6 +1606,11 @@ async def _export_gexf_inline() -> dict:
     )
     if not isinstance(exported, dict):
         return exported
+    # A reply with no "content" at all is an older plugin without inline export, which callers
+    # already handle; the failure is content that is present and blank.
+    if (exported.get("success") and "content" in exported
+            and not str(exported["content"] or "").strip()):
+        return await _empty_export_failure()
     if exported.get("filter_active") and exported.get("view") == "visible":
         full_n = exported.get("full_node_count")
         vis_n = exported.get("visible_node_count")
@@ -2387,6 +2441,14 @@ async def gephi_profile_graph(include_slow: bool = False) -> str:
     on them before choosing layout parameters. One call = one approval prompt
     instead of six.
 
+    `type_signals` lists what the structure suggests about the KIND of network: two_mode
+    (the nodes split into two sets with ties only between them), all_ties_returned (a
+    directed graph where every tie has its reverse, usually mutual ties stored both ways),
+    negative_weights, self_loops, time, and weight_meaning (asked of every weighted graph:
+    stronger or farther?). Each carries its evidence, a reading and one question. Structure
+    shows what a network could be, never what it is: ask the person the questions before
+    choosing metrics, and never state a type as a fact.
+
     USE IT TO GUIDE EVERYTHING DOWNSTREAM, together with the person's own
     description of their data: their description supplies meaning (what nodes
     and ties are, what they want to learn); this profile supplies measurement.
@@ -3213,8 +3275,7 @@ async def gephi_export_gexf(file: str | None = None) -> str:
     """
     if file and (problem := _make_output_folder(file)):
         return fmt({"success": False, "error": problem})
-    payload = {"file": file} if file else {"inline": True}
-    return fmt(await gephi.request("POST", "/export/gexf", json_data=payload))
+    return fmt(await (_export_gexf_to_file(file) if file else _export_gexf_inline()))
 
 @_tool(name="gephi_export")
 async def gephi_export(file: str, format: str) -> str:
@@ -3459,7 +3520,7 @@ async def gephi_visual_qa(partition_column: str | None = None) -> str:
     fd, path = tempfile.mkstemp(suffix=".gexf")
     os.close(fd)
     try:
-        result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
+        result = await _export_gexf_to_file(path)
         if not result.get("success", False):
             return fmt(result)
         graph = gephi_mcp_viewer.parse_gexf(path, max_nodes=1000000)
@@ -3492,7 +3553,7 @@ async def gephi_label_clusters(partition_column: str,
     fd, path = tempfile.mkstemp(suffix=".gexf")
     os.close(fd)
     try:
-        result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
+        result = await _export_gexf_to_file(path)
         if not result.get("success", False):
             return fmt(result)
         graph = gephi_mcp_viewer.parse_gexf(path, max_nodes=1000000)
@@ -3605,7 +3666,7 @@ async def gephi_view_graph(max_nodes: int = 1500, title: str = "Network view",
     fd, path = tempfile.mkstemp(suffix=".gexf")
     os.close(fd)
     try:
-        result = await gephi.request("POST", "/export/gexf", json_data={"file": path})
+        result = await _export_gexf_to_file(path)
         if not result.get("success", False):
             return CallToolResult(
                 content=[TextContent(type="text", text=fmt(result))], is_error=True)
@@ -4461,6 +4522,27 @@ def _import_body(file: str, mode: str | None, max_node_size: float | None = None
         body["max_node_size"] = max_node_size
     return body
 
+def _explain_import(result: Any, file: str) -> Any:
+    """Say in plain words what Gephi decided while importing, where it changes later numbers."""
+    if not (isinstance(result, dict) and result.get("success")):
+        return result
+    issues = result.get("import_issues") or []
+    if any("parallel edges" in str(i.get("message", "")).lower() for i in issues):
+        result["merged_rows_note"] = (
+            "Some rows named the same pair of nodes more than once. Gephi merged each repeated "
+            "pair into one tie and added the rows' weights together, so an edge weight now "
+            "counts how many rows the pair had (or sums their weights). Tell the person, and "
+            "read weights as counts."
+        )
+    if file.lower().endswith((".csv", ".tsv")):
+        result["direction_note"] = (
+            "Gephi reads a spreadsheet edge list as directed unless the file says otherwise. "
+            "The direction here is that default, not a fact about the data: ask whether the "
+            "ties have a direction before reading in-degree, out-degree or reciprocity."
+        )
+    return result
+
+
 @_tool(name="gephi_import_gexf")
 async def gephi_import_gexf(file: str, mode: _ImportMode | None = None) -> str:
     """Import a graph from a GEXF file into a new workspace (see gephi_import_file for `mode`)."""
@@ -4474,7 +4556,8 @@ async def gephi_import_graphml(file: str, mode: _ImportMode | None = None) -> st
 @_tool(name="gephi_import_csv")
 async def gephi_import_csv(file: str, mode: _ImportMode | None = None) -> str:
     """Import a graph from a CSV file into a new workspace (see gephi_import_file for `mode`)."""
-    return fmt(await gephi.request("POST", "/import/csv", json_data=_import_body(file, mode)))
+    return fmt(_explain_import(
+        await gephi.request("POST", "/import/csv", json_data=_import_body(file, mode)), file))
 
 @_tool(name="gephi_import_file")
 async def gephi_import_file(file: str, max_node_size: float | None = None,
@@ -4489,7 +4572,10 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
     still under Gephi's default name ("Workspace 1") is removed; one holding a graph, or one
     the person named, is kept, and gephi_switch_workspace returns to it. "append" adds the file to the current workspace instead, for merging two files;
     Gephi refuses when their settings differ (for example one has timestamps and the other
-    intervals). Warnings Gephi raised while reading the file come back as `import_issues`;
+    intervals). When Gephi merged repeated rows into weighted ties the reply says so in
+    `merged_rows_note`, and a spreadsheet import carries `direction_note`, because Gephi reads
+    an edge list as directed by default; pass both on to the person.
+    Warnings Gephi raised while reading the file come back as `import_issues`;
     tell the user about any that matter, such as nodes Gephi created because an edge names a node the file does not list.
 
     No file path? (e.g. the user attached a spreadsheet/CSV/JSON/RDF in chat):
@@ -4507,8 +4593,9 @@ async def gephi_import_file(file: str, max_node_size: float | None = None,
     value) when a GEXF carries `viz:size` values large enough that a few nodes cover the
     whole map; the reply then reports how many nodes were changed.
     """
-    return fmt(await gephi.request("POST", "/import/file",
-                                   json_data=_import_body(file, mode, max_node_size)))
+    return fmt(_explain_import(
+        await gephi.request("POST", "/import/file",
+                            json_data=_import_body(file, mode, max_node_size)), file))
 
 
 @_tool(name="gephi_generate_graph")

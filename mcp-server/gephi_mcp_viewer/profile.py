@@ -60,6 +60,116 @@ def freeman_degree_centralization(degrees: Sequence[float], n: int) -> float | N
     return sum(d_max - d for d in degrees) / ((n - 1) * (n - 2))
 
 
+# Below this many nodes a network with no odd cycle is too small to say anything about modes.
+_TWO_MODE_MIN_NODES = 10
+_MUTUAL_MIN_TIES = 10
+
+
+def _two_sets(nodes: Sequence[str], pairs: set[tuple[str, str]]) -> dict[str, int] | None:
+    """Split the nodes into two sets with every tie running between them, or None.
+
+    `pairs` are the distinct ties without self-loops. Isolated nodes are left out of the split.
+    """
+    neighbours: dict[str, list[str]] = {}
+    for a, b in pairs:
+        neighbours.setdefault(a, []).append(b)
+        neighbours.setdefault(b, []).append(a)
+    side: dict[str, int] = {}
+    for start in nodes:
+        if start in side or start not in neighbours:
+            continue
+        side[start] = 0
+        stack = [start]
+        while stack:
+            current = stack.pop()
+            for other in neighbours[current]:
+                if other not in side:
+                    side[other] = 1 - side[current]
+                    stack.append(other)
+                elif side[other] == side[current]:
+                    return None
+    return side
+
+
+def _type_signals(nodes: Sequence[str], edges: list[tuple[str, str]], weights: list[float],
+                  directed: bool, weighted: bool, components: int, timed: bool) -> list[dict]:
+    """What structure can show about the kind of network, each as evidence plus a question.
+
+    Structure shows what a network could be, never what it is: a grid has no odd cycle and is
+    not two-mode. So nothing here is a verdict, and each signal ends in a question for the
+    person who knows the data.
+    """
+    out: list[dict] = []
+
+    def signal(kind: str, evidence: dict, reading: str, question: str) -> None:
+        out.append({"type": kind, "evidence": evidence, "reading": reading, "question": question})
+
+    loops = sum(1 for s, t in edges if s == t)
+    ties = {(s, t) for s, t in edges if s != t}
+    pairs = {(s, t) if s <= t else (t, s) for s, t in ties}
+    touched = {k for pair in pairs for k in pair}
+
+    sources = {s for s, _ in ties}
+    targets = {t for _, t in ties}
+    never = directed and len(sources) > 1 and len(targets) > 1 and not (sources & targets)
+    # A forest has exactly nodes - components ties, and every forest splits in two, so only a
+    # network with a cycle is evidence of two modes.
+    has_cycle = len(pairs) > len(nodes) - components
+    if len(touched) >= _TWO_MODE_MIN_NODES and (never or has_cycle):
+        side = {k: 0 for k in sources} | {k: 1 for k in targets} if never else _two_sets(nodes, pairs)
+        if side is not None:
+            evidence: dict[str, Any] = {"odd_cycles": 0, "clustering": 0.0}
+            if never:
+                evidence["sources_never_targets"] = True
+            if never or components - (len(nodes) - len(touched)) == 1:
+                evidence["set_sizes"] = [sum(1 for v in side.values() if v == 0),
+                                         sum(1 for v in side.values() if v == 1)]
+            signal("two_mode", evidence,
+                   "The nodes split into two sets with every tie running between the sets and "
+                   "none inside either. That is the shape of a two-mode network, such as people "
+                   "and the events they attend, though a one-mode network can have it too. If "
+                   "it is two-mode, centrality and community detection do not apply as they "
+                   "stand: use gephi_bipartite_layout or gephi_bipartite_projection.",
+                   "Are these two different kinds of thing, such as people and events?")
+
+    if directed and len(ties) >= _MUTUAL_MIN_TIES and all((t, s) in ties for s, t in ties):
+        signal("all_ties_returned", {"reciprocity": 1.0, "directed_ties": len(ties)},
+               "Every directed tie has its reverse. Data like this is usually undirected ties "
+               "written once in each direction, in which case direction carries no information "
+               "and in- and out-degree are the same number.",
+               "Do these ties have a direction, or is each one mutual?")
+
+    negative = sum(1 for w in weights if w < 0)
+    if negative:
+        signal("negative_weights",
+               {"negative": negative, "edges": len(weights), "min": min(weights)},
+               "Some edge weights are negative. Modularity, weighted statistics and force "
+               "layouts assume weights of zero or more, so their results on this graph are not "
+               "meaningful as they stand. Negative ties are usually analysed apart from "
+               "positive ones.",
+               "Do negative weights mean opposition, such as rivalry against alliance?")
+
+    if loops:
+        signal("self_loops", {"self_loops": loops},
+               "Some nodes are tied to themselves. Self-loops add to degree and to weighted "
+               "statistics.",
+               "Are ties from a node to itself meaningful here, or left over from the data?")
+
+    if timed:
+        signal("time", {"dynamic": True},
+               "Nodes or ties carry times, so this network changes over time. A single map and "
+               "a single set of statistics describe every period at once.",
+               "Should this be read as one network, or period by period?")
+
+    if weighted:
+        signal("weight_meaning", {"min": min(weights), "max": max(weights)},
+               "The ties carry weights. Layouts, weighted statistics and weak-tie filters all "
+               "treat a larger weight as a stronger tie, which is backwards when the weight is "
+               "a distance, a cost or a time apart.",
+               "Does a larger weight mean a stronger tie, or a greater distance?")
+    return out
+
+
 def structural_profile(graph: dict) -> dict:
     """Degree, connectivity, and weight facts from a parse_gexf graph dict."""
     nodes = [n["key"] for n in graph["nodes"]]
@@ -158,6 +268,11 @@ def structural_profile(graph: dict) -> dict:
             "heavy_tailed": heavy,
         }
 
+    profile["type_signals"] = _type_signals(
+        nodes, seen_edges, weights, directed, profile["weighted"], len(comp_sizes),
+        bool(graph.get("dynamic")) or graph.get("mode") == "dynamic")
+    two_mode = any(s["type"] == "two_mode" for s in profile["type_signals"])
+
     flags = []
     if isolates:
         flags.append(f"{isolates} isolated node(s) — expected, or a data issue?")
@@ -177,7 +292,9 @@ def structural_profile(graph: dict) -> dict:
             "the strongest ties will dominate any force layout — log-transform "
             "weights before laying out, or set edgeWeightInfluence below 1"
         )
-    if (assortativity is not None and assortativity <= -0.3 and n >= 50):
+    # In a two-mode network the hubs of one mode tie only to the other mode, which reads as
+    # disassortative whatever the wiring; the two-mode signal is the explanation there.
+    if (assortativity is not None and assortativity <= -0.3 and n >= 50 and not two_mode):
         flags.append(
             f"strongly disassortative (assortativity {assortativity:.2f}): "
             "hub-and-spoke wiring — each hub sits in a halo of its own neighbours, which "
@@ -185,13 +302,18 @@ def structural_profile(graph: dict) -> dict:
             "(dissuade hubs) off, since it only acts on directed networks and costs "
             "cluster separation"
         )
-    if "reciprocity" in profile and profile["reciprocity"] < 0.1 and n >= 50:
+    if "reciprocity" in profile and profile["reciprocity"] < 0.1 and n >= 50 and not two_mode:
         flags.append(
             f"mostly one-way: only {profile['reciprocity']:.0%} of directed ties are returned — "
-            "describe hubs as accounts others address, not as partners in a conversation"
+            "describe hubs as accounts others address, not as partners in a conversation. "
+            "Gephi reads an edge list as directed by default, so confirm the direction is in "
+            "the data before reading it"
         )
     if profile["density"] > 0.3 and n >= 20:
-        flags.append("very dense — force layouts will hairball; consider filtering weak ties")
+        flags.append(
+            "very dense — force layouts will hairball; consider filtering weak ties"
+            + (", once it is confirmed that a larger weight means a stronger tie"
+               if profile["weighted"] else ""))
     if n >= 200 and degrees and degrees[n // 2] <= 1:
         flags.append(
             "leaf-majority: most nodes have a single tie, so full renders will look "

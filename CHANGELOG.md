@@ -4,6 +4,42 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Added
+- **The profile says what kind of network the structure suggests.** `gephi_profile_graph` now
+  returns `type_signals`: two modes (the nodes split into two sets with ties only between them),
+  every directed tie returned (usually mutual ties stored both ways), negative weights,
+  self-loops, a time dimension, and, for any weighted graph, the question of whether a larger
+  weight means a stronger tie or a greater distance. Each signal carries its evidence, a reading
+  and one question for the person; none is stated as a fact. The skill has a table of what each
+  answer changes.
+- **An import says what Gephi decided.** `gephi_import_file` and `gephi_import_csv` add
+  `merged_rows_note` when repeated rows were merged into weighted ties, and `direction_note` on a
+  spreadsheet, because Gephi reads an edge list as directed by default.
+
+### Changed
+- **Two flags no longer mislead on two-mode data.** The hub-and-spoke and "mostly one-way" flags
+  are not raised when the two-mode signal is present. The "mostly one-way" flag now says that
+  direction may be Gephi's import default, and the "very dense" flag ties its weak-tie advice to
+  knowing what the weight means.
+
+### Fixed
+- **A graph with a date column no longer breaks every tool that reads it.** A CSV edge list with
+  a date column imports with an attribute column that holds a set of times. Gephi's GEXF exporter
+  cannot write such a column and produces an empty file, which the plugin reports as a success.
+  `gephi_profile_graph`, `gephi_visual_qa`, `gephi_view_graph`, `gephi_export_gexf` and the other
+  tools that read the graph then failed with `FileNotFoundError: ''` or an XML parse error. They
+  now report a failed export that names the column and says how to change it:
+  `gephi_edit_column` with `action="convert", type="string"`, or `action="delete"`. Gephi's own
+  time column is not affected.
+
+### Development
+- **Four more network types** in `mcp-server/tests/network_types.py`: two modes with no column
+  naming them, mutual ties stored as directed, signed weights, and weights that measure
+  distance. `event_log_rows()` gives a dated edge list, and `live_workflow_test.py` imports it
+  as CSV to check the fix above against a real Gephi (`event_log_read`).
+
 ## MCP server 1.23.2 / workflow packages 1.22.2
 
 ### Fixed

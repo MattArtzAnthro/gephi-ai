@@ -29,6 +29,9 @@ of network, and checks each property after the calls that could break it:
     time_slice             (timestamped networks) a slice holds the nodes present in its window
     components_read        the profile counts components and isolates as networkx does, and
                            flags them by its own rules
+    event_log_read         (the dated event log, imported as CSV) a profile either reads the
+                           graph or fails naming the time column Gephi's GEXF exporter cannot
+                           write; after that column is converted to text, the profile reads it
 
 Every network gets its own project, so this DISCARDS the project open in that Gephi. Run it
 against a second Gephi on its own port (see live_smoke_test.py for the command); GEPHI_API_URL
@@ -265,9 +268,39 @@ async def check(name: str, graph: "nx.Graph", workdir: Path) -> list[tuple[str, 
     return results
 
 
+async def check_event_log(workdir: Path) -> list[tuple[str, bool, str]]:
+    """A dated edge list imported as CSV: Gephi makes `date` a column holding a set of times."""
+    from network_types import event_log_rows
+
+    path = workdir / "event_log.csv"
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["source", "target", "date"])
+        writer.writerows(event_log_rows())
+    await call(g.gephi_create_project, name="dated event log")
+    imported = await call(g.gephi_import_file, file=str(path))
+    if not imported.get("success"):
+        return [("import", False, str(imported)[:200])]
+    first = await call(g.gephi_profile_graph)
+    if first.get("success", True):
+        return [("event_log_read", first.get("nodes") == 60, f"read: {first.get('nodes')} nodes")]
+    blocking = [c["column"] for c in first.get("blocking_columns", [])]
+    for column in blocking:
+        await call(g.gephi_edit_column, column=column, action="convert", target="edge",
+                   type="string")
+    second = await call(g.gephi_profile_graph)
+    ok = blocking == ["date"] and second.get("success", True) and second.get("nodes") == 60
+    return [("event_log_read", ok, f"export refused on {blocking}; after converting, "
+                                   f"{second.get('nodes')} nodes read")]
+
+
 async def main() -> int:
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
+        print("\n== dated event log (CSV): 1500 rows")
+        for prop, ok, detail in await check_event_log(Path(tmp)):
+            failures += not ok
+            print(f"  {'PASS' if ok else 'FAIL'}  {prop:22s} {detail}")
         for name, graph in networks().items():
             kind = "directed" if graph.is_directed() else "undirected"
             print(f"\n== {name}: {graph.number_of_nodes()} nodes, "
