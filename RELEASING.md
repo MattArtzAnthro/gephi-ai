@@ -137,28 +137,21 @@ have yet, so it fails to install until PyPI catches up.
 
    `.mcpb` files are gitignored — they ship as release assets only.
 
-8. **Commit and push.** A push that changes `.github/workflows/ci.yml` requires the
-   `workflow` scope. Git routes GitHub credentials through the `gh` CLI by default, and
-   that token carries only `gist, read:org, repo`, so a push touching a workflow file is
-   rejected. This shows up most often on a force-push, where a rewritten history carries
-   the workflow file through along with everything else. A second macOS keychain item
-   holds the fix: `GitHub - https://api.github.com` under account `MattArtzAnthro`,
-   scoped `repo, user, workflow`. Use that token instead of the `gh` default for any push
-   touching a workflow file, and supply it through a credential helper that reads the
-   keychain at push time. Never put the token in a URL, a file, or `git config`, where it
-   stays findable after the fact.
+8. **Commit and push.** A push that changes a file under `.github/workflows/` needs a token
+   with the `workflow` scope, and the `gh` CLI's default token may not carry it (check with
+   `gh auth status`). Supply a token that has the scope through a credential helper that reads
+   it from the system keychain at push time. Never put a token in a URL, a file, or
+   `git config`, where it stays findable after the fact.
 
    ```bash
    git -c credential.helper= \
-       -c credential.helper='!f() { echo "username=MattArtzAnthro"; echo "password=$(security find-generic-password -s "GitHub - https://api.github.com" -a MattArtzAnthro -w)"; }; f' \
+       -c credential.helper='!f() { echo "username=<user>"; echo "password=$(<command that prints the token>)"; }; f' \
        push origin main
    ```
 
-   The empty `-c credential.helper=` is not decoration and the push fails without it.
-   Passing a helper with `-c` ADDS to the chain rather than replacing it, so the inherited
-   `osxkeychain` entry is consulted first, hands over the cached token that lacks the scope,
-   and the push is rejected a second time with the same message. Resetting the list to empty
-   first is what makes the new helper the only one asked.
+   The empty `-c credential.helper=` is required. Passing a helper with `-c` adds to the chain
+   and does not replace it, so the inherited helper is asked first, hands over the token
+   that lacks the scope, and the push is rejected again with the same message.
 
 9. **Cut the GitHub release.** Tag is `v<server-version>`, and both artifacts
    attach:
