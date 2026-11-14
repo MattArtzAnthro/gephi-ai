@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.24.1 / workflow packages 1.23.1
 
 ### Fixed
 - **Comparing workspaces no longer ends the methods record.** `gephi_compare_workspaces` switches
