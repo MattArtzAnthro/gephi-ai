@@ -44,6 +44,35 @@ def test_the_health_check_hook_matches_the_plugins_tool_names():
         assert not re.search(matcher, PLUGIN_PREFIX + tool), f"hook also guards {tool}"
 
 
+def _guarded_names(matcher):
+    group = re.search(r"gephi_\(([^)]*)\)\$$", matcher)
+    assert group, f"the matcher no longer ends in a gephi_(a|b|...)$ group: {matcher}"
+    return ["gephi_" + name for name in group.group(1).split("|")]
+
+
+def test_every_tool_the_hook_guards_is_a_registered_tool():
+    # A renamed tool drops out of the matcher silently, so check every name, not a sample.
+    hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    guarded = _guarded_names(hooks["hooks"]["PreToolUse"][0]["matcher"])
+    assert len(guarded) >= 10
+    missing = sorted(set(guarded) - _registered())
+    assert not missing, f"the hook guards tools that do not exist: {missing}"
+
+
+def test_the_guarded_tool_check_catches_a_renamed_tool():
+    stale = "mcp__gephi-ai__gephi_(add_node|add_nodez)$"
+    assert sorted(set(_guarded_names(stale)) - _registered()) == ["gephi_add_nodez"]
+
+
+def test_the_health_check_hook_has_a_bounded_timeout():
+    # A frozen Gephi accepts the connection and never answers; without a bound, every guarded
+    # call stalls until Claude Code's own default hook timeout.
+    hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    for entry in hooks["hooks"]["PreToolUse"]:
+        for hook in entry["hooks"]:
+            assert 0 < hook.get("timeout", 0) <= 10, f"hook has no short timeout: {hook}"
+
+
 def test_agents_restrict_tools_with_the_key_claude_code_reads():
     for agent in sorted((PLUGIN / "agents").glob("*.md")):
         assert _field(agent, "allowed-tools") is None, f"{agent.name}: agents read tools:, not allowed-tools:"

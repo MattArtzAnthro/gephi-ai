@@ -4,6 +4,16 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Fixed
+- **The Claude Code plugin's Gephi check no longer hangs on a frozen Gephi.** The PreToolUse
+  hook waited without limit when something accepted the connection and never answered, then said
+  Gephi was not running. It now gives up after 3 seconds (the hook itself has a 5-second
+  timeout) and says Gephi did not answer, which may mean it is frozen or busy.
+- **A test now checks every tool the hook guards.** It used to check five of the ten names, so
+  a rename could drop a tool from the hook without failing anything.
+
 ## MCP server 1.24.1 / workflow packages 1.23.1
 
 ### Fixed

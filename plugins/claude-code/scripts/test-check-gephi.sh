@@ -36,5 +36,24 @@ case "$rc:$msg" in
   *) echo "FAIL other service: expected exit 2 naming GEPHI_API_URL, got $rc: $msg"; fail=1 ;;
 esac
 
+# 4) Something accepts the connection and never answers (a frozen Gephi) -> exit 2 within a few
+#    seconds, saying it did not answer: "not running" sends the person to start a running Gephi.
+python3 -c '
+import socket, time
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", 8733)); s.listen(1); c, _ = s.accept(); time.sleep(20)
+' >/dev/null 2>&1 &
+srv3=$!
+trap 'kill "$srv" "$srv2" "$srv3" 2>/dev/null; rm -rf "$tmp" "$other"' EXIT
+sleep 1
+start=$SECONDS
+msg=$(GEPHI_API_URL="http://127.0.0.1:8733" bash "$HOOK" 2>&1 >/dev/null)
+rc=$?
+took=$((SECONDS - start))
+case "$rc:$took:$msg" in
+  2:[0-5]:*"did not answer"*) echo "ok   silent listener -> exit 2 in ${took}s, says it did not answer" ;;
+  *) echo "FAIL silent listener: expected exit 2 within 5s saying 'did not answer', got $rc after ${took}s: $msg"; fail=1 ;;
+esac
+
 [ "$fail" -eq 0 ] && echo "ALL HOOK TESTS PASS" || echo "HOOK TESTS FAILED"
 exit "$fail"
