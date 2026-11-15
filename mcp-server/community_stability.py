@@ -103,6 +103,14 @@ def _forest(n: int, pairs: list[tuple[np.ndarray, np.ndarray]]) -> list[tuple[np
     return [(np.arange(n), first[component])]
 
 
+def _per_node(kind_of: np.ndarray, pairs: list[tuple[np.ndarray, np.ndarray]]
+              ) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Groups found over kinds of node, as pairs over the nodes themselves."""
+    component = _components(int(kind_of.max()) + 1, pairs)[kind_of]
+    _, first = np.unique(component, return_index=True)
+    return [(np.arange(len(kind_of)), first[component])]
+
+
 def _groups(nodes: list[str], pairs: list[tuple[np.ndarray, np.ndarray]]) -> list[list[str]]:
     """Connected groups over the given pairs, largest first; unpaired nodes stand alone."""
     component = _components(len(nodes), pairs)
@@ -141,36 +149,46 @@ def consensus(runs: list[Partition]) -> dict[str, Any]:
 
     labels, nodes = _label_matrix(runs)
     n = len(nodes)
-    # Pairs are scored in blocks of rows so memory stays proportional to one block, not n x n.
-    block = max(1, min(n, 4_000_000 // max(n, 1)))
-    stability: dict[str, float] = {}
+    # Nodes with the same column (same community in every run, absent from the same runs) are
+    # interchangeable: every pair rate between two of them, or with any third node, is the same.
+    # Scoring one per kind, weighted by how many there are, gives identical results; on a
+    # follower graph, where most nodes are leaves that follow their one neighbour, it is far less
+    # work than scoring every node against every other.
+    kinds, kind_of, size = np.unique(labels, axis=1, return_inverse=True, return_counts=True)
+    kind_of = kind_of.reshape(-1)
+    k = kinds.shape[1]
+    # Pairs are scored in blocks of rows so memory stays proportional to one block, not k x k.
+    block = max(1, min(k, 4_000_000 // max(k, 1)))
+    kind_stability = np.ones(k)
     agreed: list[tuple[np.ndarray, np.ndarray]] = []
     held: list[tuple[np.ndarray, np.ndarray]] = []
     pooled_sq = pooled = 0.0
-    for start in range(0, n, block):
-        rows = slice(start, min(n, start + block))
-        shared, together = _pair_rates(labels, rows)
+    for start in range(0, k, block):
+        rows = slice(start, min(k, start + block))
+        shared, together = _pair_rates(kinds, rows)
         own = np.arange(rows.start, rows.stop)
-        shared[np.arange(len(own)), own] = 0  # a node is not paired with itself
+        # How many other nodes each pair of kinds stands for: a node is not paired with itself.
+        others = np.broadcast_to(size, shared.shape).astype(np.float64)
+        others[np.arange(len(own)), own] -= 1
         rate = np.divide(together, shared, out=np.zeros(shared.shape), where=shared > 0)
         # Stability compares distinct runs only, so it needs a pair seen in at least two runs.
         comparable = shared > 1
-        mass = np.where(comparable, rate, 0.0).sum(axis=1)
+        mass = (np.where(comparable, rate, 0.0) * others).sum(axis=1)
         pairs_of_runs = shared.astype(np.float64) * (shared - 1)
         repeated = together.astype(np.float64) * (together - 1)
-        mass_sq = np.divide(repeated, pairs_of_runs, out=np.zeros(shared.shape),
-                            where=comparable).sum(axis=1)
-        pooled += float(mass.sum())
-        pooled_sq += float(mass_sq.sum())
-        for i, node_index in enumerate(own):
-            # A node grouped with nobody, ever, has nothing that could change: it is stable.
-            stability[nodes[node_index]] = (round(float(mass_sq[i] / mass[i]), 4)
-                                            if mass[i] else 1.0)
+        mass_sq = (np.divide(repeated, pairs_of_runs, out=np.zeros(shared.shape),
+                             where=comparable) * others).sum(axis=1)
+        pooled += float((mass * size[own]).sum())
+        pooled_sq += float((mass_sq * size[own]).sum())
+        # A node grouped with nobody, ever, has nothing that could change: it is stable.
+        kind_stability[own] = np.divide(mass_sq, mass, out=np.ones(len(own)), where=mass > 0)
         r, c = np.nonzero(rate > 0.5)
-        agreed = _forest(n, agreed + [(own[r], c)])
+        agreed = _forest(k, agreed + [(own[r], c)])
         r, c = np.nonzero(rate >= STABLE_CORE)
-        held = _forest(n, held + [(own[r], c)])
+        held = _forest(k, held + [(own[r], c)])
 
+    stability = {node: round(float(kind_stability[kind_of[i]]), 4) for i, node in enumerate(nodes)}
+    agreed, held = _per_node(kind_of, agreed), _per_node(kind_of, held)
     groups = _groups(nodes, agreed)
     cores = _groups(nodes, held)
     in_core = sum(len(g) for g in cores if len(g) > 1)

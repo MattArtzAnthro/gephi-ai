@@ -319,14 +319,16 @@ def test_nodes_never_grouped_with_anyone_are_fully_stable_overall():
 def _peak_bytes(n: int) -> int:
     import tracemalloc
 
-    one_community = {i: 0 for i in range(n)}
+    # Each run splits the nodes in two halves by one bit of their number, so every community
+    # holds half the graph and no two nodes share a pattern: none can be scored as one.
+    runs = [{i: (i >> bit) & 1 for i in range(n)} for bit in range(12)]
     tracemalloc.start()
     try:
-        result = consensus([one_community] * 3)
+        result = consensus(runs)
         return tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()
-        assert len(result["consensus_groups"][0]) == n
+        assert len(result["node_stability"]) == n
 
 
 def test_memory_does_not_grow_with_the_square_of_a_community():
@@ -337,3 +339,84 @@ def test_memory_does_not_grow_with_the_square_of_a_community():
     small, large = _peak_bytes(2000), _peak_bytes(4000)
 
     assert large < 1.5 * small, f"peak {small / 1e6:.0f} MB -> {large / 1e6:.0f} MB"
+
+
+def _naive(runs):
+    """Stability and groups straight from the definitions, pair by pair."""
+    import itertools
+
+    nodes = sorted({n for r in runs for n in r})
+    mass = dict.fromkeys(nodes, 0.0)
+    mass_sq = dict.fromkeys(nodes, 0.0)
+    agreed, held = [], []
+    for a, b in itertools.combinations(nodes, 2):
+        both = [r for r in runs if a in r and b in r]
+        m, t = len(both), sum(r[a] == r[b] for r in both)
+        if m and t / m > 0.5:
+            agreed.append((a, b))
+        if m and t / m >= 0.9:
+            held.append((a, b))
+        if m > 1:
+            for x in (a, b):
+                mass[x] += t / m
+                mass_sq[x] += t * (t - 1) / (m * (m - 1))
+    stability = {x: round(mass_sq[x] / mass[x], 4) if mass[x] else 1.0 for x in nodes}
+    pooled = sum(mass.values())
+    mean = round(sum(mass_sq.values()) / pooled, 4) if pooled else 1.0
+
+    def groups(pairs):
+        parent = {x: x for x in nodes}
+
+        def find(x):
+            while parent[x] != x:
+                x = parent[x]
+            return x
+        for a, b in pairs:
+            parent[find(a)] = find(b)
+        out = {}
+        for x in nodes:
+            out.setdefault(find(x), []).append(x)
+        return sorted((sorted(g) for g in out.values()), key=lambda g: (-len(g), g[0]))
+    return stability, mean, groups(agreed), [g for g in groups(held) if len(g) > 1]
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_results_match_the_pairwise_definition(seed):
+    """Random runs over few communities, with some nodes missing from some runs."""
+    import random
+
+    rng = random.Random(seed)
+    nodes = [f"n{i}" for i in range(rng.randint(2, 30))]
+    runs = [{n: rng.randint(0, 3) for n in nodes if rng.random() > 0.15}
+            for _ in range(rng.randint(2, 6))]
+    stability, mean, groups, cores = _naive([r for r in runs if r])
+
+    result = consensus(runs)
+
+    # Sums taken in another order can round a tie such as 0.21875 the other way.
+    assert result["node_stability"] == pytest.approx(stability, abs=1e-4)
+    assert result["mean_stability"] == pytest.approx(mean, abs=1e-4)
+    assert result["consensus_groups"] == groups
+    assert result["stable_core_groups"] == cores
+
+
+def test_nodes_that_always_move_together_are_scored_once(monkeypatch):
+    """A follower graph is mostly leaves that go wherever their one neighbour goes. Scoring every
+    node against every other took over an hour for 20 runs on 112,000 nodes; nodes that share a
+    community in every run are interchangeable and need scoring only once."""
+    import community_stability
+
+    widths = []
+    real = community_stability._pair_rates
+
+    def spy(labels, rows):
+        widths.append(labels.shape[1])
+        return real(labels, rows)
+
+    monkeypatch.setattr(community_stability, "_pair_rates", spy)
+    runs = [{i: (i % 4 + r * (i % 8 == 0)) % 4 for i in range(20_000)} for r in range(3)]
+
+    result = consensus(runs)
+
+    assert max(widths) <= 8, f"scored {max(widths)} columns for 8 kinds of node"
+    assert len(result["node_stability"]) == 20_000

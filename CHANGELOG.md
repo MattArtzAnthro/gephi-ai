@@ -4,6 +4,15 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Changed
+- **`gephi_community_stability` scores each kind of node once.** Nodes that share a community
+  in every run are interchangeable, so they are scored as one, weighted by their number, with
+  identical results. On a follower graph, where most nodes are leaves that go wherever their one
+  neighbour goes, the pairwise step no longer grows with the square of the node count: 39 s to
+  0.4 s at 32,000 nodes over 20 runs, and 1.1 s at 112,000.
+
 ## MCP server 1.24.1 / workflow packages 1.23.1
 
 ### Fixed
