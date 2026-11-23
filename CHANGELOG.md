@@ -18,7 +18,29 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   `/explore` and `/import-and-explore` workflows (Claude Code and Codex) now run both layouts on a
   flagged graph and keep the one with the clearer separation.
 
+### Added
+- **Formal models of the server's workspace, layout and locking rules** (`formal/`): Lean 4 proofs
+  for the endpoint classification, the choice of a duplicate's copy and the session record, and
+  TLA+ models of the undo snapshot, `gephi_undo`, what-if, workspace comparison, layout stop and
+  the read gate. `formal/README.md` says how to run them and when.
+
 ### Fixed
+- **`gephi_undo` no longer deletes an unrelated workspace.** It deleted whichever workspace was
+  on screen. After a switch to another workspace, or an import that opened a new one, undo removed
+  that graph for good and left the changed one in place. It now removes the workspace the snapshot
+  was copied from, keeps any other, and names the kept one in `note`. For a snapshot taken before
+  the server restarted, the workspace on screen is removed only when it has the snapshot's name.
+- **A destructive tool does not run when its failed undo snapshot left another workspace on
+  screen.** If Gephi could not switch back from the snapshot's copy and the cleanup failed too,
+  the removal ran on whatever was showing, with no undo. The tool now reports that it was not run.
+- **A layout stopped with `gephi_stop_layout` is recorded as stopped.** Only a `sync` run was
+  marked, so the session receipt reported a stopped background layout as having run every
+  requested iteration.
+- **A `sync` layout stopped at the moment it was polled is reported as stopped.** The run decided
+  before the stop request was answered and could report `completed`.
+- **`gephi_compare_workspaces` says when it could not switch back.** The result carries
+  `workspace_warning` and the session record starts anew, since another workspace may be on
+  screen.
 - **The Claude Code plugin's Gephi check no longer hangs on a frozen Gephi.** The PreToolUse
   hook waited without limit when something accepted the connection and never answered, then said
   Gephi was not running. It now gives up after 3 seconds (the hook itself has a 5-second

@@ -790,7 +790,8 @@ async def test_a_copy_that_appears_after_the_timeout_is_removed(monkeypatch, ent
 @pytest.mark.parametrize("entry", ENTRIES)
 async def test_a_copy_that_never_appears_is_reported_and_nothing_is_deleted(monkeypatch, entry):
     state, track = _late_copy(monkeypatch, on_poll=None)
-    _fast_polls(monkeypatch, grace=0.05)
+    # Wide enough for a second poll on a loaded machine: at 0.05 s one slow list call used it up.
+    _fast_polls(monkeypatch, grace=0.5)
     _record_layout()
     # Bounded: polling that ignored the grace period would never return.
     out = json.loads(await asyncio.wait_for(ENTRIES[entry](), 2))

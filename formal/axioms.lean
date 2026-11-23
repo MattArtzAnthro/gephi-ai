@@ -1,0 +1,21 @@
+import GephiModel
+#print axioms GephiModel.prefixes_comparable
+#print axioms GephiModel.lists_disjoint
+#print axioms GephiModel.replaces_implies_mutates
+#print axioms GephiModel.get_never_mutates
+#print axioms GephiModel.get_never_replaces
+#print axioms GephiModel.unknown_path_mutates
+#print axioms GephiModel.keeps_wins
+#print axioms GephiModel.put_keys
+#print axioms GephiModel.put_nodup
+#print axioms GephiModel.legendFrom_nodup
+#print axioms GephiModel.legend_one_per_channel
+#print axioms GephiModel.new_graph_is_empty
+#print axioms GephiModel.earlier_bounded
+#print axioms GephiModel.new_graph_keeps_record
+#print axioms GephiModel.put_mem_key
+#print axioms GephiModel.legendFrom_keys
+#print axioms GephiModel.forget_removes
+#print axioms GephiModel.copy_is_new
+#print axioms GephiModel.reported_or_nothing
+#print axioms GephiModel.two_new_is_nothing

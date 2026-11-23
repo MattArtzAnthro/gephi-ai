@@ -38,3 +38,6 @@ mcp-server/caveats.local.json
 
 # mutmut working copy (mutation testing, see [tool.mutmut] in mcp-server/pyproject.toml)
 mutants/
+
+# Lean build output
+formal/.lake/

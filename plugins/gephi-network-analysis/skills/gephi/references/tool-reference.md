@@ -140,9 +140,11 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_undo
 - **Method**: composite (Python-side; workspace list + switch + delete + rename)
 - **Params**: `{}` (empty)
-- **Returns**: `{success, restored, node_count, edge_count}`
+- **Returns**: `{success, restored, node_count, edge_count, note?}`
 - **Notes**: Restores the last `[undo] …` snapshot: switches to it, deletes the
-  modified workspace, renames the snapshot back to its working name. One level,
+  modified workspace (the one the snapshot was copied from, whichever workspace is on
+  screen), renames the snapshot back to its working name. Any other workspace is kept, and
+  `note` names the one that was on screen when it was not the snapshot's source. One level,
   no redo. Errors with "nothing to undo" when no snapshot exists. Destructive
   tools report `undo_available: true/false` so you know whether this will work.
 
@@ -332,6 +334,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 
 ### gephi_stop_layout
 - **Method**: POST `/layout/stop`
+- **Notes**: The session receipt then reports the stopped run with `stopped_before_finishing` and `iterations_requested`, whether or not the run was started with `sync`.
 
 ### gephi_get_layout_status
 - **Method**: GET `/layout/status`
@@ -486,7 +489,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 ### gephi_compare_workspaces
 - **Method**: reads both workspaces (switching to each and back), diffs node and edge sets, and, when `compare` names a numeric column, tracks it across the nodes present in both.
 - **Params**: `{before: int, after: int, compare?: str, directed?: bool (false)}`. Workspace arguments are zero-based indices: the `index` in each `gephi_list_workspaces` entry, not its `id`.
-- **Returns**: `{success, nodes: {added, removed, shared, before, after}, edges: {added, removed, shared, directed}, changed: {column, comparable, grew, shrank, unchanged}|null, warning?}`.
+- **Returns**: `{success, nodes: {added, removed, shared, before, after}, edges: {added, removed, shared, directed}, changed: {column, comparable, grew, shrank, unchanged}|null, warning?, workspace_warning?}`. `workspace_warning` means Gephi could not be switched back to the workspace that was on screen: check `gephi_list_workspaces` and switch back before going on.
 - **Notes**: the comparison rests on node identity. Two graphs sharing no nodes carry a warning, because a mismatched identifier looks exactly like a network that replaced every member and is much more common; their `added` and `removed` lists then hold five examples each, with the totals in `added_count` and `removed_count`, and `nodes.label_overlap` (count, `unique_on_both_sides`, and examples) says whether the labels match instead, so the labels need not be read by hand; a label is a candidate key only when one node on each side carries it. When the graphs overlap, a list longer than 200 is cut to its first 200 entries with its `_count`, so one coincidental shared id cannot bring back thousands. Omitting `compare` returns `changed: null` rather than an empty section, since an empty one reads as a finding that nothing moved.
 
 ### gephi_bipartite_layout

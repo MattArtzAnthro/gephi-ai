@@ -1,0 +1,6 @@
+name = "gephimodel"
+version = "0.1.0"
+defaultTargets = ["GephiModel"]
+
+[[lean_lib]]
+name = "GephiModel"
