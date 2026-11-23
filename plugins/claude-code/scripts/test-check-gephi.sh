@@ -6,6 +6,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$HERE/check-gephi.sh"
 fail=0
 
+# Wait until something listens on the port. A fixed pause is too short on a busy machine, and the
+# hook then finds nothing there.
+listening() {
+  local _
+  for _ in $(seq 1 150); do
+    (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0
+    sleep 0.2
+  done
+  echo "FAIL nothing listened on port $1 within 30s"; fail=1
+}
+
 # 1) API down -> exit 2 (nothing listening on this port)
 GEPHI_API_URL="http://127.0.0.1:59999" bash "$HOOK" >/dev/null 2>&1
 rc=$?
@@ -17,7 +28,7 @@ printf '{"success": true}' > "$tmp/health"
 ( cd "$tmp" && exec python3 -m http.server 8731 --bind 127.0.0.1 ) >/dev/null 2>&1 &
 srv=$!
 trap 'kill "$srv" 2>/dev/null; rm -rf "$tmp"' EXIT
-sleep 1
+listening 8731
 GEPHI_API_URL="http://127.0.0.1:8731" bash "$HOOK" >/dev/null 2>&1
 rc=$?
 if [ "$rc" -eq 0 ]; then echo "ok   up -> exit 0"; else echo "FAIL up: expected 0, got $rc"; fail=1; fi
@@ -28,7 +39,7 @@ other="$(mktemp -d)"
 ( cd "$other" && exec python3 -m http.server 8732 --bind 127.0.0.1 ) >/dev/null 2>&1 &
 srv2=$!
 trap 'kill "$srv" "$srv2" 2>/dev/null; rm -rf "$tmp" "$other"' EXIT
-sleep 1
+listening 8732
 msg=$(GEPHI_API_URL="http://127.0.0.1:8732" bash "$HOOK" 2>&1 >/dev/null)
 rc=$?
 case "$rc:$msg" in
@@ -45,7 +56,7 @@ s.bind(("127.0.0.1", 8733)); s.listen(1); c, _ = s.accept(); time.sleep(20)
 ' >/dev/null 2>&1 &
 srv3=$!
 trap 'kill "$srv" "$srv2" "$srv3" 2>/dev/null; rm -rf "$tmp" "$other"' EXIT
-sleep 1
+listening 8733
 start=$SECONDS
 msg=$(GEPHI_API_URL="http://127.0.0.1:8733" bash "$HOOK" 2>&1 >/dev/null)
 rc=$?

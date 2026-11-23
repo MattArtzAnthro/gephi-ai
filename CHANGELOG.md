@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## MCP server 1.24.2 / workflow packages 1.23.2
 
 ### Changed
 - **The tree-like flag gives its measure and a prediction to check, not a certainty.** It fires on
