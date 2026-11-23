@@ -9,14 +9,21 @@ COV_DIR="${TMPDIR:-/tmp}/check-$(basename "$PWD")"
 mkdir -p "$COV_DIR"
 export COVERAGE_FILE="$COV_DIR/.coverage"
 
+# The environment is untracked, so a checkout made for one run (the pre-push gate's worktree) has
+# none. It then uses the main checkout's: the tools come from there, the code from here.
+VENV="$PWD/mcp-server/.venv"
+if [ ! -x "$VENV/bin/python" ]; then
+  VENV="$(cd "$(git rev-parse --git-common-dir)/.." && pwd -P)/mcp-server/.venv"
+fi
+[ -x "$VENV/bin/python" ] || { echo "check.sh: no environment at mcp-server/.venv (cd mcp-server && uv sync)" >&2; exit 1; }
 RUFF=ruff
-[ -x mcp-server/.venv/bin/ruff ] && RUFF="$PWD/mcp-server/.venv/bin/ruff"
+[ -x "$VENV/bin/ruff" ] && RUFF="$VENV/bin/ruff"
 (cd mcp-server && "$RUFF" check . ../plugins/gephi-network-analysis/tests)
 # Incremental, so a second run takes well under a second. The viewer is named for the reason
 # given in ci.yml.
-(cd mcp-server && .venv/bin/mypy ./*.py gephi_mcp_viewer)
-(cd mcp-server && .venv/bin/bandit -q -c pyproject.toml -r .)
-(cd mcp-server && PYTHONPATH=. .venv/bin/python -m pytest -q -p no:cacheprovider --cov)
+(cd mcp-server && "$VENV/bin/mypy" ./*.py gephi_mcp_viewer)
+(cd mcp-server && "$VENV/bin/bandit" -q -c pyproject.toml -r .)
+(cd mcp-server && PYTHONPATH=. "$VENV/bin/python" -m pytest -q -p no:cacheprovider --cov)
 bash plugins/claude-code/scripts/test-check-gephi.sh >/dev/null
 # The same script and workflow lint CI runs, so a push does not go red on a lint
 # that never ran here. Skipped with a warning on a Mac without the tool.
@@ -26,8 +33,8 @@ else
   echo "check.sh: shellcheck not installed; CI will run it" >&2
 fi
 if command -v actionlint >/dev/null; then actionlint; else echo "check.sh: actionlint not installed; CI will run it" >&2; fi
-mcp-server/.venv/bin/python -m unittest discover -s plugins/gephi-network-analysis/tests >/dev/null 2>&1 \
-  || mcp-server/.venv/bin/python -m unittest discover -s plugins/gephi-network-analysis/tests
+"$VENV/bin/python" -m unittest discover -s plugins/gephi-network-analysis/tests >/dev/null 2>&1 \
+  || "$VENV/bin/python" -m unittest discover -s plugins/gephi-network-analysis/tests
 # The Java build takes a minute, so it runs only when plugin sources are staged
 # (CI runs it on every push regardless).
 if git diff --cached --name-only | grep -q '^gephi-ai-plugin/'; then
