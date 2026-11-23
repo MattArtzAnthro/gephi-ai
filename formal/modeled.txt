@@ -1,0 +1,4 @@
+# Files the models describe. A push that changes one runs formal/check.sh.
+mcp-server/gephi_mcp.py
+mcp-server/session_ledger.py
+mcp-server/stats_integrity.py

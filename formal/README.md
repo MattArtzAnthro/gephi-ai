@@ -14,6 +14,8 @@ bash formal/tla/check.sh    # TLA+: every row against its expected result (TRACE
 Lean 4.36.0, unpacked from the GitHub release into `~/.local/lean/` (or set `LEAN_LAKE` to
 its `lake`). TLC needs Java 11 or later and `tla2tools.jar` 1.7.4 at
 `~/.local/share/tla/tla2tools.jar` (or set `TLA_JAR`). Neither runs in `scripts/check.sh` or CI.
+`modeled.txt` lists the files the models describe; keep it current when a model takes in
+another file.
 
 ## What is modelled
 
