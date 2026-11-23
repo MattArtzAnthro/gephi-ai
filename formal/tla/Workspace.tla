@@ -71,7 +71,9 @@ Undo ==
     /\ badRestore' = (badRestore \/ dirty[s])
     /\ kind' = [kind EXCEPT ![s] = "work"]
     /\ IF cur = s
-         THEN UNCHANGED <<ws, cur, ledger, wrongDelete>>
+         THEN \* Opened by hand: it keeps the screen, and the remembered source goes.
+              /\ ws' = IF UndoBySource THEN ws \ {src[s]} ELSE ws
+              /\ UNCHANGED <<cur, ledger, wrongDelete>>
          ELSE LET victim == IF UndoBySource THEN src[s] ELSE cur IN
                 /\ ws' = ws \ {victim}
                 /\ wrongDelete' = (wrongDelete \/ (victim \in ws /\ victim # src[s]))

@@ -26,6 +26,7 @@ import logging
 import math
 import os
 import re
+import sys
 import tempfile
 import time
 import weakref
@@ -701,10 +702,18 @@ async def _snapshot_current_unguarded(op: str, enforce_cap: bool = False) -> dic
     except BaseException:
         # Cancelled, or failed unexpectedly, while a copy may exist. Remove it before the
         # exception goes on, so the person is not left on a copy.
+        failure = sys.exc_info()[1]
         found = await _discard_new_copy(before_ids, cur, dup.get("workspace_id"),
                                         late=_timed_out(dup))
         if not found["on_original"]:
             LEDGER.start_new_graph(_OFF_ORIGINAL)
+            if isinstance(failure, Exception):
+                # A cancellation goes on as it is. Any other failure that leaves another
+                # workspace on screen must reach the tool as a refusal, not as "no undo".
+                raise _OffOriginalError(
+                    f"The undo snapshot failed ({failure!r}) and Gephi could not be confirmed "
+                    "back on your workspace, so nothing further was run. Check which workspace "
+                    "is on screen with gephi_list_workspaces and switch to yours.") from failure
         raise
 
 
@@ -961,6 +970,8 @@ async def _auto_snapshot(op: str) -> bool:
         return False
     try:
         result = await _snapshot_current(op, enforce_cap=True)
+    except _OffOriginalError as off:
+        raise _OffOriginalError(f"{off} {op} was not run.") from off
     except Exception:
         logger.warning("the undo snapshot before %s failed; the result reports no undo", op,
                        exc_info=True)
@@ -1047,6 +1058,8 @@ async def gephi_create_project(name: str = "New Project") -> str:
     confirm with them) first. To keep the current graph and start another beside it, use
     gephi_new_workspace.
     """
+    global _undo_source
+    _undo_source = None  # workspace ids belong to the project that is being replaced
     return fmt(await gephi.request("POST", "/project/new", json_data={"name": name}))
 
 @_tool(name="gephi_open_project")
@@ -1065,6 +1078,8 @@ async def gephi_open_project(file: str) -> str:
     destructive step on the copy, so "undo" is just switching back — instant, no disk.
     If you must snapshot to disk, `gephi_export_gexf` + `gephi_import_file` also
     round-trips reliably."""
+    global _undo_source
+    _undo_source = None  # workspace ids belong to the project that is being replaced
     return fmt(await gephi.request("POST", "/project/open", json_data={"file": file}))
 
 @_tool(name="gephi_save_project")
@@ -1230,19 +1245,28 @@ async def gephi_undo() -> str:
         if not known:
             note += (f' If a changed workspace named "{restored}" is still open, it was not '
                      "removed; delete it by hand once you have checked it.")
-    _undo_source = None
 
     if cur is not None and cur.get("id") == snap.get("id"):
-        # Already sitting on the snapshot (e.g. the person switched to it by
-        # hand): just give it back its working name.
+        # Already sitting on the snapshot (e.g. the person switched to it by hand): give it
+        # back its working name, then remove the changed workspace when this server knows
+        # which one it is.
         snap_i = _index_of(wss, snap.get("id"))
         rn = await gephi.request("POST", "/workspace/rename",
                                  json_data={"index": snap_i, "name": restored})
         if not rn.get("success", False):
             return fmt(rn)
-        return fmt({"success": True, "restored": restored,
-                    "node_count": snap.get("node_count"),
-                    "edge_count": snap.get("edge_count")})
+        _undo_source = None
+        if known and changed_id is not None:
+            fresh = await _workspaces()
+            damaged_i = _index_of(fresh, changed_id) if fresh is not None else None
+            if damaged_i is not None:
+                await gephi.request("DELETE", "/workspace/delete",
+                                    params={"index": str(damaged_i)})
+        else:
+            note = (f'If a changed workspace named "{restored}" is still open, it was not '
+                    "removed; delete it by hand once you have checked it.")
+        return fmt(_body(success=True, restored=restored, node_count=snap.get("node_count"),
+                         edge_count=snap.get("edge_count"), note=note))
 
     snap_i = _index_of(wss, snap.get("id"))
     sw = await gephi.request("POST", "/workspace/switch", json_data={"index": snap_i})
@@ -1266,6 +1290,7 @@ async def gephi_undo() -> str:
     if not rn.get("success", False):
         return fmt(rn)
     entry = fresh[snap_i]
+    _undo_source = None
     return fmt(_body(success=True, restored=restored, node_count=entry.get("node_count"),
                      edge_count=entry.get("edge_count"), note=note))
 
@@ -1848,11 +1873,12 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     result = await gephi.request("POST", "/layout/run",
                                  json_data=_body(algorithm=algorithm, iterations=iterations,
                                                  properties=properties))
-    global _last_run_finished
+    global _open_layout
     if isinstance(result, dict) and result.get("success"):
         LEDGER.record("run_layout", algorithm=algorithm, iterations=iterations,
                       **({"properties": properties} if properties else {}))
-        _last_run_finished = False
+        last = LEDGER.entries[-1] if LEDGER.entries else None
+        _open_layout = last if last and last.get("operation") == "run_layout" else None
     elif isinstance(result, dict) and _UI_THREAD_BUSY in str(result.get("error", "")):
         result["guidance"] = _UI_THREAD_GUIDANCE
     if not sync or not result.get("success"):
@@ -1860,20 +1886,21 @@ async def gephi_run_layout(algorithm: str, iterations: int = 1000,
     # /layout/status says only whether a layout is running, not why it ended, so a stop sent
     # through gephi_stop_layout while this call waits is counted and checked afterwards.
     stops_before = _layout_stops
+    mine = _open_layout
     # Poll until layout stops
     for _ in range(300):  # max ~5 minutes at 1s intervals
         await asyncio.sleep(1)
-        status = await gephi.request("GET", "/layout/status")
+        status = await _layout_status()
         if not status.get("running", True):
             while _stops_in_flight:
                 await asyncio.sleep(0.05)
             stopped = _layout_stops != stops_before
-            _last_run_finished = not stopped
+            _open_layout = None
             if stopped:
                 result["status"] = "stopped"
                 result["message"] = (f"Layout stopped on request before it finished; fewer than "
                                      f"the {iterations} requested iterations ran")
-                LEDGER.mark_layout_stopped()
+                LEDGER.mark_layout_stopped(mine)
             else:
                 result["status"] = "completed"
                 result["message"] = "Layout finished after polling"
@@ -1956,7 +1983,7 @@ async def gephi_similarity_layout(projection: Literal["auto", "spectral", "pca",
     if finish_noverlap:
         await gephi.request("POST", "/layout/run", json_data={"algorithm": "noverlap", "iterations": 60})
         for _ in range(120):
-            status = await gephi.request("GET", "/layout/status")
+            status = await _layout_status()
             if not status.get("running"):
                 break
             await asyncio.sleep(0.5)
@@ -2030,7 +2057,7 @@ async def gephi_community_layout(partition_column: str = "Modularity Class",
         await gephi.request("POST", "/layout/run",
                             json_data={"algorithm": "noverlap", "iterations": 60})
         for _ in range(120):
-            status = await gephi.request("GET", "/layout/status")
+            status = await _layout_status()
             if not status.get("running"):
                 break
             await asyncio.sleep(0.5)
@@ -2051,16 +2078,18 @@ async def gephi_stop_layout() -> str:
     """Stop the layout that is running, keeping the positions it reached. Use it when a layout has
     settled or is taking too long; a stopped run reports fewer iterations than were asked.
     """
-    global _layout_stops, _stops_in_flight
+    global _layout_stops, _stops_in_flight, _open_layout
     _stops_in_flight += 1
     try:
         result = await gephi.request("POST", "/layout/stop")
         if result.get("success") and result.get("message") != "No layout running":
             _layout_stops += 1
-            # A layout started without sync has no call waiting to mark it. A run that a sync
-            # call already saw finish is left alone: the layout stopped now was started by hand.
-            if not _last_run_finished:
-                LEDGER.mark_layout_stopped()
+            # A layout started without sync has no call waiting to mark it. Only the run this
+            # server started and has not seen finish is marked: a computed layout recorded
+            # since ran in full, and a layout started by hand in Gephi is not in the record.
+            if _open_layout is not None:
+                LEDGER.mark_layout_stopped(_open_layout)
+                _open_layout = None
     finally:
         _stops_in_flight -= 1
     return fmt(result)
@@ -2072,8 +2101,9 @@ _layout_stops = 0
 #: Stop requests sent and not yet answered. Gephi stops the layout before its answer arrives, so
 #: a sync gephi_run_layout that sees no layout running waits for these before it decides.
 _stops_in_flight = 0
-#: True once a sync gephi_run_layout saw its layout finish without a stop.
-_last_run_finished = False
+#: The record's entry for the gephi_run_layout this server started and has not seen finish,
+#: or None. gephi_stop_layout marks this entry, and no other, as stopped.
+_open_layout: dict[str, Any] | None = None
 
 @_tool(name="gephi_get_layout_status")
 async def gephi_get_layout_status() -> str:
@@ -2081,7 +2111,18 @@ async def gephi_get_layout_status() -> str:
     waiting for it (sync false) before reading positions or exporting a map. `last_run` gives the
     last layout started, its iterations and the settings it applied (plugin 1.6.0+).
     """
-    return fmt(await gephi.request("GET", "/layout/status"))
+    return fmt(await _layout_status())
+
+
+async def _layout_status() -> dict[str, Any]:
+    """Gephi's layout status. Every read goes through here: one that sees no layout running
+    closes the open run, so a stop sent later is not taken for that run's stop."""
+    global _open_layout
+    status = await gephi.request("GET", "/layout/status")
+    if (isinstance(status, dict) and status.get("success") and status.get("running") is False
+            and not _stops_in_flight):
+        _open_layout = None
+    return status
 
 @_tool(name="gephi_get_available_layouts")
 async def gephi_get_available_layouts() -> str:
@@ -4097,8 +4138,11 @@ async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) ->
 
 # ─── Counterfactual / comparison ─────────────────────────────
 
-async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
-    """Parse the graph of a workspace, switching to it and back if one is named."""
+async def _read_graph(workspace: int | None = None,
+                      stranded: list[int] | None = None) -> dict[str, Any] | None:
+    """Parse the graph of a workspace, switching to it and back if one is named. When the
+    switch back cannot be confirmed, the workspace is added to `stranded`, whether or not the
+    graph was read."""
     original = None
     if workspace is not None:
         listed = await gephi.request("GET", "/workspace/list")
@@ -4134,13 +4178,15 @@ async def _read_graph(workspace: int | None = None) -> dict[str, Any] | None:
             finally:
                 if not (isinstance(back, dict) and back.get("success")):
                     LEDGER.start_new_graph(_OFF_ORIGINAL)
-                    if graph is not None:
-                        graph[_NOT_SWITCHED_BACK] = True
+                    if stranded is not None:
+                        stranded.append(workspace)
     return graph
 
 
-#: Set on a graph _read_graph returns when it could not switch back to the workspace on screen.
-_NOT_SWITCHED_BACK = "not_switched_back"
+_NOT_SWITCHED_BACK = (
+    "Gephi could not be switched back to the workspace that was on screen, so another "
+    "workspace may be showing now. Check gephi_list_workspaces and switch back before going "
+    "on; the session record starts anew from here.")
 
 
 @_tool(name="gephi_compare_partitions")
@@ -4211,24 +4257,26 @@ async def gephi_compare_workspaces(before: int, after: int, compare: str | None 
 
     Answers gephi/gephi#2013.
     """
-    left = await _read_graph(before)
+    stranded: list[int] = []
+
+    def unread(index: int) -> str:
+        failed: dict[str, Any] = {"success": False, "error": (
+            f"Could not read workspace {index}: workspaces are named by the zero-based index "
+            "from gephi_list_workspaces, not by its id.")}
+        if stranded:
+            failed["workspace_warning"] = _NOT_SWITCHED_BACK
+        return fmt(failed)
+
+    left = await _read_graph(before, stranded)
     if left is None:
-        return fmt({"success": False, "error": f"Could not read workspace {before}: workspaces are "
-                                                 "named by the zero-based index from "
-                                                 "gephi_list_workspaces, not by its id."})
-    right = await _read_graph(after)
+        return unread(before)
+    right = await _read_graph(after, stranded)
     if right is None:
-        return fmt({"success": False, "error": f"Could not read workspace {after}: workspaces are "
-                                                 "named by the zero-based index from "
-                                                 "gephi_list_workspaces, not by its id."})
+        return unread(after)
     result: dict[str, Any] = {"success": True, "before_workspace": before, "after_workspace": after}
-    stranded = [g.pop(_NOT_SWITCHED_BACK, False) for g in (left, right)]
     result.update(diff_graphs(left, right, compare=compare, directed=directed))
-    if any(stranded):
-        result["workspace_warning"] = (
-            "Gephi could not be switched back to the workspace that was on screen, so another "
-            "workspace may be showing now. Check gephi_list_workspaces and switch back before "
-            "going on; the session record starts anew from here.")
+    if stranded:
+        result["workspace_warning"] = _NOT_SWITCHED_BACK
     return fmt(result)
 
 

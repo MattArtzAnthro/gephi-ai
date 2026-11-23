@@ -48,5 +48,7 @@ regression in the model or the code.
   layout began is counted against that one (`Layout current`, 2 runs, expected FAIL). It needs
   a stop and a run sent at the same time.
 - Changes made by hand in the Gephi window are outside every model.
+- A background layout that finished without any status read, followed by a layout started by
+  hand in the Gephi window and stopped with `gephi_stop_layout`, is recorded as the stopped one.
 - The numeric modules (`partition_match.py`, `community_stability.py`, `graph_diff.py`,
   `bipartite.py`) and the Java plugin are not modelled.

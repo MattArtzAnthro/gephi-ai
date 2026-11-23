@@ -83,11 +83,12 @@ class Ledger:
         except Exception:
             _log.warning("could not record %s in the session receipt", operation, exc_info=True)
 
-    def mark_layout_stopped(self) -> None:
-        """The last layout was stopped before it finished, so the iteration count recorded for it
-        is what was asked for, not what ran."""
+    def mark_layout_stopped(self, run: dict[str, Any] | None = None) -> None:
+        """A layout was stopped before it finished, so the iteration count recorded for it is
+        what was asked for, not what ran. `run` names the entry; without it, the last layout.
+        An entry no longer in this record (the graph changed since) is left alone."""
         for entry in reversed(self.entries):
-            if entry["operation"] == "run_layout":
+            if entry["operation"] == "run_layout" and (run is None or entry is run):
                 if "iterations" in entry:
                     entry["iterations_requested"] = entry.pop("iterations")
                 entry["stopped_before_finishing"] = True

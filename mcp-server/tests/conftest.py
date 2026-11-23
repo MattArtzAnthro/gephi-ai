@@ -9,9 +9,13 @@ Git's repository-locating variables are removed before any test runs. A git hook
 (the pre-commit gate runs this suite), and tests that start git in a temporary folder pass
 os.environ through, so from a linked worktree they once committed fixtures into the worktree and
 set core.bare=true on the real repository. test_git_env_isolation.py guards this.
+
+The server remembers, between calls, which workspace the undo snapshot was copied from and which
+layout run is still open. Each test starts with neither, so no test inherits another's.
 """
 
 import os
+import sys
 
 import pytest
 
@@ -28,3 +32,12 @@ def _shipped_register_only(monkeypatch, tmp_path_factory):
     absent = tmp_path_factory.getbasetemp() / "no-local-overlay.json"
     monkeypatch.setattr(stats_integrity, "local_overlay_path", lambda: absent)
     monkeypatch.setattr(stats_integrity, "_register_cache", None)
+
+
+@pytest.fixture(autouse=True)
+def _no_memory_between_tests(monkeypatch):
+    server = sys.modules.get("gephi_mcp")
+    if server is not None:
+        monkeypatch.setattr(server, "_undo_source", None)
+        monkeypatch.setattr(server, "_open_layout", None)
+        monkeypatch.setattr(server, "_stops_in_flight", 0)
