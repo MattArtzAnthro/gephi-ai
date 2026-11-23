@@ -450,7 +450,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Creates**: `Authority`, `Hub` on nodes
 
 ### gephi_label_clusters
-- **Method**: GEXF export + per-node label writes + preview settings
+- **Method**: GEXF export + one batch label write (POST `/graph/nodes/attributes`) + preview settings
 - **Params**: `{partition_column: str, names?: {group_value: caption}, caption_scale?: float (1.0), prefer?: "degree"|"size" ("degree"), restore?: bool (false)}`
 - **Returns**: `{labeled: {group: {node, label}}, blanked}` or `{restored}`
 - **Usage**: Caption clusters the way visual network analysis does: blanks all labels,

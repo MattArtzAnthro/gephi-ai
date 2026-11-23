@@ -26,6 +26,7 @@ import logging
 import math
 import os
 import re
+import ssl
 import sys
 import tempfile
 import time
@@ -147,7 +148,7 @@ async def _check_freshness(health: dict[str, Any]) -> dict[str, Any] | None:
         return _freshness_cache["result"]
     result = None
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
+        async with httpx.AsyncClient(timeout=2.0, verify=_tls_context()) as client:
             latest = (await client.get(LATEST_URL)).json()
         behind = []
         if _is_behind(__version__, latest.get("server")):
@@ -503,6 +504,16 @@ def _graph_change(endpoint: str) -> str:
     return next((text for prefix, text in _GRAPH_CHANGES if endpoint.startswith(prefix)), endpoint)
 
 
+@functools.cache
+def _tls_context() -> ssl.SSLContext:
+    """The TLS settings every HTTP client here uses, built once.
+
+    httpx builds them anew for each client, which reads the certificate bundle from disk and
+    takes longer than a local request to Gephi does. A client is made per request, so that
+    cost was paid on every tool call."""
+    return httpx.create_ssl_context()
+
+
 class GephiClient:
     def __init__(self, base_url: str = GEPHI_API_URL):
         self.base_url = base_url.rstrip("/")
@@ -512,7 +523,7 @@ class GephiClient:
     async def _gephi_on_windows(self) -> bool:
         if self._gephi_os is None:
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=5.0, verify=_tls_context()) as client:
                     health = (await client.request("GET", f"{self.base_url}/health")).json()
                 self._gephi_os = str(health.get("os") or "")
             except Exception:
@@ -545,7 +556,8 @@ class GephiClient:
                 LEDGER.start_new_graph(_graph_change(endpoint))
         try:
             json_data = await self._for_gephi(json_data)
-            async with httpx.AsyncClient(timeout=timeout or self.timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout or self.timeout,
+                                         verify=_tls_context()) as client:
                 # Name the charset: Gephi's HTTP server decodes a body as US-ASCII when none is
                 # given, which corrupted every non-ASCII id and label on older plugin builds.
                 headers = JSON_UTF8 if json_data is not None else None
@@ -3769,45 +3781,42 @@ async def gephi_label_clusters(partition_column: str,
         with contextlib.suppress(OSError):
             os.unlink(path)
 
+    # Labels go to Gephi in one request, through the node table's Label column. One request per
+    # node took minutes on a graph of a few thousand nodes.
     if restore:
-        restored = 0
-        for n in graph["nodes"]:
-            original = n["attributes"].get("label_backup")
-            if original is not None:
-                await gephi.request("POST", "/graph/node/label",
-                                    json_data={"id": n["key"], "label": original})
-                restored += 1
+        originals = [{"id": n["key"], "attributes": {"Label": n["attributes"]["label_backup"]}}
+                     for n in graph["nodes"] if n["attributes"].get("label_backup") is not None]
+        if originals:
+            put_back = await gephi.request("POST", "/graph/nodes/attributes",
+                                           json_data={"updates": originals})
+            if not put_back.get("success", False):
+                return fmt(put_back)
         await gephi.request("POST", "/preview/settings",
                             json_data={"node.label.show": False})
-        return fmt({"success": True, "restored": restored})
+        return fmt({"success": True, "restored": len(originals)})
 
     hubs = gephi_mcp_viewer.pick_cluster_hubs(graph, partition_column, prefer=prefer)
     if not hubs:
         return fmt({"success": False,
                     "error": f"no nodes carry the attribute '{partition_column}'"})
-    hub_keys = set(hubs.values())
-
-    backups = [{"id": n["key"], "attributes": {"label_backup": n["label"]}}
-               for n in graph["nodes"]
-               if n["attributes"].get("label_backup") is None]
-    if backups:
-        await gephi.request("POST", "/graph/nodes/attributes",
-                            json_data={"updates": backups})
-
-    labeled, blanked = {}, 0
     label_by_key = {n["key"]: n["attributes"].get("label_backup") or n["label"]
                     for n in graph["nodes"]}
+    labeled = {str(group): {"node": key, "label": (names or {}).get(str(group), label_by_key[key])}
+               for group, key in hubs.items()}
+    caption_of = {entry["node"]: entry["label"] for entry in labeled.values()}
+
+    # The backup and the new label of a node travel together, so a label is never blanked
+    # without its original saved.
+    updates = []
     for n in graph["nodes"]:
-        if n["key"] in hub_keys:
-            continue
-        await gephi.request("POST", "/graph/node/label",
-                            json_data={"id": n["key"], "label": ""})
-        blanked += 1
-    for group, key in hubs.items():
-        caption = (names or {}).get(str(group), label_by_key[key])
-        await gephi.request("POST", "/graph/node/label",
-                            json_data={"id": key, "label": caption})
-        labeled[str(group)] = {"node": key, "label": caption}
+        attributes = {"Label": caption_of.get(n["key"], "")}
+        if n["attributes"].get("label_backup") is None:
+            attributes["label_backup"] = n["label"]
+        updates.append({"id": n["key"], "attributes": attributes})
+    written = await gephi.request("POST", "/graph/nodes/attributes", json_data={"updates": updates})
+    if not written.get("success", False):
+        return fmt(written)
+    blanked = len(updates) - len(caption_of)
 
     # Two Gephi label facts drive this recipe: with proportional size OFF the
     # renderer clamps labels to the node's bounds (captions can never outgrow

@@ -18,6 +18,15 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
   `/explore` and `/import-and-explore` workflows (Claude Code and Codex) now run both layouts on a
   flagged graph and keep the one with the clearer separation.
 
+- **Every tool call is faster.** The server made a new HTTP client for each request to Gephi, and
+  each one rebuilt its TLS settings from the certificate bundle on disk, which took longer than
+  the request. The settings are now built once, which saves tens of milliseconds on each
+  request and more on a busy machine.
+- **`gephi_label_clusters` sends its labels in one request.** It sent one per node, so a graph of
+  a few thousand nodes took minutes. A 3,000-node graph now takes about a second, and `restore`
+  less. A node's saved original and its new label are written together, and a write Gephi
+  refuses is reported instead of passed over.
+
 ### Added
 - **Formal models of the server's workspace, layout and locking rules** (`formal/`): Lean 4 proofs
   for the endpoint classification, the choice of a duplicate's copy and the session record, and

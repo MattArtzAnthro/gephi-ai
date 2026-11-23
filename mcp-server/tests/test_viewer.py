@@ -263,12 +263,14 @@ async def test_label_clusters(gexf_file, monkeypatch, tmp_path):
     out = _json.loads(await gephi_mcp.gephi_label_clusters(
         partition_column="team", names={"A": "Alpha Team", "B": "Beta Team"}))
 
-    backup = next(c for c in calls if c["endpoint"] == "/graph/nodes/attributes")
-    assert len(backup["json"]["updates"]) == 6
-    assert all("label_backup" in u["attributes"] for u in backup["json"]["updates"])
+    # One request carries every node's backup and new label; none goes out per node.
+    writes = [c for c in calls if c["endpoint"] == "/graph/nodes/attributes"]
+    assert len(writes) == 1 and not [c for c in calls if c["endpoint"] == "/graph/node/label"]
+    updates = writes[0]["json"]["updates"]
+    assert len(updates) == 6
+    assert all("label_backup" in u["attributes"] for u in updates)
 
-    label_calls = {c["json"]["id"]: c["json"]["label"]
-                   for c in calls if c["endpoint"] == "/graph/node/label"}
+    label_calls = {u["id"]: u["attributes"]["Label"] for u in updates}
     assert label_calls["a1"] == "Alpha Team" and label_calls["b1"] == "Beta Team"
     assert label_calls["a2"] == "" and label_calls["b3"] == ""
 
@@ -303,9 +305,10 @@ async def test_label_clusters_restore(monkeypatch, tmp_path):
 
     import json as _json
     out = _json.loads(await gephi_mcp.gephi_label_clusters(partition_column="team", restore=True))
-    label_calls = {c["json"]["id"]: c["json"]["label"]
-                   for c in calls if c["endpoint"] == "/graph/node/label"}
-    assert label_calls == {"a1": "OrigA"}   # only nodes with a backup are restored
+    writes = [c for c in calls if c["endpoint"] == "/graph/nodes/attributes"]
+    assert len(writes) == 1 and not [c for c in calls if c["endpoint"] == "/graph/node/label"]
+    label_calls = {u["id"]: u["attributes"] for u in writes[0]["json"]["updates"]}
+    assert label_calls == {"a1": {"Label": "OrigA"}}   # only nodes with a backup are restored
     preview = next(c for c in calls if c["endpoint"] == "/preview/settings")
     assert preview["json"]["node.label.show"] is False
     assert out["restored"] == 1
@@ -778,3 +781,60 @@ def test_a_grouping_no_tie_can_judge_is_undetermined_not_a_mismatch():
 
     assert d["partition"]["verdict"] == "undetermined"
     assert not any("does not match" in w for w in d["warnings"])
+
+
+async def test_label_clusters_keeps_a_saved_backup_and_reports_a_refused_write(monkeypatch, tmp_path):
+    """A second run must not overwrite the saved originals with the blanked labels, and a write
+    Gephi refuses is reported, not passed over as done."""
+    again = QA_GEXF.replace(
+        '<attribute id="0" title="team" type="string"/>',
+        '<attribute id="0" title="team" type="string"/><attribute id="9" title="label_backup" type="string"/>'
+    ).replace(
+        '<attvalues><attvalue for="0" value="A"/></attvalues>',
+        '<attvalues><attvalue for="0" value="A"/><attvalue for="9" value="OrigA"/></attvalues>', 1)
+    p = tmp_path / "again.gexf"
+    p.write_text(again, encoding="utf-8")
+    calls = []
+
+    async def fake_request(method, endpoint, params=None, json_data=None):
+        calls.append({"endpoint": endpoint, "json": json_data})
+        if endpoint == "/export/gexf":
+            import shutil
+            shutil.copy(str(p), json_data["file"])
+            return {"success": True}
+        return {"success": False, "error": "Graph is busy"}
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
+
+    import json as _json
+    out = _json.loads(await gephi_mcp.gephi_label_clusters(partition_column="team"))
+    updates = {u["id"]: u["attributes"] for u in calls[1]["json"]["updates"]}
+    assert "label_backup" not in updates["a1"] and "label_backup" in updates["a2"]
+    assert updates["a1"]["Label"] == "OrigA"            # the hub is captioned with its original
+    assert out == {"success": False, "error": "Graph is busy"}
+    assert not [c for c in calls if c["endpoint"] == "/preview/settings"]
+
+
+async def test_label_clusters_restore_reports_a_refused_write(monkeypatch, tmp_path):
+    saved = QA_GEXF.replace(
+        '<attribute id="0" title="team" type="string"/>',
+        '<attribute id="0" title="team" type="string"/><attribute id="9" title="label_backup" type="string"/>'
+    ).replace(
+        '<attvalues><attvalue for="0" value="A"/></attvalues>',
+        '<attvalues><attvalue for="0" value="A"/><attvalue for="9" value="OrigA"/></attvalues>', 1)
+    p = tmp_path / "saved.gexf"
+    p.write_text(saved, encoding="utf-8")
+    calls = []
+
+    async def fake_request(method, endpoint, params=None, json_data=None):
+        calls.append(endpoint)
+        if endpoint == "/export/gexf":
+            import shutil
+            shutil.copy(str(p), json_data["file"])
+            return {"success": True}
+        return {"success": False, "error": "Graph is busy"}
+    monkeypatch.setattr(gephi_mcp.gephi, "request", fake_request)
+
+    import json as _json
+    out = _json.loads(await gephi_mcp.gephi_label_clusters(partition_column="team", restore=True))
+    assert out == {"success": False, "error": "Graph is busy"}
+    assert "/preview/settings" not in calls     # labels stay shown while the originals are not back

@@ -414,3 +414,29 @@ async def test_freshness_is_checked_again_when_the_gephi_plugin_changes(monkeypa
     again = await g._check_freshness({"version": "1.6.1", "gephi_version": "0.11.4"})
     assert again == {"available": False}
     assert client.calls == 2  # the same plugin is not checked twice
+
+
+async def test_every_http_client_shares_one_tls_context(monkeypatch):
+    """Building the TLS settings reads the certificate bundle and costs more than a local request
+    to Gephi. A client is made per request, so each must be handed the one built already."""
+    import inspect
+    import ssl
+
+    import gephi_mcp as g
+    seen = []
+
+    class _Client:
+        def __init__(self, *a, **k): seen.append(k.get("verify"))
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def request(self, **k):
+            class R:
+                def raise_for_status(self): pass
+                def json(self): return {"success": True}
+            return R()
+    monkeypatch.setattr(g.httpx, "AsyncClient", _Client)
+    await g.gephi.request("GET", "/health")
+    await g.gephi.request("POST", "/graph/node/add", json_data={"id": "a"})
+    assert isinstance(seen[0], ssl.SSLContext) and seen[0] is seen[1]
+    source = inspect.getsource(g)
+    assert source.count("httpx.AsyncClient(") == source.count("verify=_tls_context()") == 3
