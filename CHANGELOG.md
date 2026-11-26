@@ -6,6 +6,12 @@ packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## Unreleased
 
+### Changed
+- **`gephi_extract_backbone` removes its edges in one request.** The plugin gains
+  `POST /graph/edges/remove`, which takes `{edges: [{source, target}]}` and answers
+  `{removed, not_found}`. With a plugin that lacks it the tool removes one edge per request as
+  before. A removal Gephi refuses is reported.
+
 ### Added
 - **Formal models of the Gephi plugin** (`formal/`): a Lean 4 proof for the plugin's layout name
   matching, and TLA+ models of its staged layout settings and its record of running statistics.

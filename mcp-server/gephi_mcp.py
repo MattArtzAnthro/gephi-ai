@@ -4109,9 +4109,9 @@ async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) ->
     alpha: significance threshold (lower keeps fewer edges, a stricter
     backbone); 0.05 and 0.01 are the values most commonly used in the
     disparity-filter literature. max_edges: safety cap on how many edges this
-    will fetch/prune in one call — pruning removes edges one at a time
-    (no bulk-remove endpoint exists), so very large graphs will be slow;
-    raise the cap deliberately rather than by default.
+    will fetch/prune in one call; raise it deliberately rather than by default.
+    The edges go in one request; a plugin without the bulk endpoint takes one
+    request per edge, which is slow on a large graph.
     """
     edges_result = await gephi.request("GET", "/graph/edges", params={"limit": max_edges})
     if not edges_result.get("success", True):
@@ -4129,12 +4129,22 @@ async def gephi_extract_backbone(alpha: float = 0.05, max_edges: int = 20000) ->
     # undo point.
     undo = await _auto_snapshot("extract_backbone")
 
+    pairs = [{"source": e["source"], "target": e["target"]} for e in to_remove]
     removed = 0
-    for e in to_remove:
-        result = await gephi.request("POST", "/graph/edge/remove",
-                                     json_data={"source": e["source"], "target": e["target"]})
-        if result.get("success", True):
-            removed += 1
+    bulk: dict[str, Any] = {"success": True, "removed": 0}
+    if pairs:
+        bulk = await gephi.request("POST", "/graph/edges/remove", json_data={"edges": pairs},
+                                   timeout=SLOW_REQUEST_TIMEOUT)
+    if bulk.get("success", False):
+        removed = int(bulk.get("removed", 0))
+    elif str(bulk.get("error", "")).startswith("Unknown endpoint"):
+        # A plugin from before the bulk endpoint: one request per edge.
+        for pair in pairs:
+            result = await gephi.request("POST", "/graph/edge/remove", json_data=pair)
+            if result.get("success", True):
+                removed += 1
+    else:
+        return fmt({**bulk, "undo_available": undo})
 
     return fmt({
         "success": True,

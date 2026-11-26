@@ -1487,6 +1487,47 @@ public class GephiControlService {
         }
     }
 
+    /**
+     * Removes many edges under one write lock, each named by the ids of its two ends. A pair
+     * with no such edge is counted in {@code not_found} and the rest are still removed.
+     */
+    public JsonObject removeEdges(List<Map<String, Object>> edges) {
+        try {
+            Workspace ws = currentWorkspace();
+            if (ws == null) {
+                return error("No project open");
+            }
+            Graph g = currentGraphModel().getGraph();
+            lockWrite(g);
+            try {
+                int removed = 0;
+                int notFound = 0;
+                for (Map<String, Object> pair : edges) {
+                    Object source = pair == null ? null : pair.get("source");
+                    Object target = pair == null ? null : pair.get("target");
+                    Node s = source == null ? null : nodeById(g, source.toString());
+                    Node t = target == null ? null : nodeById(g, target.toString());
+                    Edge e = s == null || t == null ? null : findEdge(g, s, t);
+                    if (e == null) {
+                        notFound++;
+                        continue;
+                    }
+                    g.removeEdge(e);
+                    removed++;
+                }
+                JsonObject r = new JsonObject();
+                r.addProperty("success", true);
+                r.addProperty("removed", removed);
+                r.addProperty("not_found", notFound);
+                return r;
+            } finally {
+                unlockWrite(g);
+            }
+        } catch (Exception e) {
+            return failure("Failed: ", e);
+        }
+    }
+
     public JsonObject setEdgeWeight(String source, String target, double weight) {
         try {
             Workspace ws = currentWorkspace();

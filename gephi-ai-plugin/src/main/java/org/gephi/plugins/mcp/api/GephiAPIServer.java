@@ -494,6 +494,14 @@ public class GephiAPIServer implements HttpHandler {
             return service.removeEdge(body.get("source").getAsString(), body.get("target").getAsString());
         }
 
+        if ("/graph/edges/remove".equals(uri) && "POST".equals(method)) {
+            if (body == null || !body.has("edges")) {
+                return errorResult("Missing 'edges' array");
+            }
+            List<Map<String, Object>> edges = GSON.fromJson(body.get("edges"), List.class);
+            return service.removeEdges(edges);
+        }
+
         if ("/graph/edge/weight".equals(uri) && "POST".equals(method)) {
             if (body == null || !body.has("source") || !body.has("target") || !body.has("weight")) {
                 return errorResult("Missing 'source', 'target', or 'weight'");

@@ -290,6 +290,50 @@ async def test_extract_backbone_snapshots_before_removal(rec):
     assert "undo_available" in out
 
 
+# Two weak ties, a-d and a-e, between nodes whose other ties are all strong.
+BACKBONE_EDGES = [{"source": s, "target": t, "weight": w} for s, t, w in (
+    ("a", "b", 10.0), ("a", "c", 10.0), ("b", "c", 10.0), ("b", "d", 10.0), ("c", "d", 10.0),
+    ("b", "e", 10.0), ("c", "e", 10.0), ("a", "d", 0.001), ("a", "e", 0.001))]
+
+
+def _pruned(rec):
+    return [c["json"] for c in rec.calls if c["endpoint"].startswith("/graph/edge")
+            and c["method"] == "POST"]
+
+
+async def test_extract_backbone_removes_its_edges_in_one_request(rec):
+    rec.responses = [{"success": True, "edges": BACKBONE_EDGES}, *SNAP_OK,
+                     {"success": True, "removed": 2, "not_found": 0}]
+    out = await out_of(gephi_mcp.gephi_extract_backbone, alpha=0.5)
+    assert _pruned(rec) == [{"edges": [{"source": "a", "target": "d"},
+                                       {"source": "a", "target": "e"}]}]
+    assert rec.last["endpoint"] == "/graph/edges/remove"
+    assert out["edges_removed_from_graph"] == 2 and out["edges_remaining"] == 7
+
+
+async def test_extract_backbone_falls_back_to_single_removals_on_an_older_plugin(rec):
+    rec.responses = [{"success": True, "edges": BACKBONE_EDGES}, *SNAP_OK,
+                     {"success": False, "error": "Unknown endpoint: POST /graph/edges/remove"},
+                     {"success": True}, {"success": False, "error": "Edge not found"}]
+    out = await out_of(gephi_mcp.gephi_extract_backbone, alpha=0.5)
+    assert _pruned(rec)[1:] == [{"source": "a", "target": "d"}, {"source": "a", "target": "e"}]
+    assert out["success"] and out["edges_removed_from_graph"] == 1 and out["edges_remaining"] == 8
+
+
+async def test_extract_backbone_reports_a_refused_removal(rec):
+    rec.responses = [{"success": True, "edges": BACKBONE_EDGES}, *SNAP_OK,
+                     {"success": False, "error": "Graph is busy"}]
+    out = await out_of(gephi_mcp.gephi_extract_backbone, alpha=0.5)
+    assert out["success"] is False and out["error"] == "Graph is busy"
+    assert out["undo_available"] is True and len(_pruned(rec)) == 1
+
+
+async def test_extract_backbone_with_nothing_to_prune_sends_no_removal(rec):
+    rec.responses = [{"success": True, "edges": BACKBONE_EDGES[:1]}, *SNAP_OK]
+    out = await out_of(gephi_mcp.gephi_extract_backbone, alpha=0.5)
+    assert _pruned(rec) == [] and out["edges_removed_from_graph"] == 0
+
+
 async def test_remove_node_stays_snapshot_free(rec):
     """Single-node removal is deliberately not auto-snapshotted (too chatty)."""
     await out_of(gephi_mcp.gephi_remove_node, id="n1")

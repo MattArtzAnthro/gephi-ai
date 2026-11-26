@@ -543,7 +543,7 @@ Start with `gephi_health_check`. Then check which workspace is open (`gephi_list
 - **Notes**: Shows the whole graph again after `gephi_apply_filter` or `gephi_apply_filters`. It does not restore anything a remove, extract, or `filter_by_*` tool deleted; use `gephi_undo` for that.
 
 ### gephi_extract_backbone
-- **Method**: fetches all edges (GET `/graph/edges`), computes the disparity filter (Serrano, Boguna, and Vespignani 2009) client-side, removes every non-surviving edge one at a time (POST `/graph/edge/remove`)
+- **Method**: fetches all edges (GET `/graph/edges`), computes the disparity filter (Serrano, Boguna, and Vespignani 2009) client-side, removes every non-surviving edge in one request (POST `/graph/edges/remove`; one POST `/graph/edge/remove` per edge on a plugin without it)
 - **Params**: `{alpha?: float (0.05), max_edges?: int (20000)}`. Lower alpha keeps fewer edges (stricter backbone); max_edges is a safety cap on how many edges this fetches/prunes in one call
 - **Returns**: `{success, stats: {edges_kept, edges_removed, alpha}, edges_removed_from_graph}`
 - **Warning**: Destructive; takes an undo snapshot first (`gephi_undo` reverses it). Works on any weighted graph, not just text networks: a principled alternative to a flat `min_edge_weight` cutoff (edge significance is judged per-node, relative to that node's own weight distribution, not one global threshold). Recompute modularity/betweenness afterward if needed; existing values describe the pre-prune graph.
