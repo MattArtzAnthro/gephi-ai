@@ -4,6 +4,24 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Added
+- **Formal models of the Gephi plugin** (`formal/`): a Lean 4 proof for the plugin's layout name
+  matching, and TLA+ models of its staged layout settings and its record of running statistics.
+
+### Fixed
+- **Staged layout settings survive a refused run.** `gephi_set_layout_properties` followed by a
+  `gephi_run_layout` that answered "Layout already running" threw the staged settings away, and
+  the next run used the layout's defaults. Only a run that starts takes them now. (Gephi plugin)
+- **Staged layout settings follow the layout, not its spelling.** Settings staged for
+  "forceatlas2" were dropped by a run of "ForceAtlas 2". (Gephi plugin)
+- **A statistic still running stays stoppable.** When a request gave up on a statistic that kept
+  running in Gephi (at the one-hour wait cap, or when it ignored the stop at its deadline),
+  `gephi_stop_statistic` answered that nothing was running and a second run of it could start.
+  It now stays recorded as running until it ends. (Gephi plugin)
+- **A stop that arrives as a statistic ends no longer reports it as stopped.** (Gephi plugin)
+
 ## MCP server 1.24.2 / workflow packages 1.23.2
 
 ### Changed

@@ -2,3 +2,4 @@
 mcp-server/gephi_mcp.py
 mcp-server/session_ledger.py
 mcp-server/stats_integrity.py
+gephi-ai-plugin/src/main/java/org/gephi/plugins/mcp/service/GephiControlService.java

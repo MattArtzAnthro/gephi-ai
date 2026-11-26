@@ -1,8 +1,9 @@
 # Formal models
 
-Machine-checked models of the parts of the MCP server where a wrong step loses a graph or
-misreports what was done. They check the models, not the Python; each model names the code it
-follows, and the tests listed below hold the code to it.
+Machine-checked models of the parts of the MCP server and the Gephi plugin where a wrong step
+loses a graph, loses a setting or misreports what was done. They check the models, not the
+Python or the Java; each model names the code it follows, and the tests listed below hold the
+code to it.
 
 ## Run
 
@@ -27,16 +28,21 @@ another file.
 | `tla/Workspace.tla` | undo snapshot, `gephi_undo`, `gephi_whatif`, `gephi_compare_workspaces` | Undo removes only the snapshot's source; the record describes the workspace on screen; no change lands on a workspace other than the one on screen at the call. |
 | `tla/Layout.tla` | `gephi_run_layout`, `gephi_stop_layout` | The record and a sync call's result say "stopped" exactly for a stopped layout. |
 | `tla/ReadGate.tla` | `_one_at_a_time`, `_ReadGate` | No read runs while a what-if or compare has switched workspaces; the gate always reopens. |
+| `GephiModel/LayoutMatch.lean` | plugin `GephiControlService.bestLayoutMatch` | A name equal to the query wins over one that only contains it; the index found is in the list; nothing is found exactly when no name contains the query. |
+| `tla/PluginLayout.tla` | plugin `setLayoutProperties`, `runLayout` | Staged settings are used by the next run of their layout that starts, under any spelling of its name, and never by a run of another layout. |
+| `tla/PluginStats.tla` | plugin `claimStatistic`, `releaseStatistic`, `stopStatistics` | A stop reaches every statistic still running; one statistic never runs twice at once; no stop mark outlives its run. |
 
 `mcp-server/tests/test_formal_conformance.py` holds the Python prefix tuples to the Lean lists.
-`mcp-server/tests/test_workspace_and_layout_guards.py` has one test per TLA+ guard; each fails
-with its guard removed.
+`mcp-server/tests/test_workspace_and_layout_guards.py` has one test per TLA+ guard of the server;
+each fails with its guard removed. The plugin's guards are held by `LayoutPropertyNamesTest`,
+`StatisticClaimTest` and `PanelExecutionTest` in `gephi-ai-plugin/src/test`.
 
 ## When to run
 
 Run both scripts after a change to: the endpoint prefix tuples in `stats_integrity.py`; the
 snapshot, undo, what-if or `_read_graph` code; `gephi_run_layout` or `gephi_stop_layout`; the tool
-lock or read gate; `session_ledger.py`. Change the model in the same commit as the code.
+lock or read gate; `session_ledger.py`; in the plugin, layout staging, layout name matching, or
+the record of running statistics. Change the model in the same commit as the code.
 
 In `tla/check.sh`, a `current` row sets every guard as the server has it. A row with a guard off
 must FAIL: it shows the guard is needed. A row that changes result without a reason is a
@@ -53,4 +59,5 @@ regression in the model or the code.
 - A background layout that finished without any status read, followed by a layout started by
   hand in the Gephi window and stopped with `gephi_stop_layout`, is recorded as the stopped one.
 - The numeric modules (`partition_match.py`, `community_stability.py`, `graph_diff.py`,
-  `bipartite.py`) and the Java plugin are not modelled.
+  `bipartite.py`) are not modelled. Of the Java plugin, only layout staging, layout name
+  matching and the record of running statistics are.

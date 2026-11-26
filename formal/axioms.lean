@@ -19,3 +19,8 @@ import GephiModel
 #print axioms GephiModel.copy_is_new
 #print axioms GephiModel.reported_or_nothing
 #print axioms GephiModel.two_new_is_nothing
+#print axioms GephiModel.firstIdx_none
+#print axioms GephiModel.firstIdx_range
+#print axioms GephiModel.match_in_range
+#print axioms GephiModel.exact_wins
+#print axioms GephiModel.no_match_iff

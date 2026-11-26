@@ -29,7 +29,7 @@ run() {
   local states mark
   states=$(grep -oE "[0-9,]+ distinct states found" <<< "$out" | tail -1 || true)
   if [[ "$got" == "$expect" ]]; then mark=ok; else mark=UNEXPECTED; bad=1; fi
-  printf '%-9s %-14s %-16s %-4s (expected %-4s) %-10s %s\n' "$module" "$name" "$prop" "$got" "$expect" "$mark" "$states"
+  printf '%-12s %-14s %-17s %-4s (expected %-4s) %-10s %s\n' "$module" "$name" "$prop" "$got" "$expect" "$mark" "$states"
   if [[ "${TRACES:-}" == 1 && "$got" == FAIL ]]; then
     sed -n '/is violated/,/states generated/p' <<< "$out" | grep -E '^State [0-9]+|^/\\ ' | sed 's/^/      /'
   fi
@@ -73,5 +73,26 @@ rg current       TRUE  LockReleased   PASS
 rg current       TRUE  CountRight     PASS
 rg current       TRUE  NeverHeld      FAIL  # probe: a holder does get in
 rg no-drain      FALSE ReadsHeldBack  FAIL  # a holder that does not wait for the reads inside
+
+# ---- PluginLayout: the Gephi plugin's staged layout settings
+pl() { run PluginLayout "$1" "MatchByLayout = $2 KeepOnRefusal = $3 OneHolder = $4 MaxSteps = 5" "$5" "$6"; }
+#  name          match  keep   holder property          expect
+pl current       TRUE   TRUE   TRUE   SettingsReachRun  PASS
+pl current       TRUE   TRUE   TRUE   SettingsOwnLayout PASS
+pl current       TRUE   TRUE   TRUE   NeverApplied      FAIL  # probe: staged settings do get used
+pl by-spelling   FALSE  TRUE   TRUE   SettingsReachRun  FAIL  # staged under one spelling, run under another
+pl drop-refused  TRUE   FALSE  TRUE   SettingsReachRun  FAIL  # a refused run threw the staged settings away
+pl two-fields    TRUE   TRUE   FALSE  SettingsOwnLayout FAIL  # a run between a stage's two writes took another layout's settings
+
+# ---- PluginStats: the Gephi plugin's record of running statistics
+ps() { run PluginStats "$1" "SyncStop = $2 HoldClaim = $3 Stats = {1, 2} MaxStops = 2" "$4" "$5"; }
+#  name          sync   hold   property      expect
+ps current       TRUE   TRUE   NoStaleStop   PASS
+ps current       TRUE   TRUE   StopReaches   PASS
+ps current       TRUE   TRUE   OneAtATime    PASS
+ps current       TRUE   TRUE   NeverStopped  FAIL  # probe: a stop does mark a run
+ps unsynced      FALSE  TRUE   NoStaleStop   FAIL  # a stop marked a run that had already been released
+ps early-release TRUE   FALSE  StopReaches   FAIL  # a request gave up and released a statistic still running
+ps early-release TRUE   FALSE  OneAtATime    FAIL  # and a second run of it then started
 
 [[ $bad == 0 ]] && echo "tla: all as expected" || { echo "tla: FAILED: unexpected results" >&2; exit 1; }
