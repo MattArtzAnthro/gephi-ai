@@ -4,7 +4,7 @@ Notable changes to **gephi-ai**. Versions apply across the Gephi plugin
 (`gephi-ai-plugin/`), the MCP server (`mcp-server/`), and the Claude/Codex workflow
 packages. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## Java plugin 1.7.0 / MCP server 1.24.3 / workflow packages 1.23.3
 
 ### Changed
 - **`gephi_extract_backbone` removes its edges in one request.** The plugin gains

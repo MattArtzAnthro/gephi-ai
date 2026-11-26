@@ -73,7 +73,7 @@ You need [Gephi Desktop](https://gephi.org) 0.11.4 or newer and an AI assistant.
 1. In Gephi, open **Tools > Plugins > Available Plugins**, tick **Gephi AI**, and click **Install**.
 2. Restart Gephi. **Tools > Gephi AI Server** shows that the plugin is running.
 
-Gephi AI is listed in Gephi's own plugin center. To install a release the center does not list yet, download `gephi-ai-1.6.1.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and add it through **Tools > Plugins > Downloaded > Add Plugins**.
+Gephi AI is listed in Gephi's own plugin center. To install a release the center does not list yet, download `gephi-ai-1.7.0.nbm` from the [Releases page](https://github.com/MattArtzAnthro/gephi-ai/releases) and add it through **Tools > Plugins > Downloaded > Add Plugins**.
 
 ### 2. Connect your assistant
 
